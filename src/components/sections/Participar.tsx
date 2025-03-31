@@ -9,15 +9,15 @@ interface ActivityCardProps {
 
 function ActivityCard({ title, description, icon }: ActivityCardProps) {
   return (
-    <Card className="h-full hover:shadow-md transition-shadow">
-      <CardHeader>
-        <div className="w-12 h-12 flex items-center justify-center rounded-full bg-casa-100 text-casa-600 mb-4">
-          <span className="text-2xl">{icon}</span>
+    <Card className="h-full border-none shadow-none hover:bg-casa-50 transition-colors">
+      <CardHeader className="pb-2">
+        <div className="w-12 h-12 flex items-center justify-center mb-6 text-casa-800">
+          <span className="text-3xl">{icon}</span>
         </div>
-        <CardTitle className="text-xl">{title}</CardTitle>
+        <CardTitle className="text-xl font-medium text-casa-800">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <CardDescription className="text-base text-foreground/80">
+        <CardDescription className="text-base text-casa-600 leading-relaxed">
           {description}
         </CardDescription>
       </CardContent>
@@ -60,16 +60,16 @@ export function Participar() {
   ];
 
   return (
-    <section id="participar" className="section bg-casa-50">
+    <section id="participar" className="section bg-white">
       <div className="container-custom">
-        <h2 className="text-3xl md:text-4xl font-bold text-center text-casa-700 mb-4">
+        <h2 className="text-4xl md:text-5xl font-light text-center text-casa-800 mb-8">
           Sé parte de CASA
         </h2>
-        <p className="text-lg text-center max-w-2xl mx-auto mb-12">
+        <p className="text-lg text-center text-casa-600 max-w-2xl mx-auto mb-16">
           En CASA hay muchas maneras de estar y participar. Explora la que más te acomode a ti.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-16">
           {activities.map((activity) => (
             <ActivityCard
               key={activity.title}
