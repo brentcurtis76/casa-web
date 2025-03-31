@@ -39,25 +39,23 @@ export function Equipo() {
         </div>
 
         {/* Concilio */}
-        <div>
-          <h3 className="text-2xl font-light mb-6 text-casa-800">Concilio</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Texto del concilio - ahora primero (izquierda) */}
-            <div className="prose prose-lg max-w-none">
-              <p className="text-casa-700">
-                En cuanto a las decisiones y guías estratégicas, el Concilio de <strong>CASA</strong>, compuesto por 
-                Andrew Warren, Victor Córdova, Aurora Fontecilla, Anita Pinchart, Georgina García, 
-                Nevenka Echegaray, Mónica Van Gindertaelen, Melanie Sharman y Pablo Rebolledo, 
-                desempeña un papel crucial, velando por la integridad y el rumbo de nuestra comunidad. 
-                Juntos, cada miembro de nuestro equipo y concilio dedica su energía y amor para asegurar 
-                que <strong>CASA</strong> sea un hogar inclusivo, acogedor y en constante evolución.
-              </p>
-            </div>
-            
-            {/* Imagen del concilio - ahora segundo (derecha) */}
-            <div className="aspect-video relative overflow-hidden rounded">
-              <img alt="Concilio de CASA" className="w-full h-full object-cover" src="/lovable-uploads/92c3ec9a-16cb-405a-86d6-0914b11e5f70.jpg" />
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          {/* Texto del concilio - ahora primero (izquierda) */}
+          <div className="prose prose-lg max-w-none">
+            <h3 className="text-2xl font-light mb-6 text-casa-800">Concilio</h3>
+            <p className="text-casa-700">
+              En cuanto a las decisiones y guías estratégicas, el Concilio de <strong>CASA</strong>, compuesto por 
+              Andrew Warren, Victor Córdova, Aurora Fontecilla, Anita Pinchart, Georgina García, 
+              Nevenka Echegaray, Mónica Van Gindertaelen, Melanie Sharman y Pablo Rebolledo, 
+              desempeña un papel crucial, velando por la integridad y el rumbo de nuestra comunidad. 
+              Juntos, cada miembro de nuestro equipo y concilio dedica su energía y amor para asegurar 
+              que <strong>CASA</strong> sea un hogar inclusivo, acogedor y en constante evolución.
+            </p>
+          </div>
+          
+          {/* Imagen del concilio - ahora segundo (derecha) */}
+          <div className="aspect-video relative overflow-hidden rounded">
+            <img alt="Concilio de CASA" className="w-full h-full object-cover" src="/lovable-uploads/92c3ec9a-16cb-405a-86d6-0914b11e5f70.jpg" />
           </div>
         </div>
       </div>
