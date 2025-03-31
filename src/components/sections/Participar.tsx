@@ -39,12 +39,12 @@ export function Participar() {
     },
     {
       title: "Camino a Emaús",
-      description: "Una o dos veces al año, nos sumergimos en el retiro "Camino a Emaús", un viaje transformador para redescubrir la espiritualidad de Jesús desde perspectivas frescas y renovadoras. Una oportunidad única para profundizar en la fe y conectarse íntimamente con su mensaje.",
+      description: "Una o dos veces al año, nos sumergimos en el retiro 'Camino a Emaús', un viaje transformador para redescubrir la espiritualidad de Jesús desde perspectivas frescas y renovadoras. Una oportunidad única para profundizar en la fe y conectarse íntimamente con su mensaje.",
       icon: "🚶"
     },
     {
       title: "Música",
-      description: "Cada domingo, nuestro dedicado equipo de música guía el canto, elevando corazones y voces en alabanza unificada. Además, preparan con pasión los "Respira", fusionando melodías y reflexiones para una experiencia espiritual enriquecedora.",
+      description: "Cada domingo, nuestro dedicado equipo de música guía el canto, elevando corazones y voces en alabanza unificada. Además, preparan con pasión los 'Respira', fusionando melodías y reflexiones para una experiencia espiritual enriquecedora.",
       icon: "🎵"
     },
     {
