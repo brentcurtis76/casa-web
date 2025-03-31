@@ -8,15 +8,15 @@ export function Equipo() {
         </h2>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-          {/* Imágenes de la comunidad - con mejor distribución para ver las tres */}
-          <div className="relative h-[400px] flex items-center justify-center">
-            <div className="absolute left-0 top-0 w-[55%] h-[55%] overflow-hidden shadow-md rounded-lg z-10 transition-transform hover:scale-105">
+          {/* Imágenes de la comunidad - sin superposición */}
+          <div className="relative h-[400px] flex items-start justify-between flex-wrap">
+            <div className="w-[48%] h-[48%] overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
               <img alt="Comunidad CASA" className="object-cover w-full h-full" src="/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg" />
             </div>
-            <div className="absolute right-0 bottom-0 w-[55%] h-[55%] overflow-hidden shadow-md rounded-lg z-20 transition-transform hover:scale-105">
+            <div className="w-[48%] h-[48%] overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
               <img src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
-            <div className="absolute left-[25%] bottom-[25%] w-[55%] h-[55%] overflow-hidden shadow-md rounded-lg z-30 transition-transform hover:scale-105">
+            <div className="w-[48%] h-[48%] mx-auto mt-4 overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
               <img src="/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
           </div>
