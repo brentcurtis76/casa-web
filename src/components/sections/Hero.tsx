@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button';
 export function Hero() {
   return (
     <div className="relative min-h-screen flex items-center justify-center">
-      {/* Background image */}
+      {/* Background image with fixed positioning to ensure it covers the entire viewport */}
       <div 
-        className="absolute inset-0 bg-cover bg-center z-0" 
+        className="absolute inset-0 bg-cover bg-center bg-fixed z-0" 
         style={{ 
-          backgroundImage: "url('/lovable-uploads/7d5bf1f7-37b6-4e27-88e9-c3d1efe6771c.png')" 
+          backgroundImage: "url('/lovable-uploads/7d5bf1f7-37b6-4e27-88e9-c3d1efe6771c.png')",
+          backgroundRepeat: "no-repeat"
         }}
       >
         {/* Overlay with increased opacity for better text visibility */}
