@@ -1,0 +1,45 @@
+
+import { useState } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { LoginForm } from './LoginForm';
+import { SignupForm } from './SignupForm';
+
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  defaultTab?: 'login' | 'signup';
+}
+
+export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalProps) {
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(defaultTab);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="text-center text-2xl font-serif">
+            {activeTab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+          </DialogTitle>
+          <DialogDescription className="text-center">
+            {activeTab === 'login'
+              ? 'Ingresa a tu cuenta para enviar peticiones de oración'
+              : 'Crea una cuenta para ser parte de nuestra comunidad'}
+          </DialogDescription>
+        </DialogHeader>
+        <Tabs defaultValue={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'signup')} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
+            <TabsTrigger value="signup">Registrarse</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login">
+            <LoginForm />
+          </TabsContent>
+          <TabsContent value="signup">
+            <SignupForm />
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
