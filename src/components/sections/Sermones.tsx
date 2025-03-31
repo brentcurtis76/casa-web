@@ -32,7 +32,7 @@ function SermonCard({ title, speaker, date, spotifyLink, image }: SermonProps) {
       </CardHeader>
       <CardFooter>
         <Button asChild variant="outline" size="sm" className="w-full">
-          <a href={spotifyLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
+          <a href="https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
             <span>Escuchar en Spotify</span>
             <ExternalLink className="ml-2 h-4 w-4" />
           </a>
@@ -43,14 +43,14 @@ function SermonCard({ title, speaker, date, spotifyLink, image }: SermonProps) {
 }
 
 export function Sermones() {
-  // Datos de ejemplo para sermones
+  // Datos de ejemplo para reflexiones
   const recentSermons = [
     {
       id: 1,
       title: "El amor que transforma",
       speaker: "Brent Curtis",
       date: "3 Sep 2023",
-      spotifyLink: "https://open.spotify.com",
+      spotifyLink: "https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878",
       image: "/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png"
     },
     {
@@ -58,7 +58,7 @@ export function Sermones() {
       title: "Comunidad inclusiva",
       speaker: "Patricio Browne",
       date: "27 Ago 2023",
-      spotifyLink: "https://open.spotify.com",
+      spotifyLink: "https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878",
       image: "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png"
     },
     {
@@ -66,7 +66,7 @@ export function Sermones() {
       title: "Fe y esperanza",
       speaker: "Fiona Fraser",
       date: "20 Ago 2023",
-      spotifyLink: "https://open.spotify.com",
+      spotifyLink: "https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878",
       image: "/lovable-uploads/105a46c3-8fe4-429c-af7d-79a85edc4694.png"
     },
     {
@@ -74,7 +74,7 @@ export function Sermones() {
       title: "El camino de la compasión",
       speaker: "Claudia Araya",
       date: "13 Ago 2023",
-      spotifyLink: "https://open.spotify.com",
+      spotifyLink: "https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878",
       image: "/lovable-uploads/10870cef-f487-456b-8140-5c04bf8e4312.png"
     }
   ];
@@ -82,8 +82,8 @@ export function Sermones() {
   return (
     <section id="sermones" className="section bg-casa-50">
       <div className="container-custom">
-        <h2 className="text-3xl md:text-4xl font-bold text-center text-casa-700 mb-8">
-          Últimos Sermones
+        <h2 className="text-3xl md:text-4xl font-light text-center text-casa-800 mb-8">
+          Últimas Reflexiones
         </h2>
         <p className="text-lg text-center max-w-3xl mx-auto mb-12">
           Explora nuestros mensajes más recientes y déjate inspirar por palabras de amor, fe y esperanza.
@@ -104,8 +104,8 @@ export function Sermones() {
 
         <div className="text-center mt-12">
           <Button size="lg" variant="outline">
-            <a href="https://open.spotify.com" target="_blank" rel="noopener noreferrer" className="flex items-center">
-              Ver todos los sermones
+            <a href="https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878" target="_blank" rel="noopener noreferrer" className="flex items-center">
+              Ver todas las reflexiones
               <ExternalLink className="ml-2 h-4 w-4" />
             </a>
           </Button>

@@ -35,7 +35,11 @@ export function Navbar() {
       >
         <div className="container-custom flex items-center justify-between">
           <a href="#" className="flex items-center">
-            <span className="font-serif text-2xl font-bold text-casa-600">CASA</span>
+            <img 
+              src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png" 
+              alt="CASA Logo" 
+              className="h-12 w-auto"
+            />
           </a>
 
           {/* Desktop Navigation */}
@@ -53,7 +57,7 @@ export function Navbar() {
               Eventos
             </a>
             <a href="#sermones" className="text-foreground hover:text-casa-500 transition">
-              Sermones
+              Reflexiones
             </a>
             <a href="#oracion" className="text-foreground hover:text-casa-500 transition">
               Oración
@@ -116,7 +120,7 @@ export function Navbar() {
                 className="text-foreground hover:text-casa-500 transition py-2"
                 onClick={() => setIsMenuOpen(false)}
               >
-                Sermones
+                Reflexiones
               </a>
               <a
                 href="#oracion"

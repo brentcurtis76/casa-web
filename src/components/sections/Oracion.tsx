@@ -1,6 +1,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { PrayerRequestForm } from "@/components/prayers/PrayerRequestForm";
+import { LockKeyhole, Users, Sparkles } from 'lucide-react';
 
 export function Oracion() {
   return (
@@ -8,7 +9,7 @@ export function Oracion() {
       <div className="container-custom">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>
-            <h2 className="text-3xl md:text-4xl font-bold text-casa-700 mb-6">
+            <h2 className="text-3xl md:text-4xl font-light text-casa-800 mb-6">
               Peticiones de Oración
             </h2>
             <p className="text-lg mb-8">
@@ -18,7 +19,7 @@ export function Oracion() {
             <div className="flex flex-col space-y-4">
               <div className="flex items-start space-x-4">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center bg-casa-100 text-casa-600 flex-shrink-0">
-                  <span className="text-xl">🙏</span>
+                  <LockKeyhole size={20} />
                 </div>
                 <div>
                   <h3 className="font-medium">Confidencialidad</h3>
@@ -28,7 +29,7 @@ export function Oracion() {
               
               <div className="flex items-start space-x-4">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center bg-casa-100 text-casa-600 flex-shrink-0">
-                  <span className="text-xl">❤️</span>
+                  <Users size={20} />
                 </div>
                 <div>
                   <h3 className="font-medium">Comunidad en Oración</h3>
@@ -38,7 +39,7 @@ export function Oracion() {
               
               <div className="flex items-start space-x-4">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center bg-casa-100 text-casa-600 flex-shrink-0">
-                  <span className="text-xl">✨</span>
+                  <Sparkles size={20} />
                 </div>
                 <div>
                   <h3 className="font-medium">Esperanza Renovada</h3>

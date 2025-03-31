@@ -7,7 +7,13 @@ export function Footer() {
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           <div>
-            <h3 className="font-serif text-2xl font-bold mb-4">CASA</h3>
+            <div className="mb-4">
+              <img 
+                src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png" 
+                alt="CASA Logo" 
+                className="h-16 w-auto"
+              />
+            </div>
             <p className="text-casa-100 mb-6">
               Un espacio de amor, inclusión y esperanza para todos. Donde cada persona es bienvenida tal como es.
             </p>
@@ -43,7 +49,7 @@ export function Footer() {
                 <a href="#eventos" className="text-casa-200 hover:text-white transition">Eventos</a>
               </li>
               <li>
-                <a href="#sermones" className="text-casa-200 hover:text-white transition">Sermones</a>
+                <a href="#sermones" className="text-casa-200 hover:text-white transition">Reflexiones</a>
               </li>
               <li>
                 <a href="#oracion" className="text-casa-200 hover:text-white transition">Oración</a>
@@ -55,7 +61,7 @@ export function Footer() {
             <h4 className="font-bold text-lg mb-4">Horarios</h4>
             <div className="space-y-3">
               <div>
-                <p className="font-medium">Servicio Dominical</p>
+                <p className="font-medium">Liturgia Dominical</p>
                 <p className="text-casa-200">Domingos 11:00 AM</p>
               </div>
               <div>
@@ -74,15 +80,15 @@ export function Footer() {
             <ul className="space-y-3">
               <li className="flex">
                 <MapPin className="h-5 w-5 mr-3 text-casa-300 flex-shrink-0" />
-                <span className="text-casa-200">Av. Principal 123, Santiago, Chile</span>
+                <span className="text-casa-200">Av. Vicente Pérez Rosales 1765, La Reina, Santiago</span>
               </li>
               <li className="flex">
                 <Phone className="h-5 w-5 mr-3 text-casa-300 flex-shrink-0" />
-                <span className="text-casa-200">+56 2 1234 5678</span>
+                <span className="text-casa-200">+56941623577</span>
               </li>
               <li className="flex">
                 <Mail className="h-5 w-5 mr-3 text-casa-300 flex-shrink-0" />
-                <span className="text-casa-200">contacto@iglesiacasa.cl</span>
+                <span className="text-casa-200">sanandres@iach.cl</span>
               </li>
             </ul>
           </div>
