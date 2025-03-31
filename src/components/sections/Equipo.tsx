@@ -1,4 +1,3 @@
-
 import { Card, CardContent } from "@/components/ui/card";
 export function Equipo() {
   return <section id="equipo" className="section bg-white">
@@ -11,7 +10,7 @@ export function Equipo() {
           {/* Imágenes de la comunidad - ahora sobrepuestas */}
           <div className="relative h-[400px]">
             <div className="absolute left-0 top-0 w-2/3 h-2/3 overflow-hidden shadow-md rounded-lg z-10">
-              <img src="/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
+              <img alt="Comunidad CASA" className="object-cover w-full h-full" src="/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg" />
             </div>
             <div className="absolute right-0 top-1/4 w-2/3 h-2/3 overflow-hidden shadow-md rounded-lg z-20">
               <img src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
