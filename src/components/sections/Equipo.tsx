@@ -1,9 +1,6 @@
-
 import { Card, CardContent } from "@/components/ui/card";
-
 export function Equipo() {
-  return (
-    <section id="equipo" className="section bg-white">
+  return <section id="equipo" className="section bg-white">
       <div className="container-custom">
         <h2 className="text-3xl md:text-4xl font-light text-center text-casa-800 mb-8">
           Equipo y Liderazgo
@@ -13,32 +10,16 @@ export function Equipo() {
           {/* Imágenes de la comunidad */}
           <div className="grid grid-cols-2 gap-4">
             <div className="aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png" 
-                alt="Comunidad CASA" 
-                className="object-cover w-full h-full"
-              />
+              <img src="/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
             <div className="aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" 
-                alt="Comunidad CASA" 
-                className="object-cover w-full h-full"
-              />
+              <img src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
             <div className="aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png" 
-                alt="Comunidad CASA" 
-                className="object-cover w-full h-full"
-              />
+              <img src="/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
             <div className="aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png" 
-                alt="Comunidad CASA" 
-                className="object-cover w-full h-full"
-              />
+              <img src="/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
           </div>
 
@@ -64,11 +45,7 @@ export function Equipo() {
           <h3 className="text-2xl font-light mb-6 text-casa-800">Concilio</h3>
           <div className="grid grid-cols-1 gap-8">
             <div className="aspect-video relative overflow-hidden rounded">
-              <img 
-                src="/lovable-uploads/2f5cec32-e4c9-4cb0-b6a2-7b5c4858dcda.png" 
-                alt="Concilio de CASA" 
-                className="w-full h-full object-cover"
-              />
+              <img alt="Concilio de CASA" className="w-full h-full object-cover" src="/lovable-uploads/92c3ec9a-16cb-405a-86d6-0914b11e5f70.jpg" />
             </div>
             <div className="prose prose-lg max-w-none">
               <p className="text-casa-700">
@@ -83,6 +60,5 @@ export function Equipo() {
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 }
