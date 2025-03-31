@@ -8,7 +8,7 @@ export function Hero() {
       <div 
         className="absolute inset-0 bg-cover bg-center z-0" 
         style={{ 
-          backgroundImage: "url('/lovable-uploads/c727ba25-a911-4170-8967-24376207a63a.png')" 
+          backgroundImage: "url('/lovable-uploads/7d5bf1f7-37b6-4e27-88e9-c3d1efe6771c.png')" 
         }}
       >
         {/* Overlay with increased opacity for better text visibility */}
