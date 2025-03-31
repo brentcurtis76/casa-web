@@ -8,19 +8,16 @@ export function Equipo() {
         </h2>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-          {/* Imágenes de la comunidad */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="aspect-square overflow-hidden">
+          {/* Imágenes de la comunidad - ahora sobrepuestas */}
+          <div className="relative h-[400px]">
+            <div className="absolute left-0 top-0 w-2/3 h-2/3 overflow-hidden shadow-md rounded-lg z-10">
               <img src="/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
-            <div className="aspect-square overflow-hidden">
+            <div className="absolute right-0 top-1/4 w-2/3 h-2/3 overflow-hidden shadow-md rounded-lg z-20">
               <img src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
-            <div className="aspect-square overflow-hidden">
+            <div className="absolute left-1/4 bottom-0 w-2/3 h-2/3 overflow-hidden shadow-md rounded-lg z-30">
               <img src="/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
-            </div>
-            <div className="aspect-square overflow-hidden">
-              <img src="/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
             </div>
           </div>
 
