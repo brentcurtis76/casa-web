@@ -23,6 +23,23 @@ serve(async (req) => {
     
     console.log("Obteniendo datos de Instagram...");
     
+    // Verificar validez del token primero
+    const debugResponse = await fetch(
+      `https://graph.instagram.com/debug_token?input_token=${accessToken}&access_token=${accessToken}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    
+    const debugData = await debugResponse.json();
+    
+    if (debugData.error) {
+      console.error("Error de validación de token:", debugData);
+      throw new Error(`Token de Instagram inválido: ${debugData.error.message}`);
+    }
+    
     // Obtener media del usuario usando el token de acceso
     const response = await fetch(
       `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp&access_token=${accessToken}&limit=6`,
@@ -35,7 +52,7 @@ serve(async (req) => {
 
     const data = await response.json();
     
-    if (!response.ok) {
+    if (!response.ok || data.error) {
       console.error("Error al obtener datos de Instagram:", data);
       throw new Error(`Error al obtener datos de Instagram: ${data.error?.message || 'Error desconocido'}`);
     }
@@ -63,7 +80,7 @@ serve(async (req) => {
 
     const userData = await userResponse.json();
     
-    if (!userResponse.ok) {
+    if (!userResponse.ok || userData.error) {
       console.error("Error al obtener datos del usuario de Instagram:", userData);
       throw new Error(`Error al obtener datos del usuario: ${userData.error?.message || 'Error desconocido'}`);
     }

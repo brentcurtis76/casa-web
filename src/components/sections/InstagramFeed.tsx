@@ -24,6 +24,7 @@ export function InstagramFeed() {
   const [instagramPosts, setInstagramPosts] = useState<InstagramPost[]>([]);
   const [username, setUsername] = useState("iglesiacasa");
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Datos de ejemplo para el feed de Instagram como fallback
   const fallbackPosts = [
@@ -35,51 +36,57 @@ export function InstagramFeed() {
     { id: "6", imageUrl: "/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() }
   ];
 
-  useEffect(() => {
-    const fetchInstagramPosts = async () => {
-      try {
-        setIsLoading(true);
-        console.log('Obteniendo datos de Instagram...');
-        
-        // Llamar a nuestra función Edge en Supabase
-        const { data, error } = await supabase.functions.invoke('instagram-feed');
-        
-        if (error) {
-          throw new Error(`Error al llamar a la función Edge: ${error.message}`);
-        }
-        
-        if (!data.success) {
-          throw new Error(`Error en la respuesta de la función Edge: ${data.error}`);
-        }
-        
-        console.log('Datos de Instagram obtenidos correctamente:', data);
-        
-        // Actualizar el estado con los datos recibidos
-        setInstagramPosts(data.data.posts);
-        setUsername(data.data.user.username);
-        
-        toast({
-          title: "Feed de Instagram actualizado",
-          description: "Se han cargado las publicaciones más recientes",
-        });
-      } catch (error) {
-        console.error("Error obteniendo datos de Instagram:", error);
-        
-        // Usar datos de ejemplo en caso de error
-        setInstagramPosts(fallbackPosts);
-        
-        toast({
-          variant: "destructive",
-          title: "Error de conexión",
-          description: "No se pudo conectar con Instagram. Mostrando datos de ejemplo.",
-        });
-      } finally {
-        setIsLoading(false);
+  const fetchInstagramPosts = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('Obteniendo datos de Instagram...');
+      
+      // Llamar a nuestra función Edge en Supabase
+      const { data, error } = await supabase.functions.invoke('instagram-feed');
+      
+      if (error) {
+        throw new Error(`Error al llamar a la función Edge: ${error.message}`);
       }
-    };
+      
+      if (!data.success) {
+        throw new Error(`Error en la respuesta de la función Edge: ${data.error}`);
+      }
+      
+      console.log('Datos de Instagram obtenidos correctamente:', data);
+      
+      // Actualizar el estado con los datos recibidos
+      setInstagramPosts(data.data.posts);
+      setUsername(data.data.user.username);
+      
+      toast({
+        title: "Feed de Instagram actualizado",
+        description: "Se han cargado las publicaciones más recientes",
+      });
+    } catch (error) {
+      console.error("Error obteniendo datos de Instagram:", error);
+      setError(error instanceof Error ? error.message : 'Error desconocido');
+      
+      // Usar datos de ejemplo en caso de error
+      setInstagramPosts(fallbackPosts);
+      
+      toast({
+        variant: "destructive",
+        title: "Error de conexión",
+        description: "No se pudo conectar con Instagram. Mostrando datos de ejemplo.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchInstagramPosts();
   }, []);
+
+  const handleRetry = () => {
+    fetchInstagramPosts();
+  };
 
   return (
     <section className="section bg-white" id="instagram">
@@ -91,18 +98,31 @@ export function InstagramFeed() {
               Síguenos en Instagram
             </h2>
           </div>
-          <Button asChild variant="outline" size="sm">
-            <a 
-              href={`https://www.instagram.com/${username}`} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center"
-            >
-              @{username}
-              <ExternalLink className="ml-2 h-4 w-4" />
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            {error && (
+              <Button variant="outline" size="sm" onClick={handleRetry}>
+                Reintentar
+              </Button>
+            )}
+            <Button asChild variant="outline" size="sm">
+              <a 
+                href={`https://www.instagram.com/${username}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center"
+              >
+                @{username}
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </a>
+            </Button>
+          </div>
         </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 mb-6 rounded-md">
+            <p className="text-sm">Hubo un problema al cargar las publicaciones de Instagram. Mostrando contenido de ejemplo.</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {isLoading ? (
