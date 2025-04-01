@@ -1,34 +1,74 @@
 
-import { MoveRight, PhoneCall } from "lucide-react";
+import { MoveRight, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useRef } from "react";
 
 function Hero() {
+  const participarRef = useRef<HTMLDivElement>(null);
+
+  const scrollToParticipar = () => {
+    const participarSection = document.getElementById('participar');
+    if (participarSection) {
+      participarSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div className="w-full py-20 lg:py-40">
       <div className="container mx-auto">
         <div className="grid grid-cols-1 gap-8 items-center md:grid-cols-2">
           <div className="flex gap-4 flex-col">
             <div>
-              <Badge variant="outline">We&apos;re live!</Badge>
+              <Badge variant="outline">Bienvenidos!</Badge>
             </div>
             <div className="flex gap-4 flex-col">
               <h1 className="text-5xl md:text-7xl max-w-lg tracking-tighter text-left font-regular">
-                This is the start of something!
+                Bienvenido a CASA
               </h1>
               <p className="text-xl leading-relaxed tracking-tight text-muted-foreground max-w-md text-left">
-                Managing a small business today is already tough. Avoid further
-                complications by ditching outdated, tedious trade methods. Our
-                goal is to streamline SMB trade, making it easier and faster than
-                ever.
+                Un espacio de amor, inclusión y esperanza para todos. 
+                Una comunidad abierta, inspirada en Jesús, donde cada persona es vista y celebrada 
+                en su singularidad; un espacio seguro para explorar tu espiritualidad, crecer con otros y vivir con propósito.
               </p>
             </div>
             <div className="flex flex-row gap-4">
-              <Button size="lg" className="gap-4" variant="outline">
-                Jump on a call <PhoneCall className="w-4 h-4" />
-              </Button>
-              <Button size="lg" className="gap-4">
-                Sign up here <MoveRight className="w-4 h-4" />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button size="lg" className="gap-4" variant="outline">
+                    Visítanos <MapPin className="w-4 h-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Nuestras Liturgias</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-4 py-4">
+                    <div>
+                      <h3 className="font-medium">Día y Hora</h3>
+                      <p className="text-muted-foreground">Domingos, 11:00 AM</p>
+                    </div>
+                    <div>
+                      <h3 className="font-medium">Dirección</h3>
+                      <p className="text-muted-foreground">Av. Presidente Errázuriz 3031, Las Condes, Santiago</p>
+                    </div>
+                    <div className="mt-2">
+                      <iframe 
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3330.2080247237316!2d-70.5786697!3d-33.4160542!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9662cf40ecb1a283%3A0x6f79a73ef3440e75!2sAv.%20Pdte.%20Err%C3%A1zuriz%203031%2C%20Las%20Condes%2C%20Regi%C3%B3n%20Metropolitana!5e0!3m2!1ses!2scl!4v1655854674408!5m2!1ses!2scl" 
+                        width="100%" 
+                        height="300" 
+                        style={{ border: 0 }} 
+                        allowFullScreen 
+                        loading="lazy" 
+                        referrerPolicy="no-referrer-when-downgrade">
+                      </iframe>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Button size="lg" className="gap-4" onClick={scrollToParticipar}>
+                Participa <MoveRight className="w-4 h-4" />
               </Button>
             </div>
           </div>
