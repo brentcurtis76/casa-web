@@ -30,7 +30,7 @@ interface UserProfileProps {
 }
 
 export function UserProfile({ onClose }: UserProfileProps) {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -98,6 +98,11 @@ export function UserProfile({ onClose }: UserProfileProps) {
 
       if (error) {
         throw error;
+      }
+
+      // Refresh the profile in the Auth context
+      if (refreshProfile) {
+        await refreshProfile();
       }
 
       toast({
