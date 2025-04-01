@@ -27,7 +27,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl font-serif">
-            {activeTab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+            {activeTab === 'login' ? 'INICIAR SESION' : 'CREAR CUENTA'}
           </DialogTitle>
           <DialogDescription className="text-center">
             {activeTab === 'login'
@@ -37,8 +37,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
         </DialogHeader>
         <Tabs defaultValue={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'signup')} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
-            <TabsTrigger value="signup">Registrarse</TabsTrigger>
+            <TabsTrigger value="login">INICIAR SESION</TabsTrigger>
+            <TabsTrigger value="signup">REGISTRARSE</TabsTrigger>
           </TabsList>
           <TabsContent value="login">
             <LoginForm onLoginSuccess={handleLoginSuccess} />

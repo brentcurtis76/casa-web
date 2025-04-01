@@ -20,7 +20,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl font-serif tracking-normal">
-            Contáctanos
+            CONTACTANOS
           </DialogTitle>
           <DialogDescription className="text-center">
             Completa el formulario y nos pondremos en contacto contigo pronto.
