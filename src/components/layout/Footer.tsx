@@ -64,7 +64,7 @@ export function Footer() {
               </div>
               <div>
                 <p className="font-medium">Oficina</p>
-                <p className="text-casa-200">Lunes - Viernes: 9:00 AM - 5:00 PM</p>
+                <p className="text-casa-200">Lunes a Viernes con cita previa</p>
               </div>
             </div>
           </div>
