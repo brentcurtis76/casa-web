@@ -1,82 +1,109 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarIcon, Clock, MapPin } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/hooks/use-toast';
+import { format, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-// Datos de ejemplo para eventos
-const mockEvents = [
-  {
-    id: 1,
-    title: 'Servicio Dominical',
-    date: new Date(2023, 8, 17),
-    time: '11:00 AM',
-    location: 'Templo Principal',
-    description: 'Servicio regular de adoración dominical.'
-  },
-  {
-    id: 2,
-    title: 'Estudio Bíblico',
-    date: new Date(2023, 8, 20),
-    time: '7:00 PM',
-    location: 'Sala de Estudios',
-    description: 'Estudio profundo de las escrituras.'
-  },
-  {
-    id: 3,
-    title: 'Grupo Juvenil',
-    date: new Date(2023, 8, 22),
-    time: '6:00 PM',
-    location: 'Salón Comunitario',
-    description: 'Reunión para jóvenes entre 14-18 años.'
-  },
-  {
-    id: 4,
-    title: 'Retiro Espiritual',
-    date: new Date(2023, 8, 29),
-    time: '9:00 AM - 5:00 PM',
-    location: 'Centro de Retiros El Descanso',
-    description: 'Un día de renovación y conexión espiritual.'
-  },
-  {
-    id: 5,
-    title: 'Servicio Dominical',
-    date: new Date(2023, 8, 24),
-    time: '11:00 AM',
-    location: 'Templo Principal',
-    description: 'Servicio regular de adoración dominical.'
-  }
-];
-
-// Función para obtener eventos por fecha
-function getEventsByDate(date: Date) {
-  return mockEvents.filter(event => 
-    event.date.getDate() === date.getDate() &&
-    event.date.getMonth() === date.getMonth() &&
-    event.date.getFullYear() === date.getFullYear()
-  );
+// Define interface for the events based on the existing database structure
+interface Event {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  description: string | null;
 }
 
 export function EventCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [events, setEvents] = useState(getEventsByDate(new Date()));
-
+  const [events, setEvents] = useState<Event[]>([]);
+  const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Fetch all events from Supabase
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setIsLoading(true);
+        const { data, error } = await supabase
+          .from('events')
+          .select('*');
+        
+        if (error) {
+          throw error;
+        }
+        
+        setEvents(data as Event[]);
+        if (selectedDate) {
+          filterEventsByDate(selectedDate, data as Event[]);
+        }
+      } catch (error) {
+        console.error('Error fetching events:', error);
+        setError('Error al cargar los eventos. Por favor, intente nuevamente.');
+        toast({
+          variant: "destructive",
+          title: "Error al cargar eventos",
+          description: "No pudimos cargar los eventos. Por favor, intente más tarde."
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchEvents();
+  }, []);
+  
+  // Function to convert database date string to Date object
+  const parseEventDate = (dateStr: string): Date => {
+    return parseISO(dateStr);
+  };
+  
+  // Filter events by selected date
+  const filterEventsByDate = (date: Date, eventList: Event[] = events) => {
+    const filtered = eventList.filter(event => {
+      const eventDate = parseEventDate(event.date);
+      return (
+        eventDate.getDate() === date.getDate() &&
+        eventDate.getMonth() === date.getMonth() &&
+        eventDate.getFullYear() === date.getFullYear()
+      );
+    });
+    setFilteredEvents(filtered);
+  };
+  
+  // Handle date selection
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
     if (date) {
-      setEvents(getEventsByDate(date));
+      filterEventsByDate(date);
     }
   };
-
-  // Función para resaltar fechas con eventos
+  
+  // Function to check if a day has an event
   const isDayWithEvent = (day: Date) => {
-    return mockEvents.some(event => 
-      event.date.getDate() === day.getDate() &&
-      event.date.getMonth() === day.getMonth() &&
-      event.date.getFullYear() === day.getFullYear()
-    );
+    return events.some(event => {
+      const eventDate = parseEventDate(event.date);
+      return (
+        eventDate.getDate() === day.getDate() &&
+        eventDate.getMonth() === day.getMonth() &&
+        eventDate.getFullYear() === day.getFullYear()
+      );
+    });
   };
-
+  
+  // Format date for display
+  const formatDate = (date: Date | undefined) => {
+    if (!date) return '';
+    return format(date, "d 'de' MMMM 'de' yyyy", { locale: es });
+  };
+  
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -101,15 +128,34 @@ export function EventCalendar() {
       <div>
         <h3 className="text-xl font-medium mb-4">
           {selectedDate ? (
-            <>Eventos para el {selectedDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+            <>Eventos para el {formatDate(selectedDate)}</>
           ) : (
             'Eventos'
           )}
         </h3>
         
-        {events.length > 0 ? (
+        {isLoading ? (
           <div className="space-y-4">
-            {events.map(event => (
+            {[1, 2, 3].map(i => (
+              <Card key={i} className="overflow-hidden">
+                <CardHeader className="pb-3">
+                  <Skeleton className="h-6 w-3/4" />
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <Skeleton className="h-4 w-1/2 mb-2" />
+                  <Skeleton className="h-4 w-2/3 mb-3" />
+                  <Skeleton className="h-4 w-5/6" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : filteredEvents.length > 0 ? (
+          <div className="space-y-4">
+            {filteredEvents.map(event => (
               <Card key={event.id} className="overflow-hidden">
                 <CardHeader className="bg-casa-50 pb-3">
                   <CardTitle>{event.title}</CardTitle>
