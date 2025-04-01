@@ -1,10 +1,7 @@
-
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
-
 export function Formacion() {
-  return (
-    <section id="formacion" className="section bg-casa-50">
+  return <section id="formacion" className="section bg-casa-50">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="prose prose-lg max-w-none">
@@ -40,14 +37,9 @@ export function Formacion() {
           </div>
           
           <div className="relative h-[400px] rounded-lg overflow-hidden shadow-xl">
-            <img 
-              alt="Formación Bienvenidos a La Familia" 
-              className="absolute inset-0 w-full h-full object-cover" 
-              src="/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg" 
-            />
+            <img alt="Formación Bienvenidos a La Familia" className="absolute inset-0 w-full h-full object-cover" src="/lovable-uploads/a02c439d-5a66-4b2f-8bd0-7897d174069f.jpg" />
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 }
