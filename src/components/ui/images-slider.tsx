@@ -1,4 +1,3 @@
-
 "use client";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,7 +46,6 @@ export const ImagesSlider = ({
     setLoading(true);
     console.log("Attempting to load images:", images);
     
-    // If we have no images or they're invalid, set a default state
     if (!images || images.length === 0) {
       setLoading(false);
       return;
@@ -76,7 +74,6 @@ export const ImagesSlider = ({
       })
       .catch((error) => {
         console.error("Error loading images:", error);
-        // If we fail to load images, still show what we can
         setLoading(false);
       });
   };
@@ -92,12 +89,11 @@ export const ImagesSlider = ({
 
     window.addEventListener("keydown", handleKeyDown);
 
-    // autoplay
     let interval: any;
     if (autoplay) {
       interval = setInterval(() => {
         handleNext();
-      }, 5000);
+      }, 7000);
     }
 
     return () => {
@@ -117,7 +113,7 @@ export const ImagesSlider = ({
       rotateX: 0,
       opacity: 1,
       transition: {
-        duration: 0.5,
+        duration: 1,
         ease: [0.645, 0.045, 0.355, 1.0],
       },
     },
@@ -125,19 +121,18 @@ export const ImagesSlider = ({
       opacity: 1,
       y: "-150%",
       transition: {
-        duration: 1,
+        duration: 1.5,
       },
     },
     downExit: {
       opacity: 1,
       y: "150%",
       transition: {
-        duration: 1,
+        duration: 1.5,
       },
     },
   };
 
-  // Consider images loaded if we have at least one image OR loading is done
   const areImagesLoaded = loadedImages.length > 0 || (!loading && images.length > 0);
 
   return (
@@ -150,7 +145,6 @@ export const ImagesSlider = ({
         perspective: "1000px",
       }}
     >
-      {/* Always render children to prevent blank screen */}
       {children}
       
       {overlay && (
