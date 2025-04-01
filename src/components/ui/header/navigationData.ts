@@ -28,7 +28,7 @@ export const navigationItems = [
         description: "Descubre contenido para crecer en tu fe.",
         items: [
             {
-                title: "Sermones",
+                title: "Reflexiones",
                 href: "/#sermones",
             },
             {

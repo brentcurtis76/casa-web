@@ -29,6 +29,14 @@ interface NavigationMenuItemsProps {
 }
 
 export function NavigationMenuItems({ items, isMobile = false, onItemClick }: NavigationMenuItemsProps) {
+    const handleContactClick = () => {
+        const contactButton = document.querySelector(
+            'button[class*="ghost"]:not([class*="lg:hidden"])'
+        ) as HTMLButtonElement;
+        if (contactButton) contactButton.click();
+        if (onItemClick) onItemClick();
+    };
+
     if (isMobile) {
         return (
             <>
@@ -98,12 +106,7 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                                             <Button 
                                                 size="sm" 
                                                 className="mt-10"
-                                                onClick={() => {
-                                                    const contactButton = document.querySelector(
-                                                        'button:contains("Contactar")'
-                                                    ) as HTMLButtonElement;
-                                                    if (contactButton) contactButton.click();
-                                                }}
+                                                onClick={handleContactClick}
                                             >
                                                 Contactar
                                             </Button>
@@ -114,6 +117,7 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                                                     to={subItem.href}
                                                     key={subItem.title}
                                                     className="flex flex-row justify-between items-center hover:bg-muted py-2 px-4 rounded"
+                                                    onClick={onItemClick}
                                                 >
                                                     <span>{subItem.title}</span>
                                                     <MoveRight className="w-4 h-4 text-muted-foreground" />
