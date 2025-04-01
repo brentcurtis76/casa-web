@@ -8,6 +8,7 @@ import { AuthProvider } from "@/components/auth/AuthContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
+import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/header-demo" element={<HeaderDemo />} />
+            <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
