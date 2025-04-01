@@ -4,11 +4,13 @@ import { ImagesSlider } from '@/components/ui/images-slider';
 import { motion } from 'framer-motion';
 
 export function Hero() {
-  // Update these image paths to the images you want to use
+  // Updated image paths with the newly uploaded images
   const images = [
-    "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png",
-    "/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg",
-    "/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png"
+    "/lovable-uploads/b62bc067-c77b-4afc-9abe-20a7167432a9.png",
+    "/lovable-uploads/46ebbb38-7488-4df5-b6f4-09496189d80d.png",
+    "/lovable-uploads/2f54e668-5a35-4f9c-82b5-89ee945afc91.png",
+    "/lovable-uploads/344b7408-ade9-406e-ba5d-5fe5bf9e16cd.png",
+    "/lovable-uploads/e1b65cc9-5c46-444a-a3ce-2617b4276cd4.png"
   ];
 
   return (
