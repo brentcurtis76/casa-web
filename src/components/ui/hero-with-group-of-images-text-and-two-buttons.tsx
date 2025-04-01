@@ -32,10 +32,28 @@ function Hero() {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-8">
-            <div className="bg-muted rounded-md aspect-square"></div>
-            <div className="bg-muted rounded-md row-span-2"></div>
-            <div className="bg-muted rounded-md aspect-square"></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-muted rounded-md aspect-square overflow-hidden">
+              <img 
+                src="/lovable-uploads/bf924b41-2c5a-41f6-9774-09c75868c107.png" 
+                alt="Church building with cross" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="bg-muted rounded-md row-span-2 overflow-hidden">
+              <img 
+                src="/lovable-uploads/8b822767-4e31-4760-b15e-264a2086a357.png" 
+                alt="Child and adult interacting" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="bg-muted rounded-md aspect-square overflow-hidden">
+              <img 
+                src="/lovable-uploads/26b28f0b-f024-4f8d-98e8-52227c068246.png" 
+                alt="People embracing" 
+                className="w-full h-full object-cover"
+              />
+            </div>
           </div>
         </div>
       </div>
