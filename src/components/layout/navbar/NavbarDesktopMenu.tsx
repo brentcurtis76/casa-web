@@ -1,7 +1,15 @@
 
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { User } from 'lucide-react';
 
 interface NavbarDesktopMenuProps {
   user: any;
@@ -51,10 +59,27 @@ export function NavbarDesktopMenu({
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="flex items-center p-2">
+              <Avatar className="h-10 w-10 mr-2">
+                <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || "Usuario"} />
+                <AvatarFallback>{getInitials(profile?.full_name || "Usuario")}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="font-medium truncate max-w-[180px]">
+                  {profile?.full_name || "Usuario"}
+                </span>
+                <span className="text-xs text-muted-foreground truncate max-w-[180px]">
+                  {user.email}
+                </span>
+              </div>
+            </div>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+              <User className="mr-2 h-4 w-4" />
               Mi Perfil
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout}>
               Cerrar Sesión
             </DropdownMenuItem>
