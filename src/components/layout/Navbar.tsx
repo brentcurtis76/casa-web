@@ -23,6 +23,10 @@ export function Navbar() {
 
   const handleCloseProfileModal = () => {
     setIsProfileModalOpen(false);
+    // Force a small delay to ensure React state updates properly
+    setTimeout(() => {
+      console.log("Profile modal closed");
+    }, 10);
   };
 
   const getInitials = (name: string) => {

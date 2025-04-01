@@ -18,14 +18,19 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     <Dialog 
       open={isOpen} 
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) {
+          // Force a small delay to ensure React state updates properly
+          setTimeout(() => {
+            onClose();
+          }, 10);
+        }
       }}
     >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl font-serif">Mi Perfil</DialogTitle>
           <DialogDescription className="text-center">
-            Actualiza tu información y foto de perfil
+            Actualiza tu información
           </DialogDescription>
         </DialogHeader>
         <UserProfile onClose={onClose} />

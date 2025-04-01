@@ -29,6 +29,8 @@ export function ProfileForm({ defaultValues, onSubmit, loading }: ProfileFormPro
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues,
+    // This ensures form is updated when defaultValues change
+    values: defaultValues,
   });
 
   return (
@@ -42,18 +44,6 @@ export function ProfileForm({ defaultValues, onSubmit, loading }: ProfileFormPro
               <FormLabel>Nombre completo</FormLabel>
               <FormControl>
                 <Input placeholder="Tu nombre" {...field} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="phone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Teléfono (opcional)</FormLabel>
-              <FormControl>
-                <Input placeholder="Tu teléfono" {...field} value={field.value || ''} />
               </FormControl>
             </FormItem>
           )}
