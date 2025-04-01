@@ -89,7 +89,7 @@ export function InstagramFeed() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <div className="bg-[#E1306C] text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                  <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
                     <InstagramIcon />
                   </div>
                   <span className="font-medium">@anglicanasanandres</span>
@@ -113,7 +113,7 @@ export function InstagramFeed() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <div className="bg-[#FF0000] text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                  <div className="bg-red-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
                     <YoutubeIcon />
                   </div>
                   <span className="font-medium">Comunidad Anglicana San Andrés</span>

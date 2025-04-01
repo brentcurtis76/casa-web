@@ -3,57 +3,81 @@ import React from 'react';
 
 export const InstagramIcon = () => (
   <svg
-    viewBox="0 0 100 100"
+    viewBox="0 0 24 24"
     className="h-full w-full"
     xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
   >
-    <circle cx="50" cy="50" r="50" fill="currentColor" />
-    <path
-      d="M65.82 35.93a4.34 4.34 0 1 0 0-8.68 4.34 4.34 0 0 0 0 8.68z"
-      fill="#fff"
-    />
-    <path
-      d="M50 60.94c6.04 0 10.94-4.9 10.94-10.94S56.04 39.06 50 39.06 39.06 43.96 39.06 50 43.96 60.94 50 60.94z"
-      fill="#fff"
-    />
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M36.17 26.56h27.66c5.31 0 9.61 4.3 9.61 9.61v27.66c0 5.31-4.3 9.61-9.61 9.61H36.17c-5.31 0-9.61-4.3-9.61-9.61V36.17c0-5.31 4.3-9.61 9.61-9.61zm27.66 5.47H36.17a4.14 4.14 0 0 0-4.14 4.14v27.66a4.14 4.14 0 0 0 4.14 4.14h27.66a4.14 4.14 0 0 0 4.14-4.14V36.17a4.14 4.14 0 0 0-4.14-4.14zM50 65.63c8.63 0 15.63-7 15.63-15.63S58.63 34.37 50 34.37 34.37 41.37 34.37 50 41.37 65.63 50 65.63z"
-      fill="#fff"
-    />
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
   </svg>
 );
 
 export const TikTokIcon = () => (
   <svg
-    viewBox="0 0 100 100"
+    viewBox="0 0 24 24"
     className="h-full w-full"
     xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
   >
-    <circle cx="50" cy="50" r="50" fill="currentColor" />
-    <path
-      d="M65.9 40.2c4.2 3 9.1 4.5 14.1 4.5v-10c-1 0-2 0.1-3.1 0.1v7.9c-5 0-9.9-1.5-14.1-4.5v20.8c0 10.6-8.6 19.2-19.2 19.2-4.1 0-7.8-1.3-10.9-3.5 3.5 3.6 8.4 5.9 13.9 5.9 10.6 0 19.2-8.6 19.2-19.2V40.2zm2.4-7.5c-1.9-2.1-3.3-4.7-4-7.5v1.3c0.7 2.3 1.9 4.3 3.6 6.1l0.4 0.1zM43.6 69.8c-2.1-2-3.4-4.8-3.4-7.9 0-6 4.8-10.8 10.8-10.8l0.7 0v-10c-0.7 0-1.4-0.1-2.1-0.1v8c-0.7 0-1.4 0-2 0-6 0-10.8 4.8-10.8 10.8 0 4.2 2.4 7.8 5.9 9.6 0.3 0.1 0.6 0.3 0.9 0.4z"
-      fill="#fff"
-    />
+    <path d="M9 12a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"></path>
+    <path d="M15 8a4 4 0 0 0 4 4V8h-4Z"></path>
+    <path d="M15 2v16a4 4 0 0 1-4 4"></path>
+    <path d="M9 16v-4"></path>
   </svg>
 );
 
 export const YoutubeIcon = () => (
   <svg
-    viewBox="0 0 100 100"
+    viewBox="0 0 24 24"
     className="h-full w-full"
     xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
   >
-    <circle cx="50" cy="50" r="50" fill="currentColor" />
-    <path
-      d="M71 58.35c0 4.25-3.4 7.65-7.65 7.65H36.65c-4.25 0-7.65-3.4-7.65-7.65V41.65c0-4.25 3.4-7.65 7.65-7.65h26.7c4.25 0 7.65 3.4 7.65 7.65v16.7z"
-      fill="#fff"
-    />
-    <path
-      d="M55 50l-10-6v12l10-6z"
-      fill="currentColor"
-    />
+    <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"></path>
+    <path d="m10 15 5-3-5-3z"></path>
   </svg>
 );
 
+export const FacebookIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-full w-full"
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path>
+  </svg>
+);
+
+export const TwitterIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-full w-full"
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"></path>
+  </svg>
+);
