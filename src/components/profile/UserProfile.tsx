@@ -112,7 +112,9 @@ export function UserProfile({ onClose }: UserProfileProps) {
       
       // Close the modal if the onClose prop is provided
       if (onClose) {
-        onClose();
+        setTimeout(() => {
+          onClose();
+        }, 500);
       }
     } catch (error) {
       console.error('Error updating profile:', error);

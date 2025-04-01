@@ -22,7 +22,6 @@ import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ProfileModal } from "@/components/profile/ProfileModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -32,47 +31,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 function Header1() {
-    const { user, logout } = useAuth();
+    const { user, profile, logout } = useAuth();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-    const [profile, setProfile] = useState<{ full_name?: string, avatar_url?: string | null } | null>(null);
     
-    useEffect(() => {
-        if (user) {
-            fetchProfile();
-        } else {
-            setProfile(null);
-        }
-    }, [user]);
-
-    async function fetchProfile() {
-        if (!user) return;
-        
-        try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('full_name, avatar_url')
-                .eq('id', user.id)
-                .single();
-
-            if (error) {
-                throw error;
-            }
-
-            if (data) {
-                setProfile(data);
-            }
-        } catch (error) {
-            console.error('Error fetching profile:', error);
-        }
-    }
-
     const handleCloseProfileModal = () => {
         setIsProfileModalOpen(false);
-        if (user) {
-            fetchProfile();
-        }
     };
 
     const navigationItems = [
