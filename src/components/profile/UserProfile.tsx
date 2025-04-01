@@ -1,21 +1,44 @@
 
 import { useState, useEffect } from 'react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/components/auth/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { useForm } from "react-hook-form";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useAuth } from "@/components/auth/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { User, Upload } from "lucide-react";
+
+const profileSchema = z.object({
+  full_name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
+  phone: z.string().optional(),
+});
+
+type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export function UserProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const form = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      full_name: '',
+      phone: '',
+    },
+  });
 
   useEffect(() => {
     if (user) {
@@ -25,100 +48,93 @@ export function UserProfile() {
 
   async function fetchProfile() {
     try {
-      setLoading(true);
-      
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name, phone, avatar_url')
-        .eq('id', user.id)
+        .select('*')
+        .eq('id', user?.id)
         .single();
 
       if (error) {
-        throw error;
+        console.error('Error fetching profile:', error);
+        return;
       }
 
       if (data) {
-        setFullName(data.full_name || '');
-        setPhone(data.phone || '');
+        form.reset({
+          full_name: data.full_name || '',
+          phone: data.phone || '',
+        });
         setAvatarUrl(data.avatar_url);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo cargar la información del perfil',
-      });
     } finally {
       setLoading(false);
     }
   }
 
-  async function updateProfile() {
+  const onSubmit = async (values: ProfileFormValues) => {
+    if (!user) return;
+    
     try {
       setLoading(true);
-
-      if (!user) return;
-
+      
       const updates = {
         id: user.id,
-        full_name: fullName,
-        phone,
+        full_name: values.full_name,
+        phone: values.phone || null,
         avatar_url: avatarUrl,
         updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase
         .from('profiles')
-        .upsert(updates);
+        .update(updates)
+        .eq('id', user.id);
 
       if (error) {
         throw error;
       }
 
       toast({
-        title: 'Perfil actualizado',
-        description: 'Tu información ha sido actualizada con éxito',
+        title: "Perfil actualizado",
+        description: "Tu información ha sido guardada correctamente."
       });
     } catch (error) {
       console.error('Error updating profile:', error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo actualizar la información',
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo actualizar tu perfil. Por favor, intenta de nuevo."
       });
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function uploadAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+  const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
 
       if (!event.target.files || event.target.files.length === 0) {
-        return;
+        throw new Error('Debes seleccionar una imagen');
       }
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
       const filePath = `${user?.id}-${Math.random()}.${fileExt}`;
 
-      // Create storage bucket if it doesn't exist
-      const { data: bucketExists } = await supabase
-        .storage
-        .getBucket('avatars');
-      
+      // Comprobar si el bucket existe, si no, lo creamos
+      const { data: bucketExists } = await supabase.storage.getBucket('avatars');
       if (!bucketExists) {
-        await supabase
-          .storage
-          .createBucket('avatars', { public: true });
+        await supabase.storage.createBucket('avatars', {
+          public: true,
+          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'],
+          fileSizeLimit: 1024 * 1024, // 1MB
+        });
       }
 
-      const { error: uploadError } = await supabase
-        .storage
+      const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
@@ -126,94 +142,97 @@ export function UserProfile() {
         throw uploadError;
       }
 
-      const { data } = supabase
-        .storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      setAvatarUrl(data.publicUrl);
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
       
-      // Update profile with new avatar
+      const avatarUrl = data.publicUrl;
+      setAvatarUrl(avatarUrl);
+
+      // Actualizar el avatar_url en la base de datos
       if (user) {
         const { error } = await supabase
           .from('profiles')
-          .upsert({
-            id: user.id,
-            avatar_url: data.publicUrl,
-            updated_at: new Date().toISOString(),
-          });
+          .update({ avatar_url: avatarUrl })
+          .eq('id', user.id);
 
         if (error) throw error;
       }
 
       toast({
-        title: 'Imagen actualizada',
-        description: 'Tu foto de perfil ha sido actualizada',
+        title: "Imagen subida",
+        description: "Tu foto de perfil ha sido actualizada."
       });
     } catch (error) {
       console.error('Error uploading avatar:', error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo subir la imagen',
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo subir la imagen. Por favor, intenta de nuevo."
       });
     } finally {
       setUploading(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-center space-y-4">
-        <Avatar className="h-24 w-24">
-          <AvatarImage src={avatarUrl || ''} alt={fullName} />
-          <AvatarFallback>{fullName?.substring(0, 2).toUpperCase() || 'US'}</AvatarFallback>
-        </Avatar>
-        
-        <div className="flex flex-col items-center">
-          <Label htmlFor="avatar" className="cursor-pointer py-2 px-4 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80">
-            {uploading ? 'Subiendo...' : 'Cambiar foto'}
-          </Label>
-          <Input 
-            id="avatar" 
+      <div className="flex flex-col items-center justify-center space-y-4">
+        <div className="relative">
+          <Avatar className="h-24 w-24">
+            <AvatarImage src={avatarUrl || ''} />
+            <AvatarFallback className="bg-primary text-primary-foreground text-lg">
+              {user?.email?.substring(0, 2).toUpperCase() || <User />}
+            </AvatarFallback>
+          </Avatar>
+          <label 
+            htmlFor="avatar-upload" 
+            className="absolute -bottom-2 -right-2 p-1 bg-primary text-white rounded-full cursor-pointer"
+            title="Cambiar foto de perfil"
+          >
+            <Upload size={16} />
+          </label>
+          <input 
+            id="avatar-upload" 
             type="file" 
             accept="image/*" 
-            onChange={uploadAvatar} 
-            disabled={uploading} 
-            className="hidden"
+            className="hidden" 
+            onChange={uploadAvatar}
+            disabled={uploading}
           />
         </div>
+        {uploading && <p className="text-sm text-muted-foreground">Subiendo...</p>}
       </div>
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="fullName">Nombre completo</Label>
-          <Input
-            id="fullName"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Tu nombre completo"
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="full_name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nombre completo</FormLabel>
+                <FormControl>
+                  <Input placeholder="Tu nombre" {...field} />
+                </FormControl>
+              </FormItem>
+            )}
           />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="phone">Teléfono</Label>
-          <Input
-            id="phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Tu número de teléfono"
+          <FormField
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Teléfono (opcional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="Tu teléfono" {...field} value={field.value || ''} />
+                </FormControl>
+              </FormItem>
+            )}
           />
-        </div>
-
-        <Button 
-          onClick={updateProfile} 
-          disabled={loading}
-          className="w-full"
-        >
-          {loading ? 'Guardando...' : 'Guardar cambios'}
-        </Button>
-      </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Guardando..." : "Guardar cambios"}
+          </Button>
+        </form>
+      </Form>
     </div>
   );
 }
