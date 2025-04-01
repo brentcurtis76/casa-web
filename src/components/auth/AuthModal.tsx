@@ -14,6 +14,14 @@ interface AuthModalProps {
 export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalProps) {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>(defaultTab);
 
+  const handleLoginSuccess = () => {
+    onClose();
+  };
+
+  const handleSignupSuccess = () => {
+    onClose();
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
@@ -33,10 +41,10 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
             <TabsTrigger value="signup">Registrarse</TabsTrigger>
           </TabsList>
           <TabsContent value="login">
-            <LoginForm />
+            <LoginForm onLoginSuccess={handleLoginSuccess} />
           </TabsContent>
           <TabsContent value="signup">
-            <SignupForm />
+            <SignupForm onSignupSuccess={handleSignupSuccess} />
           </TabsContent>
         </Tabs>
       </DialogContent>

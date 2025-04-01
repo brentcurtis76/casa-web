@@ -23,7 +23,11 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export function LoginForm() {
+interface LoginFormProps {
+  onLoginSuccess?: () => void;
+}
+
+export function LoginForm({ onLoginSuccess }: LoginFormProps) {
   const { login } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +48,9 @@ export function LoginForm() {
         title: '¡Bienvenido de vuelta!',
         description: 'Has iniciado sesión correctamente.',
       });
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
     } catch (error) {
       toast({
         variant: 'destructive',

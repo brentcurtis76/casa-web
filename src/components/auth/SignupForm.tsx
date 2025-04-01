@@ -28,7 +28,11 @@ const signupSchema = z.object({
 
 type SignupFormValues = z.infer<typeof signupSchema>;
 
-export function SignupForm() {
+interface SignupFormProps {
+  onSignupSuccess?: () => void;
+}
+
+export function SignupForm({ onSignupSuccess }: SignupFormProps) {
   const { signup } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +55,9 @@ export function SignupForm() {
         title: '¡Registro exitoso!',
         description: 'Tu cuenta ha sido creada correctamente.',
       });
+      if (onSignupSuccess) {
+        onSignupSuccess();
+      }
     } catch (error) {
       toast({
         variant: 'destructive',

@@ -1,15 +1,24 @@
 
 import { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { ProfileModal } from '@/components/profile/ProfileModal';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const { user, profile, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -23,6 +32,14 @@ export function Navbar() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const getInitials = (name: string) => {
+    return name
+      ?.split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase() || 'U';
+  };
 
   return (
     <>
@@ -64,9 +81,24 @@ export function Navbar() {
             </a>
 
             {user ? (
-              <Button variant="outline" onClick={logout}>
-                Cerrar Sesión
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="rounded-full p-0 h-10 w-10 overflow-hidden">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || "Usuario"} />
+                      <AvatarFallback>{getInitials(profile?.full_name || "Usuario")}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+                    Mi Perfil
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={logout}>
+                    Cerrar Sesión
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Button onClick={() => setIsAuthModalOpen(true)}>
                 Iniciar Sesión
@@ -131,9 +163,26 @@ export function Navbar() {
               </a>
 
               {user ? (
-                <Button variant="outline" onClick={logout} className="w-full">
-                  Cerrar Sesión
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={() => {
+                      setIsProfileModalOpen(true);
+                      setIsMenuOpen(false);
+                    }}
+                  >
+                    <User size={16} />
+                    Mi Perfil
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={logout} 
+                    className="w-full"
+                  >
+                    Cerrar Sesión
+                  </Button>
+                </div>
               ) : (
                 <Button 
                   onClick={() => {
@@ -153,6 +202,11 @@ export function Navbar() {
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
+      />
+      
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
       />
     </>
   );
