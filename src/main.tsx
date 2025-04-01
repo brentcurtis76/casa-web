@@ -7,7 +7,12 @@ import './index.css'
 const documentReady = () => {
   return new Promise<void>(resolve => {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', resolve);
+      // Create a function that will be called when the document is loaded
+      const onDOMContentLoaded = () => {
+        document.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
+        resolve();
+      };
+      document.addEventListener('DOMContentLoaded', onDOMContentLoaded);
     } else {
       resolve();
     }
