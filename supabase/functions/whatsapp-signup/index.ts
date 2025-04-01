@@ -2,9 +2,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "npm:resend@2.0.0";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
-const destinationEmail = "sanandres@iach.cl";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -29,6 +26,29 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     console.log(`Procesando solicitud para: ${name}, teléfono: ${phone}`);
+
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    if (!resendApiKey) {
+      // Fallback to direct response without email if API key is missing
+      console.log("La clave de API de Resend no está configurada. Omitiendo el envío de correo electrónico.");
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Solicitud recibida correctamente (sin correo electrónico)"
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        }
+      );
+    }
+
+    const resend = new Resend(resendApiKey);
+    const destinationEmail = "sanandres@iach.cl";
 
     const emailResponse = await resend.emails.send({
       from: "Anglicana San Andrés <onboarding@resend.dev>",

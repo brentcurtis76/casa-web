@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Send } from "lucide-react";
 import { InstagramIcon, TikTokIcon, YoutubeIcon } from "@/components/icons/SocialIcons";
@@ -17,6 +18,8 @@ import {
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -29,6 +32,7 @@ const formSchema = z.object({
 
 export function InstagramFeed() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -39,6 +43,7 @@ export function InstagramFeed() {
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setSubmitError(null);
     try {
       setIsSubmitting(true);
       console.log("Enviando solicitud...", values);
@@ -60,6 +65,7 @@ export function InstagramFeed() {
       form.reset();
     } catch (error) {
       console.error("Error:", error);
+      setSubmitError(error instanceof Error ? error.message : "Ocurrió un error inesperado");
       toast({
         variant: "destructive",
         title: "Error al enviar",
@@ -126,6 +132,14 @@ export function InstagramFeed() {
             <h3 className="text-xl font-semibold text-casa-600 mb-4">
               Únete a nuestra lista de difusión de WhatsApp
             </h3>
+            
+            {submitError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{submitError}</AlertDescription>
+              </Alert>
+            )}
             
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
