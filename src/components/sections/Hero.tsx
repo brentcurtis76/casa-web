@@ -6,9 +6,9 @@ import { motion } from 'framer-motion';
 export function Hero() {
   // Update these image paths to the images you want to use
   const images = [
-    "/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png",
-    "/lovable-uploads/92c3ec9a-16cb-405a-86d6-0914b11e5f70.jpg",
-    "/lovable-uploads/9ea1c3e6-66ec-4a6c-a94d-6eeb0f18d281.png"
+    "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png",
+    "/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg",
+    "/lovable-uploads/c7632011-97ff-46fc-8d5c-279a4ab4d6b1.png"
   ];
 
   return (
