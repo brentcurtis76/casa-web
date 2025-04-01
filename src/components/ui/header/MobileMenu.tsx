@@ -36,8 +36,7 @@ export function MobileMenu({
         <div className="container absolute top-[100%] left-0 right-0 z-40 bg-white py-4 border-t border-muted">
             <div className="flex flex-col space-y-4">
                 <NavigationMenuItems 
-                    items={navigationItems} 
-                    isMobile 
+                    items={navigationItems}
                     onItemClick={closeMenu}
                 />
 

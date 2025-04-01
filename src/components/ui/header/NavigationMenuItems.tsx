@@ -8,14 +8,25 @@ import {
     NavigationMenuTrigger 
 } from "@/components/ui/navigation-menu";
 import { cn } from "@/lib/utils";
-import { NavigationItem } from "./navigationData";
+import { navigationItems } from "./navigationData";
 import { LucideIcon } from "lucide-react";
+
+// Define the NavigationItem type
+export interface NavigationItem {
+    title: string;
+    link: string;
+    icon?: LucideIcon;
+    description?: string;
+    subItems?: NavigationItem[];
+}
 
 interface NavigationMenuItemsProps {
     items: NavigationItem[];
+    isMobile?: boolean;
+    onItemClick?: () => void;
 }
 
-export function NavigationMenuItems({ items }: NavigationMenuItemsProps) {
+export function NavigationMenuItems({ items, isMobile, onItemClick }: NavigationMenuItemsProps) {
     // Regular menu items that link directly to a URL
     const regularItems = items.filter(item => !item.subItems);
     
@@ -33,6 +44,7 @@ export function NavigationMenuItems({ items }: NavigationMenuItemsProps) {
                             className={cn(
                                 "block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             )}
+                            onClick={onItemClick}
                         >
                             <div className="text-sm font-medium leading-none">{item.title}</div>
                         </NavigationMenuLink>
@@ -63,6 +75,7 @@ export function NavigationMenuItems({ items }: NavigationMenuItemsProps) {
                                             href={subItem.link}
                                             description={subItem.description || ""}
                                             Icon={subItem.icon}
+                                            onClick={onItemClick}
                                         />
                                     ))}
                                 </ul>
@@ -80,15 +93,17 @@ interface ListItemProps {
     href: string;
     description: string;
     Icon?: LucideIcon;
+    onClick?: () => void;
 }
 
-const ListItem = ({ title, href, description, Icon }: ListItemProps) => {
+const ListItem = ({ title, href, description, Icon, onClick }: ListItemProps) => {
     return (
         <li>
             <NavigationMenuLink asChild>
                 <a
                     href={href}
                     className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                    onClick={onClick}
                 >
                     <div className="flex items-center gap-2">
                         {Icon && <Icon className="h-4 w-4" />}
