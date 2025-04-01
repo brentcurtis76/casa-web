@@ -19,7 +19,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="text-center text-2xl font-serif">
+          <DialogTitle className="text-center text-2xl font-serif tracking-normal">
             Contáctanos
           </DialogTitle>
           <DialogDescription className="text-center">
