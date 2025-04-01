@@ -1,18 +1,12 @@
 import { Mail, MapPin, Phone } from "lucide-react";
 import { FacebookIcon, InstagramIcon, TwitterIcon, YoutubeIcon } from "@/components/icons/SocialIcons";
-
 export function Footer() {
-  return (
-    <footer className="bg-casa-800 text-white pt-16 pb-8">
+  return <footer className="bg-casa-800 text-white pt-16 pb-8">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           <div>
             <div className="mb-4">
-              <img 
-                src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png" 
-                alt="CASA Logo" 
-                className="h-16 w-auto"
-              />
+              <img alt="CASA Logo" className="h-16 w-auto" src="/lovable-uploads/675de6a8-e016-487d-87ce-0c956d83bdc3.png" />
             </div>
             <p className="text-casa-100 mb-6">
               Un espacio de amor, inclusión y esperanza para todos. Donde cada persona es bienvenida tal como es.
@@ -66,7 +60,7 @@ export function Footer() {
               </div>
               <div>
                 <p className="font-medium">Grupos en CASA</p>
-                <p className="text-casa-200">Jueves 7:00 PM</p>
+                <p className="text-casa-200">Jueves por medio 7:00 PM</p>
               </div>
               <div>
                 <p className="font-medium">Oficina</p>
@@ -98,6 +92,5 @@ export function Footer() {
           <p>&copy; {new Date().getFullYear()} CASA. Todos los derechos reservados.</p>
         </div>
       </div>
-    </footer>
-  );
+    </footer>;
 }
