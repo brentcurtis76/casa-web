@@ -17,51 +17,47 @@ import { Link } from "react-router-dom";
 function Header1() {
     const navigationItems = [
         {
-            title: "Home",
+            title: "Inicio",
             href: "/",
             description: "",
         },
         {
-            title: "Product",
-            description: "Managing a small business today is already tough.",
+            title: "Nosotros",
+            description: "Conoce más sobre nuestra comunidad y misión.",
             items: [
                 {
-                    title: "Reports",
-                    href: "/reports",
+                    title: "Propósito",
+                    href: "/#proposito",
                 },
                 {
-                    title: "Statistics",
-                    href: "/statistics",
+                    title: "Equipo",
+                    href: "/#equipo",
                 },
                 {
-                    title: "Dashboards",
-                    href: "/dashboards",
-                },
-                {
-                    title: "Recordings",
-                    href: "/recordings",
+                    title: "Participar",
+                    href: "/#participar",
                 },
             ],
         },
         {
-            title: "Company",
-            description: "Managing a small business today is already tough.",
+            title: "Recursos",
+            description: "Descubre contenido para crecer en tu fe.",
             items: [
                 {
-                    title: "About us",
-                    href: "/about",
+                    title: "Sermones",
+                    href: "/#sermones",
                 },
                 {
-                    title: "Fundraising",
-                    href: "/fundraising",
+                    title: "Eventos",
+                    href: "/#eventos",
                 },
                 {
-                    title: "Investors",
-                    href: "/investors",
+                    title: "Oración",
+                    href: "/#oracion",
                 },
                 {
-                    title: "Contact us",
-                    href: "/contact",
+                    title: "Instagram",
+                    href: "/#instagram",
                 },
             ],
         },
@@ -76,7 +72,7 @@ function Header1() {
                         <NavigationMenuList className="flex justify-start gap-4 flex-row">
                             {navigationItems.map((item) => (
                                 <NavigationMenuItem key={item.title}>
-                                    {item.href ? (
+                                    {item.href && !item.items ? (
                                         <>
                                             <NavigationMenuLink asChild>
                                                 <Link to={item.href}>
@@ -99,7 +95,7 @@ function Header1() {
                                                             </p>
                                                         </div>
                                                         <Button size="sm" className="mt-10">
-                                                            Book a call today
+                                                            Contactar
                                                         </Button>
                                                     </div>
                                                     <div className="flex flex-col text-sm h-full justify-end">
@@ -124,15 +120,15 @@ function Header1() {
                     </NavigationMenu>
                 </div>
                 <div className="flex lg:justify-center">
-                    <p className="font-semibold">TWBlocks</p>
+                    <div className="font-serif text-2xl font-bold">Casa de Fe</div>
                 </div>
                 <div className="flex justify-end w-full gap-4">
                     <Button variant="ghost" className="hidden md:inline">
-                        Book a demo
+                        Contactar
                     </Button>
                     <div className="border-r hidden md:inline"></div>
-                    <Button variant="outline">Sign in</Button>
-                    <Button>Get started</Button>
+                    <Button variant="outline">Iniciar Sesión</Button>
+                    <Button>Participar</Button>
                 </div>
                 <div className="flex w-12 shrink lg:hidden items-end justify-end">
                     <Button variant="ghost" onClick={() => setOpen(!isOpen)}>
@@ -143,7 +139,7 @@ function Header1() {
                             {navigationItems.map((item) => (
                                 <div key={item.title}>
                                     <div className="flex flex-col gap-2">
-                                        {item.href ? (
+                                        {item.href && !item.items ? (
                                             <Link
                                                 to={item.href}
                                                 className="flex justify-between items-center"
