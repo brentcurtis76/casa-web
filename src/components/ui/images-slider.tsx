@@ -12,7 +12,7 @@ export const ImagesSlider = ({
   className,
   autoplay = true,
   direction = "up",
-  slideDuration = 7000, // Adding a prop to control slide duration
+  slideDuration = 7000,
 }: {
   images: string[];
   children: React.ReactNode;
@@ -21,23 +21,35 @@ export const ImagesSlider = ({
   className?: string;
   autoplay?: boolean;
   direction?: "up" | "down";
-  slideDuration?: number; // Time in milliseconds each slide stays visible
+  slideDuration?: number;
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadedImages, setLoadedImages] = useState<string[]>([]);
+  const [nextIndex, setNextIndex] = useState<number | null>(null);
 
   const handleNext = () => {
-    setCurrentIndex((prevIndex) =>
-      prevIndex + 1 === images.length ? 0 : prevIndex + 1
-    );
+    const next = currentIndex + 1 === images.length ? 0 : currentIndex + 1;
+    setNextIndex(next);
+    // We'll update currentIndex after the animation completes
   };
 
   const handlePrevious = () => {
-    setCurrentIndex((prevIndex) =>
-      prevIndex - 1 < 0 ? images.length - 1 : prevIndex - 1
-    );
+    const prev = currentIndex - 1 < 0 ? images.length - 1 : currentIndex - 1;
+    setNextIndex(prev);
+    // We'll update currentIndex after the animation completes
   };
+
+  useEffect(() => {
+    if (nextIndex !== null) {
+      // Wait a short time to ensure both images are displayed before transitioning
+      const timer = setTimeout(() => {
+        setCurrentIndex(nextIndex);
+        setNextIndex(null);
+      }, 500); // Half a second delay for smoother transition
+      return () => clearTimeout(timer);
+    }
+  }, [nextIndex]);
 
   useEffect(() => {
     loadImages();
@@ -96,18 +108,18 @@ export const ImagesSlider = ({
     if (autoplay) {
       interval = setInterval(() => {
         handleNext();
-      }, slideDuration); // Using the prop here instead of hardcoded 7000
+      }, slideDuration);
     }
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       clearInterval(interval);
     };
-  }, [slideDuration]); // Add slideDuration to dependency array
+  }, [slideDuration, currentIndex]); // Added currentIndex to dependencies
 
   const slideVariants = {
     initial: {
-      scale: 0,
+      scale: 1, // Start at full scale
       opacity: 0,
       rotateX: 45,
     },
@@ -121,17 +133,17 @@ export const ImagesSlider = ({
       },
     },
     upExit: {
-      opacity: 1,
-      y: "-150%",
+      opacity: 0, // Fade out instead of moving away
+      y: "-10%", // Reduced movement
       transition: {
-        duration: 1.5,
+        duration: 0.5, // Faster exit
       },
     },
     downExit: {
-      opacity: 1,
-      y: "150%",
+      opacity: 0, // Fade out instead of moving away
+      y: "10%", // Reduced movement
       transition: {
-        duration: 1.5,
+        duration: 0.5, // Faster exit
       },
     },
   };
@@ -141,7 +153,7 @@ export const ImagesSlider = ({
   return (
     <div
       className={cn(
-        "overflow-hidden h-full w-full relative flex items-center justify-center",
+        "overflow-hidden h-full w-full relative flex items-center justify-center bg-black", // Added bg-black to prevent gray background
         className
       )}
       style={{
@@ -157,7 +169,7 @@ export const ImagesSlider = ({
       )}
 
       {areImagesLoaded && (
-        <AnimatePresence>
+        <AnimatePresence mode="sync"> {/* Use sync mode to ensure smooth transitions */}
           <motion.img
             key={currentIndex}
             src={loadedImages[currentIndex] || images[currentIndex]}
@@ -167,6 +179,16 @@ export const ImagesSlider = ({
             variants={slideVariants}
             className="image h-full w-full absolute inset-0 object-cover object-center"
           />
+          {nextIndex !== null && (
+            <motion.img
+              key={`next-${nextIndex}`}
+              src={loadedImages[nextIndex] || images[nextIndex]}
+              initial="initial"
+              animate="visible"
+              variants={slideVariants}
+              className="image h-full w-full absolute inset-0 object-cover object-center z-30"
+            />
+          )}
         </AnimatePresence>
       )}
     </div>
