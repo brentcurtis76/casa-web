@@ -1,6 +1,6 @@
-
 "use client";
 
+import React from 'react';
 import { Button } from "@/components/ui/button";
 import {
     NavigationMenu,
@@ -123,7 +123,7 @@ function Header1() {
                     <img 
                         src="/lovable-uploads/bc608912-a57b-456f-a6c5-74ffc00e8300.png" 
                         alt="CASA San Andrés" 
-                        className="h-16 w-auto"
+                        className="h-24 w-auto"
                     />
                 </div>
                 <div className="flex justify-end w-full gap-4">
