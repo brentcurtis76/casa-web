@@ -5,7 +5,7 @@ import './index.css'
 
 // Create a promise that waits for document ready and fonts loaded
 const documentReady = () => {
-  return new Promise(resolve => {
+  return new Promise<void>(resolve => {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', resolve);
     } else {
