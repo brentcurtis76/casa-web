@@ -14,17 +14,17 @@ interface ProfileModalProps {
 }
 
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
+  const handleDialogChange = (open: boolean) => {
+    if (!open) {
+      // Force page reload when modal closes via any method
+      window.location.reload();
+    }
+  };
+
   return (
     <Dialog 
       open={isOpen} 
-      onOpenChange={(open) => {
-        if (!open) {
-          // Force a small delay to ensure React state updates properly
-          setTimeout(() => {
-            onClose();
-          }, 10);
-        }
-      }}
+      onOpenChange={handleDialogChange}
     >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
