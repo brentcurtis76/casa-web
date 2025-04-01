@@ -104,8 +104,19 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const showId = url.searchParams.get("showId") || "0V0M4hBslDmQ8o2y9Rp61E"; // ID por defecto del podcast de CASA
+    let showId = "0V0M4hBslDmQ8o2y9Rp61E"; // ID por defecto del podcast de CASA
+    
+    // Intentar leer el showId del cuerpo de la solicitud
+    try {
+      const body = await req.json();
+      if (body && body.showId) {
+        showId = body.showId;
+      }
+    } catch (e) {
+      console.log("No se proporcionó un cuerpo de solicitud o no es un JSON válido, usando ID por defecto");
+    }
+    
+    console.log(`Obteniendo datos para el podcast con ID: ${showId}`);
     
     // Obtener token de Spotify
     const token = await getSpotifyToken();

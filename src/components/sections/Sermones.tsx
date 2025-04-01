@@ -106,9 +106,9 @@ export function Sermones() {
         
         console.log('Obteniendo datos del podcast de Spotify...');
         
-        // Llamar a nuestra función Edge en Supabase
+        // Llamar a nuestra función Edge en Supabase con la sintaxis correcta
         const { data, error } = await supabase.functions.invoke('spotify-sermones', {
-          query: { showId: CASA_SPOTIFY_SHOW_ID }
+          body: { showId: CASA_SPOTIFY_SHOW_ID }
         });
         
         if (error) {
