@@ -7,7 +7,7 @@ function HeaderDemo() {
       <Header1 />
       <div className="container mx-auto mt-20">
         <h1 className="text-3xl font-bold">Header Demo Page</h1>
-        <p className="mt-4">This page demonstrates the Header1 component.</p>
+        <p className="mt-4">This page demonstrates the Header1 component with the new CASA San Andrés logo.</p>
       </div>
     </div>
   );

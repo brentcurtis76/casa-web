@@ -120,7 +120,11 @@ function Header1() {
                     </NavigationMenu>
                 </div>
                 <div className="flex lg:justify-center">
-                    <div className="font-serif text-2xl font-bold">Casa de Fe</div>
+                    <img 
+                        src="/lovable-uploads/bc608912-a57b-456f-a6c5-74ffc00e8300.png" 
+                        alt="CASA San Andrés" 
+                        className="h-16 w-auto"
+                    />
                 </div>
                 <div className="flex justify-end w-full gap-4">
                     <Button variant="ghost" className="hidden md:inline">
