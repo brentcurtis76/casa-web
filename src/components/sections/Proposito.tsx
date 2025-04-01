@@ -10,9 +10,7 @@ export function Proposito() {
               <p className="mb-4">
                 Nuestra CASA surge como un faro de inclusión, igualdad y amor incondicional. Fundados en la visión de un cristianismo renovado y acogedor, nos esforzamos por ser un refugio para aquellos en busca de una espiritualidad que valora y celebra nuestras singularidades.
               </p>
-              <p className="mb-4">
-                En CASA, creemos que la teología es una conversación en constante evolución, permitiéndonos reflejar una imagen de Dios más compasiva y acogedora.
-              </p>
+              <p className="mb-4">En CASA, creemos que la fe es una conversación en constante evolución, permitiéndonos reflejar una imagen de Dios compasiva y llena de gracia.</p>
               <p>
                 Podríamos contarte más sobre lo que creemos, pero pensamos que la mejor forma de averiguarlo es conociéndonos. ¡Ven a visitarnos!
               </p>
