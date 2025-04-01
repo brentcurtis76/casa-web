@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExternalLink, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import SpotifyWebApi from "spotify-web-api-js";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface SermonProps {
   title: string;
@@ -12,6 +13,7 @@ interface SermonProps {
   date: string;
   spotifyLink: string;
   image: string;
+  description?: string;
 }
 
 function SermonCard({ title, speaker, date, spotifyLink, image }: SermonProps) {
@@ -48,10 +50,10 @@ function SermonCard({ title, speaker, date, spotifyLink, image }: SermonProps) {
 export function Sermones() {
   const [recentSermons, setRecentSermons] = useState<SermonProps[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showInfo, setShowInfo] = useState<any>(null);
 
-  // IDs requeridos para la API de Spotify
-  const CASA_SPOTIFY_SHOW_ID = "0V0M4hBslDmQ8o2y9Rp61E"; 
-  const CASA_SPOTIFY_LINK = "https://open.spotify.com/show/0V0M4hBslDmQ8o2y9Rp61E?si=cc8157fb01c54878";
+  // ID requerido para la API de Spotify
+  const CASA_SPOTIFY_SHOW_ID = "0V0M4hBslDmQ8o2y9Rp61E";
   
   // Placeholder images en caso de que no se puedan obtener desde Spotify
   const placeholderImages = [
@@ -68,7 +70,7 @@ export function Sermones() {
       title: "El amor que transforma",
       speaker: "Brent Curtis",
       date: "3 Sep 2023",
-      spotifyLink: CASA_SPOTIFY_LINK,
+      spotifyLink: `https://open.spotify.com/show/${CASA_SPOTIFY_SHOW_ID}`,
       image: "/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png"
     },
     {
@@ -76,7 +78,7 @@ export function Sermones() {
       title: "Comunidad inclusiva",
       speaker: "Patricio Browne",
       date: "27 Ago 2023",
-      spotifyLink: CASA_SPOTIFY_LINK,
+      spotifyLink: `https://open.spotify.com/show/${CASA_SPOTIFY_SHOW_ID}`,
       image: "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png"
     },
     {
@@ -84,7 +86,7 @@ export function Sermones() {
       title: "Fe y esperanza",
       speaker: "Fiona Fraser",
       date: "20 Ago 2023",
-      spotifyLink: CASA_SPOTIFY_LINK,
+      spotifyLink: `https://open.spotify.com/show/${CASA_SPOTIFY_SHOW_ID}`,
       image: "/lovable-uploads/105a46c3-8fe4-429c-af7d-79a85edc4694.png"
     },
     {
@@ -92,7 +94,7 @@ export function Sermones() {
       title: "El camino de la compasión",
       speaker: "Claudia Araya",
       date: "13 Ago 2023",
-      spotifyLink: CASA_SPOTIFY_LINK,
+      spotifyLink: `https://open.spotify.com/show/${CASA_SPOTIFY_SHOW_ID}`,
       image: "/lovable-uploads/10870cef-f487-456b-8140-5c04bf8e4312.png"
     }
   ];
@@ -102,38 +104,34 @@ export function Sermones() {
       try {
         setIsLoading(true);
         
-        // Cliente de Spotify
-        const spotifyApi = new SpotifyWebApi();
+        console.log('Obteniendo datos del podcast de Spotify...');
         
-        // Intentar usar Credenciales de Cliente (Client Credentials flow)
-        // Nota: Esta implementación requiere un proxy o backend para autenticación segura
-        // Por ahora usamos el Client ID como ejemplo
-        const clientId = 'client-id-here'; // Reemplazar con el Client ID real de CASA
+        // Llamar a nuestra función Edge en Supabase
+        const { data, error } = await supabase.functions.invoke('spotify-sermones', {
+          query: { showId: CASA_SPOTIFY_SHOW_ID }
+        });
         
-        // En una implementación real, esta parte se haría en un servidor/edge function
-        // Por ahora simplemente mostramos datos de ejemplo
-        console.log('Intentando conectar a Spotify con el cliente ID:', clientId);
+        if (error) {
+          throw new Error(`Error al llamar a la función Edge: ${error.message}`);
+        }
         
-        // En una implementación completa, aquí obtendríamos un token y luego haríamos:
-        // spotifyApi.setAccessToken(token);
-        // const showData = await spotifyApi.getShow(CASA_SPOTIFY_SHOW_ID);
-        // const episodes = await spotifyApi.getShowEpisodes(CASA_SPOTIFY_SHOW_ID);
+        if (!data.success) {
+          throw new Error(`Error en la respuesta de la función Edge: ${data.error}`);
+        }
         
-        // Por ahora, usamos los datos de ejemplo
-        const sermonsData = fallbackSermons.map(sermon => ({
-          ...sermon,
-          spotifyLink: CASA_SPOTIFY_LINK
-        }));
+        console.log('Datos obtenidos correctamente:', data);
         
-        setRecentSermons(sermonsData);
+        // Actualizar el estado con los datos recibidos
+        setRecentSermons(data.data.episodes);
+        setShowInfo(data.data.showInfo);
         
-        // Cuando tengamos la implementación real
-        // toast({
-        //   title: "Contenido actualizado",
-        //   description: "Se cargaron los episodios más recientes de Spotify",
-        // });
+        toast({
+          title: "Contenido actualizado",
+          description: "Se cargaron los episodios más recientes de Spotify",
+        });
       } catch (error) {
         console.error("Error obteniendo datos de Spotify:", error);
+        
         // Usar datos de ejemplo en caso de error
         setRecentSermons(fallbackSermons);
         
@@ -149,6 +147,8 @@ export function Sermones() {
 
     fetchSpotifySermons();
   }, []);
+
+  const spotifyLink = showInfo?.spotifyLink || `https://open.spotify.com/show/${CASA_SPOTIFY_SHOW_ID}`;
 
   return (
     <section id="sermones" className="section bg-casa-50">
@@ -191,7 +191,7 @@ export function Sermones() {
 
         <div className="text-center mt-12">
           <Button size="lg" variant="outline">
-            <a href={CASA_SPOTIFY_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center">
+            <a href={spotifyLink} target="_blank" rel="noopener noreferrer" className="flex items-center">
               Ver todas las reflexiones
               <ExternalLink className="ml-2 h-4 w-4" />
             </a>
