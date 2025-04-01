@@ -1,3 +1,4 @@
+
 import { MoveRight, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,11 +50,11 @@ function Hero() {
                     </div>
                     <div>
                       <h3 className="font-medium">Dirección</h3>
-                      <p className="text-muted-foreground">Av. Presidente Errázuriz 3031, Las Condes, Santiago</p>
+                      <p className="text-muted-foreground">Vicente Pérez Rosales 1765, La Reina, Santiago</p>
                     </div>
                     <div className="mt-2">
                       <iframe 
-                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3330.2080247237316!2d-70.5786697!3d-33.4160542!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9662cf40ecb1a283%3A0x6f79a73ef3440e75!2sAv.%20Pdte.%20Err%C3%A1zuriz%203031%2C%20Las%20Condes%2C%20Regi%C3%B3n%20Metropolitana!5e0!3m2!1ses!2scl!4v1655854674408!5m2!1ses!2scl" 
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3329.938189752371!2d-70.5666986!3d-33.4207245!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9662cfa94f2e7d41%3A0x8e14039b12e5c74b!2sVicente%20P%C3%A9rez%20Rosales%201765%2C%20La%20Reina%2C%20Regi%C3%B3n%20Metropolitana!5e0!3m2!1ses!2scl!4v1719528142344!5m2!1ses!2scl" 
                         width="100%" 
                         height="300" 
                         style={{ border: 0 }} 
