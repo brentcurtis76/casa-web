@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +11,6 @@ import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-// Define interface for the events based on the existing database structure
 interface Event {
   id: string;
   title: string;
@@ -31,12 +29,10 @@ export function EventCalendar() {
   const [error, setError] = useState<string | null>(null);
   const [showAllEvents, setShowAllEvents] = useState<boolean>(false);
   
-  // Fetch all events from Supabase
   useEffect(() => {
     const fetchEvents = async () => {
       try {
         setIsLoading(true);
-        // Use a type assertion to fix the TypeScript error
         const { data, error } = await supabase
           .from('events')
           .select('*') as { data: Event[] | null; error: Error | null };
@@ -51,7 +47,6 @@ export function EventCalendar() {
             filterEventsByDate(selectedDate, data);
           }
           
-          // Get upcoming events
           const today = new Date();
           const upcoming = data
             .filter(event => {
@@ -84,12 +79,10 @@ export function EventCalendar() {
     fetchEvents();
   }, []);
   
-  // Function to convert database date string to Date object
   const parseEventDate = (dateStr: string): Date => {
     return parseISO(dateStr);
   };
   
-  // Filter events by selected date
   const filterEventsByDate = (date: Date, eventList: Event[] = events) => {
     const filtered = eventList.filter(event => {
       const eventDate = parseEventDate(event.date);
@@ -102,7 +95,6 @@ export function EventCalendar() {
     setFilteredEvents(filtered);
   };
   
-  // Handle date selection
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
     if (date) {
@@ -110,7 +102,6 @@ export function EventCalendar() {
     }
   };
   
-  // Function to check if a day has an event
   const isDayWithEvent = (day: Date) => {
     return events.some(event => {
       const eventDate = parseEventDate(event.date);
@@ -122,13 +113,11 @@ export function EventCalendar() {
     });
   };
   
-  // Format date for display
   const formatDate = (date: Date | undefined) => {
     if (!date) return '';
     return format(date, "d 'de' MMMM 'de' yyyy", { locale: es });
   };
   
-  // Render event card
   const renderEventCard = (event: Event) => (
     <Card key={event.id} className="overflow-hidden mb-4">
       <CardHeader className="bg-casa-50 pb-3">
@@ -172,6 +161,7 @@ export function EventCalendar() {
           modifiersClassNames={{
             hasEvent: "bg-casa-200 font-bold text-casa-800",
           }}
+          locale={es}
         />
       </div>
 
