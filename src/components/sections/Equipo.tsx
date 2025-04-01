@@ -1,4 +1,3 @@
-
 import { Card, CardContent } from "@/components/ui/card";
 export function Equipo() {
   return <section id="equipo" className="section bg-white">
@@ -11,10 +10,10 @@ export function Equipo() {
           {/* Imágenes de la comunidad - sin superposición */}
           <div className="relative h-[400px] flex items-start justify-between flex-wrap">
             <div className="w-[48%] h-[48%] overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
-              <img alt="Comunidad CASA" className="object-cover w-full h-full" src="/lovable-uploads/a8df8ec1-5023-4c67-8abb-52c3d59098cc.jpg" />
+              <img alt="Comunidad CASA" className="object-cover w-full h-full" src="/lovable-uploads/6557351c-1481-42de-b3be-b9077ea618d7.png" />
             </div>
             <div className="w-[48%] h-[48%] overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
-              <img src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
+              <img alt="Comunidad CASA" className="object-cover w-full h-full" src="/lovable-uploads/8fb1b293-53ea-495a-8af0-80ca5e683c9b.png" />
             </div>
             <div className="w-[48%] h-[48%] mx-auto mt-4 overflow-hidden shadow-md rounded-lg transition-transform hover:scale-105">
               <img src="/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png" alt="Comunidad CASA" className="object-cover w-full h-full" />
