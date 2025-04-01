@@ -17,7 +17,7 @@ export function Navbar() {
   const { user, profile, logout } = useAuth();
   const isScrolled = useNavbarScroll();
 
-  // Esta función se ejecuta después de cerrar el modal de perfil
+  // Separate handler function for closing the profile modal
   const handleCloseProfileModal = () => {
     setIsProfileModalOpen(false);
   };
