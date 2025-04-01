@@ -63,7 +63,26 @@ const handler = async (req: Request): Promise<Response> => {
         `,
       });
 
-      console.log("Email enviado exitosamente:", JSON.stringify(emailResponse));
+      console.log("Respuesta completa de Resend:", JSON.stringify(emailResponse, null, 2));
+
+      // Check if there's an error in the response
+      if (emailResponse.error) {
+        console.error("Error en la respuesta de Resend:", emailResponse.error);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Error al enviar el email: ${emailResponse.error.message || "Error desconocido"}`,
+            details: emailResponse.error
+          }),
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders,
+            },
+          }
+        );
+      }
 
       return new Response(
         JSON.stringify({ 
@@ -85,7 +104,8 @@ const handler = async (req: Request): Promise<Response> => {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Error al enviar el email: ${emailError.message || "Error desconocido"}` 
+          error: `Error al enviar el email: ${emailError.message || "Error desconocido"}`,
+          stack: emailError.stack
         }),
         {
           status: 500,
@@ -102,7 +122,8 @@ const handler = async (req: Request): Promise<Response> => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message || "Error desconocido"
+        error: error.message || "Error desconocido",
+        stack: error.stack
       }),
       {
         status: 500,
