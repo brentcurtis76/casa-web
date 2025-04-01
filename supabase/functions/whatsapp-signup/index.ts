@@ -46,7 +46,7 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     const resend = new Resend(resendApiKey);
-    const destinationEmail = "sanandres@iach.cl";
+    const destinationEmail = "brentcurtis76@gmail.com";
 
     try {
       console.log(`Enviando email a: ${destinationEmail} con asunto: Agrega a ${name} a la lista de difusión de CASA`);
@@ -137,3 +137,4 @@ const handler = async (req: Request): Promise<Response> => {
 };
 
 serve(handler);
+
