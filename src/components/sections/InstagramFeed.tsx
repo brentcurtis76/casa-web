@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Instagram, Hexagon, Youtube, Send } from "lucide-react";
+import { Instagram, SwitchCamera, Youtube, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -102,7 +102,7 @@ export function InstagramFeed() {
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
                   <div className="bg-black text-white p-2 rounded-full">
-                    <Hexagon className="h-5 w-5" />
+                    <SwitchCamera className="h-5 w-5" />
                   </div>
                   <span className="font-medium">@anglicanasanandres</span>
                 </a>
