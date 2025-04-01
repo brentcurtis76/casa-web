@@ -1,5 +1,6 @@
+
 import { Mail, MapPin, Phone } from "lucide-react";
-import { FacebookIcon, InstagramIcon, TwitterIcon, YoutubeIcon } from "@/components/icons/SocialIcons";
+
 export function Footer() {
   return <footer className="bg-casa-800 text-white pt-16 pb-8">
       <div className="container-custom">
@@ -11,20 +12,6 @@ export function Footer() {
             <p className="text-casa-100 mb-6">
               Un espacio de amor, inclusión y esperanza para todos. Donde cada persona es bienvenida tal como es.
             </p>
-            <div className="flex space-x-4">
-              <a href="#" className="text-casa-200 hover:text-white transition w-6 h-6">
-                <FacebookIcon />
-              </a>
-              <a href="https://www.instagram.com/anglicanasanandres" className="text-casa-200 hover:text-white transition w-6 h-6">
-                <InstagramIcon />
-              </a>
-              <a href="#" className="text-casa-200 hover:text-white transition w-6 h-6">
-                <TwitterIcon />
-              </a>
-              <a href="https://www.youtube.com/c/ComunidadAnglicanaSanAndrés" className="text-casa-200 hover:text-white transition w-6 h-6">
-                <YoutubeIcon />
-              </a>
-            </div>
           </div>
 
           <div>
