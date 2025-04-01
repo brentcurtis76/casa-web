@@ -124,34 +124,29 @@ export function UserProfile() {
       const fileExt = file.name.split('.').pop();
       const filePath = `${user?.id}-${Math.random()}.${fileExt}`;
 
-      // Comprobar si el bucket existe, si no, lo creamos
-      const { data: bucketExists } = await supabase.storage.getBucket('avatars');
-      if (!bucketExists) {
-        await supabase.storage.createBucket('avatars', {
-          public: true,
-          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'],
-          fileSizeLimit: 1024 * 1024, // 1MB
-        });
-      }
-
+      // Upload the file to Supabase storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
 
       if (uploadError) {
         throw uploadError;
       }
 
+      // Get the public URL for the uploaded file
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
       
-      const avatarUrl = data.publicUrl;
-      setAvatarUrl(avatarUrl);
+      const newAvatarUrl = data.publicUrl;
+      setAvatarUrl(newAvatarUrl);
 
-      // Actualizar el avatar_url en la base de datos
+      // Update the avatar_url in the profiles table
       if (user) {
         const { error } = await supabase
           .from('profiles')
-          .update({ avatar_url: avatarUrl })
+          .update({ avatar_url: newAvatarUrl })
           .eq('id', user.id);
 
         if (error) throw error;
@@ -178,7 +173,7 @@ export function UserProfile() {
       <div className="flex flex-col items-center justify-center space-y-4">
         <div className="relative">
           <Avatar className="h-24 w-24">
-            <AvatarImage src={avatarUrl || ''} />
+            <AvatarImage src={avatarUrl || undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground text-lg">
               {user?.email?.substring(0, 2).toUpperCase() || <User />}
             </AvatarFallback>
