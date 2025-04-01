@@ -1,18 +1,11 @@
-
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
-
 export function RetiroSemanaSanta() {
-  return (
-    <section id="retiro" className="section bg-white">
+  return <section id="retiro" className="section bg-white">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="order-2 md:order-1 relative h-[400px] rounded-lg overflow-hidden shadow-xl">
-            <img 
-              alt="Retiro Semana Santa" 
-              className="absolute inset-0 w-full h-full object-cover" 
-              src="/lovable-uploads/92c3ec9a-16cb-405a-86d6-0914b11e5f70.jpg" 
-            />
+            <img alt="Retiro Semana Santa" className="absolute inset-0 w-full h-full object-cover" src="/lovable-uploads/aac6de0b-8487-4a93-b074-6ff83340b495.jpg" />
           </div>
           
           <div className="order-1 md:order-2 prose prose-lg max-w-none">
@@ -48,6 +41,5 @@ export function RetiroSemanaSanta() {
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 }
