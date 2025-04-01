@@ -32,17 +32,10 @@ function Header1() {
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
             <div className="container relative mx-auto min-h-20 flex items-center justify-between">
-                {/* Logo on the left */}
-                <div className="flex items-center">
-                    <img 
-                        src="/lovable-uploads/bc608912-a57b-456f-a6c5-74ffc00e8300.png" 
-                        alt="CASA San Andrés" 
-                        className="h-16 w-auto"
-                    />
-                </div>
+                {/* Logo section removed */}
                 
                 {/* Action buttons on the right */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 w-full justify-end">
                     <Button 
                         variant="ghost" 
                         className="hidden md:inline"
@@ -111,3 +104,4 @@ function Header1() {
 }
 
 export { Header1 };
+
