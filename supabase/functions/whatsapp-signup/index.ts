@@ -53,7 +53,7 @@ const handler = async (req: Request): Promise<Response> => {
     const emailResponse = await resend.emails.send({
       from: "Anglicana San Andrés <onboarding@resend.dev>",
       to: [destinationEmail],
-      subject: "Nueva solicitud para lista de difusión WhatsApp",
+      subject: `Agrega a ${name} a la lista de difusión de CASA`,
       html: `
         <h1>Nueva solicitud para lista de difusión</h1>
         <p><strong>Nombre:</strong> ${name}</p>
