@@ -4,12 +4,12 @@ import { Footer } from '@/components/layout/Footer';
 import { Header1 } from '@/components/ui/header';
 import { Equipo } from '@/components/sections/Equipo';
 import { Eventos } from '@/components/sections/Eventos';
-import { Hero } from '@/components/sections/Hero';
 import { InstagramFeed } from '@/components/sections/InstagramFeed';
 import { Oracion } from '@/components/sections/Oracion';
 import { Participar } from '@/components/sections/Participar';
 import { Proposito } from '@/components/sections/Proposito';
 import { Sermones } from '@/components/sections/Sermones';
+import { Hero } from '@/components/ui/hero-with-group-of-images-text-and-two-buttons';
 
 const Index = () => {
   return (

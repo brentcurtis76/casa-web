@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
 import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
+import HeroDemo from "./pages/HeroDemo";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/header-demo" element={<HeaderDemo />} />
             <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
+            <Route path="/hero-demo" element={<HeroDemo />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
