@@ -55,7 +55,7 @@ export function Participar() {
     },
     {
       title: "Cursos",
-      description: "Semanalmente, ofrecemos cursos por Zoom diseñados para equiparte en tu camino. Estas sesiones interactivas brindan herramientas y perspectivas valiosas, conectándonos a pesar de la distancia y fortaleciendo nuestra fe colectiva.",
+      description: "Semanalmente, ofrecemos cursos presenciales diseñados para equiparte en tu camino. Estas sesiones interactivas brindan herramientas y perspectivas valiosas, fortaleciendo nuestra fe colectiva mientras aprendemos juntos en comunidad.",
       icon: <BookIcon size={24} className="text-casa-800" />
     }
   ];
