@@ -46,5 +46,14 @@ export const YoutubeIcon = () => (
     xmlns="http://www.w3.org/2000/svg"
   >
     <circle cx="50" cy="50" r="50" fill="currentColor" />
+    <path
+      d="M71 58.35c0 4.25-3.4 7.65-7.65 7.65H36.65c-4.25 0-7.65-3.4-7.65-7.65V41.65c0-4.25 3.4-7.65 7.65-7.65h26.7c4.25 0 7.65 3.4 7.65 7.65v16.7z"
+      fill="#fff"
+    />
+    <path
+      d="M55 50l-10-6v12l10-6z"
+      fill="currentColor"
+    />
   </svg>
 );
+
