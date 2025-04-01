@@ -10,6 +10,8 @@ import { Participar } from '@/components/sections/Participar';
 import { Proposito } from '@/components/sections/Proposito';
 import { Sermones } from '@/components/sections/Sermones';
 import { Hero } from '@/components/ui/hero-with-group-of-images-text-and-two-buttons';
+import { Formacion } from '@/components/sections/Formacion';
+import { RetiroSemanaSanta } from '@/components/sections/RetiroSemanaSanta';
 
 const Index = () => {
   return (
@@ -20,6 +22,8 @@ const Index = () => {
           <Hero />
           <Proposito />
           <Equipo />
+          <Formacion />
+          <RetiroSemanaSanta />
           <Participar />
           <Eventos />
           <Sermones />
