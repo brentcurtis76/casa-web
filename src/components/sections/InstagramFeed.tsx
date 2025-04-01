@@ -27,12 +27,12 @@ export function InstagramFeed() {
 
   // Datos de ejemplo para el feed de Instagram como fallback
   const fallbackPosts = [
-    { id: "1", imageUrl: "/lovable-uploads/f3a16c7c-e0d2-4471-9099-848c6533fb7a.png", permalink: "https://www.instagram.com" },
-    { id: "2", imageUrl: "/lovable-uploads/10870cef-f487-456b-8140-5c04bf8e4312.png", permalink: "https://www.instagram.com" },
-    { id: "3", imageUrl: "/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png", permalink: "https://www.instagram.com" },
-    { id: "4", imageUrl: "/lovable-uploads/105a46c3-8fe4-429c-af7d-79a85edc4694.png", permalink: "https://www.instagram.com" },
-    { id: "5", imageUrl: "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png", permalink: "https://www.instagram.com" },
-    { id: "6", imageUrl: "/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png", permalink: "https://www.instagram.com" }
+    { id: "1", imageUrl: "/lovable-uploads/f3a16c7c-e0d2-4471-9099-848c6533fb7a.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() },
+    { id: "2", imageUrl: "/lovable-uploads/10870cef-f487-456b-8140-5c04bf8e4312.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() },
+    { id: "3", imageUrl: "/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() },
+    { id: "4", imageUrl: "/lovable-uploads/105a46c3-8fe4-429c-af7d-79a85edc4694.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() },
+    { id: "5", imageUrl: "/lovable-uploads/f29336e6-582e-4bd6-8fbf-e8fe350391e7.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() },
+    { id: "6", imageUrl: "/lovable-uploads/530f4d22-998f-4e6e-a3b4-ec8c788e3098.png", permalink: "https://www.instagram.com", timestamp: new Date().toISOString() }
   ];
 
   useEffect(() => {
