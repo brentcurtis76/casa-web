@@ -29,16 +29,14 @@ const handler = async (req: Request): Promise<Response> => {
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (!resendApiKey) {
-      // Fallback to direct response without email if API key is missing
-      console.log("La clave de API de Resend no está configurada. Omitiendo el envío de correo electrónico.");
-      
+      console.error("Error: La clave de API de Resend no está configurada.");
       return new Response(
         JSON.stringify({ 
-          success: true, 
-          message: "Solicitud recibida correctamente (sin correo electrónico)"
+          success: false, 
+          error: "La clave de API de Resend no está configurada" 
         }),
         {
-          status: 200,
+          status: 500,
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders,
@@ -50,33 +48,54 @@ const handler = async (req: Request): Promise<Response> => {
     const resend = new Resend(resendApiKey);
     const destinationEmail = "sanandres@iach.cl";
 
-    const emailResponse = await resend.emails.send({
-      from: "Anglicana San Andrés <onboarding@resend.dev>",
-      to: [destinationEmail],
-      subject: `Agrega a ${name} a la lista de difusión de CASA`,
-      html: `
-        <h1>Nueva solicitud para lista de difusión</h1>
-        <p><strong>Nombre:</strong> ${name}</p>
-        <p><strong>Teléfono:</strong> ${phone}</p>
-        <p>Por favor agrega este contacto a la lista de difusión de WhatsApp.</p>
-      `,
-    });
+    try {
+      console.log(`Enviando email a: ${destinationEmail} con asunto: Agrega a ${name} a la lista de difusión de CASA`);
+      
+      const emailResponse = await resend.emails.send({
+        from: "Anglicana San Andrés <onboarding@resend.dev>",
+        to: [destinationEmail],
+        subject: `Agrega a ${name} a la lista de difusión de CASA`,
+        html: `
+          <h1>Nueva solicitud para lista de difusión</h1>
+          <p><strong>Nombre:</strong> ${name}</p>
+          <p><strong>Teléfono:</strong> ${phone}</p>
+          <p>Por favor agrega este contacto a la lista de difusión de WhatsApp.</p>
+        `,
+      });
 
-    console.log("Email enviado exitosamente:", emailResponse);
+      console.log("Email enviado exitosamente:", JSON.stringify(emailResponse));
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "Solicitud recibida correctamente"
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders,
-        },
-      }
-    );
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Solicitud recibida correctamente",
+          emailStatus: emailResponse
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        }
+      );
+    } catch (emailError: any) {
+      console.error("Error al enviar el email:", emailError);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Error al enviar el email: ${emailError.message || "Error desconocido"}` 
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        }
+      );
+    }
   } catch (error: any) {
     console.error("Error en la función whatsapp-signup:", error);
     

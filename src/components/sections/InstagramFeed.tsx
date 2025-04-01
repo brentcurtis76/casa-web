@@ -33,6 +33,7 @@ const formSchema = z.object({
 export function InstagramFeed() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,6 +45,8 @@ export function InstagramFeed() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setSubmitError(null);
+    setSubmitSuccess(false);
+    
     try {
       setIsSubmitting(true);
       console.log("Enviando solicitud...", values);
@@ -57,6 +60,12 @@ export function InstagramFeed() {
       }
 
       console.log("Respuesta:", data);
+      
+      if (!data.success) {
+        throw new Error(data.error || "Error al procesar la solicitud");
+      }
+
+      setSubmitSuccess(true);
       toast({
         title: "¡Solicitud enviada!",
         description: "Gracias por unirte a nuestra lista de difusión.",
@@ -65,11 +74,12 @@ export function InstagramFeed() {
       form.reset();
     } catch (error) {
       console.error("Error:", error);
-      setSubmitError(error instanceof Error ? error.message : "Ocurrió un error inesperado");
+      const errorMessage = error instanceof Error ? error.message : "Ocurrió un error inesperado";
+      setSubmitError(errorMessage);
       toast({
         variant: "destructive",
         title: "Error al enviar",
-        description: error instanceof Error ? error.message : "Ocurrió un error inesperado",
+        description: errorMessage,
       });
     } finally {
       setIsSubmitting(false);
@@ -138,6 +148,15 @@ export function InstagramFeed() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Error</AlertTitle>
                 <AlertDescription>{submitError}</AlertDescription>
+              </Alert>
+            )}
+            
+            {submitSuccess && (
+              <Alert className="mb-4 bg-green-50 border-green-200">
+                <AlertTitle className="text-green-700">¡Solicitud enviada!</AlertTitle>
+                <AlertDescription className="text-green-600">
+                  Gracias por unirte a nuestra lista de difusión.
+                </AlertDescription>
               </Alert>
             )}
             
