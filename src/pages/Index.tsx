@@ -1,7 +1,7 @@
 
 import { AuthProvider } from '@/components/auth/AuthContext';
 import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import { Header1 } from '@/components/ui/header';
 import { Equipo } from '@/components/sections/Equipo';
 import { Eventos } from '@/components/sections/Eventos';
 import { Hero } from '@/components/sections/Hero';
@@ -15,8 +15,8 @@ const Index = () => {
   return (
     <AuthProvider>
       <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <main>
+        <Header1 />
+        <main className="pt-24">
           <Hero />
           <Proposito />
           <Equipo />
