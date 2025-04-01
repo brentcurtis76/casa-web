@@ -1,22 +1,19 @@
-
 import { MoveRight, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useRef } from "react";
-
 function Hero() {
   const participarRef = useRef<HTMLDivElement>(null);
-
   const scrollToParticipar = () => {
     const participarSection = document.getElementById('participar');
     if (participarSection) {
-      participarSection.scrollIntoView({ behavior: 'smooth' });
+      participarSection.scrollIntoView({
+        behavior: 'smooth'
+      });
     }
   };
-
-  return (
-    <div className="w-full py-20 lg:py-40">
+  return <div className="w-full py-20 lg:py-40">
       <div className="container mx-auto">
         <div className="grid grid-cols-1 gap-8 items-center md:grid-cols-2">
           <div className="flex gap-4 flex-col">
@@ -53,14 +50,9 @@ function Hero() {
                       <p className="text-muted-foreground">Vicente Pérez Rosales 1765, La Reina, Santiago</p>
                     </div>
                     <div className="mt-2">
-                      <iframe 
-                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3329.938189752371!2d-70.5666986!3d-33.4207245!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9662cfa94f2e7d41%3A0x8e14039b12e5c74b!2sVicente%20P%C3%A9rez%20Rosales%201765%2C%20La%20Reina%2C%20Regi%C3%B3n%20Metropolitana!5e0!3m2!1ses!2scl!4v1719528142344!5m2!1ses!2scl" 
-                        width="100%" 
-                        height="300" 
-                        style={{ border: 0 }} 
-                        allowFullScreen 
-                        loading="lazy" 
-                        referrerPolicy="no-referrer-when-downgrade">
+                      <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3329.938189752371!2d-70.5666986!3d-33.4207245!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9662cfa94f2e7d41%3A0x8e14039b12e5c74b!2sVicente%20P%C3%A9rez%20Rosales%201765%2C%20La%20Reina%2C%20Regi%C3%B3n%20Metropolitana!5e0!3m2!1ses!2scl!4v1719528142344!5m2!1ses!2scl" width="100%" height="300" style={{
+                      border: 0
+                    }} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade">
                       </iframe>
                     </div>
                   </div>
@@ -73,31 +65,17 @@ function Hero() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-muted rounded-md aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/bf924b41-2c5a-41f6-9774-09c75868c107.png" 
-                alt="Church building with cross" 
-                className="w-full h-full object-cover"
-              />
+              <img alt="Church building with cross" className="w-full h-full object-cover" src="/lovable-uploads/80737c28-0e51-41ab-9749-01bc313de2a8.jpg" />
             </div>
             <div className="bg-muted rounded-md row-span-2 overflow-hidden">
-              <img 
-                src="/lovable-uploads/8b822767-4e31-4760-b15e-264a2086a357.png" 
-                alt="Child and adult interacting" 
-                className="w-full h-full object-cover"
-              />
+              <img alt="Child and adult interacting" className="w-full h-full object-contain" src="/lovable-uploads/5902a974-c6e8-4fe6-aa5c-0a33eb6dce5c.png" />
             </div>
             <div className="bg-muted rounded-md aspect-square overflow-hidden">
-              <img 
-                src="/lovable-uploads/26b28f0b-f024-4f8d-98e8-52227c068246.png" 
-                alt="People embracing" 
-                className="w-full h-full object-cover"
-              />
+              <img src="/lovable-uploads/26b28f0b-f024-4f8d-98e8-52227c068246.png" alt="People embracing" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 }
-
 export { Hero };
