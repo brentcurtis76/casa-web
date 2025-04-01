@@ -2,14 +2,11 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ProfileModal } from "@/components/profile/ProfileModal";
-import { NavigationMenuItems } from "./header/NavigationMenuItems";
 import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
-import { navigationItems } from "./header/navigationData";
 import { ContactModal } from "@/components/contact/ContactModal";
 import { DonationModal } from "@/components/donation/DonationModal";
 
@@ -34,12 +31,9 @@ function Header1() {
 
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
-            <div className="container relative mx-auto min-h-20 flex gap-4 flex-row lg:grid lg:grid-cols-3 items-center">
-                <div className="justify-start items-center gap-4 lg:flex hidden flex-row">
-                    <NavigationMenuItems items={navigationItems} />
-                </div>
-                
-                <div className="flex lg:justify-center px-4">
+            <div className="container relative mx-auto min-h-20 flex items-center justify-between">
+                {/* Logo on the left */}
+                <div className="flex items-center">
                     <img 
                         src="/lovable-uploads/bc608912-a57b-456f-a6c5-74ffc00e8300.png" 
                         alt="CASA San Andrés" 
@@ -47,7 +41,8 @@ function Header1() {
                     />
                 </div>
                 
-                <div className="flex justify-end w-full gap-4 items-center">
+                {/* Action buttons on the right */}
+                <div className="flex items-center gap-4">
                     <Button 
                         variant="ghost" 
                         className="hidden md:inline"
@@ -55,7 +50,6 @@ function Header1() {
                     >
                         Contactar
                     </Button>
-                    <div className="border-r hidden md:inline"></div>
                     
                     {user ? (
                         <UserMenu 
@@ -71,26 +65,26 @@ function Header1() {
                     )}
                     
                     <Button onClick={openDonationModal}>Haz un aporte</Button>
-                </div>
-                
-                <div className="flex w-12 shrink lg:hidden items-end justify-end">
-                    <Button variant="ghost" onClick={toggleMenu}>
+                    
+                    {/* Mobile menu button */}
+                    <Button variant="ghost" className="md:hidden" onClick={toggleMenu}>
                         {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                     </Button>
-                    
-                    <MobileMenu 
-                        isOpen={isOpen}
-                        navigationItems={navigationItems}
-                        user={user}
-                        profile={profile}
-                        logout={logout}
-                        openProfileModal={openProfileModal}
-                        openAuthModal={openAuthModal}
-                        openContactModal={openContactModal}
-                        openDonationModal={openDonationModal}
-                        closeMenu={closeMenu}
-                    />
                 </div>
+                
+                {/* Simplified mobile menu */}
+                <MobileMenu 
+                    isOpen={isOpen}
+                    navigationItems={[]}
+                    user={user}
+                    profile={profile}
+                    logout={logout}
+                    openProfileModal={openProfileModal}
+                    openAuthModal={openAuthModal}
+                    openContactModal={openContactModal}
+                    openDonationModal={openDonationModal}
+                    closeMenu={closeMenu}
+                />
             </div>
             
             <AuthModal 
