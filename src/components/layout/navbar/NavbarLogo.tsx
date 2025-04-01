@@ -7,7 +7,7 @@ export function NavbarLogo() {
       <img 
         src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png" 
         alt="CASA Logo" 
-        className="h-12 w-auto"
+        className="h-12 md:h-16 w-auto"
       />
     </a>
   );
