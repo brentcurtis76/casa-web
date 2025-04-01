@@ -1,12 +1,14 @@
+
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
+
 export function Formacion() {
   return <section id="formacion" className="section bg-casa-50">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="prose prose-lg max-w-none">
             <h2 className="text-3xl md:text-4xl font-light text-casa-800 mb-6">
-              Inscríbete en nuestra formación Bienvenidos a La Familia
+              Inscríbete en nuestra formación <strong>Bienvenidos a La Familia</strong>
             </h2>
             <p className="text-casa-700">
               Bienvenidos a La Familia de CASA es un programa diseñado para quienes desean conocer más sobre nuestra comunidad y descubrir respuestas a preguntas clave como: ¿Quién somos?, ¿De dónde venimos?, ¿Hacia dónde vamos?, y ¿Cuál es mi lugar en CASA?.
