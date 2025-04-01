@@ -32,17 +32,20 @@ export function EventCalendar() {
     const fetchEvents = async () => {
       try {
         setIsLoading(true);
+        // Use a type assertion to fix the TypeScript error
         const { data, error } = await supabase
           .from('events')
-          .select('*');
+          .select('*') as { data: Event[] | null; error: Error | null };
         
         if (error) {
           throw error;
         }
         
-        setEvents(data as Event[]);
-        if (selectedDate) {
-          filterEventsByDate(selectedDate, data as Event[]);
+        if (data) {
+          setEvents(data);
+          if (selectedDate) {
+            filterEventsByDate(selectedDate, data);
+          }
         }
       } catch (error) {
         console.error('Error fetching events:', error);
