@@ -1,16 +1,19 @@
 
-import { Header1 } from "@/components/ui/header";
+import { AuthProvider } from '@/components/auth/AuthContext';
+import { Header1 } from '@/components/ui/header';
 
-function HeaderDemo() {
+const HeaderDemo = () => {
   return (
-    <div className="block min-h-screen pt-24">
-      <Header1 />
-      <div className="container mx-auto mt-20">
-        <h1 className="text-3xl font-bold">Header Demo Page</h1>
-        <p className="mt-4">This page demonstrates the Header1 component with the new CASA San Andrés logo.</p>
+    <AuthProvider>
+      <div className="min-h-screen">
+        <Header1 />
+        <div className="pt-20 container mx-auto">
+          <h1 className="text-2xl font-bold mb-4">Header Demo</h1>
+          <p>Esta página muestra el componente de cabecera en acción.</p>
+        </div>
       </div>
-    </div>
+    </AuthProvider>
   );
-}
+};
 
 export default HeaderDemo;

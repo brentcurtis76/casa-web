@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import {
     NavigationMenu,
@@ -11,10 +11,15 @@ import {
     NavigationMenuTrigger,
 } from "@/components/ui/navigation-menu";
 import { Menu, MoveRight, X } from "lucide-react";
-import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/components/auth/AuthContext";
+import { AuthModal } from "@/components/auth/AuthModal";
 
 function Header1() {
+    const { user, logout } = useAuth();
+    const [isOpen, setOpen] = useState(false);
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    
     const navigationItems = [
         {
             title: "Inicio",
@@ -63,7 +68,6 @@ function Header1() {
         },
     ];
 
-    const [isOpen, setOpen] = useState(false);
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
             <div className="container relative mx-auto min-h-20 flex gap-4 flex-row lg:grid lg:grid-cols-3 items-center">
@@ -131,7 +135,13 @@ function Header1() {
                         Contactar
                     </Button>
                     <div className="border-r hidden md:inline"></div>
-                    <Button variant="outline">Iniciar Sesión</Button>
+                    {user ? (
+                        <Button variant="outline" onClick={logout}>Cerrar Sesión</Button>
+                    ) : (
+                        <Button variant="outline" onClick={() => setIsAuthModalOpen(true)}>
+                            Iniciar Sesión
+                        </Button>
+                    )}
                     <Button>Participar</Button>
                 </div>
                 <div className="flex w-12 shrink lg:hidden items-end justify-end">
@@ -170,10 +180,35 @@ function Header1() {
                                     </div>
                                 </div>
                             ))}
+                            {user ? (
+                                <div className="flex flex-col gap-2 mt-4">
+                                    <Button variant="outline" onClick={logout} className="w-full">
+                                        Cerrar Sesión
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-2 mt-4">
+                                    <Button 
+                                        variant="outline" 
+                                        onClick={() => {
+                                            setIsAuthModalOpen(true);
+                                            setOpen(false);
+                                        }}
+                                        className="w-full"
+                                    >
+                                        Iniciar Sesión
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </div>
+            
+            <AuthModal 
+                isOpen={isAuthModalOpen} 
+                onClose={() => setIsAuthModalOpen(false)} 
+            />
         </header>
     );
 }
