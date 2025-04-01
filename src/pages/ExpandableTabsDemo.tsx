@@ -3,11 +3,24 @@ import { Bell, Home, HelpCircle, Settings, Shield, Mail, User, FileText, Lock } 
 import { ExpandableTabs } from "@/components/ui/expandable-tabs";
 import { Header1 } from '@/components/ui/header';
 
+// Define the tab types explicitly to match what expandable-tabs expects
+type TabItem = {
+  title: string;
+  icon: React.FC<any>;
+  type?: undefined;
+};
+
+type SeparatorItem = {
+  type: "separator";
+};
+
+type TabsItem = TabItem | SeparatorItem;
+
 function DefaultDemo() {
-  const tabs = [
+  const tabs: TabsItem[] = [
     { title: "Dashboard", icon: Home },
     { title: "Notifications", icon: Bell },
-    { type: "separator" as const },
+    { type: "separator" } as SeparatorItem,
     { title: "Settings", icon: Settings },
     { title: "Support", icon: HelpCircle },
     { title: "Security", icon: Shield },
@@ -21,10 +34,10 @@ function DefaultDemo() {
 }
 
 function CustomColorDemo() {
-  const tabs = [
+  const tabs: TabsItem[] = [
     { title: "Profile", icon: User },
     { title: "Messages", icon: Mail },
-    { type: "separator" as const },
+    { type: "separator" } as SeparatorItem,
     { title: "Documents", icon: FileText },
     { title: "Privacy", icon: Lock },
   ];

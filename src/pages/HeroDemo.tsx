@@ -6,7 +6,7 @@ function HeroDemo() {
   return (
     <div className="min-h-screen">
       <Header1 />
-      <div className="pt-28">
+      <div className="pt-0">
         <Hero />
       </div>
     </div>

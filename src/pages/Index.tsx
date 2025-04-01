@@ -16,7 +16,7 @@ const Index = () => {
     <AuthProvider>
       <div className="min-h-screen flex flex-col">
         <Header1 />
-        <main className="pt-24">
+        <main className="pt-0">
           <Hero />
           <Proposito />
           <Equipo />
