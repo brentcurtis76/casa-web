@@ -15,7 +15,6 @@ import {
     MoveRight, 
     X, 
     User,
-    Settings,
     LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -68,6 +67,13 @@ function Header1() {
             console.error('Error fetching profile:', error);
         }
     }
+
+    const handleCloseProfileModal = () => {
+        setIsProfileModalOpen(false);
+        if (user) {
+            fetchProfile();
+        }
+    };
 
     const navigationItems = [
         {
@@ -199,10 +205,6 @@ function Header1() {
                                     <User className="mr-2 h-4 w-4" />
                                     <span>Mi Perfil</span>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
-                                    <Settings className="mr-2 h-4 w-4" />
-                                    <span>Configuración</span>
-                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={logout}>
                                     <LogOut className="mr-2 h-4 w-4" />
@@ -295,7 +297,7 @@ function Header1() {
             
             <ProfileModal 
                 isOpen={isProfileModalOpen}
-                onClose={() => setIsProfileModalOpen(false)}
+                onClose={handleCloseProfileModal}
             />
         </header>
     );

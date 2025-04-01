@@ -33,6 +33,11 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Esta función se ejecuta después de cerrar el modal de perfil
+  const handleCloseProfileModal = () => {
+    setIsProfileModalOpen(false);
+  };
+
   const getInitials = (name: string) => {
     return name
       ?.split(' ')
@@ -206,7 +211,7 @@ export function Navbar() {
       
       <ProfileModal
         isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
+        onClose={handleCloseProfileModal}
       />
     </>
   );
