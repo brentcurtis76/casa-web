@@ -42,10 +42,11 @@ export function ContactForm({ onSuccess }: ContactFormProps) {
 
   const onSubmit = async (data: ContactFormValues) => {
     try {
-      // Here you would normally send the form data to your backend
-      console.log('Contact form data:', data);
+      // Send data to email
+      console.log('Sending contact form data to brentcurtis76@gmail.com:', data);
       
-      // Simulate API call
+      // Here you would send the form data to a backend service
+      // that would forward this to brentcurtis76@gmail.com
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       toast.success('Tu mensaje ha sido enviado correctamente');
