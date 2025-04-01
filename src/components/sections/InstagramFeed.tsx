@@ -1,6 +1,7 @@
 
 import { useState } from "react";
-import { Instagram, SwitchCamera, Youtube, Send } from "lucide-react";
+import { Send } from "lucide-react";
+import { InstagramIcon, TikTokIcon, YoutubeIcon } from "@/components/icons/SocialIcons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -89,8 +90,8 @@ export function InstagramFeed() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <div className="bg-pink-600 text-white p-2 rounded-full">
-                    <Instagram className="h-5 w-5" />
+                  <div className="bg-pink-600 text-white p-2 rounded-full w-9 h-9 flex items-center justify-center">
+                    <InstagramIcon />
                   </div>
                   <span className="font-medium">@anglicanasanandres</span>
                 </a>
@@ -101,8 +102,8 @@ export function InstagramFeed() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <div className="bg-black text-white p-2 rounded-full">
-                    <SwitchCamera className="h-5 w-5" />
+                  <div className="bg-black text-white p-2 rounded-full w-9 h-9 flex items-center justify-center">
+                    <TikTokIcon />
                   </div>
                   <span className="font-medium">@anglicanasanandres</span>
                 </a>
@@ -113,8 +114,8 @@ export function InstagramFeed() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <div className="bg-red-600 text-white p-2 rounded-full">
-                    <Youtube className="h-5 w-5" />
+                  <div className="bg-red-600 text-white p-2 rounded-full w-9 h-9 flex items-center justify-center">
+                    <YoutubeIcon />
                   </div>
                   <span className="font-medium">Comunidad Anglicana San Andrés</span>
                 </a>
