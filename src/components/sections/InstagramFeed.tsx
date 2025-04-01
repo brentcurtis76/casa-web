@@ -22,7 +22,7 @@ interface InstagramUser {
 
 export function InstagramFeed() {
   const [instagramPosts, setInstagramPosts] = useState<InstagramPost[]>([]);
-  const [username, setUsername] = useState("iglesiacasa");
+  const [username, setUsername] = useState("anglicanasanandres");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
