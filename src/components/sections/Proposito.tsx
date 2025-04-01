@@ -1,7 +1,5 @@
-
 export function Proposito() {
-  return (
-    <section id="proposito" className="section bg-secondary/50">
+  return <section id="proposito" className="section bg-secondary/50">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div>
@@ -21,14 +19,9 @@ export function Proposito() {
             </div>
           </div>
           <div className="relative h-[400px] md:h-[500px] rounded-lg overflow-hidden shadow-xl">
-            <img 
-              src="/lovable-uploads/4590165d-08cf-4cf7-8a81-482f0ebbf654.png" 
-              alt="Comunidad CASA" 
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+            <img alt="Comunidad CASA" className="absolute inset-0 w-full h-full object-cover" src="/lovable-uploads/edce4927-d243-4828-83bc-9bd3c8d52b8f.jpg" />
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 }
