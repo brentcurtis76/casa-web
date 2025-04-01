@@ -81,6 +81,13 @@ export function NavbarMobileMenu({
         >
           Oración
         </a>
+        <a
+          href="#redes-sociales"
+          className="text-foreground hover:text-casa-500 transition py-2"
+          onClick={(e) => handleNavigation('#redes-sociales', e)}
+        >
+          Redes Sociales
+        </a>
 
         {user ? (
           <div className="space-y-2">

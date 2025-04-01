@@ -11,6 +11,7 @@ import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
 import { navigationItems } from "./header/navigationData";
 import { ContactModal } from "@/components/contact/ContactModal";
+import { DonationModal } from "@/components/donation/DonationModal";
 
 function Header1() {
     const { user, profile, logout } = useAuth();
@@ -18,6 +19,7 @@ function Header1() {
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+    const [isDonationModalOpen, setIsDonationModalOpen] = useState(false);
     
     const handleCloseProfileModal = () => {
         setIsProfileModalOpen(false);
@@ -27,6 +29,7 @@ function Header1() {
     const openProfileModal = () => setIsProfileModalOpen(true);
     const openAuthModal = () => setIsAuthModalOpen(true);
     const openContactModal = () => setIsContactModalOpen(true);
+    const openDonationModal = () => setIsDonationModalOpen(true);
     const closeMenu = () => setOpen(false);
 
     return (
@@ -67,7 +70,7 @@ function Header1() {
                         </Button>
                     )}
                     
-                    <Button>Participar</Button>
+                    <Button onClick={openDonationModal}>Haz un aporte</Button>
                 </div>
                 
                 <div className="flex w-12 shrink lg:hidden items-end justify-end">
@@ -84,6 +87,7 @@ function Header1() {
                         openProfileModal={openProfileModal}
                         openAuthModal={openAuthModal}
                         openContactModal={openContactModal}
+                        openDonationModal={openDonationModal}
                         closeMenu={closeMenu}
                     />
                 </div>
@@ -102,6 +106,11 @@ function Header1() {
             <ContactModal
                 isOpen={isContactModalOpen}
                 onClose={() => setIsContactModalOpen(false)}
+            />
+
+            <DonationModal
+                isOpen={isDonationModalOpen}
+                onClose={() => setIsDonationModalOpen(false)}
             />
         </header>
     );

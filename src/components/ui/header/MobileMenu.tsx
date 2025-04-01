@@ -14,6 +14,7 @@ interface MobileMenuProps {
     openProfileModal: () => void;
     openAuthModal: () => void;
     openContactModal: () => void;
+    openDonationModal: () => void;
     closeMenu: () => void;
 }
 
@@ -26,6 +27,7 @@ export function MobileMenu({
     openProfileModal,
     openAuthModal,
     openContactModal,
+    openDonationModal,
     closeMenu 
 }: MobileMenuProps) {
     if (!isOpen) return null;
@@ -49,6 +51,16 @@ export function MobileMenu({
                         className="w-full mb-4"
                     >
                         Contactar
+                    </Button>
+
+                    <Button 
+                        onClick={() => {
+                            openDonationModal();
+                            closeMenu();
+                        }}
+                        className="w-full mb-4"
+                    >
+                        Haz un aporte
                     </Button>
 
                     {user ? (

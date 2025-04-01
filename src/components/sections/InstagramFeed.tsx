@@ -89,12 +89,12 @@ export function InstagramFeed() {
   return (
     <section className="section bg-white" id="redes-sociales">
       <div className="container-custom">
-        <h2 className="text-2xl md:text-3xl font-bold text-casa-700 mb-8">
-          Síguenos en redes sociales
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           <div className="space-y-6">
+            <h2 className="text-2xl md:text-3xl font-bold text-casa-700 mb-8">
+              Síguenos en redes sociales
+            </h2>
+            
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-casa-600">Nuestras redes</h3>
               

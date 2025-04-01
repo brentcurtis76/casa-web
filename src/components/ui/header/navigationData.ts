@@ -40,8 +40,8 @@ export const navigationItems = [
                 href: "/#oracion",
             },
             {
-                title: "Instagram",
-                href: "/#instagram",
+                title: "Redes Sociales",
+                href: "/#redes-sociales",
             },
         ],
     },
