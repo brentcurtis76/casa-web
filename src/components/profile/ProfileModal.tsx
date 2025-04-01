@@ -14,14 +14,13 @@ interface ProfileModalProps {
 }
 
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const handleClose = () => {
-    if (onClose) onClose();
-  };
-
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open) handleClose();
-    }}>
+    <Dialog 
+      open={isOpen} 
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl font-serif">Mi Perfil</DialogTitle>
@@ -29,7 +28,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             Actualiza tu información y foto de perfil
           </DialogDescription>
         </DialogHeader>
-        <UserProfile onClose={handleClose} />
+        <UserProfile onClose={onClose} />
       </DialogContent>
     </Dialog>
   );

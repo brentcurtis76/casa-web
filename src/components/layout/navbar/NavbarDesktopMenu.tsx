@@ -14,7 +14,7 @@ import { User } from 'lucide-react';
 interface NavbarDesktopMenuProps {
   user: any;
   profile: any;
-  setIsProfileModalOpen: (isOpen: boolean) => void;
+  setIsProfileModalOpen: () => void;
   setIsAuthModalOpen: (isOpen: boolean) => void;
   logout: () => void;
   getInitials: (name: string) => string;
@@ -75,7 +75,7 @@ export function NavbarDesktopMenu({
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+            <DropdownMenuItem onClick={setIsProfileModalOpen}>
               <User className="mr-2 h-4 w-4" />
               Mi Perfil
             </DropdownMenuItem>

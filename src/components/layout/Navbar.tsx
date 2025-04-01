@@ -17,7 +17,10 @@ export function Navbar() {
   const { user, profile, logout } = useAuth();
   const isScrolled = useNavbarScroll();
 
-  // Separate handler function for closing the profile modal
+  const handleOpenProfileModal = () => {
+    setIsProfileModalOpen(true);
+  };
+
   const handleCloseProfileModal = () => {
     setIsProfileModalOpen(false);
   };
@@ -46,7 +49,7 @@ export function Navbar() {
           <NavbarDesktopMenu 
             user={user}
             profile={profile}
-            setIsProfileModalOpen={setIsProfileModalOpen}
+            setIsProfileModalOpen={handleOpenProfileModal}
             setIsAuthModalOpen={setIsAuthModalOpen}
             logout={logout}
             getInitials={getInitials}
@@ -65,7 +68,7 @@ export function Navbar() {
         <NavbarMobileMenu 
           isMenuOpen={isMenuOpen}
           user={user}
-          setIsProfileModalOpen={setIsProfileModalOpen}
+          setIsProfileModalOpen={handleOpenProfileModal}
           setIsAuthModalOpen={setIsAuthModalOpen}
           setIsMenuOpen={setIsMenuOpen}
           logout={logout}
