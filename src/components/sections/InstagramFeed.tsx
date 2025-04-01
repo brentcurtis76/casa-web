@@ -11,6 +11,13 @@ interface InstagramPost {
   imageUrl: string;
   caption?: string;
   permalink: string;
+  timestamp: string;
+}
+
+interface InstagramUser {
+  username: string;
+  accountType: string;
+  mediaCount: number;
 }
 
 export function InstagramFeed() {
@@ -75,7 +82,7 @@ export function InstagramFeed() {
   }, []);
 
   return (
-    <section className="section bg-white">
+    <section className="section bg-white" id="instagram">
       <div className="container-custom">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center">
