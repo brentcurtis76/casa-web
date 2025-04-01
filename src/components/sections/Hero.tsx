@@ -4,6 +4,7 @@ import { ImagesSlider } from '@/components/ui/images-slider';
 import { motion } from 'framer-motion';
 
 export function Hero() {
+  // Make sure these image paths are correct
   const images = [
     "/lovable-uploads/7d5bf1f7-37b6-4e27-88e9-c3d1efe6771c.png",
     "/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png",

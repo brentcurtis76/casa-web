@@ -39,26 +39,48 @@ export const ImagesSlider = ({
 
   useEffect(() => {
     loadImages();
-  }, []);
+  }, [images]);
 
   const loadImages = () => {
+    if (images.length === 0) return;
+    
     setLoading(true);
+    console.log("Attempting to load images:", images);
+    
+    // If we have no images or they're invalid, set a default state
+    if (!images || images.length === 0) {
+      setLoading(false);
+      return;
+    }
+    
     const loadPromises = images.map((image) => {
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.src = image;
-        img.onload = () => resolve(image);
-        img.onerror = reject;
+        img.onload = () => {
+          console.log("Image loaded successfully:", image);
+          resolve(image);
+        };
+        img.onerror = (e) => {
+          console.error("Failed to load image:", image, e);
+          reject(e);
+        };
       });
     });
 
     Promise.all(loadPromises)
       .then((loadedImages) => {
+        console.log("All images loaded successfully:", loadedImages);
         setLoadedImages(loadedImages as string[]);
         setLoading(false);
       })
-      .catch((error) => console.error("Failed to load images", error));
+      .catch((error) => {
+        console.error("Error loading images:", error);
+        // If we fail to load images, still show what we can
+        setLoading(false);
+      });
   };
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight") {
@@ -115,7 +137,8 @@ export const ImagesSlider = ({
     },
   };
 
-  const areImagesLoaded = loadedImages.length > 0;
+  // Consider images loaded if we have at least one image OR loading is done
+  const areImagesLoaded = loadedImages.length > 0 || (!loading && images.length > 0);
 
   return (
     <div
@@ -127,8 +150,10 @@ export const ImagesSlider = ({
         perspective: "1000px",
       }}
     >
-      {areImagesLoaded && children}
-      {areImagesLoaded && overlay && (
+      {/* Always render children to prevent blank screen */}
+      {children}
+      
+      {overlay && (
         <div
           className={cn("absolute inset-0 bg-black/60 z-40", overlayClassName)}
         />
@@ -138,7 +163,7 @@ export const ImagesSlider = ({
         <AnimatePresence>
           <motion.img
             key={currentIndex}
-            src={loadedImages[currentIndex]}
+            src={loadedImages[currentIndex] || images[currentIndex]}
             initial="initial"
             animate="visible"
             exit={direction === "up" ? "upExit" : "downExit"}
