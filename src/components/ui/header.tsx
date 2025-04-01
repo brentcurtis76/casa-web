@@ -119,11 +119,11 @@ function Header1() {
                         </NavigationMenuList>
                     </NavigationMenu>
                 </div>
-                <div className="flex lg:justify-center">
+                <div className="flex lg:justify-center px-4">
                     <img 
                         src="/lovable-uploads/bc608912-a57b-456f-a6c5-74ffc00e8300.png" 
                         alt="CASA San Andrés" 
-                        className="h-24 w-auto"
+                        className="h-16 w-auto"
                     />
                 </div>
                 <div className="flex justify-end w-full gap-4">
