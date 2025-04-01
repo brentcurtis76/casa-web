@@ -28,24 +28,62 @@ export function NavbarDesktopMenu({
   logout,
   getInitials
 }: NavbarDesktopMenuProps) {
+  const handleNavigation = (href: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    
+    if (href.includes('#')) {
+      const id = href.split('#')[1];
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      window.location.href = href;
+    }
+  };
+
   return (
     <div className="hidden lg:flex items-center space-x-8">
-      <a href="#proposito" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#proposito" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#proposito', e)}
+      >
         Sentido & Propósito
       </a>
-      <a href="#equipo" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#equipo" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#equipo', e)}
+      >
         Equipo
       </a>
-      <a href="#participar" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#participar" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#participar', e)}
+      >
         Participar
       </a>
-      <a href="#eventos" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#eventos" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#eventos', e)}
+      >
         Eventos
       </a>
-      <a href="#sermones" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#sermones" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#sermones', e)}
+      >
         Reflexiones
       </a>
-      <a href="#oracion" className="text-foreground hover:text-casa-500 transition">
+      <a 
+        href="#oracion" 
+        className="text-foreground hover:text-casa-500 transition"
+        onClick={(e) => handleNavigation('#oracion', e)}
+      >
         Oración
       </a>
 

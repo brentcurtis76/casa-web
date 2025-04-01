@@ -37,6 +37,23 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
         if (onItemClick) onItemClick();
     };
 
+    const handleNavigation = (href: string, event: React.MouseEvent) => {
+        event.preventDefault();
+        
+        // For hash links, scroll to the section
+        if (href.includes('#') && window.location.pathname === '/') {
+            const id = href.split('#')[1];
+            const element = document.getElementById(id);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+                if (onItemClick) onItemClick();
+            }
+        } else {
+            // For regular navigation
+            window.location.href = href;
+        }
+    };
+
     if (isMobile) {
         return (
             <>
@@ -44,30 +61,30 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                     <div key={item.title}>
                         <div className="flex flex-col gap-2">
                             {item.href && !item.items ? (
-                                <Link
-                                    to={item.href}
+                                <a
+                                    href={item.href}
                                     className="flex justify-between items-center"
-                                    onClick={onItemClick}
+                                    onClick={(e) => handleNavigation(item.href!, e)}
                                 >
                                     <span className="text-lg">{item.title}</span>
                                     <MoveRight className="w-4 h-4 stroke-1 text-muted-foreground" />
-                                </Link>
+                                </a>
                             ) : (
                                 <p className="text-lg">{item.title}</p>
                             )}
                             {item.items &&
                                 item.items.map((subItem) => (
-                                    <Link
+                                    <a
                                         key={subItem.title}
-                                        to={subItem.href}
+                                        href={subItem.href}
                                         className="flex justify-between items-center"
-                                        onClick={onItemClick}
+                                        onClick={(e) => handleNavigation(subItem.href, e)}
                                     >
                                         <span className="text-muted-foreground">
                                             {subItem.title}
                                         </span>
                                         <MoveRight className="w-4 h-4 stroke-1" />
-                                    </Link>
+                                    </a>
                                 ))}
                         </div>
                     </div>
@@ -84,9 +101,12 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                         {item.href && !item.items ? (
                             <>
                                 <NavigationMenuLink asChild>
-                                    <Link to={item.href}>
+                                    <a 
+                                        href={item.href}
+                                        onClick={(e) => handleNavigation(item.href!, e)}
+                                    >
                                         <Button variant="ghost">{item.title}</Button>
-                                    </Link>
+                                    </a>
                                 </NavigationMenuLink>
                             </>
                         ) : (
@@ -113,15 +133,15 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                                         </div>
                                         <div className="flex flex-col text-sm h-full justify-end">
                                             {item.items?.map((subItem) => (
-                                                <Link
-                                                    to={subItem.href}
+                                                <a
+                                                    href={subItem.href}
                                                     key={subItem.title}
                                                     className="flex flex-row justify-between items-center hover:bg-muted py-2 px-4 rounded"
-                                                    onClick={onItemClick}
+                                                    onClick={(e) => handleNavigation(subItem.href, e)}
                                                 >
                                                     <span>{subItem.title}</span>
                                                     <MoveRight className="w-4 h-4 text-muted-foreground" />
-                                                </Link>
+                                                </a>
                                             ))}
                                         </div>
                                     </div>

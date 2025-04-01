@@ -21,48 +21,63 @@ export function NavbarMobileMenu({
 }: NavbarMobileMenuProps) {
   if (!isMenuOpen) return null;
 
+  const handleNavigation = (href: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    
+    if (href.includes('#')) {
+      const id = href.split('#')[1];
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+        setIsMenuOpen(false);
+      }
+    } else {
+      window.location.href = href;
+    }
+  };
+
   return (
     <div className="lg:hidden bg-background border-t mt-2 py-4">
       <div className="container-custom flex flex-col space-y-4">
         <a
           href="#proposito"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#proposito', e)}
         >
           Sentido & Propósito
         </a>
         <a
           href="#equipo"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#equipo', e)}
         >
           Equipo
         </a>
         <a
           href="#participar"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#participar', e)}
         >
           Participar
         </a>
         <a
           href="#eventos"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#eventos', e)}
         >
           Eventos
         </a>
         <a
           href="#sermones"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#sermones', e)}
         >
           Reflexiones
         </a>
         <a
           href="#oracion"
           className="text-foreground hover:text-casa-500 transition py-2"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={(e) => handleNavigation('#oracion', e)}
         >
           Oración
         </a>
