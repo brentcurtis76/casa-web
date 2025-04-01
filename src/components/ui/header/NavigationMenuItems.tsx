@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link } from "react-router-dom";
 import { MoveRight } from "lucide-react";
@@ -114,7 +113,7 @@ export function NavigationMenuItems({ items, isMobile = false, onItemClick }: Na
                                 <NavigationMenuTrigger className="font-medium text-sm">
                                     {item.title}
                                 </NavigationMenuTrigger>
-                                <NavigationMenuContent className="!w-[450px] p-4 z-50 bg-white shadow-md border">
+                                <NavigationMenuContent className="!w-[450px] p-4 z-50 bg-white border" style={{ backgroundColor: 'white' }}>
                                     <div className="flex flex-col lg:grid grid-cols-2 gap-4">
                                         <div className="flex flex-col h-full justify-between">
                                             <div className="flex flex-col">
