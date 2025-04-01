@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isAfter, compareAsc } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 // Define interface for the events based on the existing database structure
@@ -24,6 +24,7 @@ export function EventCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [events, setEvents] = useState<Event[]>([]);
   const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -46,6 +47,23 @@ export function EventCalendar() {
           if (selectedDate) {
             filterEventsByDate(selectedDate, data);
           }
+          
+          // Get upcoming events
+          const today = new Date();
+          const upcoming = data
+            .filter(event => {
+              const eventDate = parseEventDate(event.date);
+              return isAfter(eventDate, today) || 
+                (eventDate.getDate() === today.getDate() && 
+                 eventDate.getMonth() === today.getMonth() && 
+                 eventDate.getFullYear() === today.getFullYear());
+            })
+            .sort((a, b) => {
+              return compareAsc(parseEventDate(a.date), parseEventDate(b.date));
+            })
+            .slice(0, 5);
+          
+          setUpcomingEvents(upcoming);
         }
       } catch (error) {
         console.error('Error fetching events:', error);
@@ -107,6 +125,29 @@ export function EventCalendar() {
     return format(date, "d 'de' MMMM 'de' yyyy", { locale: es });
   };
   
+  // Render event card
+  const renderEventCard = (event: Event) => (
+    <Card key={event.id} className="overflow-hidden mb-4">
+      <CardHeader className="bg-casa-50 pb-3">
+        <CardTitle>{event.title}</CardTitle>
+        <div className="text-sm text-muted-foreground">
+          {formatDate(parseEventDate(event.date))}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <div className="flex items-center text-sm text-muted-foreground mb-2">
+          <Clock size={16} className="mr-1" />
+          <span>{event.time}</span>
+        </div>
+        <div className="flex items-center text-sm text-muted-foreground mb-3">
+          <MapPin size={16} className="mr-1" />
+          <span>{event.location}</span>
+        </div>
+        <CardDescription>{event.description}</CardDescription>
+      </CardContent>
+    </Card>
+  );
+  
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -129,57 +170,54 @@ export function EventCalendar() {
       </div>
 
       <div>
-        <h3 className="text-xl font-medium mb-4">
-          {selectedDate ? (
-            <>Eventos para el {formatDate(selectedDate)}</>
+        <div className="mb-6">
+          <h3 className="text-xl font-medium mb-4">Próximos 5 Eventos</h3>
+          
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map(i => (
+                <Card key={i} className="overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <Skeleton className="h-6 w-3/4" />
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <Skeleton className="h-4 w-1/2 mb-2" />
+                    <Skeleton className="h-4 w-2/3 mb-3" />
+                    <Skeleton className="h-4 w-5/6" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : upcomingEvents.length > 0 ? (
+            <div className="space-y-4">
+              {upcomingEvents.map(event => renderEventCard(event))}
+            </div>
           ) : (
-            'Eventos'
+            <div className="bg-secondary rounded-lg p-8 text-center">
+              <p className="text-muted-foreground">No hay eventos próximos programados.</p>
+            </div>
           )}
-        </h3>
+        </div>
         
-        {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => (
-              <Card key={i} className="overflow-hidden">
-                <CardHeader className="pb-3">
-                  <Skeleton className="h-6 w-3/4" />
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <Skeleton className="h-4 w-1/2 mb-2" />
-                  <Skeleton className="h-4 w-2/3 mb-3" />
-                  <Skeleton className="h-4 w-5/6" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : error ? (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : filteredEvents.length > 0 ? (
-          <div className="space-y-4">
-            {filteredEvents.map(event => (
-              <Card key={event.id} className="overflow-hidden">
-                <CardHeader className="bg-casa-50 pb-3">
-                  <CardTitle>{event.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="flex items-center text-sm text-muted-foreground mb-2">
-                    <Clock size={16} className="mr-1" />
-                    <span>{event.time}</span>
-                  </div>
-                  <div className="flex items-center text-sm text-muted-foreground mb-3">
-                    <MapPin size={16} className="mr-1" />
-                    <span>{event.location}</span>
-                  </div>
-                  <CardDescription>{event.description}</CardDescription>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-secondary rounded-lg p-8 text-center">
-            <p className="text-muted-foreground">No hay eventos programados para esta fecha.</p>
+        {selectedDate && (
+          <div>
+            <h3 className="text-xl font-medium mb-4">
+              Eventos para el {formatDate(selectedDate)}
+            </h3>
+            
+            {filteredEvents.length > 0 ? (
+              <div className="space-y-4">
+                {filteredEvents.map(event => renderEventCard(event))}
+              </div>
+            ) : (
+              <div className="bg-secondary rounded-lg p-8 text-center">
+                <p className="text-muted-foreground">No hay eventos programados para esta fecha.</p>
+              </div>
+            )}
           </div>
         )}
       </div>
