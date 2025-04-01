@@ -1,37 +1,21 @@
 
-import { useState, useEffect } from 'react';
-import { Menu, X, User } from 'lucide-react';
+import { useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { ProfileModal } from '@/components/profile/ProfileModal';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { NavbarDesktopMenu } from './navbar/NavbarDesktopMenu';
+import { NavbarMobileMenu } from './navbar/NavbarMobileMenu';
+import { NavbarLogo } from './navbar/NavbarLogo';
+import { useNavbarScroll } from './navbar/useNavbarScroll';
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const { user, profile, logout } = useAuth();
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.scrollY > 20) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  const isScrolled = useNavbarScroll();
 
   // Esta función se ejecuta después de cerrar el modal de perfil
   const handleCloseProfileModal = () => {
@@ -56,60 +40,17 @@ export function Navbar() {
         }`}
       >
         <div className="container-custom flex items-center justify-between">
-          <a href="#" className="flex items-center">
-            <img 
-              src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png" 
-              alt="CASA Logo" 
-              className="h-12 w-auto"
-            />
-          </a>
+          <NavbarLogo />
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center space-x-8">
-            <a href="#proposito" className="text-foreground hover:text-casa-500 transition">
-              Sentido & Propósito
-            </a>
-            <a href="#equipo" className="text-foreground hover:text-casa-500 transition">
-              Equipo
-            </a>
-            <a href="#participar" className="text-foreground hover:text-casa-500 transition">
-              Participar
-            </a>
-            <a href="#eventos" className="text-foreground hover:text-casa-500 transition">
-              Eventos
-            </a>
-            <a href="#sermones" className="text-foreground hover:text-casa-500 transition">
-              Reflexiones
-            </a>
-            <a href="#oracion" className="text-foreground hover:text-casa-500 transition">
-              Oración
-            </a>
-
-            {user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="rounded-full p-0 h-10 w-10 overflow-hidden">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || "Usuario"} />
-                      <AvatarFallback>{getInitials(profile?.full_name || "Usuario")}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
-                    Mi Perfil
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={logout}>
-                    Cerrar Sesión
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Button onClick={() => setIsAuthModalOpen(true)}>
-                Iniciar Sesión
-              </Button>
-            )}
-          </div>
+          <NavbarDesktopMenu 
+            user={user}
+            profile={profile}
+            setIsProfileModalOpen={setIsProfileModalOpen}
+            setIsAuthModalOpen={setIsAuthModalOpen}
+            logout={logout}
+            getInitials={getInitials}
+          />
 
           {/* Mobile menu button */}
           <button
@@ -121,87 +62,14 @@ export function Navbar() {
         </div>
 
         {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="lg:hidden bg-background border-t mt-2 py-4">
-            <div className="container-custom flex flex-col space-y-4">
-              <a
-                href="#proposito"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Sentido & Propósito
-              </a>
-              <a
-                href="#equipo"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Equipo
-              </a>
-              <a
-                href="#participar"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Participar
-              </a>
-              <a
-                href="#eventos"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Eventos
-              </a>
-              <a
-                href="#sermones"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Reflexiones
-              </a>
-              <a
-                href="#oracion"
-                className="text-foreground hover:text-casa-500 transition py-2"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Oración
-              </a>
-
-              {user ? (
-                <div className="space-y-2">
-                  <Button
-                    variant="outline"
-                    className="w-full flex items-center justify-center gap-2"
-                    onClick={() => {
-                      setIsProfileModalOpen(true);
-                      setIsMenuOpen(false);
-                    }}
-                  >
-                    <User size={16} />
-                    Mi Perfil
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={logout} 
-                    className="w-full"
-                  >
-                    Cerrar Sesión
-                  </Button>
-                </div>
-              ) : (
-                <Button 
-                  onClick={() => {
-                    setIsAuthModalOpen(true);
-                    setIsMenuOpen(false);
-                  }} 
-                  className="w-full"
-                >
-                  Iniciar Sesión
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
+        <NavbarMobileMenu 
+          isMenuOpen={isMenuOpen}
+          user={user}
+          setIsProfileModalOpen={setIsProfileModalOpen}
+          setIsAuthModalOpen={setIsAuthModalOpen}
+          setIsMenuOpen={setIsMenuOpen}
+          logout={logout}
+        />
       </nav>
 
       <AuthModal 
