@@ -23,7 +23,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             Actualiza tu información y foto de perfil
           </DialogDescription>
         </DialogHeader>
-        <UserProfile />
+        <UserProfile onClose={onClose} />
       </DialogContent>
     </Dialog>
   );

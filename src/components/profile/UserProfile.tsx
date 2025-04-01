@@ -25,7 +25,11 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
-export function UserProfile() {
+interface UserProfileProps {
+  onClose?: () => void;
+}
+
+export function UserProfile({ onClose }: UserProfileProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -100,6 +104,11 @@ export function UserProfile() {
         title: "Perfil actualizado",
         description: "Tu información ha sido guardada correctamente."
       });
+      
+      // Close the modal if the onClose prop is provided
+      if (onClose) {
+        onClose();
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
       toast({
