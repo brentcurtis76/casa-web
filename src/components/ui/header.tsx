@@ -10,12 +10,14 @@ import { NavigationMenuItems } from "./header/NavigationMenuItems";
 import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
 import { navigationItems } from "./header/navigationData";
+import { ContactModal } from "@/components/contact/ContactModal";
 
 function Header1() {
     const { user, profile, logout } = useAuth();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [isContactModalOpen, setIsContactModalOpen] = useState(false);
     
     const handleCloseProfileModal = () => {
         setIsProfileModalOpen(false);
@@ -24,6 +26,7 @@ function Header1() {
     const toggleMenu = () => setOpen(!isOpen);
     const openProfileModal = () => setIsProfileModalOpen(true);
     const openAuthModal = () => setIsAuthModalOpen(true);
+    const openContactModal = () => setIsContactModalOpen(true);
     const closeMenu = () => setOpen(false);
 
     return (
@@ -42,7 +45,11 @@ function Header1() {
                 </div>
                 
                 <div className="flex justify-end w-full gap-4 items-center">
-                    <Button variant="ghost" className="hidden md:inline">
+                    <Button 
+                        variant="ghost" 
+                        className="hidden md:inline"
+                        onClick={openContactModal}
+                    >
                         Contactar
                     </Button>
                     <div className="border-r hidden md:inline"></div>
@@ -76,6 +83,7 @@ function Header1() {
                         logout={logout}
                         openProfileModal={openProfileModal}
                         openAuthModal={openAuthModal}
+                        openContactModal={openContactModal}
                         closeMenu={closeMenu}
                     />
                 </div>
@@ -89,6 +97,11 @@ function Header1() {
             <ProfileModal 
                 isOpen={isProfileModalOpen}
                 onClose={handleCloseProfileModal}
+            />
+
+            <ContactModal
+                isOpen={isContactModalOpen}
+                onClose={() => setIsContactModalOpen(false)}
             />
         </header>
     );
