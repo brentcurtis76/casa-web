@@ -1,3 +1,4 @@
+
 "use client";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,6 +12,7 @@ export const ImagesSlider = ({
   className,
   autoplay = true,
   direction = "up",
+  slideDuration = 7000, // Adding a prop to control slide duration
 }: {
   images: string[];
   children: React.ReactNode;
@@ -19,6 +21,7 @@ export const ImagesSlider = ({
   className?: string;
   autoplay?: boolean;
   direction?: "up" | "down";
+  slideDuration?: number; // Time in milliseconds each slide stays visible
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -93,14 +96,14 @@ export const ImagesSlider = ({
     if (autoplay) {
       interval = setInterval(() => {
         handleNext();
-      }, 7000);
+      }, slideDuration); // Using the prop here instead of hardcoded 7000
     }
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       clearInterval(interval);
     };
-  }, []);
+  }, [slideDuration]); // Add slideDuration to dependency array
 
   const slideVariants = {
     initial: {

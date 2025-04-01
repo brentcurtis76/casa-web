@@ -21,6 +21,7 @@ export function Hero() {
         autoplay={true}
         direction="up"
         overlayClassName="bg-black/50"
+        slideDuration={14000} // Double the default time (7000ms to 14000ms)
       >
         <motion.div
           initial={{
