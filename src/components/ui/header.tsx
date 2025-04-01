@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import {
     NavigationMenu,
@@ -10,16 +10,65 @@ import {
     NavigationMenuList,
     NavigationMenuTrigger,
 } from "@/components/ui/navigation-menu";
-import { Menu, MoveRight, X } from "lucide-react";
+import { 
+    Menu, 
+    MoveRight, 
+    X, 
+    User,
+    Settings,
+    LogOut
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { ProfileModal } from "@/components/profile/ProfileModal";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function Header1() {
     const { user, logout } = useAuth();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [profile, setProfile] = useState<{ full_name?: string, avatar_url?: string | null } | null>(null);
     
+    useEffect(() => {
+        if (user) {
+            fetchProfile();
+        } else {
+            setProfile(null);
+        }
+    }, [user]);
+
+    async function fetchProfile() {
+        if (!user) return;
+        
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('full_name, avatar_url')
+                .eq('id', user.id)
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            if (data) {
+                setProfile(data);
+            }
+        } catch (error) {
+            console.error('Error fetching profile:', error);
+        }
+    }
+
     const navigationItems = [
         {
             title: "Inicio",
@@ -130,13 +179,37 @@ function Header1() {
                         className="h-16 w-auto"
                     />
                 </div>
-                <div className="flex justify-end w-full gap-4">
+                <div className="flex justify-end w-full gap-4 items-center">
                     <Button variant="ghost" className="hidden md:inline">
                         Contactar
                     </Button>
                     <div className="border-r hidden md:inline"></div>
                     {user ? (
-                        <Button variant="outline" onClick={logout}>Cerrar Sesión</Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="rounded-full">
+                                    <Avatar className="h-8 w-8">
+                                        <AvatarImage src={profile?.avatar_url || ''} />
+                                        <AvatarFallback>{profile?.full_name?.substring(0, 2).toUpperCase() || user.email?.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                    </Avatar>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+                                    <User className="mr-2 h-4 w-4" />
+                                    <span>Mi Perfil</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+                                    <Settings className="mr-2 h-4 w-4" />
+                                    <span>Configuración</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={logout}>
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    <span>Cerrar Sesión</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     ) : (
                         <Button variant="outline" onClick={() => setIsAuthModalOpen(true)}>
                             Iniciar Sesión
@@ -182,6 +255,16 @@ function Header1() {
                             ))}
                             {user ? (
                                 <div className="flex flex-col gap-2 mt-4">
+                                    <Button 
+                                        variant="outline" 
+                                        onClick={() => {
+                                            setIsProfileModalOpen(true);
+                                            setOpen(false);
+                                        }}
+                                        className="w-full"
+                                    >
+                                        Mi Perfil
+                                    </Button>
                                     <Button variant="outline" onClick={logout} className="w-full">
                                         Cerrar Sesión
                                     </Button>
@@ -208,6 +291,11 @@ function Header1() {
             <AuthModal 
                 isOpen={isAuthModalOpen} 
                 onClose={() => setIsAuthModalOpen(false)} 
+            />
+            
+            <ProfileModal 
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
             />
         </header>
     );

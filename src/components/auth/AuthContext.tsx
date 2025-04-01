@@ -1,14 +1,18 @@
 
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User, Session } from '@supabase/supabase-js';
 
-type User = {
+type UserProfile = {
   id: string;
-  email: string;
-  name: string;
+  full_name: string | null;
+  avatar_url: string | null;
 };
 
 type AuthContextType = {
   user: User | null;
+  profile: UserProfile | null;
+  session: Session | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
@@ -19,36 +23,74 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check if user is stored in localStorage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+  // Fetch user profile
+  async function fetchUserProfile(userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        return;
+      }
+
+      setProfile(data);
+    } catch (error) {
+      console.error('Error in fetchUserProfile:', error);
     }
-    setLoading(false);
+  }
+
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          setTimeout(() => {
+            fetchUserProfile(session.user.id);
+          }, 0);
+        } else {
+          setProfile(null);
+        }
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
+      }
+    }).finally(() => {
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Simulated login for demo purposes
     setLoading(true);
     try {
-      // In a real app, this would be an API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Mock user data
-      const userData = {
-        id: `user-${Date.now()}`,
+      const { error } = await supabase.auth.signInWithPassword({
         email,
-        name: email.split('@')[0],
-      };
+        password,
+      });
       
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-    } catch (error) {
-      console.error('Login error:', error);
-      throw new Error('Error al iniciar sesión');
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Login error:', error.message);
+      throw new Error(error.message || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
     }
@@ -57,33 +99,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signup = async (email: string, password: string, name: string) => {
     setLoading(true);
     try {
-      // In a real app, this would be an API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Mock user data
-      const userData = {
-        id: `user-${Date.now()}`,
+      const { error } = await supabase.auth.signUp({
         email,
-        name,
-      };
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      });
       
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-    } catch (error) {
-      console.error('Signup error:', error);
-      throw new Error('Error al registrar usuario');
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Signup error:', error.message);
+      throw new Error(error.message || 'Error al registrar usuario');
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      session, 
+      loading, 
+      login, 
+      signup, 
+      logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );
