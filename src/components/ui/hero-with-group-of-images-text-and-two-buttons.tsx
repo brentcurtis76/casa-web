@@ -68,7 +68,7 @@ function Hero() {
               <img alt="Church building with cross" className="w-full h-full object-cover" src="/lovable-uploads/80737c28-0e51-41ab-9749-01bc313de2a8.jpg" />
             </div>
             <div className="bg-muted rounded-md row-span-2 overflow-hidden">
-              <img alt="Child and adult interacting" className="w-full h-full object-contain" src="/lovable-uploads/5902a974-c6e8-4fe6-aa5c-0a33eb6dce5c.png" />
+              <img alt="Child and adult interacting" src="/lovable-uploads/5902a974-c6e8-4fe6-aa5c-0a33eb6dce5c.png" className="w-full h-full object-contain" />
             </div>
             <div className="bg-muted rounded-md aspect-square overflow-hidden">
               <img src="/lovable-uploads/26b28f0b-f024-4f8d-98e8-52227c068246.png" alt="People embracing" className="w-full h-full object-cover" />
