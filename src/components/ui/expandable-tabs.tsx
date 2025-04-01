@@ -8,19 +8,19 @@ import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
 
 // Define proper types with discriminated union pattern
-interface TabItem {
+export interface TabItem {
   title: string;
   icon: LucideIcon;
   type?: never;
 }
 
-interface SeparatorItem {
+export interface SeparatorItem {
   type: "separator";
   title?: never;
   icon?: never;
 }
 
-type TabsItem = TabItem | SeparatorItem;
+export type TabsItem = TabItem | SeparatorItem;
 
 interface ExpandableTabsProps {
   tabs: TabsItem[];

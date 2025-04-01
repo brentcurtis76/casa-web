@@ -2,19 +2,10 @@
 import { Bell, Home, HelpCircle, Settings, Shield, Mail, User, FileText, Lock } from "lucide-react";
 import { ExpandableTabs } from "@/components/ui/expandable-tabs";
 import { Header1 } from '@/components/ui/header';
+import * as React from "react";
 
-// Define the tab types explicitly to match what expandable-tabs expects
-type TabItem = {
-  title: string;
-  icon: React.FC<any>;
-  type?: undefined;
-};
-
-type SeparatorItem = {
-  type: "separator";
-};
-
-type TabsItem = TabItem | SeparatorItem;
+// Import types from expandable-tabs
+import type { TabItem, SeparatorItem, TabsItem } from "@/components/ui/expandable-tabs";
 
 function DefaultDemo() {
   const tabs: TabsItem[] = [
