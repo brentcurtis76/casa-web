@@ -1,4 +1,3 @@
-
 import { MoveRight, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,14 +20,13 @@ function Hero() {
         <div className="grid grid-cols-1 gap-8 items-center md:grid-cols-2">
           <div className="flex gap-4 flex-col">
             <div>
-              <Badge variant="outline">Bienvenidos!</Badge>
+              <Badge variant="outline">Bienvenido a CASA</Badge>
             </div>
             <div className="flex gap-4 flex-col">
               <h1 className="text-5xl md:text-7xl max-w-lg tracking-tighter text-left font-regular">
-                Bienvenido a CASA
+                Un espacio de amor, inclusión y esperanza para todos
               </h1>
               <p className="text-xl leading-relaxed tracking-tight text-muted-foreground max-w-md text-left">
-                Un espacio de amor, inclusión y esperanza para todos. 
                 Una comunidad abierta, inspirada en Jesús, donde cada persona es vista y celebrada 
                 en su singularidad; un espacio seguro para explorar tu espiritualidad, crecer con otros y vivir con propósito.
               </p>
