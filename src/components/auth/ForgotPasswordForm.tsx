@@ -48,11 +48,12 @@ export function ForgotPasswordForm({ onBack }: ForgotPasswordFormProps) {
         title: '¡Correo enviado!',
         description: 'Revisa tu correo para restablecer tu contraseña.',
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Password reset error:', error);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo enviar el correo. Por favor, intenta de nuevo.',
+        title: 'Error al enviar correo',
+        description: error.message || 'No se pudo enviar el correo. Por favor, intenta de nuevo.',
       });
     } finally {
       setIsLoading(false);
