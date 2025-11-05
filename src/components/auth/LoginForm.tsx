@@ -25,9 +25,10 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
   onLoginSuccess?: () => void;
+  onForgotPassword?: () => void;
 }
 
-export function LoginForm({ onLoginSuccess }: LoginFormProps) {
+export function LoginForm({ onLoginSuccess, onForgotPassword }: LoginFormProps) {
   const { login } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -94,6 +95,16 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
         <Button type="submit" className="w-full" disabled={isLoading}>
           {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
         </Button>
+        {onForgotPassword && (
+          <Button
+            type="button"
+            variant="link"
+            className="w-full text-sm"
+            onClick={onForgotPassword}
+          >
+            ¿Olvidaste tu contraseña?
+          </Button>
+        )}
       </form>
     </Form>
   );

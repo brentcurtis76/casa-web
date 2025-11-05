@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
 import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
 import HeroDemo from "./pages/HeroDemo";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/header-demo" element={<HeaderDemo />} />
             <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
             <Route path="/hero-demo" element={<HeroDemo />} />
