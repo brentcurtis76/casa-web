@@ -63,15 +63,511 @@ export type Database = {
         }
         Relationships: []
       }
+      mesa_abierta_admin_roles: {
+        Row: {
+          id: string
+          user_id: string
+          role: Database['public']['Enums']['mesa_abierta_admin_role']
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          role?: Database['public']['Enums']['mesa_abierta_admin_role']
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          role?: Database['public']['Enums']['mesa_abierta_admin_role']
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: []
+      }
+      mesa_abierta_months: {
+        Row: {
+          id: string
+          month_date: string
+          registration_deadline: string
+          dinner_date: string
+          dinner_time: string
+          status: Database['public']['Enums']['mesa_abierta_month_status']
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          month_date: string
+          registration_deadline: string
+          dinner_date: string
+          dinner_time?: string
+          status?: Database['public']['Enums']['mesa_abierta_month_status']
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          month_date?: string
+          registration_deadline?: string
+          dinner_date?: string
+          dinner_time?: string
+          status?: Database['public']['Enums']['mesa_abierta_month_status']
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      mesa_abierta_participants: {
+        Row: {
+          id: string
+          user_id: string
+          month_id: string
+          role_preference: Database['public']['Enums']['mesa_abierta_role']
+          assigned_role: Database['public']['Enums']['mesa_abierta_role'] | null
+          has_plus_one: boolean
+          plus_one_name: string | null
+          recurring: boolean
+          host_address: string | null
+          host_max_guests: number | null
+          phone_number: string | null
+          whatsapp_enabled: boolean
+          status: Database['public']['Enums']['mesa_abierta_participant_status']
+          cancellation_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          month_id: string
+          role_preference: Database['public']['Enums']['mesa_abierta_role']
+          assigned_role?: Database['public']['Enums']['mesa_abierta_role'] | null
+          has_plus_one?: boolean
+          plus_one_name?: string | null
+          recurring?: boolean
+          host_address?: string | null
+          host_max_guests?: number | null
+          phone_number?: string | null
+          whatsapp_enabled?: boolean
+          status?: Database['public']['Enums']['mesa_abierta_participant_status']
+          cancellation_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          month_id?: string
+          role_preference?: Database['public']['Enums']['mesa_abierta_role']
+          assigned_role?: Database['public']['Enums']['mesa_abierta_role'] | null
+          has_plus_one?: boolean
+          plus_one_name?: string | null
+          recurring?: boolean
+          host_address?: string | null
+          host_max_guests?: number | null
+          phone_number?: string | null
+          whatsapp_enabled?: boolean
+          status?: Database['public']['Enums']['mesa_abierta_participant_status']
+          cancellation_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_participants_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_dietary_restrictions: {
+        Row: {
+          id: string
+          participant_id: string
+          restriction_type: Database['public']['Enums']['mesa_abierta_dietary_type']
+          description: string | null
+          severity: Database['public']['Enums']['mesa_abierta_dietary_severity']
+          is_plus_one: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          participant_id: string
+          restriction_type: Database['public']['Enums']['mesa_abierta_dietary_type']
+          description?: string | null
+          severity?: Database['public']['Enums']['mesa_abierta_dietary_severity']
+          is_plus_one?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          participant_id?: string
+          restriction_type?: Database['public']['Enums']['mesa_abierta_dietary_type']
+          description?: string | null
+          severity?: Database['public']['Enums']['mesa_abierta_dietary_severity']
+          is_plus_one?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_dietary_restrictions_participant_id_fkey"
+            columns: ["participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_matches: {
+        Row: {
+          id: string
+          month_id: string
+          host_participant_id: string
+          dinner_date: string
+          dinner_time: string
+          guest_count: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          month_id: string
+          host_participant_id: string
+          dinner_date: string
+          dinner_time?: string
+          guest_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          month_id?: string
+          host_participant_id?: string
+          dinner_date?: string
+          dinner_time?: string
+          guest_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_matches_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_matches_host_participant_id_fkey"
+            columns: ["host_participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_assignments: {
+        Row: {
+          id: string
+          match_id: string
+          guest_participant_id: string
+          food_assignment: Database['public']['Enums']['mesa_abierta_food_assignment']
+          notification_sent: boolean
+          notification_sent_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          match_id: string
+          guest_participant_id: string
+          food_assignment?: Database['public']['Enums']['mesa_abierta_food_assignment']
+          notification_sent?: boolean
+          notification_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          match_id?: string
+          guest_participant_id?: string
+          food_assignment?: Database['public']['Enums']['mesa_abierta_food_assignment']
+          notification_sent?: boolean
+          notification_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_assignments_match_id_fkey"
+            columns: ["match_id"]
+            referencedRelation: "mesa_abierta_matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_assignments_guest_participant_id_fkey"
+            columns: ["guest_participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_email_logs: {
+        Row: {
+          id: string
+          month_id: string | null
+          participant_id: string | null
+          email_type: Database['public']['Enums']['mesa_abierta_email_type']
+          recipient_email: string
+          subject: string | null
+          sent_at: string
+          status: Database['public']['Enums']['mesa_abierta_message_status']
+          sendgrid_message_id: string | null
+          error_message: string | null
+        }
+        Insert: {
+          id?: string
+          month_id?: string | null
+          participant_id?: string | null
+          email_type: Database['public']['Enums']['mesa_abierta_email_type']
+          recipient_email: string
+          subject?: string | null
+          sent_at?: string
+          status?: Database['public']['Enums']['mesa_abierta_message_status']
+          sendgrid_message_id?: string | null
+          error_message?: string | null
+        }
+        Update: {
+          id?: string
+          month_id?: string | null
+          participant_id?: string | null
+          email_type?: Database['public']['Enums']['mesa_abierta_email_type']
+          recipient_email?: string
+          subject?: string | null
+          sent_at?: string
+          status?: Database['public']['Enums']['mesa_abierta_message_status']
+          sendgrid_message_id?: string | null
+          error_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_email_logs_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_email_logs_participant_id_fkey"
+            columns: ["participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_whatsapp_messages: {
+        Row: {
+          id: string
+          participant_id: string | null
+          month_id: string | null
+          message_type: Database['public']['Enums']['mesa_abierta_whatsapp_type']
+          phone_number: string
+          message_content: string
+          twilio_message_sid: string | null
+          status: Database['public']['Enums']['mesa_abierta_message_status']
+          sent_at: string
+          delivered_at: string | null
+          error_message: string | null
+        }
+        Insert: {
+          id?: string
+          participant_id?: string | null
+          month_id?: string | null
+          message_type: Database['public']['Enums']['mesa_abierta_whatsapp_type']
+          phone_number: string
+          message_content: string
+          twilio_message_sid?: string | null
+          status?: Database['public']['Enums']['mesa_abierta_message_status']
+          sent_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+        }
+        Update: {
+          id?: string
+          participant_id?: string | null
+          month_id?: string | null
+          message_type?: Database['public']['Enums']['mesa_abierta_whatsapp_type']
+          phone_number?: string
+          message_content?: string
+          twilio_message_sid?: string | null
+          status?: Database['public']['Enums']['mesa_abierta_message_status']
+          sent_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_whatsapp_messages_participant_id_fkey"
+            columns: ["participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_whatsapp_messages_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_photos: {
+        Row: {
+          id: string
+          match_id: string
+          month_id: string
+          uploaded_by: string
+          photo_url: string
+          caption: string | null
+          is_approved: boolean
+          is_featured: boolean
+          created_at: string
+          approved_at: string | null
+          approved_by: string | null
+        }
+        Insert: {
+          id?: string
+          match_id: string
+          month_id: string
+          uploaded_by: string
+          photo_url: string
+          caption?: string | null
+          is_approved?: boolean
+          is_featured?: boolean
+          created_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+        }
+        Update: {
+          id?: string
+          match_id?: string
+          month_id?: string
+          uploaded_by?: string
+          photo_url?: string
+          caption?: string | null
+          is_approved?: boolean
+          is_featured?: boolean
+          created_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_photos_match_id_fkey"
+            columns: ["match_id"]
+            referencedRelation: "mesa_abierta_matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_photos_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      mesa_abierta_testimonials: {
+        Row: {
+          id: string
+          month_id: string
+          participant_id: string
+          match_id: string | null
+          rating: number
+          testimonial_text: string | null
+          would_participate_again: boolean
+          what_went_well: string | null
+          suggestions_for_improvement: string | null
+          is_approved: boolean
+          is_featured: boolean
+          created_at: string
+          approved_at: string | null
+          approved_by: string | null
+        }
+        Insert: {
+          id?: string
+          month_id: string
+          participant_id: string
+          match_id?: string | null
+          rating: number
+          testimonial_text?: string | null
+          would_participate_again: boolean
+          what_went_well?: string | null
+          suggestions_for_improvement?: string | null
+          is_approved?: boolean
+          is_featured?: boolean
+          created_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+        }
+        Update: {
+          id?: string
+          month_id?: string
+          participant_id?: string
+          match_id?: string | null
+          rating?: number
+          testimonial_text?: string | null
+          would_participate_again?: boolean
+          what_went_well?: string | null
+          suggestions_for_improvement?: string | null
+          is_approved?: boolean
+          is_featured?: boolean
+          created_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mesa_abierta_testimonials_month_id_fkey"
+            columns: ["month_id"]
+            referencedRelation: "mesa_abierta_months"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_testimonials_participant_id_fkey"
+            columns: ["participant_id"]
+            referencedRelation: "mesa_abierta_participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mesa_abierta_testimonials_match_id_fkey"
+            columns: ["match_id"]
+            referencedRelation: "mesa_abierta_matches"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_mesa_admin: {
+        Args: {
+          user_uuid: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      mesa_abierta_month_status: 'open' | 'matching' | 'matched' | 'completed'
+      mesa_abierta_role: 'host' | 'guest'
+      mesa_abierta_participant_status: 'pending' | 'confirmed' | 'cancelled' | 'waitlist'
+      mesa_abierta_food_assignment: 'main_course' | 'salad' | 'drinks' | 'dessert' | 'none'
+      mesa_abierta_dietary_type: 'vegetarian' | 'vegan' | 'gluten_free' | 'dairy_free' | 'nut_allergy' | 'shellfish_allergy' | 'other'
+      mesa_abierta_dietary_severity: 'preference' | 'allergy' | 'religious'
+      mesa_abierta_email_type: 'confirmation' | 'assignment' | 'reminder' | 'cancellation' | 'custom'
+      mesa_abierta_message_status: 'queued' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'undelivered'
+      mesa_abierta_whatsapp_type: 'confirmation' | 'reminder_7days' | 'reminder_1day' | 'assignment_host' | 'assignment_guest' | 'feedback_request' | 'emergency' | 'custom'
+      mesa_abierta_admin_role: 'super_admin' | 'coordinator'
     }
     CompositeTypes: {
       [_ in never]: never
