@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "env": {}
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["chrome-devtools-mcp@latest"],
+      "env": {}
+    },
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp",
+      "env": {
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_KEY": "your-anon-key-here"
+      }
+    }
+  },
+  "readme": {
+    "setup": "Copy this file to ~/.config/claude/config.json (or appropriate location for your OS)",
+    "playwright": "Enables browser automation for testing",
+    "chrome-devtools": "Enables real-time debugging and performance analysis",
+    "supabase": "Enables database queries and schema inspection",
+    "documentation": "See TESTING.md for detailed usage instructions"
+  }
+}
