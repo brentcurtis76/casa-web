@@ -8,8 +8,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/auth/AuthContext";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { MesaAbiertaSignup } from "./MesaAbiertaSignup";
 
 interface NextMonth {
   id: string;
@@ -39,13 +39,14 @@ interface FeaturedTestimonial {
 
 export function MesaAbiertaSection() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [nextMonth, setNextMonth] = useState<NextMonth | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [testimonials, setTestimonials] = useState<FeaturedTestimonial[]>([]);
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [signupOpen, setSignupOpen] = useState(false);
+  const [signupRole, setSignupRole] = useState<'host' | 'guest'>('guest');
 
   useEffect(() => {
     fetchNextMonth();
@@ -160,7 +161,16 @@ export function MesaAbiertaSection() {
       return;
     }
 
-    navigate(`/mesa-abierta/signup?role=${role}`);
+    setSignupRole(role);
+    setSignupOpen(true);
+  };
+
+  const handleSignupClose = () => {
+    setSignupOpen(false);
+    // Refresh stats after signup
+    if (nextMonth) {
+      fetchStats(nextMonth.id);
+    }
   };
 
   if (loading) {
@@ -478,6 +488,16 @@ export function MesaAbiertaSection() {
               </Button>
             </div>
           </motion.div>
+        )}
+
+        {/* Sign-up Dialog */}
+        {nextMonth && (
+          <MesaAbiertaSignup
+            open={signupOpen}
+            onClose={handleSignupClose}
+            monthId={nextMonth.id}
+            preferredRole={signupRole}
+          />
         )}
       </div>
     </section>
