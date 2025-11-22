@@ -51,6 +51,7 @@ interface MatchResult {
       hostId: string;
       guestCount: number;
     }>;
+    unassignedGuests?: string[];
   };
   error?: string;
 }
@@ -188,7 +189,7 @@ export const MesaAbiertaAdmin = () => {
     setMatchResult(null);
 
     try {
-      const { data, error} = await supabase.functions.invoke('create-mesa-matches', {
+      const { data, error } = await supabase.functions.invoke('create-mesa-matches', {
         body: { monthId: selectedMonth.id },
       });
 
@@ -599,6 +600,29 @@ export const MesaAbiertaAdmin = () => {
                         <AlertTitle>Error</AlertTitle>
                         <AlertDescription>{matchResult.error || matchResult.message}</AlertDescription>
                       </Alert>
+                    )}
+
+                    {matchResult.results?.unassignedGuests && matchResult.results.unassignedGuests.length > 0 && (
+                      <div className="mt-6">
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>Invitados Sin Asignar</AlertTitle>
+                          <AlertDescription>
+                            Hay {matchResult.results.unassignedGuests.length} invitados que no pudieron ser asignados debido a falta de capacidad.
+                            <ul className="mt-2 list-disc list-inside">
+                              {matchResult.results.unassignedGuests.map(id => {
+                                const participant = participants.find(p => p.id === id);
+                                return (
+                                  <li key={id}>
+                                    {participant?.full_name || 'Desconocido'}
+                                    {participant?.has_plus_one ? ' (+1)' : ''}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </AlertDescription>
+                        </Alert>
+                      </div>
                     )}
                   </div>
                 )}

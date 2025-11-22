@@ -76,6 +76,7 @@ serve(async (req) => {
     console.log(`Found ${participants.length} confirmed participants`);
 
     // Separate hosts and guests based on assigned_role
+    // Separate hosts and guests based on assigned_role
     const hosts = participants.filter((p) => p.assigned_role === "host");
     const guests = participants.filter((p) => p.assigned_role === "guest");
 
@@ -105,26 +106,70 @@ serve(async (req) => {
     const shuffledHosts = shuffle([...hosts]);
     const shuffledGuests = shuffle([...guests]);
 
-    // Calculate guests per host
-    const guestsPerHost = Math.floor(guests.length / hosts.length);
-    const remainingGuests = guests.length % hosts.length;
+    // Calculate total capacity
+    const totalCapacity = shuffledHosts.reduce((sum, host) => sum + (host.host_max_guests || 5), 0);
+    
+    // Calculate total guest count (including plus ones)
+    const totalGuestCount = shuffledGuests.reduce((sum, guest) => sum + (guest.has_plus_one ? 2 : 1), 0);
 
-    console.log(
-      `Distribution: ${guestsPerHost} guests per host, with ${remainingGuests} hosts getting an extra guest`
-    );
+    console.log(`Total Host Capacity: ${totalCapacity}, Total Guests (with +1s): ${totalGuestCount}`);
+
+    if (totalCapacity < totalGuestCount) {
+      console.warn("Warning: Not enough host capacity for all guests!");
+    }
 
     // Create matches
     const matches = [];
-    let guestIndex = 0;
+    const assignments = [];
+    const unassignedGuests = [];
+    
+    // Initialize host tracking
+    const hostStatus = shuffledHosts.map(host => ({
+      ...host,
+      currentGuests: 0,
+      maxGuests: host.host_max_guests || 5,
+      assignedGuests: []
+    }));
 
-    for (let i = 0; i < shuffledHosts.length; i++) {
-      const host = shuffledHosts[i];
-      // Some hosts get an extra guest to distribute remainder
-      const numGuests = guestsPerHost + (i < remainingGuests ? 1 : 0);
+    // Greedy assignment: Fill hosts one by one (or round robin)
+    // Let's do a modified round-robin to distribute evenly but respect limits
+    
+    let guestsAssignedCount = 0;
+    
+    // Sort guests: put those with +1 first to ensure they fit? 
+    // Actually, random is better for fairness, but +1s are harder to fit at the end.
+    // Let's try to fit them in order.
+    
+    for (const guest of shuffledGuests) {
+      const guestSize = guest.has_plus_one ? 2 : 1;
+      let assigned = false;
 
-      // Get guests for this match
-      const matchGuests = shuffledGuests.slice(guestIndex, guestIndex + numGuests);
-      guestIndex += numGuests;
+      // Find a host with space
+      // We sort hosts by % full to distribute evenly
+      hostStatus.sort((a, b) => (a.currentGuests / a.maxGuests) - (b.currentGuests / b.maxGuests));
+
+      for (const host of hostStatus) {
+        if (host.currentGuests + guestSize <= host.maxGuests) {
+          host.assignedGuests.push(guest);
+          host.currentGuests += guestSize;
+          assigned = true;
+          guestsAssignedCount += guestSize;
+          break;
+        }
+      }
+
+      if (!assigned) {
+        unassignedGuests.push(guest);
+      }
+    }
+
+    console.log(`Assigned ${guestsAssignedCount} guests. Unassigned: ${unassignedGuests.length} guests.`);
+
+    // Create DB records for matches and assignments
+    const foodAssignments = ["main_course", "salad", "drinks", "dessert"];
+
+    for (const host of hostStatus) {
+      if (host.assignedGuests.length === 0) continue;
 
       // Create match record
       const { data: match, error: matchError } = await supabase
@@ -134,7 +179,10 @@ serve(async (req) => {
           host_participant_id: host.id,
           dinner_date: month.dinner_date,
           dinner_time: "19:00:00",
-          guest_count: matchGuests.length,
+          guest_count: host.assignedGuests.length, // This is count of guest units (families/couples), not total people? 
+          // Wait, the schema says guest_count INTEGER. Usually means number of guest entries.
+          // But for capacity we care about heads. 
+          // Let's store number of guest ENTRIES here, but we know capacity was checked against heads.
         })
         .select()
         .single();
@@ -143,15 +191,13 @@ serve(async (req) => {
         throw new Error(`Failed to create match: ${matchError.message}`);
       }
 
-      console.log(`Created match ${match.id} with host ${host.id} and ${matchGuests.length} guests`);
+      console.log(`Created match ${match.id} with host ${host.id} and ${host.assignedGuests.length} guest units (${host.currentGuests} people)`);
 
-      // Create assignments for each guest
-      const foodAssignments = ["main_course", "salad", "drinks", "dessert"];
+      // Create assignments
       const shuffledFoodAssignments = shuffle([...foodAssignments]);
 
-      for (let j = 0; j < matchGuests.length; j++) {
-        const guest = matchGuests[j];
-        // Cycle through food assignments if we have more guests than food types
+      for (let j = 0; j < host.assignedGuests.length; j++) {
+        const guest = host.assignedGuests[j];
         const foodAssignment = shuffledFoodAssignments[j % shuffledFoodAssignments.length];
 
         const { error: assignmentError } = await supabase
@@ -165,15 +211,14 @@ serve(async (req) => {
         if (assignmentError) {
           throw new Error(`Failed to create assignment: ${assignmentError.message}`);
         }
-
-        console.log(`Assigned ${guest.id} to bring ${foodAssignment}`);
       }
 
       matches.push({
         matchId: match.id,
         hostId: host.id,
-        guestCount: matchGuests.length,
-        guests: matchGuests.map((g) => g.id),
+        guestCount: host.assignedGuests.length,
+        totalPeople: host.currentGuests,
+        guests: host.assignedGuests.map(g => g.id),
       });
     }
 
@@ -187,20 +232,19 @@ serve(async (req) => {
       throw new Error(`Failed to update month status: ${updateError.message}`);
     }
 
-    console.log(`Successfully created ${matches.length} matches`);
-
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully created ${matches.length} matches with ${guests.length} guests`,
+        message: `Successfully created ${matches.length} matches. Assigned ${guestsAssignedCount} people. Unassigned: ${unassignedGuests.length} guest units.`,
         results: {
           totalMatches: matches.length,
-          hostsUsed: hosts.length,
-          hostsConverted: 0, // No conversion logic in basic algorithm
-          guestsAssigned: guests.length,
-          guestsUnassigned: 0, // All guests are assigned in basic algorithm
+          hostsUsed: matches.length,
+          hostsConverted: 0, 
+          guestsAssigned: guests.length - unassignedGuests.length,
+          guestsUnassigned: unassignedGuests.length,
           totalParticipants: hosts.length + guests.length,
           matches: matches,
+          unassignedGuests: unassignedGuests.map(g => g.id)
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
