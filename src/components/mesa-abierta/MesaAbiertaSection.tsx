@@ -54,24 +54,7 @@ export function MesaAbiertaSection() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pendingSignupRole, setPendingSignupRole] = useState<'host' | 'guest' | null>(null);
 
-  useEffect(() => {
-    fetchNextMonth();
-    fetchTestimonials();
-  }, []);
 
-  useEffect(() => {
-    if (user) {
-      checkActiveParticipation();
-
-      // If user just logged in and had a pending signup role, open the signup modal
-      if (pendingSignupRole) {
-        setAuthModalOpen(false);
-        setSignupRole(pendingSignupRole);
-        setSignupOpen(true);
-        setPendingSignupRole(null);
-      }
-    }
-  }, [user]);
 
   const fetchNextMonth = async () => {
     try {
@@ -226,6 +209,37 @@ export function MesaAbiertaSection() {
     }
   };
 
+  // Testimonial carousel auto-rotation
+  useEffect(() => {
+    if (testimonials.length <= 1) return;
+
+    const interval = setInterval(() => {
+      setCurrentTestimonial((prev) => (prev + 1) % testimonials.length);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [testimonials.length]);
+
+  useEffect(() => {
+    console.log('MesaAbiertaSection mounted');
+    fetchNextMonth();
+    fetchTestimonials();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      checkActiveParticipation();
+
+      // If user just logged in and had a pending signup role, open the signup modal
+      if (pendingSignupRole) {
+        setAuthModalOpen(false);
+        setSignupRole(pendingSignupRole);
+        setSignupOpen(true);
+        setPendingSignupRole(null);
+      }
+    }
+  }, [user]);
+
   if (loading) {
     return (
       <section id="mesa-abierta" className="section bg-gradient-to-b from-white to-casa-50">
@@ -242,29 +256,18 @@ export function MesaAbiertaSection() {
   }
 
   return (
-    <section id="mesa-abierta" className="section bg-gradient-to-b from-white to-casa-50">
+    <section id="mesa-abierta" className="section bg-gradient-to-b from-white to-casa-50 min-h-[200px]">
       <div className="container-custom">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            whileInView={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.5 }}
-            viewport={{ once: true }}
-            className="flex flex-col items-center mb-6"
-          >
+        {/* Header */}
+        <div className="text-center mb-16">
+          <div className="flex flex-col items-center mb-6">
             <img
               src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM"
               alt="La Mesa Abierta Logo"
               className="h-40 md:h-56 w-auto"
             />
-          </motion.div>
+          </div>
           <p className="text-lg text-center text-casa-600 max-w-3xl mx-auto mb-4">
             Una cena mensual llena de sorpresas donde compartimos comida y
             comunidad con hermanos que aún no conoces.
@@ -273,7 +276,7 @@ export function MesaAbiertaSection() {
             No sabrás quién es el anfitrión ni quiénes serán los otros invitados
             hasta que llegues. ¡Déjate sorprender!
           </p>
-        </motion.div>
+        </div>
 
         {/* Next Dinner Info Card */}
         {nextMonth && (
@@ -364,13 +367,7 @@ export function MesaAbiertaSection() {
 
         {/* No Active Month Message */}
         {!nextMonth && !loading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            viewport={{ once: true }}
-            className="text-center py-12"
-          >
+          <div className="text-center py-12">
             <Card className="border-casa-200 bg-casa-50">
               <CardContent className="p-8">
                 <Utensils className="w-16 h-16 text-casa-400 mx-auto mb-4" />
@@ -383,7 +380,7 @@ export function MesaAbiertaSection() {
                 </p>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         )}
 
         {/* Featured Testimonials Carousel */}
@@ -406,11 +403,10 @@ export function MesaAbiertaSection() {
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
-                        className={`w-5 h-5 ${
-                          i < testimonials[currentTestimonial].rating
+                        className={`w-5 h-5 ${i < testimonials[currentTestimonial].rating
                             ? 'fill-amber-400 text-amber-400'
                             : 'text-gray-300'
-                        }`}
+                          }`}
                       />
                     ))}
                   </div>
@@ -442,11 +438,10 @@ export function MesaAbiertaSection() {
                         <button
                           key={index}
                           onClick={() => setCurrentTestimonial(index)}
-                          className={`w-2 h-2 rounded-full transition-all ${
-                            index === currentTestimonial
+                          className={`w-2 h-2 rounded-full transition-all ${index === currentTestimonial
                               ? 'w-8 bg-casa-700'
                               : 'bg-casa-300 hover:bg-casa-400'
-                          }`}
+                            }`}
                           aria-label={`Ver testimonial ${index + 1}`}
                         />
                       ))}
