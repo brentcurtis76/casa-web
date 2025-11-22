@@ -51,11 +51,21 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
       if (onLoginSuccess) {
         onLoginSuccess();
       }
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = 'Credenciales inválidas. Por favor, intenta de nuevo.';
+
+      // Check for specific error messages
+      if (error.message === 'Email not confirmed') {
+        errorMessage = 'Debes confirmar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.';
+      } else if (error.message === 'Invalid login credentials') {
+        errorMessage = 'Correo o contraseña incorrectos. Por favor, intenta de nuevo.';
+      }
+
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Credenciales inválidas. Por favor, intenta de nuevo.',
+        description: errorMessage,
+        duration: 6000,
       });
     } finally {
       setIsLoading(false);

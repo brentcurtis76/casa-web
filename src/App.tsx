@@ -10,6 +10,8 @@ import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
 import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
 import HeroDemo from "./pages/HeroDemo";
+import MesaAbiertaDashboardPage from "./pages/MesaAbiertaDashboard";
+import MesaAbiertaAdminPage from "./pages/MesaAbiertaAdmin";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +24,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/mesa-abierta/dashboard" element={<MesaAbiertaDashboardPage />} />
+            <Route path="/mesa-abierta/admin" element={<MesaAbiertaAdminPage />} />
             <Route path="/header-demo" element={<HeaderDemo />} />
             <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
             <Route path="/hero-demo" element={<HeroDemo />} />

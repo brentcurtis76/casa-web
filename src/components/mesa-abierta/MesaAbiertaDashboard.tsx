@@ -75,7 +75,7 @@ export function MesaAbiertaDashboard() {
     try {
       setLoading(true);
 
-      // Get current/upcoming participation
+      // Step 1: Get basic participant info (works for all users, including pending)
       const { data: participant, error: participantError } = await supabase
         .from('mesa_abierta_participants')
         .select(`
@@ -89,20 +89,11 @@ export function MesaAbiertaDashboard() {
           mesa_abierta_months!inner(
             dinner_date,
             month_date
-          ),
-          mesa_abierta_assignments(
-            food_assignment,
-            mesa_abierta_matches!inner(
-              dinner_date,
-              dinner_time,
-              mesa_abierta_participants!mesa_abierta_matches_host_participant_id_fkey(
-                host_address
-              )
-            )
           )
         `)
         .eq('user_id', user.id)
         .gte('mesa_abierta_months.dinner_date', new Date().toISOString())
+        .neq('status', 'cancelled')
         .order('mesa_abierta_months.dinner_date', { ascending: true })
         .limit(1)
         .single();
@@ -116,12 +107,36 @@ export function MesaAbiertaDashboard() {
         throw participantError;
       }
 
-      setParticipantData(participant as any);
+      // Step 2: If assigned_role exists, fetch assignment/match details
+      let assignmentData = null;
+      if (participant.assigned_role) {
+        const { data: assignment, error: assignmentError } = await supabase
+          .from('mesa_abierta_assignments')
+          .select(`
+            food_assignment,
+            mesa_abierta_matches(
+              dinner_date,
+              dinner_time,
+              mesa_abierta_participants!mesa_abierta_matches_host_participant_id_fkey(
+                host_address
+              )
+            )
+          `)
+          .eq('participant_id', participant.id)
+          .single();
 
-      // If assigned, fetch group dietary restrictions
-      if (participant.assigned_role && participant.mesa_abierta_assignments?.[0]) {
-        await fetchGroupDietary(participant.mesa_abierta_assignments[0].mesa_abierta_matches.id);
+        if (!assignmentError && assignment) {
+          assignmentData = assignment;
+        }
       }
+
+      // Combine the data
+      const completeParticipant = {
+        ...participant,
+        mesa_abierta_assignments: assignmentData ? [assignmentData] : []
+      };
+
+      setParticipantData(completeParticipant as any);
 
     } catch (error: any) {
       console.error('Error fetching participant data:', error);

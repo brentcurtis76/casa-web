@@ -53,16 +53,21 @@ export function SignupForm({ onSignupSuccess }: SignupFormProps) {
       await signup(values.email, values.password, values.name);
       toast({
         title: '¡Registro exitoso!',
-        description: 'Tu cuenta ha sido creada correctamente.',
+        description: 'Revisa tu correo electrónico para confirmar tu cuenta antes de iniciar sesión.',
+        duration: 8000,
       });
-      if (onSignupSuccess) {
-        onSignupSuccess();
-      }
-    } catch (error) {
+      // Don't call onSignupSuccess - user needs to confirm email first
+      // Show them they need to check their email
+      form.reset();
+    } catch (error: any) {
+      const errorMessage = error.message === 'User already registered'
+        ? 'Este correo electrónico ya está registrado. Intenta iniciar sesión.'
+        : 'No se pudo crear la cuenta. Por favor, intenta de nuevo.';
+
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se pudo crear la cuenta. Por favor, intenta de nuevo.',
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);

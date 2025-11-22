@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Users, Utensils, Star } from "lucide-react";
+import { Calendar, Clock, Users, Utensils, Star, ExternalLink } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,8 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { MesaAbiertaSignup } from "./MesaAbiertaSignup";
+import { AuthModal } from "@/components/auth/AuthModal";
+import { useNavigate } from "react-router-dom";
 
 interface NextMonth {
   id: string;
@@ -40,6 +42,7 @@ interface FeaturedTestimonial {
 export function MesaAbiertaSection() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [nextMonth, setNextMonth] = useState<NextMonth | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [testimonials, setTestimonials] = useState<FeaturedTestimonial[]>([]);
@@ -47,11 +50,28 @@ export function MesaAbiertaSection() {
   const [loading, setLoading] = useState(true);
   const [signupOpen, setSignupOpen] = useState(false);
   const [signupRole, setSignupRole] = useState<'host' | 'guest'>('guest');
+  const [hasActiveParticipation, setHasActiveParticipation] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [pendingSignupRole, setPendingSignupRole] = useState<'host' | 'guest' | null>(null);
 
   useEffect(() => {
     fetchNextMonth();
     fetchTestimonials();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      checkActiveParticipation();
+
+      // If user just logged in and had a pending signup role, open the signup modal
+      if (pendingSignupRole) {
+        setAuthModalOpen(false);
+        setSignupRole(pendingSignupRole);
+        setSignupOpen(true);
+        setPendingSignupRole(null);
+      }
+    }
+  }, [user]);
 
   const fetchNextMonth = async () => {
     try {
@@ -81,23 +101,26 @@ export function MesaAbiertaSection() {
     try {
       const { data: participants, error } = await supabase
         .from('mesa_abierta_participants')
-        .select('role_preference, has_plus_one')
+        .select('role_preference, has_plus_one, host_max_guests')
         .eq('month_id', monthId)
         .eq('status', 'pending');
 
       if (error) throw error;
 
-      const hosts = participants?.filter(p => p.role_preference === 'host').length || 0;
+      const hosts = participants?.filter(p => p.role_preference === 'host') || [];
       const guests = participants?.filter(p => p.role_preference === 'guest').length || 0;
       const plusOnes = participants?.filter(p => p.has_plus_one).length || 0;
 
+      // Calculate total capacity from actual host_max_guests values
+      const totalHostCapacity = hosts.reduce((sum, host) => sum + (host.host_max_guests || 0), 0);
+
       const totalGuestSlots = guests + plusOnes;
       const hostsNeeded = Math.ceil(totalGuestSlots / 5);
-      const spotsAvailable = Math.max(0, (hosts * 5) - totalGuestSlots);
+      const spotsAvailable = Math.max(0, totalHostCapacity - totalGuestSlots);
 
       setStats({
         totalParticipants: participants?.length || 0,
-        hostsNeeded: hostsNeeded - hosts,
+        hostsNeeded: hostsNeeded - hosts.length,
         spotsAvailable
       });
     } catch (error) {
@@ -140,6 +163,25 @@ export function MesaAbiertaSection() {
     }
   };
 
+  const checkActiveParticipation = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('mesa_abierta_participants')
+        .select('id, mesa_abierta_months!inner(dinner_date)')
+        .eq('user_id', user.id)
+        .gte('mesa_abierta_months.dinner_date', new Date().toISOString())
+        .neq('status', 'cancelled')
+        .limit(1)
+        .single();
+
+      setHasActiveParticipation(!!data && !error);
+    } catch (error) {
+      console.error('Error checking participation:', error);
+    }
+  };
+
   // Testimonial carousel auto-rotation
   useEffect(() => {
     if (testimonials.length <= 1) return;
@@ -153,11 +195,9 @@ export function MesaAbiertaSection() {
 
   const handleSignUp = (role: 'host' | 'guest') => {
     if (!user) {
-      toast({
-        title: "Inicia sesión",
-        description: "Debes iniciar sesión para inscribirte en La Mesa Abierta",
-        variant: "destructive"
-      });
+      // Store the intended role and open auth modal
+      setPendingSignupRole(role);
+      setAuthModalOpen(true);
       return;
     }
 
@@ -165,11 +205,24 @@ export function MesaAbiertaSection() {
     setSignupOpen(true);
   };
 
+  const handleAuthSuccess = () => {
+    // After successful authentication, open the signup modal with the pending role
+    setAuthModalOpen(false);
+    if (pendingSignupRole && user) {
+      setSignupRole(pendingSignupRole);
+      setSignupOpen(true);
+      setPendingSignupRole(null);
+    }
+  };
+
   const handleSignupClose = () => {
     setSignupOpen(false);
-    // Refresh stats after signup
+    // Refresh stats and participation check after signup
     if (nextMonth) {
       fetchStats(nextMonth.id);
+    }
+    if (user) {
+      checkActiveParticipation();
     }
   };
 
@@ -204,12 +257,13 @@ export function MesaAbiertaSection() {
             whileInView={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.5 }}
             viewport={{ once: true }}
-            className="inline-flex items-center gap-2 mb-4"
+            className="flex flex-col items-center mb-6"
           >
-            <Utensils className="w-8 h-8 text-casa-700" />
-            <h2 className="text-4xl md:text-5xl font-light text-casa-800">
-              La Mesa Abierta
-            </h2>
+            <img
+              src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM"
+              alt="La Mesa Abierta Logo"
+              className="h-40 md:h-56 w-auto"
+            />
           </motion.div>
           <p className="text-lg text-center text-casa-600 max-w-3xl mx-auto mb-4">
             Una cena mensual llena de sorpresas donde compartimos comida y
@@ -273,12 +327,7 @@ export function MesaAbiertaSection() {
                           </p>
                           {stats.hostsNeeded > 0 && (
                             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                              {stats.hostsNeeded} anfitriones más necesarios
-                            </Badge>
-                          )}
-                          {stats.spotsAvailable > 0 && (
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                              {stats.spotsAvailable} cupos disponibles
+                              Se necesitan {stats.hostsNeeded} anfitriones más
                             </Badge>
                           )}
                         </div>
@@ -289,21 +338,24 @@ export function MesaAbiertaSection() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-                  <Button
-                    onClick={() => handleSignUp('host')}
-                    size="lg"
-                    className="bg-casa-700 hover:bg-casa-800 text-white px-8"
-                  >
-                    Ser Anfitrión
-                  </Button>
-                  <Button
-                    onClick={() => handleSignUp('guest')}
-                    size="lg"
-                    variant="outline"
-                    className="border-casa-700 text-casa-700 hover:bg-casa-50 px-8"
-                  >
-                    Ser Invitado
-                  </Button>
+                  {hasActiveParticipation ? (
+                    <Button
+                      onClick={() => navigate('/mesa-abierta/dashboard')}
+                      size="lg"
+                      className="bg-casa-700 hover:bg-casa-800 text-white px-8"
+                    >
+                      Ver Mi Participación
+                      <ExternalLink className="w-4 h-4 ml-2" />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => handleSignUp('guest')}
+                      size="lg"
+                      className="bg-casa-700 hover:bg-casa-800 text-white px-8"
+                    >
+                      Inscríbete Aquí
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -467,26 +519,44 @@ export function MesaAbiertaSection() {
             viewport={{ once: true }}
             className="mt-16 text-center"
           >
-            <p className="text-lg text-casa-600 mb-6">
-              ¿Listo para una experiencia única de comunidad?
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button
-                onClick={() => handleSignUp('host')}
-                size="lg"
-                className="bg-casa-700 hover:bg-casa-800 text-white px-12"
-              >
-                Inscribirme como Anfitrión
-              </Button>
-              <Button
-                onClick={() => handleSignUp('guest')}
-                size="lg"
-                variant="outline"
-                className="border-casa-700 text-casa-700 hover:bg-casa-50 px-12"
-              >
-                Inscribirme como Invitado
-              </Button>
-            </div>
+            {hasActiveParticipation ? (
+              <>
+                <p className="text-lg text-casa-600 mb-6">
+                  Ya estás inscrito. ¡Revisa los detalles de tu participación!
+                </p>
+                <Button
+                  onClick={() => navigate('/mesa-abierta/dashboard')}
+                  size="lg"
+                  className="bg-casa-700 hover:bg-casa-800 text-white px-12"
+                >
+                  Ver Mi Dashboard
+                  <ExternalLink className="w-4 h-4 ml-2" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-lg text-casa-600 mb-6">
+                  ¿Listo para una experiencia única de comunidad?
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <Button
+                    onClick={() => handleSignUp('host')}
+                    size="lg"
+                    className="bg-casa-700 hover:bg-casa-800 text-white px-12"
+                  >
+                    Inscribirme como Anfitrión
+                  </Button>
+                  <Button
+                    onClick={() => handleSignUp('guest')}
+                    size="lg"
+                    variant="outline"
+                    className="border-casa-700 text-casa-700 hover:bg-casa-50 px-12"
+                  >
+                    Inscribirme como Invitado
+                  </Button>
+                </div>
+              </>
+            )}
           </motion.div>
         )}
 
@@ -499,6 +569,16 @@ export function MesaAbiertaSection() {
             preferredRole={signupRole}
           />
         )}
+
+        {/* Auth Modal */}
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => {
+            setAuthModalOpen(false);
+            setPendingSignupRole(null);
+          }}
+          defaultTab="signup"
+        />
       </div>
     </section>
   );

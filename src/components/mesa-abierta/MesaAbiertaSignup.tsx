@@ -14,7 +14,7 @@ import { useAuth } from "@/components/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DietaryRestrictionsForm, DietaryRestriction, PlusOneDietary } from "./DietaryRestrictionsForm";
 import { WhatsAppOptIn } from "./WhatsAppOptIn";
-import { Home, Users, Check, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
+import { Home, Users, Check, ArrowLeft, ArrowRight, AlertCircle, CheckCircle, Mail } from "lucide-react";
 
 interface MesaAbiertaSignupProps {
   open: boolean;
@@ -28,9 +28,12 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Form state
   const [rolePreference, setRolePreference] = useState<'host' | 'guest'>(preferredRole || 'guest');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [hasPlusOne, setHasPlusOne] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [hostAddress, setHostAddress] = useState('');
@@ -40,11 +43,12 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
   const [phoneNumber, setPhoneNumber] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
 
-  const totalSteps = 4;
+  const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
 
   const canProceedFromStep1 = rolePreference !== null;
-  const canProceedFromStep2 = rolePreference === 'guest' || (rolePreference === 'host' && hostAddress.trim().length > 0);
+  const canProceedFromStep2 = fullName.trim().length > 0 && email.trim().length > 0 && phoneNumber.trim().length > 0;
+  const canProceedFromStep3 = rolePreference === 'guest' || (rolePreference === 'host' && hostAddress.trim().length > 0);
 
   const handleNext = () => {
     if (currentStep < totalSteps) {
@@ -71,6 +75,36 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
     setLoading(true);
 
     try {
+      // Check if user is already registered for this month
+      const { data: existing } = await supabase
+        .from('mesa_abierta_participants')
+        .select('id, status')
+        .eq('user_id', user.id)
+        .eq('month_id', monthId)
+        .maybeSingle();
+
+      if (existing) {
+        toast({
+          title: "Ya estás inscrito",
+          description: existing.status === 'confirmed'
+            ? "Ya tienes una inscripción confirmada para este mes"
+            : "Ya tienes una inscripción pendiente para este mes",
+          variant: "destructive",
+        });
+        onClose();
+        return;
+      }
+
+      // Update user profile with name only (email is in auth.users)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName,
+        })
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
       // Insert participant record
       const { data: participant, error: participantError } = await supabase
         .from('mesa_abierta_participants')
@@ -78,6 +112,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
           user_id: user.id,
           month_id: monthId,
           role_preference: rolePreference,
+          email: email,
           has_plus_one: hasPlusOne,
           plus_one_name: plusOneDietary?.name || null,
           recurring,
@@ -124,16 +159,18 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
         if (plusOneRestrictionsError) throw plusOneRestrictionsError;
       }
 
-      // TODO: Send confirmation email/WhatsApp
+      // Send confirmation email
+      try {
+        await supabase.functions.invoke('send-signup-confirmation', {
+          body: { participantId: participant.id },
+        });
+      } catch (emailError) {
+        console.error('Failed to send confirmation email:', emailError);
+        // Don't throw - we still want to show success even if email fails
+      }
 
-      toast({
-        title: "¡Inscripción exitosa!",
-        description: rolePreference === 'host'
-          ? "Te confirmaremos si serás anfitrión el lunes anterior a la cena."
-          : "Recibirás los detalles de tu cena el lunes anterior al evento.",
-      });
-
-      onClose();
+      // Show success screen instead of just closing
+      setShowSuccess(true);
     } catch (error: any) {
       console.error('Error signing up:', error);
       toast({
@@ -203,6 +240,55 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
         );
 
       case 2:
+        return (
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold">Información de contacto</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Nombre completo *</Label>
+                <Input
+                  id="fullName"
+                  placeholder="Tu nombre completo"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Correo electrónico *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Necesitamos tu email para enviarte los detalles de la cena
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Número de teléfono *</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="+56 9 1234 5678"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Para contactarte en caso de cambios de último momento
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 3:
         return (
           <div className="space-y-6">
             {rolePreference === 'host' ? (
@@ -285,7 +371,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
           </div>
         );
 
-      case 3:
+      case 4:
         return (
           <DietaryRestrictionsForm
             hasPlusOne={hasPlusOne}
@@ -298,20 +384,115 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
           />
         );
 
-      case 4:
+      case 5:
         return (
-          <WhatsAppOptIn
-            phoneNumber={phoneNumber}
-            whatsappEnabled={whatsappEnabled}
-            onPhoneNumberChange={setPhoneNumber}
-            onWhatsAppEnabledChange={setWhatsappEnabled}
-          />
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold">¡Casi listo!</h3>
+            <div className="bg-muted p-6 rounded-lg space-y-4">
+              <div className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Rol: {rolePreference === 'host' ? 'Anfitrión' : 'Invitado'}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Nombre: {fullName}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Email: {email}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Teléfono: {phoneNumber}</p>
+                </div>
+              </div>
+              {hasPlusOne && (
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Con acompañante (+1)</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Recibirás un correo electrónico el lunes anterior a la cena con todos los detalles.
+            </p>
+          </div>
         );
 
       default:
         return null;
     }
   };
+
+  // Show success screen after successful signup
+  if (showSuccess) {
+    return (
+      <Dialog open={open} onOpenChange={() => {
+        setShowSuccess(false);
+        setCurrentStep(1);
+        onClose();
+      }}>
+        <DialogContent className="max-w-md">
+          <div className="text-center space-y-6 py-6">
+            <div className="flex justify-center">
+              <div className="w-20 h-20 bg-casa-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-12 h-12 text-casa-700" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <DialogTitle className="text-2xl font-bold text-casa-800">
+                ¡Inscripción Exitosa!
+              </DialogTitle>
+              <DialogDescription className="text-base">
+                {rolePreference === 'host'
+                  ? "Te confirmaremos si serás anfitrión el lunes anterior a la cena."
+                  : "Recibirás los detalles de tu cena el lunes anterior al evento."}
+              </DialogDescription>
+            </div>
+
+            <div className="bg-casa-50 border border-casa-200 rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-center gap-2 text-casa-800">
+                <Mail className="w-5 h-5" />
+                <span className="font-semibold">Revisa tu correo</span>
+              </div>
+              <p className="text-sm text-casa-700">
+                Te hemos enviado un email de confirmación a <strong>{email}</strong>
+              </p>
+            </div>
+
+            <Alert className="bg-amber-50 border-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                Recibirás toda la información sobre tu cena el <strong>lunes anterior al evento</strong> por correo electrónico.
+              </AlertDescription>
+            </Alert>
+
+            <Button
+              onClick={() => {
+                setShowSuccess(false);
+                setCurrentStep(1);
+                onClose();
+              }}
+              className="w-full bg-casa-700 hover:bg-casa-800 text-white"
+              size="lg"
+            >
+              Entendido
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -343,7 +524,8 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                 onClick={handleNext}
                 disabled={
                   (currentStep === 1 && !canProceedFromStep1) ||
-                  (currentStep === 2 && !canProceedFromStep2)
+                  (currentStep === 2 && !canProceedFromStep2) ||
+                  (currentStep === 3 && !canProceedFromStep3)
                 }
               >
                 Siguiente
