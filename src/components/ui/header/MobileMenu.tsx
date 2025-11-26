@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { User } from 'lucide-react';
 
@@ -9,31 +10,30 @@ interface MobileMenuProps {
     user: any;
     profile: any;
     logout: () => void;
-    openProfileModal: () => void;
     openAuthModal: () => void;
     openContactModal: () => void;
     openDonationModal: () => void;
     closeMenu: () => void;
 }
 
-export function MobileMenu({ 
-    isOpen, 
-    user, 
-    profile, 
-    logout, 
-    openProfileModal,
+export function MobileMenu({
+    isOpen,
+    user,
+    logout,
     openAuthModal,
     openContactModal,
     openDonationModal,
-    closeMenu 
+    closeMenu
 }: MobileMenuProps) {
+    const navigate = useNavigate();
+
     if (!isOpen) return null;
 
     return (
         <div className="container absolute top-[100%] left-0 right-0 z-40 bg-white py-4 border-t border-muted">
             <div className="flex flex-col space-y-4">
-                <Button 
-                    variant="outline" 
+                <Button
+                    variant="outline"
                     onClick={() => {
                         openContactModal();
                         closeMenu();
@@ -43,7 +43,7 @@ export function MobileMenu({
                     Contactar
                 </Button>
 
-                <Button 
+                <Button
                     onClick={() => {
                         openDonationModal();
                         closeMenu();
@@ -59,15 +59,15 @@ export function MobileMenu({
                             variant="outline"
                             className="w-full flex items-center justify-center gap-2"
                             onClick={() => {
-                                openProfileModal();
+                                navigate('/profile');
                                 closeMenu();
                             }}
                         >
                             <User size={16} />
                             Mi Perfil
                         </Button>
-                        <Button 
-                            variant="outline" 
+                        <Button
+                            variant="outline"
                             onClick={() => {
                                 logout();
                                 closeMenu();
@@ -78,7 +78,7 @@ export function MobileMenu({
                         </Button>
                     </div>
                 ) : (
-                    <Button 
+                    <Button
                         onClick={() => {
                             openAuthModal();
                             closeMenu();

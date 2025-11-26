@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoginForm } from './LoginForm';
 import { SignupForm } from './SignupForm';
+import { ForgotPasswordForm } from './ForgotPasswordForm';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface AuthModalProps {
 
 export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalProps) {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>(defaultTab);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleLoginSuccess = () => {
     onClose();
@@ -22,31 +24,60 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
     onClose();
   };
 
+  const handleForgotPassword = () => {
+    setShowForgotPassword(true);
+  };
+
+  const handleBackToLogin = () => {
+    setShowForgotPassword(false);
+  };
+
+  const handleModalClose = () => {
+    setShowForgotPassword(false);
+    onClose();
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleModalClose}>
       <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="text-center text-2xl font-serif">
-            {activeTab === 'login' ? 'INICIAR SESION' : 'CREAR CUENTA'}
-          </DialogTitle>
-          <DialogDescription className="text-center">
-            {activeTab === 'login'
-              ? 'Ingresa a tu cuenta para enviar peticiones de oración'
-              : 'Crea una cuenta para ser parte de nuestra comunidad'}
-          </DialogDescription>
-        </DialogHeader>
-        <Tabs defaultValue={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'signup')} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="login">INICIAR SESION</TabsTrigger>
-            <TabsTrigger value="signup">REGISTRARSE</TabsTrigger>
-          </TabsList>
-          <TabsContent value="login">
-            <LoginForm onLoginSuccess={handleLoginSuccess} />
-          </TabsContent>
-          <TabsContent value="signup">
-            <SignupForm onSignupSuccess={handleSignupSuccess} />
-          </TabsContent>
-        </Tabs>
+        {showForgotPassword ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-center text-2xl font-serif">
+                RECUPERAR CONTRASEÑA
+              </DialogTitle>
+              <DialogDescription className="text-center">
+                Te enviaremos un enlace para restablecer tu contraseña
+              </DialogDescription>
+            </DialogHeader>
+            <ForgotPasswordForm onBack={handleBackToLogin} />
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-center text-2xl font-serif">
+                {activeTab === 'login' ? 'INICIAR SESION' : 'CREAR CUENTA'}
+              </DialogTitle>
+              <DialogDescription className="text-center">
+                {activeTab === 'login'
+                  ? 'Ingresa a tu cuenta para enviar peticiones de oración'
+                  : 'Crea una cuenta para ser parte de nuestra comunidad'}
+              </DialogDescription>
+            </DialogHeader>
+            <Tabs defaultValue={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'signup')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="login">INICIAR SESION</TabsTrigger>
+                <TabsTrigger value="signup">REGISTRARSE</TabsTrigger>
+              </TabsList>
+              <TabsContent value="login">
+                <LoginForm onLoginSuccess={handleLoginSuccess} onForgotPassword={handleForgotPassword} />
+              </TabsContent>
+              <TabsContent value="signup">
+                <SignupForm onSignupSuccess={handleSignupSuccess} />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

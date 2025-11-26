@@ -1,10 +1,8 @@
 
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { ProfileModal } from '@/components/profile/ProfileModal';
 import { NavbarDesktopMenu } from './navbar/NavbarDesktopMenu';
 import { NavbarMobileMenu } from './navbar/NavbarMobileMenu';
 import { NavbarLogo } from './navbar/NavbarLogo';
@@ -13,21 +11,8 @@ import { useNavbarScroll } from './navbar/useNavbarScroll';
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const { user, profile, logout } = useAuth();
   const isScrolled = useNavbarScroll();
-
-  const handleOpenProfileModal = () => {
-    setIsProfileModalOpen(true);
-  };
-
-  const handleCloseProfileModal = () => {
-    setIsProfileModalOpen(false);
-    // Force a small delay to ensure React state updates properly
-    setTimeout(() => {
-      console.log("Profile modal closed");
-    }, 10);
-  };
 
   const getInitials = (name: string) => {
     return name
@@ -50,10 +35,9 @@ export function Navbar() {
           <NavbarLogo />
 
           {/* Desktop Navigation */}
-          <NavbarDesktopMenu 
+          <NavbarDesktopMenu
             user={user}
             profile={profile}
-            setIsProfileModalOpen={handleOpenProfileModal}
             setIsAuthModalOpen={setIsAuthModalOpen}
             logout={logout}
             getInitials={getInitials}
@@ -69,24 +53,18 @@ export function Navbar() {
         </div>
 
         {/* Mobile Navigation */}
-        <NavbarMobileMenu 
+        <NavbarMobileMenu
           isMenuOpen={isMenuOpen}
           user={user}
-          setIsProfileModalOpen={handleOpenProfileModal}
           setIsAuthModalOpen={setIsAuthModalOpen}
           setIsMenuOpen={setIsMenuOpen}
           logout={logout}
         />
       </nav>
 
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
-      />
-      
-      <ProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={handleCloseProfileModal}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </>
   );

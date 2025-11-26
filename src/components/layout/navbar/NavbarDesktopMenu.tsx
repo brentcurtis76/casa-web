@@ -1,12 +1,12 @@
 
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel,
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger 
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User } from 'lucide-react';
@@ -14,20 +14,19 @@ import { User } from 'lucide-react';
 interface NavbarDesktopMenuProps {
   user: any;
   profile: any;
-  setIsProfileModalOpen: () => void;
   setIsAuthModalOpen: (isOpen: boolean) => void;
   logout: () => void;
   getInitials: (name: string) => string;
 }
 
-export function NavbarDesktopMenu({ 
-  user, 
-  profile, 
-  setIsProfileModalOpen, 
-  setIsAuthModalOpen, 
+export function NavbarDesktopMenu({
+  user,
+  profile,
+  setIsAuthModalOpen,
   logout,
   getInitials
 }: NavbarDesktopMenuProps) {
+  const navigate = useNavigate();
   const handleNavigation = (href: string, event: React.MouseEvent) => {
     event.preventDefault();
     
@@ -113,7 +112,7 @@ export function NavbarDesktopMenu({
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={setIsProfileModalOpen}>
+            <DropdownMenuItem onClick={() => navigate('/profile')}>
               <User className="mr-2 h-4 w-4" />
               Mi Perfil
             </DropdownMenuItem>

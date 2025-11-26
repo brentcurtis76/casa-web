@@ -1,24 +1,24 @@
 
+import { useNavigate } from 'react-router-dom';
 import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface NavbarMobileMenuProps {
   isMenuOpen: boolean;
   user: any;
-  setIsProfileModalOpen: (isOpen: boolean) => void;
   setIsAuthModalOpen: (isOpen: boolean) => void;
   setIsMenuOpen: (isOpen: boolean) => void;
   logout: () => void;
 }
 
-export function NavbarMobileMenu({ 
-  isMenuOpen, 
-  user, 
-  setIsProfileModalOpen, 
-  setIsAuthModalOpen, 
+export function NavbarMobileMenu({
+  isMenuOpen,
+  user,
+  setIsAuthModalOpen,
   setIsMenuOpen,
-  logout 
+  logout
 }: NavbarMobileMenuProps) {
+  const navigate = useNavigate();
   if (!isMenuOpen) return null;
 
   const handleNavigation = (href: string, event: React.MouseEvent) => {
@@ -95,7 +95,7 @@ export function NavbarMobileMenu({
               variant="outline"
               className="w-full flex items-center justify-center gap-2"
               onClick={() => {
-                setIsProfileModalOpen(true);
+                navigate('/profile');
                 setIsMenuOpen(false);
               }}
             >

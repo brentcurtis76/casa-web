@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
-import { ProfileModal } from "@/components/profile/ProfileModal";
 import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
 import { ContactModal } from "@/components/contact/ContactModal";
@@ -14,16 +13,10 @@ function Header1() {
     const { user, profile, logout } = useAuth();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isContactModalOpen, setIsContactModalOpen] = useState(false);
     const [isDonationModalOpen, setIsDonationModalOpen] = useState(false);
-    
-    const handleCloseProfileModal = () => {
-        setIsProfileModalOpen(false);
-    };
 
     const toggleMenu = () => setOpen(!isOpen);
-    const openProfileModal = () => setIsProfileModalOpen(true);
     const openAuthModal = () => setIsAuthModalOpen(true);
     const openContactModal = () => setIsContactModalOpen(true);
     const openDonationModal = () => setIsDonationModalOpen(true);
@@ -45,11 +38,10 @@ function Header1() {
                     </Button>
                     
                     {user ? (
-                        <UserMenu 
-                            user={user} 
-                            profile={profile} 
-                            logout={logout} 
-                            openProfileModal={openProfileModal} 
+                        <UserMenu
+                            user={user}
+                            profile={profile}
+                            logout={logout}
                         />
                     ) : (
                         <Button variant="outline" onClick={openAuthModal}>
@@ -66,13 +58,12 @@ function Header1() {
                 </div>
                 
                 {/* Simplified mobile menu */}
-                <MobileMenu 
+                <MobileMenu
                     isOpen={isOpen}
                     navigationItems={[]}
                     user={user}
                     profile={profile}
                     logout={logout}
-                    openProfileModal={openProfileModal}
                     openAuthModal={openAuthModal}
                     openContactModal={openContactModal}
                     openDonationModal={openDonationModal}
@@ -80,14 +71,9 @@ function Header1() {
                 />
             </div>
             
-            <AuthModal 
-                isOpen={isAuthModalOpen} 
-                onClose={() => setIsAuthModalOpen(false)} 
-            />
-            
-            <ProfileModal 
-                isOpen={isProfileModalOpen}
-                onClose={handleCloseProfileModal}
+            <AuthModal
+                isOpen={isAuthModalOpen}
+                onClose={() => setIsAuthModalOpen(false)}
             />
 
             <ContactModal

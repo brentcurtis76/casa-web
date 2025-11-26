@@ -17,7 +17,9 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => void;
-  refreshProfile: () => Promise<void>; // Added the refreshProfile method
+  refreshProfile: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -137,16 +139,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Reset password error:', error.message);
+      throw new Error(error.message || 'Error al enviar el correo de recuperación');
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Update password error:', error.message);
+      throw new Error(error.message || 'Error al actualizar la contraseña');
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      profile, 
-      session, 
-      loading, 
-      login, 
-      signup, 
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      session,
+      loading,
+      login,
+      signup,
       logout,
-      refreshProfile // Add the refreshProfile function to the context
+      refreshProfile,
+      resetPassword,
+      updatePassword,
     }}>
       {children}
     </AuthContext.Provider>

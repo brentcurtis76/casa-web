@@ -12,6 +12,8 @@ import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
 import HeroDemo from "./pages/HeroDemo";
 import MesaAbiertaDashboardPage from "./pages/MesaAbiertaDashboard";
 import MesaAbiertaAdminPage from "./pages/MesaAbiertaAdmin";
+import ResetPassword from "./pages/ResetPassword";
+import ProfilePage from "./pages/ProfilePage";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +31,8 @@ const App = () => (
             <Route path="/header-demo" element={<HeaderDemo />} />
             <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
             <Route path="/hero-demo" element={<HeroDemo />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/profile" element={<ProfilePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

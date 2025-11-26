@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,17 +16,18 @@ interface UserMenuProps {
     user: any;
     profile: any;
     logout: () => void;
-    openProfileModal: () => void;
     isMobile?: boolean;
 }
 
-export function UserMenu({ user, profile, logout, openProfileModal, isMobile = false }: UserMenuProps) {
+export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuProps) {
+    const navigate = useNavigate();
+
     if (isMobile) {
         return (
             <div className="flex flex-col gap-2 mt-4">
-                <Button 
-                    variant="outline" 
-                    onClick={openProfileModal}
+                <Button
+                    variant="outline"
+                    onClick={() => navigate('/profile')}
                     className="w-full"
                 >
                     <User className="mr-2 h-4 w-4" />
@@ -50,7 +52,7 @@ export function UserMenu({ user, profile, logout, openProfileModal, isMobile = f
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={openProfileModal}>
+                <DropdownMenuItem onClick={() => navigate('/profile')}>
                     <User className="mr-2 h-4 w-4" />
                     <span>Mi Perfil</span>
                 </DropdownMenuItem>
