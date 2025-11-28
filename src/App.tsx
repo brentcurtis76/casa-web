@@ -12,6 +12,7 @@ import ExpandableTabsDemo from "./pages/ExpandableTabsDemo";
 import HeroDemo from "./pages/HeroDemo";
 import MesaAbiertaDashboardPage from "./pages/MesaAbiertaDashboard";
 import MesaAbiertaAdminPage from "./pages/MesaAbiertaAdmin";
+import EventsAdminPage from "./pages/EventsAdmin";
 import ResetPassword from "./pages/ResetPassword";
 import ProfilePage from "./pages/ProfilePage";
 
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/mesa-abierta/dashboard" element={<MesaAbiertaDashboardPage />} />
             <Route path="/mesa-abierta/admin" element={<MesaAbiertaAdminPage />} />
+            <Route path="/admin/events" element={<EventsAdminPage />} />
             <Route path="/header-demo" element={<HeaderDemo />} />
             <Route path="/expandable-tabs" element={<ExpandableTabsDemo />} />
             <Route path="/hero-demo" element={<HeroDemo />} />
