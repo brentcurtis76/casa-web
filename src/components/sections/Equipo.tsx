@@ -242,7 +242,7 @@ export function Equipo() {
             >
               En cuanto a las decisiones y guías estratégicas, el Concilio de <strong className="text-casa-700">CASA</strong>, compuesto por
               Andrew Warren, Victor Córdova, Aurora Fontecilla, Anita Pinchart, Georgina García,
-              Nevenka Echegaray, Mónica Van Gindertaelen, Melanie Sharman, Pablo Rebolledo y José Martínez,
+              Nevenka Echegaray, Melanie Sharman, Pablo Rebolledo y José Martínez,
               desempeña un papel crucial, velando por la integridad y el rumbo de nuestra comunidad.
             </motion.p>
             <motion.p
