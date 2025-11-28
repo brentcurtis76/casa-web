@@ -1,7 +1,7 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Settings, Calendar, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -10,7 +10,9 @@ import {
     DropdownMenuItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
+    DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { supabase } from "@/integrations/supabase/client";
 
 interface UserMenuProps {
     user: any;
@@ -21,6 +23,25 @@ interface UserMenuProps {
 
 export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuProps) {
     const navigate = useNavigate();
+    const [isAdmin, setIsAdmin] = useState(false);
+
+    useEffect(() => {
+        const checkAdminStatus = async () => {
+            if (!user) return;
+
+            const { data, error } = await supabase
+                .from('mesa_abierta_admin_roles')
+                .select('role')
+                .eq('user_id', user.id)
+                .single();
+
+            if (data && !error) {
+                setIsAdmin(true);
+            }
+        };
+
+        checkAdminStatus();
+    }, [user]);
 
     if (isMobile) {
         return (
@@ -33,6 +54,26 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                     <User className="mr-2 h-4 w-4" />
                     Mi Perfil
                 </Button>
+                {isAdmin && (
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => navigate('/admin/events')}
+                            className="w-full"
+                        >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            Admin Eventos
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => navigate('/mesa-abierta/admin')}
+                            className="w-full"
+                        >
+                            <UtensilsCrossed className="mr-2 h-4 w-4" />
+                            Admin Mesa Abierta
+                        </Button>
+                    </>
+                )}
                 <Button variant="outline" onClick={logout} className="w-full">
                     <LogOut className="mr-2 h-4 w-4" />
                     Cerrar Sesión
@@ -56,6 +97,22 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                     <User className="mr-2 h-4 w-4" />
                     <span>Mi Perfil</span>
                 </DropdownMenuItem>
+                {isAdmin && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                            Administración
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => navigate('/admin/events')}>
+                            <Calendar className="mr-2 h-4 w-4" />
+                            <span>Eventos</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate('/mesa-abierta/admin')}>
+                            <UtensilsCrossed className="mr-2 h-4 w-4" />
+                            <span>Mesa Abierta</span>
+                        </DropdownMenuItem>
+                    </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
