@@ -634,56 +634,6 @@ export function MesaAbiertaSection() {
           </div>
         </motion.div>
 
-        {/* Final CTA */}
-        {nextMonth && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-            viewport={{ once: true }}
-            className="mt-16 text-center"
-          >
-            {hasActiveParticipation ? (
-              <>
-                <p className="text-lg text-stone-600 mb-6">
-                  Ya estás inscrito. ¡Revisa los detalles de tu participación!
-                </p>
-                <Button
-                  onClick={() => navigate('/mesa-abierta/dashboard')}
-                  size="lg"
-                  className="bg-stone-800 hover:bg-stone-900 text-white px-12"
-                >
-                  Ver Mi Dashboard
-                  <ExternalLink className="w-4 h-4 ml-2" />
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-lg text-stone-600 mb-6">
-                  ¿Listo para una experiencia única de comunidad?
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Button
-                    onClick={() => handleSignUp('host')}
-                    size="lg"
-                    className="bg-stone-800 hover:bg-stone-900 text-white px-12"
-                  >
-                    Inscribirme como Anfitrión
-                  </Button>
-                  <Button
-                    onClick={() => handleSignUp('guest')}
-                    size="lg"
-                    variant="outline"
-                    className="border-stone-700 text-stone-700 hover:bg-stone-50 px-12"
-                  >
-                    Inscribirme como Invitado
-                  </Button>
-                </div>
-              </>
-            )}
-          </motion.div>
-        )}
-
         {/* Sign-up Dialog */}
         {nextMonth && (
           <MesaAbiertaSignup

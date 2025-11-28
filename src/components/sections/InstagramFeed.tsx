@@ -20,6 +20,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { motion } from "framer-motion";
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -29,6 +30,27 @@ const formSchema = z.object({
     message: "Por favor ingrese un número de teléfono válido.",
   }),
 });
+
+const socialLinks = [
+  {
+    href: "https://www.instagram.com/anglicanasanandres",
+    icon: InstagramIcon,
+    label: "@anglicanasanandres",
+    bgClass: "bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500"
+  },
+  {
+    href: "https://www.tiktok.com/@anglicanasanandres",
+    icon: TikTokIcon,
+    label: "@anglicanasanandres",
+    bgClass: "bg-black"
+  },
+  {
+    href: "https://www.youtube.com/c/ComunidadAnglicanaSanAndrés",
+    icon: YoutubeIcon,
+    label: "Comunidad Anglicana San Andrés",
+    bgClass: "bg-red-600"
+  }
+];
 
 export function InstagramFeed() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,7 +68,7 @@ export function InstagramFeed() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setSubmitError(null);
     setSubmitSuccess(false);
-    
+
     try {
       setIsSubmitting(true);
       console.log("Enviando solicitud...", values);
@@ -60,7 +82,7 @@ export function InstagramFeed() {
       }
 
       console.log("Respuesta:", data);
-      
+
       if (!data.success) {
         throw new Error(data.error || "Error al procesar la solicitud");
       }
@@ -91,58 +113,64 @@ export function InstagramFeed() {
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           <div className="space-y-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-casa-700 mb-8">
+            <motion.h2
+              className="text-2xl md:text-3xl font-bold text-casa-700 mb-8"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              viewport={{ once: true }}
+            >
               Síguenos en redes sociales
-            </h2>
-            
-            <div className="space-y-4">
+            </motion.h2>
+
+            <motion.div
+              className="space-y-4"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              viewport={{ once: true }}
+            >
               <h3 className="text-xl font-semibold text-casa-600">Nuestras redes</h3>
-              
+
               <div className="flex flex-col space-y-4">
-                <a 
-                  href="https://www.instagram.com/anglicanasanandres" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
-                >
-                  <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
-                    <InstagramIcon />
-                  </div>
-                  <span className="font-medium">@anglicanasanandres</span>
-                </a>
-                
-                <a 
-                  href="https://www.tiktok.com/@anglicanasanandres" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
-                >
-                  <div className="bg-black text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
-                    <TikTokIcon />
-                  </div>
-                  <span className="font-medium">@anglicanasanandres</span>
-                </a>
-                
-                <a 
-                  href="https://www.youtube.com/c/ComunidadAnglicanaSanAndrés" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
-                >
-                  <div className="bg-red-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
-                    <YoutubeIcon />
-                  </div>
-                  <span className="font-medium">Comunidad Anglicana San Andrés</span>
-                </a>
+                {socialLinks.map((link, index) => (
+                  <motion.a
+                    key={link.href}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-3 rounded-md hover:bg-gray-100 transition-colors"
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
+                    viewport={{ once: true }}
+                    whileHover={{ x: 5 }}
+                  >
+                    <motion.div
+                      className={`${link.bgClass} text-white p-2 rounded-full w-10 h-10 flex items-center justify-center`}
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <link.icon />
+                    </motion.div>
+                    <span className="font-medium">{link.label}</span>
+                  </motion.a>
+                ))}
               </div>
-            </div>
+            </motion.div>
           </div>
 
-          <div className="bg-casa-50 p-6 rounded-lg shadow-sm">
+          <motion.div
+            className="bg-casa-50 p-6 rounded-lg shadow-sm"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            viewport={{ once: true }}
+          >
             <h3 className="text-xl font-semibold text-casa-600 mb-4">
               Únete a nuestra lista de difusión de WhatsApp
             </h3>
-            
+
             {submitError && (
               <Alert variant="destructive" className="mb-4">
                 <AlertCircle className="h-4 w-4" />
@@ -150,7 +178,7 @@ export function InstagramFeed() {
                 <AlertDescription>{submitError}</AlertDescription>
               </Alert>
             )}
-            
+
             {submitSuccess && (
               <Alert className="mb-4 bg-green-50 border-green-200">
                 <AlertTitle className="text-green-700">¡Solicitud enviada!</AlertTitle>
@@ -159,7 +187,7 @@ export function InstagramFeed() {
                 </AlertDescription>
               </Alert>
             )}
-            
+
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
@@ -175,7 +203,7 @@ export function InstagramFeed() {
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="phone"
@@ -192,10 +220,10 @@ export function InstagramFeed() {
                     </FormItem>
                   )}
                 />
-                
-                <Button 
-                  type="submit" 
-                  className="w-full" 
+
+                <Button
+                  type="submit"
+                  className="w-full"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? "Enviando..." : "Unirse"}
@@ -203,7 +231,7 @@ export function InstagramFeed() {
                 </Button>
               </form>
             </Form>
-          </div>
+          </motion.div>
         </div>
       </div>
     </section>
