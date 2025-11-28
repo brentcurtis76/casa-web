@@ -10,6 +10,30 @@ import { EventCalendar } from '@/components/calendar/EventCalendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { parseISO, isAfter, compareAsc } from 'date-fns';
 
+// Animation variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.1
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: [0.25, 0.46, 0.45, 0.94]
+    }
+  }
+};
+
 interface Event {
   id: string;
   title: string;
@@ -69,22 +93,43 @@ export function Eventos() {
   const upcomingEvents = events.slice(1, 5);
 
   return (
-    <section id="eventos" className="py-20 bg-gradient-to-b from-white to-casa-50/30">
-      <div className="container mx-auto px-4">
+    <section id="eventos" className="section bg-gradient-to-b from-white via-casa-50/30 to-white noise-texture overflow-hidden relative">
+      {/* Decorative background elements */}
+      <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-radial from-amber-100/20 to-transparent rounded-full blur-3xl opacity-50" />
+      <div className="absolute bottom-20 left-10 w-24 h-24 border border-casa-200/30 rounded-full opacity-40" />
+      <div className="absolute top-40 left-0 w-2 h-24 bg-gradient-to-b from-amber-200/40 to-transparent" />
+
+      <div className="container mx-auto px-4 relative z-10">
         {/* Header */}
         <motion.div
-          className="text-center mb-12"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
+          className="text-center mb-14"
+          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
         >
-          <h2 className="text-3xl md:text-4xl font-light text-casa-800 mb-4">
+          <motion.div
+            className="flex items-center justify-center gap-4 mb-6"
+            variants={itemVariants}
+          >
+            <div className="w-16 h-px bg-gradient-to-r from-transparent to-amber-400/60" />
+            <div className="w-2 h-2 bg-amber-400 rounded-full" />
+            <div className="w-16 h-px bg-gradient-to-l from-transparent to-amber-400/60" />
+          </motion.div>
+
+          <motion.h2
+            className="heading-dramatic font-light text-casa-800 mb-4"
+            variants={itemVariants}
+          >
             Próximos Eventos
-          </h2>
-          <p className="text-lg text-casa-600 max-w-2xl mx-auto">
+          </motion.h2>
+
+          <motion.p
+            className="text-xl text-casa-600 max-w-2xl mx-auto leading-relaxed"
+            variants={itemVariants}
+          >
             Únete a nuestras actividades y celebraciones. Cada encuentro es una oportunidad para crecer juntos.
-          </p>
+          </motion.p>
         </motion.div>
 
         {/* Loading State */}
@@ -104,16 +149,22 @@ export function Eventos() {
           /* Empty State */
           <motion.div
             className="text-center py-16"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6 }}
             viewport={{ once: true }}
           >
-            <Calendar className="h-16 w-16 mx-auto text-casa-300 mb-4" />
-            <p className="text-casa-500 text-lg">
+            <motion.div
+              className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-casa-100/50 flex items-center justify-center"
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <Calendar className="h-10 w-10 text-casa-400" />
+            </motion.div>
+            <p className="text-casa-600 text-xl mb-2">
               No hay eventos programados próximamente.
             </p>
-            <p className="text-casa-400 mt-2">
+            <p className="text-casa-400">
               Vuelve pronto para ver nuevas actividades.
             </p>
           </motion.div>
@@ -121,7 +172,13 @@ export function Eventos() {
           <div className="max-w-4xl mx-auto">
             {/* Featured Event */}
             {featuredEvent && (
-              <div className="mb-10">
+              <motion.div
+                className="mb-12"
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                viewport={{ once: true }}
+              >
                 <FeaturedEventCard
                   title={featuredEvent.title}
                   date={featuredEvent.date}
@@ -130,7 +187,7 @@ export function Eventos() {
                   description={featuredEvent.description}
                   imageUrl={featuredEvent.image_url}
                 />
-              </div>
+              </motion.div>
             )}
 
             {/* Upcoming Events Timeline */}
@@ -141,16 +198,19 @@ export function Eventos() {
                 transition={{ duration: 0.6, delay: 0.2 }}
                 viewport={{ once: true }}
               >
-                <h3 className="text-xl font-light text-casa-700 mb-6">
-                  Más Eventos
-                </h3>
+                <div className="flex items-center gap-4 mb-8">
+                  <h3 className="text-xl font-light text-casa-700">
+                    Más Eventos
+                  </h3>
+                  <div className="flex-1 h-px bg-gradient-to-r from-casa-200 to-transparent" />
+                </div>
                 <EventTimeline events={upcomingEvents} />
               </motion.div>
             )}
 
             {/* View Calendar Button */}
             <motion.div
-              className="text-center mt-10"
+              className="text-center mt-12"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
@@ -160,11 +220,11 @@ export function Eventos() {
                 variant="outline"
                 size="lg"
                 onClick={() => setShowCalendar(true)}
-                className="border-casa-300 text-casa-700 hover:bg-casa-50"
+                className="border-2 border-casa-300 text-casa-700 hover:bg-casa-50 hover:border-casa-400 shadow-sm hover:shadow-lg transition-all duration-300 group"
               >
-                <Calendar className="h-4 w-4 mr-2" />
+                <Calendar className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
                 Ver Calendario Completo
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
               </Button>
             </motion.div>
           </div>

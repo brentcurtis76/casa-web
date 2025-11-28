@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 
 // Calculate which Advent week we're in (1-4, or 0 if before Advent, 5 if Christmas)
 const getAdventWeek = (): number => {
@@ -103,6 +104,53 @@ const Candle = ({
   );
 };
 
+// Animation variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.2
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 25 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: [0.25, 0.46, 0.45, 0.94]
+    }
+  }
+};
+
+const candleContainerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+      delayChildren: 0.5
+    }
+  }
+};
+
+const candleVariants = {
+  hidden: { opacity: 0, y: 40, scale: 0.8 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      duration: 0.5,
+      ease: [0.25, 0.46, 0.45, 0.94]
+    }
+  }
+};
 
 export function AdvientoHero() {
   const adventWeek = useMemo(() => getAdventWeek(), []);
@@ -132,175 +180,182 @@ export function AdvientoHero() {
   ];
 
   return (
-    <section className="section relative overflow-hidden bg-gradient-to-b from-amber-50/30 via-white to-white">
-      {/* Subtle radial glow behind candles */}
+    <section className="section relative overflow-hidden bg-gradient-to-b from-amber-50/40 via-white to-white noise-texture min-h-[90vh] flex items-center">
+      {/* Enhanced radial glow behind candles */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <motion.div
-          className="w-[500px] h-[500px] rounded-full"
+          className="w-[600px] h-[600px] rounded-full"
           style={{
-            background: "radial-gradient(circle, rgba(251,191,36,0.08) 0%, rgba(251,191,36,0) 70%)"
+            background: "radial-gradient(circle, rgba(251,191,36,0.12) 0%, rgba(251,191,36,0.04) 40%, rgba(251,191,36,0) 70%)"
           }}
           animate={{
-            scale: [1, 1.05, 1],
-            opacity: [0.6, 0.8, 0.6]
+            scale: [1, 1.08, 1],
+            opacity: [0.6, 0.9, 0.6]
           }}
           transition={{
-            duration: 4,
+            duration: 5,
             repeat: Infinity,
             ease: "easeInOut"
           }}
         />
       </div>
 
-      <div className="container-custom relative z-10">
-        <div className="max-w-3xl mx-auto text-center">
-          {/* Overline */}
-          <motion.p
-            className="text-sm tracking-widest uppercase text-casa-500 mb-4"
-            initial={{ opacity: 0, y: -10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            viewport={{ once: true }}
-          >
-            CASA te invita
-          </motion.p>
+      {/* Decorative geometric elements */}
+      <div className="absolute top-20 left-10 w-32 h-32 border border-amber-200/30 rounded-full opacity-50" />
+      <div className="absolute bottom-32 right-16 w-20 h-20 border border-casa-200/40 rotate-45 opacity-40" />
+      <div className="absolute top-1/3 right-10 w-2 h-16 bg-gradient-to-b from-amber-200/20 to-transparent" />
 
-          {/* Title */}
+      <div className="container-custom relative z-10">
+        <motion.div
+          className="max-w-3xl mx-auto text-center"
+          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-50px" }}
+        >
+          {/* Overline with decorative elements */}
+          <motion.div
+            className="flex items-center justify-center gap-4 mb-6"
+            variants={itemVariants}
+          >
+            <div className="w-12 h-px bg-gradient-to-r from-transparent to-amber-400/60" />
+            <p className="text-sm tracking-[0.2em] uppercase text-casa-500 font-medium">
+              CASA te invita
+            </p>
+            <div className="w-12 h-px bg-gradient-to-l from-transparent to-amber-400/60" />
+          </motion.div>
+
+          {/* Title - Larger and more dramatic */}
           <motion.h1
-            className="text-5xl md:text-7xl font-serif font-bold text-casa-800 mb-6 tracking-tight"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            viewport={{ once: true }}
+            className="heading-xl font-serif font-bold text-casa-800 mb-8"
+            variants={itemVariants}
           >
             Adviento 2025
           </motion.h1>
 
           {/* Subtitle */}
           <motion.p
-            className="text-lg md:text-xl text-casa-600 mb-8 leading-relaxed"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            viewport={{ once: true }}
+            className="text-xl md:text-2xl text-casa-600 mb-10 leading-relaxed max-w-xl mx-auto"
+            variants={itemVariants}
           >
             Un tiempo de espera, esperanza y preparación.
             <br className="hidden md:block" />
-            Acompáñanos en este camino hacia la luz.
+            <span className="text-amber-700">Acompáñanos en este camino hacia la luz.</span>
           </motion.p>
 
-          {/* Candles */}
-          <div className="relative my-12">
+          {/* Candles with enhanced animation */}
+          <motion.div
+            className="relative my-16"
+            variants={candleContainerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+          >
             {/* Candles row */}
-            <div className="relative flex justify-center items-end gap-4 md:gap-8">
+            <div className="relative flex justify-center items-end gap-6 md:gap-10">
               {candles.map((candle, index) => (
                 <motion.div
                   key={index}
-                  className="flex flex-col items-center"
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.5,
-                    delay: 0.3 + index * 0.1,
-                    ease: "easeOut"
+                  className="flex flex-col items-center cursor-pointer"
+                  variants={candleVariants}
+                  whileHover={{
+                    y: -8,
+                    transition: { type: "spring", stiffness: 400 }
                   }}
-                  viewport={{ once: true }}
-                  whileHover={{ y: -5 }}
                 >
-                  {/* Glow effect for lit candles */}
+                  {/* Enhanced glow effect for lit candles */}
                   {candle.isLit && (
                     <motion.div
-                      className="absolute -top-4 w-8 h-12 rounded-full"
+                      className="absolute -top-6 w-12 h-16 rounded-full"
                       style={{
-                        background: "radial-gradient(ellipse at center, rgba(251,191,36,0.4) 0%, rgba(251,191,36,0) 70%)"
+                        background: "radial-gradient(ellipse at center, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.2) 40%, rgba(251,191,36,0) 70%)"
                       }}
                       animate={{
-                        opacity: [0.5, 0.8, 0.5],
-                        scale: [1, 1.1, 1]
+                        opacity: [0.4, 0.9, 0.4],
+                        scale: [1, 1.15, 1]
                       }}
                       transition={{
-                        duration: 2,
+                        duration: 2.5,
                         repeat: Infinity,
                         ease: "easeInOut",
-                        delay: index * 0.3
+                        delay: index * 0.25
                       }}
                     />
                   )}
                   <Candle
-                    className={`${candle.isTall ? 'w-10 h-24 md:w-12 md:h-28' : 'w-8 h-20 md:w-10 md:h-24'} ${
+                    className={`${candle.isTall ? 'w-12 h-28 md:w-14 md:h-32' : 'w-10 h-24 md:w-12 md:h-28'} ${
                       candle.isLit ? 'text-amber-600' : 'text-casa-400'
                     } transition-colors duration-500`}
                     isLit={candle.isLit}
                     isTall={candle.isTall}
                   />
                   <motion.span
-                    className={`text-[10px] md:text-xs mt-3 tracking-wide transition-colors duration-500 ${
-                      candle.isLit ? 'text-amber-700 font-medium' : 'text-casa-400'
+                    className={`text-xs md:text-sm mt-4 tracking-wide transition-colors duration-500 ${
+                      candle.isLit ? 'text-amber-700 font-semibold' : 'text-casa-400'
                     }`}
-                    initial={{ opacity: 0 }}
-                    whileInView={{ opacity: 1 }}
-                    transition={{ duration: 0.4, delay: 0.5 + index * 0.1 }}
-                    viewport={{ once: true }}
                   >
                     {candle.label}
                   </motion.span>
                 </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Week indicator */}
           {adventWeek > 0 && adventWeek < 5 && (
-            <motion.p
-              className="text-sm text-amber-700 mb-6 font-medium"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.9 }}
-              viewport={{ once: true }}
+            <motion.div
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100/60 rounded-full mb-8"
+              variants={itemVariants}
             >
-              Semana {adventWeek} de Adviento
-            </motion.p>
+              <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+              <p className="text-sm text-amber-800 font-medium">
+                Semana {adventWeek} de Adviento
+              </p>
+            </motion.div>
           )}
           {adventWeek === 5 && (
-            <motion.p
-              className="text-sm text-amber-700 mb-6 font-medium"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.9 }}
-              viewport={{ once: true }}
+            <motion.div
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100/60 rounded-full mb-8"
+              variants={itemVariants}
             >
-              ¡Feliz Navidad!
-            </motion.p>
+              <span className="text-lg">✨</span>
+              <p className="text-sm text-amber-800 font-medium">
+                ¡Feliz Navidad!
+              </p>
+            </motion.div>
           )}
 
           {/* Description */}
           <motion.p
-            className="text-casa-500 mb-10 max-w-xl mx-auto"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
-            viewport={{ once: true }}
+            className="text-casa-500 mb-12 max-w-lg mx-auto leading-relaxed"
+            variants={itemVariants}
           >
             Cada domingo encendemos una nueva vela, recordando las promesas
             que culminan en el nacimiento de Cristo.
           </motion.p>
 
           {/* CTA */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
-            viewport={{ once: true }}
-          >
+          <motion.div variants={itemVariants}>
             <Button
               size="lg"
-              className="bg-casa-700 hover:bg-casa-800 text-white transition-transform hover:scale-105"
+              className="bg-casa-700 hover:bg-casa-800 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 px-8"
               onClick={scrollToEventos}
             >
               Ver Eventos de Adviento
             </Button>
           </motion.div>
-        </div>
+
+          {/* Scroll indicator */}
+          <motion.div
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-casa-400"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.5, duration: 0.6 }}
+          >
+            <span className="text-xs tracking-wider uppercase">Descubre más</span>
+            <ChevronDown className="w-5 h-5 scroll-indicator" />
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );
