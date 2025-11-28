@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Users, Utensils, Star, ExternalLink } from "lucide-react";
+import { Calendar, Clock, Users, Utensils, Star, ExternalLink, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +11,7 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { MesaAbiertaSignup } from "./MesaAbiertaSignup";
 import { AuthModal } from "@/components/auth/AuthModal";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 interface NextMonth {
   id: string;
@@ -53,6 +53,7 @@ export function MesaAbiertaSection() {
   const [hasActiveParticipation, setHasActiveParticipation] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pendingSignupRole, setPendingSignupRole] = useState<'host' | 'guest' | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
 
 
@@ -119,10 +120,8 @@ export function MesaAbiertaSection() {
           id,
           testimonial_text,
           rating,
-          mesa_abierta_participants!inner(
-            profiles!inner(full_name)
-          ),
-          mesa_abierta_months!inner(month_date)
+          participant_id,
+          month_id
         `)
         .eq('is_approved', true)
         .eq('is_featured', true)
@@ -131,18 +130,21 @@ export function MesaAbiertaSection() {
 
       if (error) throw error;
 
-      // Transform the data structure
+      // For now, use placeholder data for the nested relations
+      // This can be enhanced later with separate queries if needed
       const transformedData = data?.map((item: any) => ({
         id: item.id,
         testimonial_text: item.testimonial_text,
         rating: item.rating,
-        profiles: item.mesa_abierta_participants.profiles,
-        mesa_abierta_months: item.mesa_abierta_months
+        profiles: { full_name: 'Participante' },
+        mesa_abierta_months: { month_date: new Date().toISOString() }
       })) || [];
 
       setTestimonials(transformedData);
     } catch (error) {
       console.error('Error fetching testimonials:', error);
+      // Don't fail silently - just don't show testimonials
+      setTestimonials([]);
     }
   };
 
@@ -150,18 +152,46 @@ export function MesaAbiertaSection() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      const { data: participants, error } = await supabase
         .from('mesa_abierta_participants')
-        .select('id, mesa_abierta_months!inner(dinner_date)')
+        .select('id, mesa_abierta_months(dinner_date)')
         .eq('user_id', user.id)
-        .gte('mesa_abierta_months.dinner_date', new Date().toISOString())
-        .neq('status', 'cancelled')
-        .limit(1)
-        .single();
+        .neq('status', 'cancelled');
 
-      setHasActiveParticipation(!!data && !error);
+      if (error) {
+        console.error('Error checking participation:', error);
+        return;
+      }
+
+      // Filter client-side for future dinner dates
+      const now = new Date().toISOString();
+      const hasActive = participants?.some(p =>
+        p.mesa_abierta_months &&
+        (p.mesa_abierta_months as any).dinner_date >= now
+      ) || false;
+
+      setHasActiveParticipation(hasActive);
     } catch (error) {
       console.error('Error checking participation:', error);
+    }
+  };
+
+  const checkAdminStatus = async () => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('mesa_abierta_admin_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      setIsAdmin(!!data && !error);
+    } catch (error) {
+      setIsAdmin(false);
     }
   };
 
@@ -229,6 +259,7 @@ export function MesaAbiertaSection() {
   useEffect(() => {
     if (user) {
       checkActiveParticipation();
+      checkAdminStatus();
 
       // If user just logged in and had a pending signup role, open the signup modal
       if (pendingSignupRole) {
@@ -237,17 +268,19 @@ export function MesaAbiertaSection() {
         setSignupOpen(true);
         setPendingSignupRole(null);
       }
+    } else {
+      setIsAdmin(false);
     }
   }, [user]);
 
   if (loading) {
     return (
-      <section id="mesa-abierta" className="section bg-gradient-to-b from-white to-casa-50">
+      <section id="mesa-abierta" className="section bg-stone-100">
         <div className="container-custom">
           <div className="text-center py-20">
             <div className="animate-pulse">
-              <div className="h-12 bg-casa-200 rounded w-1/2 mx-auto mb-4"></div>
-              <div className="h-6 bg-casa-200 rounded w-1/3 mx-auto"></div>
+              <div className="h-12 bg-stone-200 rounded w-1/2 mx-auto mb-4"></div>
+              <div className="h-6 bg-stone-200 rounded w-1/3 mx-auto"></div>
             </div>
           </div>
         </div>
@@ -255,28 +288,124 @@ export function MesaAbiertaSection() {
     );
   }
 
+  // Olive branch SVG component
+  const OliveBranch = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+    <svg viewBox="0 0 200 300" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="1.5">
+      {/* Main stem */}
+      <path d="M100 280 Q90 200, 100 120 Q110 60, 90 20" strokeLinecap="round" />
+      {/* Leaves - left side */}
+      <ellipse cx="70" cy="60" rx="25" ry="10" transform="rotate(-30 70 60)" />
+      <ellipse cx="65" cy="100" rx="25" ry="10" transform="rotate(-40 65 100)" />
+      <ellipse cx="70" cy="140" rx="25" ry="10" transform="rotate(-35 70 140)" />
+      <ellipse cx="65" cy="180" rx="25" ry="10" transform="rotate(-45 65 180)" />
+      <ellipse cx="70" cy="220" rx="25" ry="10" transform="rotate(-30 70 220)" />
+      {/* Leaves - right side */}
+      <ellipse cx="130" cy="80" rx="25" ry="10" transform="rotate(30 130 80)" />
+      <ellipse cx="135" cy="120" rx="25" ry="10" transform="rotate(40 135 120)" />
+      <ellipse cx="130" cy="160" rx="25" ry="10" transform="rotate(35 130 160)" />
+      <ellipse cx="135" cy="200" rx="25" ry="10" transform="rotate(45 135 200)" />
+      {/* Olives */}
+      <ellipse cx="55" cy="130" rx="8" ry="10" fill="currentColor" fillOpacity="0.1" />
+      <ellipse cx="145" cy="150" rx="8" ry="10" fill="currentColor" fillOpacity="0.1" />
+      <ellipse cx="60" cy="200" rx="8" ry="10" fill="currentColor" fillOpacity="0.1" />
+    </svg>
+  );
+
+  // Plate with utensils SVG component
+  const PlaceSetting = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+    <svg viewBox="0 0 120 80" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="1">
+      {/* Plate - outer rim */}
+      <ellipse cx="60" cy="45" rx="35" ry="28" />
+      {/* Plate - inner circle */}
+      <ellipse cx="60" cy="45" rx="22" ry="17" />
+      {/* Fork - left side */}
+      <path d="M15 15 L15 55" strokeLinecap="round" />
+      <path d="M12 15 L12 28" strokeLinecap="round" />
+      <path d="M15 15 L15 28" strokeLinecap="round" />
+      <path d="M18 15 L18 28" strokeLinecap="round" />
+      <path d="M12 28 Q15 32, 18 28" />
+      {/* Knife - right side */}
+      <path d="M105 15 L105 55" strokeLinecap="round" />
+      <path d="M105 15 Q110 20, 108 35 L105 35" />
+      {/* Spoon - far right */}
+      <ellipse cx="115" cy="22" rx="4" ry="8" />
+      <path d="M115 30 L115 55" strokeLinecap="round" />
+    </svg>
+  );
+
+  // Wine glass SVG component
+  const WineGlass = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+    <svg viewBox="0 0 40 80" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="1">
+      {/* Glass bowl */}
+      <path d="M8 5 Q8 30, 20 35 Q32 30, 32 5" />
+      <path d="M8 5 L32 5" />
+      {/* Stem */}
+      <path d="M20 35 L20 65" strokeLinecap="round" />
+      {/* Base */}
+      <ellipse cx="20" cy="70" rx="12" ry="4" />
+      {/* Wine level hint */}
+      <path d="M12 18 Q20 22, 28 18" strokeOpacity="0.3" />
+    </svg>
+  );
+
   return (
-    <section id="mesa-abierta" className="section bg-gradient-to-b from-white to-casa-50 min-h-[200px]">
-      <div className="container-custom">
-        {/* Header */}
-        {/* Header */}
-        <div className="text-center mb-16">
-          <div className="flex flex-col items-center mb-6">
-            <img
-              src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM"
-              alt="La Mesa Abierta Logo"
-              className="h-40 md:h-56 w-auto"
-            />
-          </div>
-          <p className="text-lg text-center text-casa-600 max-w-3xl mx-auto mb-4">
-            Una cena mensual llena de sorpresas donde compartimos comida y
-            comunidad con hermanos que aún no conoces.
-          </p>
-          <p className="text-base text-casa-500 italic">
-            No sabrás quién es el anfitrión ni quiénes serán los otros invitados
-            hasta que llegues. ¡Déjate sorprender!
-          </p>
+    <section id="mesa-abierta" className="section bg-stone-100 min-h-[200px] relative overflow-hidden">
+      {/* Admin Button - only visible to admins */}
+      {isAdmin && (
+        <div className="absolute top-4 right-4 z-10">
+          <Link to="/mesa-abierta/admin">
+            <Button variant="outline" size="sm" className="gap-2 bg-white/80">
+              <Settings className="w-4 h-4" />
+              Panel de Administración
+            </Button>
+          </Link>
         </div>
+      )}
+
+      {/* Decorative Hero Section */}
+      <div className="relative py-16 md:py-24">
+        {/* Olive branch decorations */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Olive branches - corners only */}
+          <OliveBranch className="absolute -top-8 -left-8 w-36 h-52 text-stone-400 opacity-50 -rotate-45" />
+          <OliveBranch className="absolute -top-8 -right-8 w-36 h-52 text-stone-400 opacity-50 rotate-45 scale-x-[-1]" />
+          <OliveBranch className="absolute -bottom-8 -left-8 w-36 h-52 text-stone-400 opacity-50 rotate-[135deg]" />
+          <OliveBranch className="absolute -bottom-8 -right-8 w-36 h-52 text-stone-400 opacity-50 -rotate-[135deg] scale-x-[-1]" />
+
+          {/* Place settings - middle sides, well spaced from corners */}
+          <PlaceSetting className="absolute top-[45%] left-[3%] w-28 h-20 text-stone-400 opacity-45 -rotate-12 hidden md:block" />
+          <PlaceSetting className="absolute top-[45%] right-[3%] w-28 h-20 text-stone-400 opacity-45 rotate-12 hidden md:block" />
+
+          {/* Wine glasses - upper middle area */}
+          <WineGlass className="absolute top-[20%] left-[18%] w-10 h-20 text-stone-400 opacity-45 rotate-6 hidden md:block" />
+          <WineGlass className="absolute top-[20%] right-[18%] w-10 h-20 text-stone-400 opacity-45 -rotate-6 hidden md:block" />
+
+          {/* Additional wine glasses - lower area, spread out */}
+          <WineGlass className="absolute bottom-[15%] left-[25%] w-8 h-16 text-stone-400 opacity-35 -rotate-8 hidden lg:block" />
+          <WineGlass className="absolute bottom-[15%] right-[25%] w-8 h-16 text-stone-400 opacity-35 rotate-8 hidden lg:block" />
+        </div>
+
+        {/* Content */}
+        <div className="container-custom relative z-10">
+          <div className="text-center max-w-4xl mx-auto px-4">
+            <h1 className="text-5xl md:text-7xl font-serif font-bold text-stone-900 mb-8 tracking-tight">
+              La Mesa Abierta
+            </h1>
+            <p className="text-lg md:text-xl text-stone-700 mb-6 leading-relaxed">
+              Una cena mensual llena de sorpresas donde compartimos comida
+              <br className="hidden md:block" />
+              y comunidad con personas que aún no conoces.
+            </p>
+            <p className="text-base md:text-lg text-stone-600 italic">
+              No sabrás quién es el anfitrión ni quiénes serán los otros invitados
+              <br className="hidden md:block" />
+              hasta que llegues. ¡Déjate sorprender!
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="container-custom pb-16">
 
         {/* Next Dinner Info Card */}
         {nextMonth && (
@@ -287,30 +416,30 @@ export function MesaAbiertaSection() {
             viewport={{ once: true }}
             className="mb-12"
           >
-            <Card className="border-casa-200 shadow-lg bg-white">
+            <Card className="border-stone-200 shadow-lg bg-white/90 backdrop-blur-sm">
               <CardContent className="p-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Dinner Date */}
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 flex items-center justify-center bg-casa-100 rounded-full flex-shrink-0">
-                      <Calendar className="w-6 h-6 text-casa-700" />
+                    <div className="w-12 h-12 flex items-center justify-center bg-stone-100 rounded-full flex-shrink-0">
+                      <Calendar className="w-6 h-6 text-stone-700" />
                     </div>
                     <div>
-                      <p className="text-sm text-casa-500 font-medium">Próxima Cena</p>
-                      <p className="text-lg font-semibold text-casa-800">
-                        {format(new Date(nextMonth.dinner_date), "EEEE, d 'de' MMMM", { locale: es })}
+                      <p className="text-sm text-stone-500 font-medium">Próxima Cena</p>
+                      <p className="text-lg font-semibold text-stone-800">
+                        {format(new Date(nextMonth.dinner_date + 'T12:00:00'), "EEEE, d 'de' MMMM", { locale: es })}
                       </p>
                     </div>
                   </div>
 
                   {/* Registration Deadline */}
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 flex items-center justify-center bg-casa-100 rounded-full flex-shrink-0">
-                      <Clock className="w-6 h-6 text-casa-700" />
+                    <div className="w-12 h-12 flex items-center justify-center bg-stone-100 rounded-full flex-shrink-0">
+                      <Clock className="w-6 h-6 text-stone-700" />
                     </div>
                     <div>
-                      <p className="text-sm text-casa-500 font-medium">Inscripción hasta</p>
-                      <p className="text-lg font-semibold text-casa-800">
+                      <p className="text-sm text-stone-500 font-medium">Inscripción hasta</p>
+                      <p className="text-lg font-semibold text-stone-800">
                         {format(new Date(nextMonth.registration_deadline), "d 'de' MMMM, HH:mm", { locale: es })}
                       </p>
                     </div>
@@ -318,14 +447,14 @@ export function MesaAbiertaSection() {
 
                   {/* Stats */}
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 flex items-center justify-center bg-casa-100 rounded-full flex-shrink-0">
-                      <Users className="w-6 h-6 text-casa-700" />
+                    <div className="w-12 h-12 flex items-center justify-center bg-stone-100 rounded-full flex-shrink-0">
+                      <Users className="w-6 h-6 text-stone-700" />
                     </div>
                     <div>
-                      <p className="text-sm text-casa-500 font-medium">Estado</p>
+                      <p className="text-sm text-stone-500 font-medium">Estado</p>
                       {stats && (
                         <div className="space-y-1">
-                          <p className="text-sm text-casa-700">
+                          <p className="text-sm text-stone-700">
                             {stats.totalParticipants} inscritos
                           </p>
                           {stats.hostsNeeded > 0 && (
@@ -345,7 +474,7 @@ export function MesaAbiertaSection() {
                     <Button
                       onClick={() => navigate('/mesa-abierta/dashboard')}
                       size="lg"
-                      className="bg-casa-700 hover:bg-casa-800 text-white px-8"
+                      className="bg-stone-800 hover:bg-stone-900 text-white px-8"
                     >
                       Ver Mi Participación
                       <ExternalLink className="w-4 h-4 ml-2" />
@@ -354,7 +483,7 @@ export function MesaAbiertaSection() {
                     <Button
                       onClick={() => handleSignUp('guest')}
                       size="lg"
-                      className="bg-casa-700 hover:bg-casa-800 text-white px-8"
+                      className="bg-stone-800 hover:bg-stone-900 text-white px-8"
                     >
                       Inscríbete Aquí
                     </Button>
@@ -368,13 +497,13 @@ export function MesaAbiertaSection() {
         {/* No Active Month Message */}
         {!nextMonth && !loading && (
           <div className="text-center py-12">
-            <Card className="border-casa-200 bg-casa-50">
+            <Card className="border-stone-200 bg-white/80">
               <CardContent className="p-8">
-                <Utensils className="w-16 h-16 text-casa-400 mx-auto mb-4" />
-                <h3 className="text-2xl font-medium text-casa-700 mb-2">
+                <Utensils className="w-16 h-16 text-stone-400 mx-auto mb-4" />
+                <h3 className="text-2xl font-medium text-stone-700 mb-2">
                   Próximamente
                 </h3>
-                <p className="text-casa-600">
+                <p className="text-stone-600">
                   La próxima cena aún no ha sido programada.
                   Mantente atento a nuestras comunicaciones.
                 </p>
@@ -392,12 +521,12 @@ export function MesaAbiertaSection() {
             viewport={{ once: true }}
             className="mt-16"
           >
-            <h3 className="text-2xl md:text-3xl font-light text-center text-casa-800 mb-8">
+            <h3 className="text-2xl md:text-3xl font-light text-center text-stone-800 mb-8">
               Lo Que Dicen Nuestros Participantes
             </h3>
 
             <div className="relative max-w-3xl mx-auto">
-              <Card className="border-casa-200 bg-white shadow-md">
+              <Card className="border-stone-200 bg-white shadow-md">
                 <CardContent className="p-8">
                   <div className="flex justify-center mb-4">
                     {[...Array(5)].map((_, i) => (
@@ -418,10 +547,10 @@ export function MesaAbiertaSection() {
                     transition={{ duration: 0.5 }}
                     className="text-center"
                   >
-                    <p className="text-lg text-casa-700 mb-6 italic">
+                    <p className="text-lg text-stone-700 mb-6 italic">
                       "{testimonials[currentTestimonial].testimonial_text}"
                     </p>
-                    <p className="text-sm text-casa-500">
+                    <p className="text-sm text-stone-500">
                       — {testimonials[currentTestimonial].profiles.full_name},{' '}
                       {format(
                         new Date(testimonials[currentTestimonial].mesa_abierta_months.month_date),
@@ -439,8 +568,8 @@ export function MesaAbiertaSection() {
                           key={index}
                           onClick={() => setCurrentTestimonial(index)}
                           className={`w-2 h-2 rounded-full transition-all ${index === currentTestimonial
-                              ? 'w-8 bg-casa-700'
-                              : 'bg-casa-300 hover:bg-casa-400'
+                              ? 'w-8 bg-stone-700'
+                              : 'bg-stone-300 hover:bg-stone-400'
                             }`}
                           aria-label={`Ver testimonial ${index + 1}`}
                         />
@@ -461,7 +590,7 @@ export function MesaAbiertaSection() {
           viewport={{ once: true }}
           className="mt-16"
         >
-          <h3 className="text-2xl md:text-3xl font-light text-center text-casa-800 mb-12">
+          <h3 className="text-2xl md:text-3xl font-light text-center text-stone-800 mb-12">
             ¿Cómo Funciona?
           </h3>
 
@@ -475,12 +604,12 @@ export function MesaAbiertaSection() {
               {
                 step: "2",
                 title: "Espera la Asignación",
-                description: "El lunes anterior a la cena recibirás tu asignación por email y WhatsApp con la dirección y lo que debes llevar."
+                description: "El miércoles anterior a la cena recibirás tu asignación por email y WhatsApp con la dirección y lo que debes llevar."
               },
               {
                 step: "3",
                 title: "¡Disfruta!",
-                description: "Comparte una cena deliciosa con hermanos de CASA. Haz nuevas amistades y vive la sorpresa."
+                description: "Comparte una cena deliciosa con miembros de CASA. Haz nuevas amistades y vive la sorpresa."
               }
             ].map((item, index) => (
               <motion.div
@@ -491,13 +620,13 @@ export function MesaAbiertaSection() {
                 viewport={{ once: true }}
                 className="text-center"
               >
-                <div className="w-16 h-16 flex items-center justify-center bg-casa-700 text-white text-2xl font-bold rounded-full mx-auto mb-4">
+                <div className="w-16 h-16 flex items-center justify-center bg-stone-800 text-white text-2xl font-bold rounded-full mx-auto mb-4">
                   {item.step}
                 </div>
-                <h4 className="text-xl font-medium text-casa-800 mb-2">
+                <h4 className="text-xl font-medium text-stone-800 mb-2">
                   {item.title}
                 </h4>
-                <p className="text-casa-600">
+                <p className="text-stone-600">
                   {item.description}
                 </p>
               </motion.div>
@@ -516,13 +645,13 @@ export function MesaAbiertaSection() {
           >
             {hasActiveParticipation ? (
               <>
-                <p className="text-lg text-casa-600 mb-6">
+                <p className="text-lg text-stone-600 mb-6">
                   Ya estás inscrito. ¡Revisa los detalles de tu participación!
                 </p>
                 <Button
                   onClick={() => navigate('/mesa-abierta/dashboard')}
                   size="lg"
-                  className="bg-casa-700 hover:bg-casa-800 text-white px-12"
+                  className="bg-stone-800 hover:bg-stone-900 text-white px-12"
                 >
                   Ver Mi Dashboard
                   <ExternalLink className="w-4 h-4 ml-2" />
@@ -530,14 +659,14 @@ export function MesaAbiertaSection() {
               </>
             ) : (
               <>
-                <p className="text-lg text-casa-600 mb-6">
+                <p className="text-lg text-stone-600 mb-6">
                   ¿Listo para una experiencia única de comunidad?
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <Button
                     onClick={() => handleSignUp('host')}
                     size="lg"
-                    className="bg-casa-700 hover:bg-casa-800 text-white px-12"
+                    className="bg-stone-800 hover:bg-stone-900 text-white px-12"
                   >
                     Inscribirme como Anfitrión
                   </Button>
@@ -545,7 +674,7 @@ export function MesaAbiertaSection() {
                     onClick={() => handleSignUp('guest')}
                     size="lg"
                     variant="outline"
-                    className="border-casa-700 text-casa-700 hover:bg-casa-50 px-12"
+                    className="border-stone-700 text-stone-700 hover:bg-stone-50 px-12"
                   >
                     Inscribirme como Invitado
                   </Button>

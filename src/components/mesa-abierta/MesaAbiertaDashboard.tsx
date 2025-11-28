@@ -75,8 +75,8 @@ export function MesaAbiertaDashboard() {
     try {
       setLoading(true);
 
-      // Step 1: Get basic participant info (works for all users, including pending)
-      const { data: participant, error: participantError } = await supabase
+      // Step 1: Get all participant records for this user with month info
+      const { data: participants, error: participantError } = await supabase
         .from('mesa_abierta_participants')
         .select(`
           id,
@@ -86,25 +86,39 @@ export function MesaAbiertaDashboard() {
           status,
           host_address,
           phone_number,
-          mesa_abierta_months!inner(
+          month_id,
+          mesa_abierta_months(
             dinner_date,
             month_date
           )
         `)
         .eq('user_id', user.id)
-        .gte('mesa_abierta_months.dinner_date', new Date().toISOString())
-        .neq('status', 'cancelled')
-        .order('mesa_abierta_months.dinner_date', { ascending: true })
-        .limit(1)
-        .single();
+        .neq('status', 'cancelled');
 
       if (participantError) {
-        if (participantError.code === 'PGRST116') {
-          // No participation found
-          setParticipantData(null);
-          return;
-        }
         throw participantError;
+      }
+
+      // Filter to only future dinner dates and get the earliest one
+      const now = new Date().toISOString();
+      const futureParticipants = participants?.filter(p =>
+        p.mesa_abierta_months &&
+        (p.mesa_abierta_months as any).dinner_date >= now
+      ) || [];
+
+      // Sort by dinner_date ascending and get the first one
+      futureParticipants.sort((a, b) => {
+        const dateA = (a.mesa_abierta_months as any)?.dinner_date || '';
+        const dateB = (b.mesa_abierta_months as any)?.dinner_date || '';
+        return dateA.localeCompare(dateB);
+      });
+
+      const participant = futureParticipants[0] || null;
+
+      if (!participant) {
+        // No participation found
+        setParticipantData(null);
+        return;
       }
 
       // Step 2: If assigned_role exists, fetch assignment/match details
@@ -337,7 +351,7 @@ export function MesaAbiertaDashboard() {
                   <p className="font-medium mb-1">Esperando asignación</p>
                   <p className="text-sm text-muted-foreground">
                     Te inscribiste como <strong>{participantData.role_preference === 'host' ? 'anfitrión' : 'invitado'}</strong>.
-                    Recibirás la confirmación de tu rol y los detalles de la cena el lunes anterior al evento.
+                    Recibirás la confirmación de tu rol y los detalles de la cena el miércoles anterior al evento.
                   </p>
                 </AlertDescription>
               </Alert>
@@ -362,7 +376,7 @@ export function MesaAbiertaDashboard() {
                     <div>
                       <p className="text-sm font-medium text-casa-500">Fecha</p>
                       <p className="text-base text-casa-800">
-                        {format(new Date(assignment.mesa_abierta_matches.dinner_date), "EEEE, d 'de' MMMM", { locale: es })}
+                        {format(new Date(assignment.mesa_abierta_matches.dinner_date + 'T12:00:00'), "EEEE, d 'de' MMMM", { locale: es })}
                       </p>
                     </div>
                   </div>
@@ -423,7 +437,7 @@ export function MesaAbiertaDashboard() {
                     <div>
                       <p className="text-sm font-medium text-casa-500">Fecha</p>
                       <p className="text-base text-casa-800">
-                        {format(new Date(assignment.mesa_abierta_matches.dinner_date), "EEEE, d 'de' MMMM", { locale: es })}
+                        {format(new Date(assignment.mesa_abierta_matches.dinner_date + 'T12:00:00'), "EEEE, d 'de' MMMM", { locale: es })}
                       </p>
                     </div>
                   </div>

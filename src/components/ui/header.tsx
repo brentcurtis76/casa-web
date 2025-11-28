@@ -1,16 +1,18 @@
 
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Home } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
 import { ContactModal } from "@/components/contact/ContactModal";
 import { DonationModal } from "@/components/donation/DonationModal";
+import { useLocation, Link } from "react-router-dom";
 
 function Header1() {
     const { user, profile, logout } = useAuth();
+    const location = useLocation();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -22,11 +24,20 @@ function Header1() {
     const openDonationModal = () => setIsDonationModalOpen(true);
     const closeMenu = () => setOpen(false);
 
+    const isHomePage = location.pathname === '/';
+
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
             <div className="container relative mx-auto min-h-20 flex items-center justify-between">
-                {/* Logo section removed */}
-                
+                {/* Home button - only shows when not on home page */}
+                {!isHomePage && (
+                    <Link to="/">
+                        <Button variant="ghost" size="icon" className="mr-2">
+                            <Home className="h-5 w-5" />
+                        </Button>
+                    </Link>
+                )}
+
                 {/* Action buttons on the right */}
                 <div className="flex items-center gap-4 w-full justify-end">
                     <Button 

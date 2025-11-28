@@ -200,7 +200,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                         Quiero ser anfitrión
                       </Label>
                       <p className="text-sm text-muted-foreground mt-2">
-                        Abre tu hogar para recibir a hermanos de la iglesia
+                        Abre tu hogar para recibir a miembros de la comunidad
                       </p>
                     </div>
                   </CardContent>
@@ -215,7 +215,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                         Quiero ser invitado
                       </Label>
                       <p className="text-sm text-muted-foreground mt-2">
-                        Asiste a una cena en el hogar de otro hermano
+                        Asiste a una cena en el hogar de otro miembro
                       </p>
                     </div>
                   </CardContent>
@@ -228,7 +228,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                   <AlertDescription>
                     <p className="font-medium mb-1">⚠️ Importante para anfitriones:</p>
                     <p className="text-sm">
-                      Tu rol final se confirmará el lunes anterior a la cena. Esto depende
+                      Tu rol final se confirmará el miércoles anterior a la cena. Esto depende
                       del número de participantes que se inscriban. Si hay suficientes
                       anfitriones, podrías ser asignado como invitado.
                     </p>
@@ -423,7 +423,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              Recibirás un correo electrónico el lunes anterior a la cena con todos los detalles.
+              Recibirás un correo electrónico el miércoles anterior a la cena con todos los detalles.
             </p>
           </div>
         );
@@ -455,8 +455,8 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
               </DialogTitle>
               <DialogDescription className="text-base">
                 {rolePreference === 'host'
-                  ? "Te confirmaremos si serás anfitrión el lunes anterior a la cena."
-                  : "Recibirás los detalles de tu cena el lunes anterior al evento."}
+                  ? "Te confirmaremos si serás anfitrión el miércoles anterior a la cena."
+                  : "Recibirás los detalles de tu cena el miércoles anterior al evento."}
               </DialogDescription>
             </div>
 
@@ -473,7 +473,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
             <Alert className="bg-amber-50 border-amber-200">
               <AlertCircle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
-                Recibirás toda la información sobre tu cena el <strong>lunes anterior al evento</strong> por correo electrónico.
+                Recibirás toda la información sobre tu cena el <strong>miércoles anterior al evento</strong> por correo electrónico.
               </AlertDescription>
             </Alert>
 
