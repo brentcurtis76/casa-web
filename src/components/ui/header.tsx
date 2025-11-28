@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Menu, X, Home } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { UserMenu } from "./header/UserMenu";
@@ -29,14 +29,14 @@ function Header1() {
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
             <div className="container relative mx-auto min-h-20 flex items-center justify-between">
-                {/* Home button - only shows when not on home page */}
-                {!isHomePage && (
-                    <Link to="/">
-                        <Button variant="ghost" size="icon" className="mr-2">
-                            <Home className="h-5 w-5" />
-                        </Button>
-                    </Link>
-                )}
+                {/* Logo - links to home */}
+                <Link to="/" className="flex-shrink-0">
+                    <img
+                        src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/public/images/Nuevo%20Logo%20Cuadrado%20-%20Negro%20con%20fondo%20blanco.png"
+                        alt="CASA Logo"
+                        className="h-14 w-14 object-contain"
+                    />
+                </Link>
 
                 {/* Action buttons on the right */}
                 <div className="flex items-center gap-4 w-full justify-end">
