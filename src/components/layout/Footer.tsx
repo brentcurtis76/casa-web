@@ -221,7 +221,7 @@ export function Footer() {
             </p>
             <div className="flex items-center gap-2 text-casa-500 text-sm">
               <span className="w-2 h-2 bg-amber-400/60 rounded-full" />
-              <span>Comunidad Anglicana de Santiago</span>
+              <span>Comunidad Anglicana San Andrés</span>
             </div>
           </div>
         </motion.div>
