@@ -30,6 +30,7 @@ export const EventsAdmin = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [showEventForm, setShowEventForm] = useState(false);
   const [editEvent, setEditEvent] = useState<Event | null>(null);
   const [deleteEvent, setDeleteEvent] = useState<Event | null>(null);
@@ -38,7 +39,10 @@ export const EventsAdmin = () => {
   // Check if user is admin
   useEffect(() => {
     const checkAdminStatus = async () => {
-      if (!user) return;
+      if (!user) {
+        setCheckingAdmin(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from('mesa_abierta_admin_roles')
@@ -49,15 +53,18 @@ export const EventsAdmin = () => {
       if (data && !error) {
         setIsAdmin(true);
       }
+      setCheckingAdmin(false);
     };
 
     checkAdminStatus();
   }, [user]);
 
-  // Fetch events
+  // Fetch events only if admin
   useEffect(() => {
-    fetchEvents();
-  }, []);
+    if (isAdmin) {
+      fetchEvents();
+    }
+  }, [isAdmin]);
 
   const fetchEvents = async () => {
     setIsLoading(true);
@@ -132,6 +139,18 @@ export const EventsAdmin = () => {
   const formatDate = (date: string) => {
     return format(parseISO(date), "d 'de' MMMM, yyyy", { locale: es });
   };
+
+  if (checkingAdmin) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-casa-700"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (!user) {
     return (
