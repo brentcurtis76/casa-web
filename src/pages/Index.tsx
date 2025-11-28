@@ -10,8 +10,6 @@ import { Participar } from '@/components/sections/Participar';
 import { Proposito } from '@/components/sections/Proposito';
 import { Sermones } from '@/components/sections/Sermones';
 import { Hero } from '@/components/ui/hero-with-group-of-images-text-and-two-buttons';
-import { Formacion } from '@/components/sections/Formacion';
-import { RetiroSemanaSanta } from '@/components/sections/RetiroSemanaSanta';
 import { MesaAbiertaSection } from '@/components/mesa-abierta/MesaAbiertaSection';
 
 const Index = () => {
@@ -23,12 +21,10 @@ const Index = () => {
           <Hero />
           <Proposito />
           <Equipo />
-          <Formacion />
           <MesaAbiertaSection />
-          <RetiroSemanaSanta />
+          <Sermones />
           <Participar />
           <Eventos />
-          <Sermones />
           <Oracion />
           <InstagramFeed />
         </main>

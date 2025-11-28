@@ -78,7 +78,7 @@ export function Participar() {
   ];
 
   return (
-    <section id="participar" className="section bg-white">
+    <section id="participar" className="section bg-casa-50">
       <div className="container-custom">
         <motion.div
           initial={{ opacity: 0, y: -20 }}

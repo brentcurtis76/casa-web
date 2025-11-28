@@ -10,7 +10,7 @@ export function Sermones() {
   const { recentSermons, isLoading, spotifyLink } = useSermonData();
 
   return (
-    <section id="sermones" className="section bg-casa-50">
+    <section id="sermones" className="section bg-white">
       <div className="container-custom">
         <h2 className="text-3xl md:text-4xl font-light text-center text-casa-800 mb-8">
           Últimas Reflexiones

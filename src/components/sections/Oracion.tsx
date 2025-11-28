@@ -5,7 +5,7 @@ import { LockKeyhole, Users, Sparkles } from 'lucide-react';
 
 export function Oracion() {
   return (
-    <section id="oracion" className="section">
+    <section id="oracion" className="section bg-casa-50">
       <div className="container-custom">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>

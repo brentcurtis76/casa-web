@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle } from 'lucide-react';
+import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { CreateMonthDialog } from './CreateMonthDialog';
+import { EditMonthDialog } from './EditMonthDialog';
 
 interface Month {
   id: string;
@@ -17,6 +19,14 @@ interface Month {
   registration_deadline: string;
   dinner_time: string;
   status: string;
+}
+
+interface DietaryRestriction {
+  id: string;
+  restriction_type: string;
+  description?: string;
+  severity: string;
+  is_plus_one: boolean;
 }
 
 interface Participant {
@@ -28,9 +38,9 @@ interface Participant {
   user_id: string;
   phone_number?: string;
   host_address?: string;
-  dietary_restrictions?: string;
+  host_max_guests?: number;
   plus_one_name?: string;
-  plus_one_dietary_restrictions?: string;
+  mesa_abierta_dietary_restrictions?: DietaryRestriction[];
   full_name?: string;
   email?: string;
 }
@@ -56,6 +66,29 @@ interface MatchResult {
   error?: string;
 }
 
+interface DinnerMatch {
+  id: string;
+  dinner_date: string;
+  dinner_time: string;
+  guest_count: number;
+  host: {
+    id: string;
+    full_name: string;
+    phone_number?: string;
+    host_address?: string;
+    has_plus_one: boolean;
+  };
+  guests: Array<{
+    id: string;
+    full_name: string;
+    phone_number?: string;
+    has_plus_one: boolean;
+    plus_one_name?: string;
+    food_assignment: string;
+    dietary_restrictions: DietaryRestriction[];
+  }>;
+}
+
 export const MesaAbiertaAdmin = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -68,6 +101,12 @@ export const MesaAbiertaAdmin = () => {
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showCreateMonth, setShowCreateMonth] = useState(false);
+  const [editMonth, setEditMonth] = useState<Month | null>(null);
+  const [deleteMonth, setDeleteMonth] = useState<Month | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showUnmatchConfirm, setShowUnmatchConfirm] = useState(false);
+  const [unmatching, setUnmatching] = useState(false);
+  const [dinnerMatches, setDinnerMatches] = useState<DinnerMatch[]>([]);
 
   // Check if user is admin
   useEffect(() => {
@@ -93,10 +132,15 @@ export const MesaAbiertaAdmin = () => {
     fetchMonths();
   }, []);
 
-  // Fetch participants when month changes
+  // Fetch participants and matches when month changes
   useEffect(() => {
     if (selectedMonth) {
       fetchParticipants(selectedMonth.id);
+      if (selectedMonth.status === 'matched') {
+        fetchDinnerMatches(selectedMonth.id);
+      } else {
+        setDinnerMatches([]);
+      }
     }
   }, [selectedMonth]);
 
@@ -115,6 +159,7 @@ export const MesaAbiertaAdmin = () => {
   };
 
   const fetchParticipants = async (monthId: string) => {
+    // First fetch participants
     const { data, error } = await supabase
       .from('mesa_abierta_participants')
       .select(`
@@ -127,9 +172,8 @@ export const MesaAbiertaAdmin = () => {
         email,
         phone_number,
         host_address,
-        dietary_restrictions,
-        plus_one_name,
-        plus_one_dietary_restrictions
+        host_max_guests,
+        plus_one_name
       `)
       .eq('month_id', monthId)
       .order('created_at', { ascending: false });
@@ -147,22 +191,222 @@ export const MesaAbiertaAdmin = () => {
     if (data) {
       // Fetch user names for all participants
       const userIds = data.map(p => p.user_id);
+      const participantIds = data.map(p => p.id);
+
       const { data: users } = await supabase
         .from('profiles')
         .select('id, full_name')
         .in('id', userIds);
 
-      // Merge user data with participant data
-      const participantsWithNames = data.map(participant => {
+      // Fetch dietary restrictions for all participants
+      const { data: dietaryData } = await supabase
+        .from('mesa_abierta_dietary_restrictions')
+        .select('*')
+        .in('participant_id', participantIds);
+
+      // Merge user data and dietary restrictions with participant data
+      const participantsWithDetails = data.map(participant => {
         const user = users?.find(u => u.id === participant.user_id);
+        const restrictions = dietaryData?.filter(d => d.participant_id === participant.id) || [];
         return {
           ...participant,
           full_name: user?.full_name || 'Sin nombre',
-          // Email comes from participant record (already in data)
+          mesa_abierta_dietary_restrictions: restrictions,
         };
       });
 
-      setParticipants(participantsWithNames as any);
+      setParticipants(participantsWithDetails as any);
+    }
+  };
+
+  const fetchDinnerMatches = async (monthId: string) => {
+    try {
+      // Fetch matches with host participant info
+      const { data: matches, error: matchesError } = await supabase
+        .from('mesa_abierta_matches')
+        .select('*')
+        .eq('month_id', monthId)
+        .order('created_at', { ascending: true });
+
+      if (matchesError) {
+        console.error('Error fetching matches:', matchesError);
+        return;
+      }
+
+      if (!matches || matches.length === 0) {
+        setDinnerMatches([]);
+        return;
+      }
+
+      // Get all host participant IDs
+      const hostParticipantIds = matches.map(m => m.host_participant_id);
+
+      // Fetch host participants
+      const { data: hostParticipants } = await supabase
+        .from('mesa_abierta_participants')
+        .select('id, user_id, phone_number, host_address, has_plus_one')
+        .in('id', hostParticipantIds);
+
+      // Get host user IDs for profile lookup
+      const hostUserIds = hostParticipants?.map(p => p.user_id) || [];
+      const { data: hostProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', hostUserIds);
+
+      // Fetch assignments for all matches
+      const matchIds = matches.map(m => m.id);
+      const { data: assignments } = await supabase
+        .from('mesa_abierta_assignments')
+        .select('*')
+        .in('match_id', matchIds);
+
+      // Get guest participant IDs from assignments
+      const guestParticipantIds = assignments?.map(a => a.guest_participant_id) || [];
+
+      // Fetch guest participants
+      const { data: guestParticipants } = await supabase
+        .from('mesa_abierta_participants')
+        .select('id, user_id, phone_number, has_plus_one, plus_one_name')
+        .in('id', guestParticipantIds);
+
+      // Get guest user IDs for profile lookup
+      const guestUserIds = guestParticipants?.map(p => p.user_id) || [];
+      const { data: guestProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', guestUserIds);
+
+      // Fetch dietary restrictions for all guests
+      const { data: dietaryRestrictions } = await supabase
+        .from('mesa_abierta_dietary_restrictions')
+        .select('*')
+        .in('participant_id', guestParticipantIds);
+
+      // Build the dinner matches with all details
+      const dinnerMatchesData: DinnerMatch[] = matches.map(match => {
+        const hostParticipant = hostParticipants?.find(p => p.id === match.host_participant_id);
+        const hostProfile = hostProfiles?.find(p => p.id === hostParticipant?.user_id);
+
+        const matchAssignments = assignments?.filter(a => a.match_id === match.id) || [];
+        const guests = matchAssignments.map(assignment => {
+          const guestParticipant = guestParticipants?.find(p => p.id === assignment.guest_participant_id);
+          const guestProfile = guestProfiles?.find(p => p.id === guestParticipant?.user_id);
+          const guestDietaryRestrictions = dietaryRestrictions?.filter(
+            d => d.participant_id === assignment.guest_participant_id
+          ) || [];
+
+          return {
+            id: assignment.guest_participant_id,
+            full_name: guestProfile?.full_name || 'Sin nombre',
+            phone_number: guestParticipant?.phone_number,
+            has_plus_one: guestParticipant?.has_plus_one || false,
+            plus_one_name: guestParticipant?.plus_one_name,
+            food_assignment: assignment.food_assignment,
+            dietary_restrictions: guestDietaryRestrictions,
+          };
+        });
+
+        return {
+          id: match.id,
+          dinner_date: match.dinner_date,
+          dinner_time: match.dinner_time,
+          guest_count: match.guest_count,
+          host: {
+            id: match.host_participant_id,
+            full_name: hostProfile?.full_name || 'Sin nombre',
+            phone_number: hostParticipant?.phone_number,
+            host_address: hostParticipant?.host_address,
+            has_plus_one: hostParticipant?.has_plus_one || false,
+          },
+          guests,
+        };
+      });
+
+      setDinnerMatches(dinnerMatchesData);
+    } catch (error) {
+      console.error('Error fetching dinner matches:', error);
+    }
+  };
+
+  const handleDeleteMonth = async () => {
+    if (!deleteMonth) return;
+
+    setDeleting(true);
+    try {
+      // Get match IDs for this month first
+      const { data: matches } = await supabase
+        .from('mesa_abierta_matches')
+        .select('id')
+        .eq('month_id', deleteMonth.id);
+
+      // Delete assignments for those matches
+      if (matches && matches.length > 0) {
+        const matchIds = matches.map(m => m.id);
+        await supabase
+          .from('mesa_abierta_assignments')
+          .delete()
+          .in('match_id', matchIds);
+      }
+
+      // Delete matches
+      await supabase
+        .from('mesa_abierta_matches')
+        .delete()
+        .eq('month_id', deleteMonth.id);
+
+      // Get participant IDs for this month
+      const { data: participantData } = await supabase
+        .from('mesa_abierta_participants')
+        .select('id')
+        .eq('month_id', deleteMonth.id);
+
+      // Delete dietary restrictions for those participants
+      if (participantData && participantData.length > 0) {
+        const participantIds = participantData.map(p => p.id);
+        await supabase
+          .from('mesa_abierta_dietary_restrictions')
+          .delete()
+          .in('participant_id', participantIds);
+      }
+
+      // Delete participants
+      await supabase
+        .from('mesa_abierta_participants')
+        .delete()
+        .eq('month_id', deleteMonth.id);
+
+      // Finally delete the month
+      const { error: monthError } = await supabase
+        .from('mesa_abierta_months')
+        .delete()
+        .eq('id', deleteMonth.id);
+
+      if (monthError) throw monthError;
+
+      toast({
+        title: 'Mes eliminado',
+        description: 'El mes y todos sus datos han sido eliminados exitosamente.',
+      });
+
+      // If we deleted the selected month, clear selection
+      if (selectedMonth?.id === deleteMonth.id) {
+        setSelectedMonth(null);
+        setParticipants([]);
+      }
+
+      // Refresh months list
+      await fetchMonths();
+    } catch (error: any) {
+      console.error('Error deleting month:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al eliminar el mes',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
+      setDeleteMonth(null);
     }
   };
 
@@ -217,6 +461,8 @@ export const MesaAbiertaAdmin = () => {
 
         if (updatedMonth) {
           setSelectedMonth(updatedMonth);
+          // Fetch dinner matches after successful matching
+          await fetchDinnerMatches(selectedMonth.id);
         }
 
         await fetchParticipants(selectedMonth.id);
@@ -236,6 +482,78 @@ export const MesaAbiertaAdmin = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUnmatch = async () => {
+    if (!selectedMonth) return;
+
+    setUnmatching(true);
+    try {
+      // Get match IDs for this month
+      const { data: matches } = await supabase
+        .from('mesa_abierta_matches')
+        .select('id')
+        .eq('month_id', selectedMonth.id);
+
+      // Delete assignments for those matches
+      if (matches && matches.length > 0) {
+        const matchIds = matches.map(m => m.id);
+        await supabase
+          .from('mesa_abierta_assignments')
+          .delete()
+          .in('match_id', matchIds);
+      }
+
+      // Delete all matches for this month
+      await supabase
+        .from('mesa_abierta_matches')
+        .delete()
+        .eq('month_id', selectedMonth.id);
+
+      // Reset all participants back to pending status and clear assigned_role
+      await supabase
+        .from('mesa_abierta_participants')
+        .update({ status: 'pending', assigned_role: null })
+        .eq('month_id', selectedMonth.id);
+
+      // Update month status back to open
+      const { error: monthError } = await supabase
+        .from('mesa_abierta_months')
+        .update({ status: 'open' })
+        .eq('id', selectedMonth.id);
+
+      if (monthError) throw monthError;
+
+      toast({
+        title: 'Matching deshecho',
+        description: 'El mes ha sido reiniciado. Puedes ejecutar el algoritmo de matching nuevamente.',
+      });
+
+      // Refresh data
+      await fetchMonths();
+      const { data: updatedMonth } = await supabase
+        .from('mesa_abierta_months')
+        .select('*')
+        .eq('id', selectedMonth.id)
+        .single();
+
+      if (updatedMonth) {
+        setSelectedMonth(updatedMonth);
+      }
+      await fetchParticipants(selectedMonth.id);
+      setMatchResult(null);
+      setDinnerMatches([]);
+    } catch (error: any) {
+      console.error('Error unmatching:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al deshacer el matching',
+        variant: 'destructive',
+      });
+    } finally {
+      setUnmatching(false);
+      setShowUnmatchConfirm(false);
     }
   };
 
@@ -414,6 +732,89 @@ export const MesaAbiertaAdmin = () => {
         />
       )}
 
+      {/* Edit Month Dialog */}
+      {editMonth && (
+        <EditMonthDialog
+          open={!!editMonth}
+          month={editMonth}
+          onClose={() => setEditMonth(null)}
+          onSuccess={() => {
+            setEditMonth(null);
+            fetchMonths();
+            // Update selectedMonth if it was the one edited
+            if (selectedMonth?.id === editMonth.id) {
+              supabase
+                .from('mesa_abierta_months')
+                .select('*')
+                .eq('id', editMonth.id)
+                .single()
+                .then(({ data }) => {
+                  if (data) setSelectedMonth(data);
+                });
+            }
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteMonth} onOpenChange={(open) => !open && setDeleteMonth(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este mes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán permanentemente:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>La configuración del mes</li>
+                <li>Todos los participantes registrados</li>
+                <li>Todos los matches y asignaciones</li>
+                <li>Las restricciones dietéticas asociadas</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteMonth}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unmatch Confirmation Dialog */}
+      <AlertDialog open={showUnmatchConfirm} onOpenChange={setShowUnmatchConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Deshacer el matching?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará todos los matches y asignaciones actuales:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Se eliminarán todas las cenas asignadas</li>
+                <li>Los participantes volverán a estado "pendiente"</li>
+                <li>El mes volverá a estado "open"</li>
+                <li>Podrás ejecutar el algoritmo de matching nuevamente</li>
+              </ul>
+              <p className="mt-2 font-medium text-orange-600">
+                Nota: Los participantes NO serán eliminados, solo sus asignaciones.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unmatching}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnmatch}
+              disabled={unmatching}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              {unmatching ? 'Deshaciendo...' : 'Deshacer Matching'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Month Selector */}
       <Card>
         <CardHeader>
@@ -432,27 +833,60 @@ export const MesaAbiertaAdmin = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {months.map((month) => (
-                <Button
+                <div
                   key={month.id}
-                  variant={selectedMonth?.id === month.id ? 'default' : 'outline'}
-                  className="justify-start h-auto p-4"
+                  className={`relative border rounded-lg p-4 cursor-pointer transition-colors ${
+                    selectedMonth?.id === month.id
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background hover:bg-muted'
+                  }`}
                   onClick={() => setSelectedMonth(month)}
                 >
-                  <div className="text-left w-full">
+                  <div className="text-left w-full pr-16">
                     <div className="font-semibold">
-                      {new Date(month.dinner_date).toLocaleDateString('es-ES', {
+                      {new Date(month.dinner_date + 'T12:00:00').toLocaleDateString('es-ES', {
                         month: 'long',
                         year: 'numeric',
                       })}
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Cena: {new Date(month.dinner_date).toLocaleDateString('es-ES')}
+                    <div className={`text-sm ${selectedMonth?.id === month.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                      Cena: {new Date(month.dinner_date + 'T12:00:00').toLocaleDateString('es-ES')}
                     </div>
-                    <Badge variant={month.status === 'open' ? 'default' : 'secondary'} className="mt-2">
+                    <Badge
+                      variant={month.status === 'open' ? 'default' : 'secondary'}
+                      className={`mt-2 ${selectedMonth?.id === month.id ? 'bg-primary-foreground text-primary' : ''}`}
+                    >
                       {month.status}
                     </Badge>
                   </div>
-                </Button>
+                  {/* Edit and Delete buttons */}
+                  <div className="absolute top-2 right-2 flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-8 w-8 ${selectedMonth?.id === month.id ? 'hover:bg-primary-foreground/20' : 'hover:bg-muted'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditMonth(month);
+                      }}
+                      title="Editar mes"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-8 w-8 ${selectedMonth?.id === month.id ? 'hover:bg-destructive/20 text-destructive-foreground' : 'hover:bg-destructive/10 text-destructive'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteMonth(month);
+                      }}
+                      title="Eliminar mes"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -460,11 +894,15 @@ export const MesaAbiertaAdmin = () => {
       </Card>
 
       {selectedMonth && (
-        <Tabs defaultValue="matching" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue={selectedMonth.status === 'matched' ? 'dinners' : 'matching'} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="matching">
               <Play className="h-4 w-4 mr-2" />
               Matching
+            </TabsTrigger>
+            <TabsTrigger value="dinners" disabled={selectedMonth.status !== 'matched'}>
+              <UtensilsCrossed className="h-4 w-4 mr-2" />
+              Cenas
             </TabsTrigger>
             <TabsTrigger value="participants">
               <Users className="h-4 w-4 mr-2" />
@@ -499,7 +937,7 @@ export const MesaAbiertaAdmin = () => {
                   </AlertDescription>
                 </Alert>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap">
                   <Button
                     onClick={runMatching}
                     disabled={loading || selectedMonth.status !== 'open'}
@@ -508,6 +946,18 @@ export const MesaAbiertaAdmin = () => {
                   >
                     {loading ? 'Ejecutando...' : 'Ejecutar Matching'}
                   </Button>
+                  {selectedMonth.status === 'matched' && (
+                    <Button
+                      onClick={() => setShowUnmatchConfirm(true)}
+                      disabled={unmatching}
+                      size="lg"
+                      variant="outline"
+                      className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      {unmatching ? 'Deshaciendo...' : 'Deshacer Matching'}
+                    </Button>
+                  )}
                   <Badge variant={selectedMonth.status === 'open' ? 'default' : 'secondary'}>
                     Estado: {selectedMonth.status}
                   </Badge>
@@ -544,7 +994,7 @@ export const MesaAbiertaAdmin = () => {
                               </div>
                               <div>
                                 <div className="text-2xl font-bold text-orange-600">
-                                  {matchResult.results?.hostsConverted}
+                                  {matchResult.results?.hostsConvertedToGuests}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   Anfitriones Convertidos
@@ -696,6 +1146,128 @@ export const MesaAbiertaAdmin = () => {
             </Card>
           </TabsContent>
 
+          {/* Dinners Tab */}
+          <TabsContent value="dinners" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UtensilsCrossed className="h-5 w-5" />
+                  Cenas Asignadas
+                </CardTitle>
+                <CardDescription>
+                  {dinnerMatches.length} cenas creadas para este mes
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {dinnerMatches.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <UtensilsCrossed className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No hay cenas asignadas aún.</p>
+                    <p className="text-sm">Ejecuta el algoritmo de matching primero.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {dinnerMatches.map((dinner, index) => (
+                      <Card key={dinner.id} className="border-2">
+                        <CardHeader className="bg-casa-50 border-b">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                              <span className="bg-casa-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm">
+                                {index + 1}
+                              </span>
+                              Cena #{index + 1}
+                            </CardTitle>
+                            <Badge variant="secondary">
+                              {dinner.guests.length} invitados + anfitrión
+                              {dinner.host.has_plus_one ? ' (+1)' : ''}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-4">
+                          {/* Host Section */}
+                          <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Home className="h-5 w-5 text-green-700" />
+                              <span className="font-semibold text-green-800">Anfitrión</span>
+                              {dinner.host.has_plus_one && (
+                                <Badge variant="outline" className="text-green-700 border-green-300">+1</Badge>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span className="font-medium">Nombre:</span> {dinner.host.full_name}
+                              </div>
+                              {dinner.host.phone_number && (
+                                <div>
+                                  <span className="font-medium">Teléfono:</span> {dinner.host.phone_number}
+                                </div>
+                              )}
+                              {dinner.host.host_address && (
+                                <div className="col-span-full">
+                                  <span className="font-medium">Dirección:</span> {dinner.host.host_address}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Guests Section */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Users className="h-5 w-5 text-casa-700" />
+                              <span className="font-semibold">Invitados ({dinner.guests.length})</span>
+                            </div>
+                            <div className="space-y-3">
+                              {dinner.guests.map((guest) => (
+                                <div key={guest.id} className="p-3 bg-muted rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">{guest.full_name}</span>
+                                      {guest.has_plus_one && (
+                                        <Badge variant="outline" className="text-xs">
+                                          +1: {guest.plus_one_name || 'Acompañante'}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <Badge variant="secondary" className="capitalize">
+                                      {guest.food_assignment === 'main_course' ? 'Plato Principal' :
+                                       guest.food_assignment === 'salad' ? 'Ensalada' :
+                                       guest.food_assignment === 'drinks' ? 'Bebidas' :
+                                       guest.food_assignment === 'dessert' ? 'Postre' : guest.food_assignment}
+                                    </Badge>
+                                  </div>
+                                  {guest.phone_number && (
+                                    <div className="text-sm text-muted-foreground">
+                                      Tel: {guest.phone_number}
+                                    </div>
+                                  )}
+                                  {guest.dietary_restrictions.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                      {guest.dietary_restrictions.map((restriction) => (
+                                        <Badge
+                                          key={restriction.id}
+                                          variant={restriction.severity === 'allergy' ? 'destructive' : 'outline'}
+                                          className="text-xs"
+                                        >
+                                          {restriction.is_plus_one ? '(+1) ' : ''}
+                                          {restriction.description || restriction.restriction_type}
+                                          {restriction.severity === 'allergy' && ' ⚠️'}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* Participants Tab */}
           <TabsContent value="participants" className="space-y-4">
             <Card>
@@ -745,15 +1317,26 @@ export const MesaAbiertaAdmin = () => {
                             <span className="font-semibold">Dirección:</span> {participant.host_address}
                           </div>
                         )}
-                        {participant.dietary_restrictions && (
+                        {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => !r.is_plus_one).length > 0 && (
                           <div className="col-span-full">
-                            <span className="font-semibold">Restricciones:</span> {participant.dietary_restrictions}
+                            <span className="font-semibold">Restricciones:</span>{' '}
+                            {participant.mesa_abierta_dietary_restrictions
+                              .filter(r => !r.is_plus_one)
+                              .map(r => r.description || r.restriction_type)
+                              .join(', ')}
                           </div>
                         )}
                         {participant.has_plus_one && participant.plus_one_name && (
                           <div className="col-span-full">
                             <span className="font-semibold">Acompañante:</span> {participant.plus_one_name}
-                            {participant.plus_one_dietary_restrictions && ` (${participant.plus_one_dietary_restrictions})`}
+                            {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => r.is_plus_one).length > 0 && (
+                              <span className="text-muted-foreground">
+                                {' '}({participant.mesa_abierta_dietary_restrictions
+                                  .filter(r => r.is_plus_one)
+                                  .map(r => r.description || r.restriction_type)
+                                  .join(', ')})
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

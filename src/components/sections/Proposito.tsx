@@ -1,5 +1,5 @@
 export function Proposito() {
-  return <section id="proposito" className="section bg-secondary/50">
+  return <section id="proposito" className="section bg-casa-50">
       <div className="container-custom">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div>
