@@ -1,7 +1,6 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useMemo } from "react";
-import { ChevronDown } from "lucide-react";
 
 // Calculate which Advent week we're in (1-4, or 0 if before Advent, 5 if Christmas)
 const getAdventWeek = (): number => {
@@ -345,16 +344,6 @@ export function AdvientoHero() {
             </Button>
           </motion.div>
 
-          {/* Scroll indicator */}
-          <motion.div
-            className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-casa-400"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.5, duration: 0.6 }}
-          >
-            <span className="text-xs tracking-wider uppercase">Descubre más</span>
-            <ChevronDown className="w-5 h-5 scroll-indicator" />
-          </motion.div>
         </motion.div>
       </div>
     </section>
