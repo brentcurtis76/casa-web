@@ -62,8 +62,8 @@ export function Equipo() {
               El acompañamiento espiritual de nuestra <strong>CASA</strong> reside en su apasionado Equipo Pastoral,
               liderado por Brent Curtis. A su lado, co-lideran Patricio Browne (que sigue como pastor
               titular ante la diócesis mientras dure el proceso de ordenación de Brent), Fiona Fraser,
-              Claudia Araya y Arnoldo Cisternas, cada uno aportando sus propias luces y perspectivas
-              para enriquecer la misión de la iglesia.
+              Claudia Araya, Arnoldo Cisternas, Mónica Van Ginderthaelen y Tomás Diéguez, cada uno
+              aportando sus propias luces y perspectivas para enriquecer la misión de la iglesia.
             </p>
             <p className="text-casa-700">
               Eugenia Riffo gestiona con precisión y dedicación las áreas de Administración y Finanzas,
@@ -86,7 +86,7 @@ export function Equipo() {
             <p className="text-casa-700">
               En cuanto a las decisiones y guías estratégicas, el Concilio de <strong>CASA</strong>, compuesto por
               Andrew Warren, Victor Córdova, Aurora Fontecilla, Anita Pinchart, Georgina García,
-              Nevenka Echegaray, Mónica Van Gindertaelen, Melanie Sharman y Pablo Rebolledo,
+              Nevenka Echegaray, Mónica Van Gindertaelen, Melanie Sharman, Pablo Rebolledo y José Martínez,
               desempeña un papel crucial, velando por la integridad y el rumbo de nuestra comunidad.
               Juntos, cada miembro de nuestro equipo y concilio dedica su energía y amor para asegurar
               que <strong>CASA</strong> sea un hogar inclusivo, acogedor y en constante evolución.
