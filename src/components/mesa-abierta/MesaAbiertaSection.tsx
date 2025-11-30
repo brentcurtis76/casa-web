@@ -164,9 +164,13 @@ export function MesaAbiertaSection() {
     try {
       const { data: participants, error } = await supabase
         .from('mesa_abierta_participants')
-        .select('id, mesa_abierta_months(dinner_date)')
+        .select('id, status, month_id, mesa_abierta_months(dinner_date)')
         .eq('user_id', user.id)
         .neq('status', 'cancelled');
+
+      console.log('checkActiveParticipation - user:', user.id);
+      console.log('checkActiveParticipation - participants:', participants);
+      console.log('checkActiveParticipation - error:', error);
 
       if (error) {
         console.error('Error checking participation:', error);
@@ -175,11 +179,15 @@ export function MesaAbiertaSection() {
 
       // Filter client-side for future dinner dates
       const now = new Date().toISOString();
-      const hasActive = participants?.some(p =>
-        p.mesa_abierta_months &&
-        (p.mesa_abierta_months as any).dinner_date >= now
-      ) || false;
+      console.log('checkActiveParticipation - now:', now);
 
+      const hasActive = participants?.some(p => {
+        const dinnerDate = p.mesa_abierta_months && (p.mesa_abierta_months as any).dinner_date;
+        console.log('checkActiveParticipation - checking participant:', p.id, 'dinner_date:', dinnerDate, 'isFuture:', dinnerDate >= now);
+        return p.mesa_abierta_months && dinnerDate >= now;
+      }) || false;
+
+      console.log('checkActiveParticipation - hasActive:', hasActive);
       setHasActiveParticipation(hasActive);
     } catch (error) {
       console.error('Error checking participation:', error);
