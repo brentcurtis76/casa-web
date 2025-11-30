@@ -709,12 +709,12 @@ export const MesaAbiertaAdmin = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-casa-700">Panel de Administración</h2>
           <p className="text-muted-foreground">Gestiona eventos y participantes de La Mesa Abierta</p>
         </div>
-        <Button onClick={() => setShowCreateMonth(true)} size="lg">
+        <Button onClick={() => setShowCreateMonth(true)} size="lg" className="w-full sm:w-auto">
           <Calendar className="h-4 w-4 mr-2" />
           Crear Nuevo Mes
         </Button>
@@ -895,28 +895,30 @@ export const MesaAbiertaAdmin = () => {
 
       {selectedMonth && (
         <Tabs defaultValue={selectedMonth.status === 'matched' ? 'dinners' : 'matching'} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="matching">
-              <Play className="h-4 w-4 mr-2" />
-              Matching
-            </TabsTrigger>
-            <TabsTrigger value="dinners" disabled={selectedMonth.status !== 'matched'}>
-              <UtensilsCrossed className="h-4 w-4 mr-2" />
-              Cenas
-            </TabsTrigger>
-            <TabsTrigger value="participants">
-              <Users className="h-4 w-4 mr-2" />
-              Participantes
-            </TabsTrigger>
-            <TabsTrigger value="statistics">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              Estadísticas
-            </TabsTrigger>
-            <TabsTrigger value="communication">
-              <Mail className="h-4 w-4 mr-2" />
-              Comunicación
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4">
+            <TabsList className="inline-flex w-auto min-w-full md:grid md:w-full md:grid-cols-5">
+              <TabsTrigger value="matching" className="whitespace-nowrap">
+                <Play className="h-4 w-4 mr-2" />
+                Matching
+              </TabsTrigger>
+              <TabsTrigger value="dinners" disabled={selectedMonth.status !== 'matched'} className="whitespace-nowrap">
+                <UtensilsCrossed className="h-4 w-4 mr-2" />
+                Cenas
+              </TabsTrigger>
+              <TabsTrigger value="participants" className="whitespace-nowrap">
+                <Users className="h-4 w-4 mr-2" />
+                Participantes
+              </TabsTrigger>
+              <TabsTrigger value="statistics" className="whitespace-nowrap">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Estadísticas
+              </TabsTrigger>
+              <TabsTrigger value="communication" className="whitespace-nowrap">
+                <Mail className="h-4 w-4 mr-2" />
+                Comunicación
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Matching Tab */}
           <TabsContent value="matching" className="space-y-4">

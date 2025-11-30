@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, MapPin, BookOpen, Music, HomeIcon, BookOpen as BookIcon } from "lucide-react";
+import { Users, MapPin, BookOpen, Music, Coffee, BookOpen as BookIcon, Heart } from "lucide-react";
 import { motion } from "framer-motion";
 
 // Animation variants
@@ -90,9 +90,9 @@ export function Participar() {
       icon: <MapPin size={26} />
     },
     {
-      title: "Camino a Emaús",
-      description: "Una o dos veces al año, nos sumergimos en el retiro 'Camino a Emaús', un viaje transformador para redescubrir la espiritualidad de Jesús desde perspectivas frescas y renovadoras. Una oportunidad única para profundizar en la fe y conectarse íntimamente con su mensaje.",
-      icon: <BookOpen size={26} />
+      title: "Grupo de Apoyo Psicoemocional",
+      description: "Cada jueves a las 19:00 hrs, ofrecemos un espacio seguro para quienes sienten que la vida pesa demasiado. Aquí puedes hablar, ser escuchado y sentirte acompañado. No estás solo/a en tu camino.",
+      icon: <Heart size={26} />
     },
     {
       title: "Música",
@@ -100,13 +100,13 @@ export function Participar() {
       icon: <Music size={26} />
     },
     {
-      title: "Grupos En CASA",
-      description: "Dos veces al mes, los Grupos en CASA se reúnen para compartir vivencias y profundizar en la espiritualidad de Jesús. Es un espacio íntimo y cálido donde la comunidad se fortalece, explorando juntos la fe y apoyándose en el camino de la vida.",
-      icon: <HomeIcon size={26} />
+      title: "Desayuno de Hombres",
+      description: "Una vez al mes, un domingo a las 9:30 hrs, los hombres de la comunidad están invitados a un desayuno donde conversamos temas relevantes a lo que significa ser un hombre que sigue a Cristo en los tiempos que vivimos.",
+      icon: <Coffee size={26} />
     },
     {
-      title: "Cursos",
-      description: "Semanalmente, ofrecemos cursos presenciales diseñados para equiparte en tu camino. Estas sesiones interactivas brindan herramientas y perspectivas valiosas, fortaleciendo nuestra fe colectiva mientras aprendemos juntos en comunidad.",
+      title: "Club de Lectura",
+      description: "Cada semestre leemos un libro que nos desafía en nuestro caminar con Cristo. Es un espacio online para incluir a aquellos de nuestra comunidad que están fuera de Santiago. Actualmente estamos leyendo La Danza Divina de Richard Rohr.",
       icon: <BookIcon size={26} />
     }
   ];

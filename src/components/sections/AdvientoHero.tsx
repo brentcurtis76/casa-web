@@ -238,7 +238,7 @@ export function AdvientoHero() {
             variants={itemVariants}
           >
             Un tiempo de espera, esperanza y preparación.
-            <br className="hidden md:block" />
+            <br />
             <span className="text-amber-700">Acompáñanos en este camino hacia la luz.</span>
           </motion.p>
 

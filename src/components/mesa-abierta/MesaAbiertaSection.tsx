@@ -392,12 +392,12 @@ export function MesaAbiertaSection() {
               La Mesa Abierta
             </h1>
             <p className="text-lg md:text-xl text-stone-700 mb-6 leading-relaxed">
-              Una cena mensual llena de sorpresas donde compartimos comida
+              Una cena mensual llena de sorpresas donde compartimos comida{" "}
               <br className="hidden md:block" />
               y comunidad con personas que aún no conoces.
             </p>
             <p className="text-base md:text-lg text-stone-600 italic">
-              No sabrás quién es el anfitrión ni quiénes serán los otros invitados
+              No sabrás quién es el anfitrión ni quiénes serán los otros invitados{" "}
               <br className="hidden md:block" />
               hasta que llegues. ¡Déjate sorprender!
             </p>
