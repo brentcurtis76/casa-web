@@ -73,11 +73,11 @@ export const FeaturedEventCard = ({
 
             {/* Image */}
             {imageUrl && (
-              <div className="lg:w-48 flex-shrink-0">
+              <div className="w-full lg:w-48 flex-shrink-0">
                 <img
                   src={imageUrl}
                   alt={title}
-                  className="w-full h-32 lg:h-full object-cover rounded-xl"
+                  className="w-full h-auto aspect-[4/3] lg:aspect-auto lg:h-full object-cover rounded-xl"
                 />
               </div>
             )}
