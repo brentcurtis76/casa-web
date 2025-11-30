@@ -92,18 +92,20 @@ export function MesaAbiertaSection() {
       if (error) throw error;
 
       const hosts = participants?.filter(p => p.role_preference === 'host') || [];
-      const guests = participants?.filter(p => p.role_preference === 'guest').length || 0;
-      const plusOnes = participants?.filter(p => p.has_plus_one).length || 0;
+      const guests = participants?.filter(p => p.role_preference === 'guest') || [];
+      const guestPlusOnes = guests.filter(p => p.has_plus_one).length;
+      const allPlusOnes = participants?.filter(p => p.has_plus_one).length || 0;
 
       // Calculate total capacity from actual host_max_guests values
       const totalHostCapacity = hosts.reduce((sum, host) => sum + (host.host_max_guests || 0), 0);
 
-      const totalGuestSlots = guests + plusOnes;
+      // Only count guest +1s for calculating hosts needed (not host +1s)
+      const totalGuestSlots = guests.length + guestPlusOnes;
       const hostsNeeded = Math.ceil(totalGuestSlots / 5);
       const spotsAvailable = Math.max(0, totalHostCapacity - totalGuestSlots);
 
-      // Count total people including +1s
-      const totalPeople = (participants?.length || 0) + plusOnes;
+      // Count total people including all +1s
+      const totalPeople = (participants?.length || 0) + allPlusOnes;
 
       setStats({
         totalParticipants: totalPeople,
@@ -462,7 +464,7 @@ export function MesaAbiertaSection() {
                           </p>
                           {stats.hostsNeeded > 0 && (
                             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                              Se necesitan {stats.hostsNeeded} anfitriones más
+                              Se {stats.hostsNeeded === 1 ? 'necesita' : 'necesitan'} {stats.hostsNeeded} {stats.hostsNeeded === 1 ? 'anfitrión' : 'anfitriones'} más
                             </Badge>
                           )}
                         </div>
