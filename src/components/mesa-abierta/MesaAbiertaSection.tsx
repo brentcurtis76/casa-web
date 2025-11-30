@@ -101,15 +101,20 @@ export function MesaAbiertaSection() {
 
       // Only count guest +1s for calculating hosts needed (not host +1s)
       const totalGuestSlots = guests.length + guestPlusOnes;
-      const hostsNeeded = Math.ceil(totalGuestSlots / 5);
       const spotsAvailable = Math.max(0, totalHostCapacity - totalGuestSlots);
+
+      // Calculate hosts needed based on actual capacity vs demand
+      // If current hosts can accommodate all guests, no more hosts needed
+      const additionalHostsNeeded = totalHostCapacity >= totalGuestSlots
+        ? 0
+        : Math.ceil((totalGuestSlots - totalHostCapacity) / 5);
 
       // Count total people including all +1s
       const totalPeople = (participants?.length || 0) + allPlusOnes;
 
       setStats({
         totalParticipants: totalPeople,
-        hostsNeeded: hostsNeeded - hosts.length,
+        hostsNeeded: additionalHostsNeeded,
         spotsAvailable
       });
     } catch (error) {
