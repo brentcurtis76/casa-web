@@ -102,8 +102,11 @@ export function MesaAbiertaSection() {
       const hostsNeeded = Math.ceil(totalGuestSlots / 5);
       const spotsAvailable = Math.max(0, totalHostCapacity - totalGuestSlots);
 
+      // Count total people including +1s
+      const totalPeople = (participants?.length || 0) + plusOnes;
+
       setStats({
-        totalParticipants: participants?.length || 0,
+        totalParticipants: totalPeople,
         hostsNeeded: hostsNeeded - hosts.length,
         spotsAvailable
       });
