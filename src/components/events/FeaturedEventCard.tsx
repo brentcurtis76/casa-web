@@ -77,7 +77,7 @@ export const FeaturedEventCard = ({
                 <img
                   src={imageUrl}
                   alt={title}
-                  className="w-full h-auto aspect-[4/3] lg:aspect-auto lg:h-full object-cover rounded-xl"
+                  className="w-full h-auto aspect-square lg:aspect-auto lg:h-full object-cover rounded-xl"
                 />
               </div>
             )}
