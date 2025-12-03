@@ -6,11 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed } from 'lucide-react';
+import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed, UserPlus } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { CreateMonthDialog } from './CreateMonthDialog';
 import { EditMonthDialog } from './EditMonthDialog';
+import { AddParticipantDialog } from './AddParticipantDialog';
+import { EditParticipantDialog } from './EditParticipantDialog';
 
 interface Month {
   id: string;
@@ -107,6 +109,10 @@ export const MesaAbiertaAdmin = () => {
   const [showUnmatchConfirm, setShowUnmatchConfirm] = useState(false);
   const [unmatching, setUnmatching] = useState(false);
   const [dinnerMatches, setDinnerMatches] = useState<DinnerMatch[]>([]);
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [editParticipant, setEditParticipant] = useState<Participant | null>(null);
+  const [deleteParticipant, setDeleteParticipant] = useState<Participant | null>(null);
+  const [deletingParticipant, setDeletingParticipant] = useState(false);
 
   // Check if user is admin
   useEffect(() => {
@@ -557,6 +563,74 @@ export const MesaAbiertaAdmin = () => {
     }
   };
 
+  const handleDeleteParticipant = async () => {
+    if (!deleteParticipant) return;
+
+    setDeletingParticipant(true);
+    try {
+      // First delete dietary restrictions for this participant
+      await supabase
+        .from('mesa_abierta_dietary_restrictions')
+        .delete()
+        .eq('participant_id', deleteParticipant.id);
+
+      // Delete any assignments where this participant is a guest
+      await supabase
+        .from('mesa_abierta_assignments')
+        .delete()
+        .eq('guest_participant_id', deleteParticipant.id);
+
+      // If this participant is a host with a match, we need to handle that
+      const { data: hostMatch } = await supabase
+        .from('mesa_abierta_matches')
+        .select('id')
+        .eq('host_participant_id', deleteParticipant.id)
+        .maybeSingle();
+
+      if (hostMatch) {
+        // Delete assignments for this match first
+        await supabase
+          .from('mesa_abierta_assignments')
+          .delete()
+          .eq('match_id', hostMatch.id);
+
+        // Delete the match
+        await supabase
+          .from('mesa_abierta_matches')
+          .delete()
+          .eq('id', hostMatch.id);
+      }
+
+      // Finally delete the participant
+      const { error } = await supabase
+        .from('mesa_abierta_participants')
+        .delete()
+        .eq('id', deleteParticipant.id);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Participante eliminado',
+        description: `${deleteParticipant.full_name} ha sido eliminado`,
+      });
+
+      // Refresh participants list
+      if (selectedMonth) {
+        fetchParticipants(selectedMonth.id);
+      }
+    } catch (error: any) {
+      console.error('Error deleting participant:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo eliminar el participante',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingParticipant(false);
+      setDeleteParticipant(null);
+    }
+  };
+
   const sendNotifications = async () => {
     if (!selectedMonth) {
       toast({
@@ -810,6 +884,61 @@ export const MesaAbiertaAdmin = () => {
               className="bg-orange-600 text-white hover:bg-orange-700"
             >
               {unmatching ? 'Deshaciendo...' : 'Deshacer Matching'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add Participant Dialog */}
+      {showAddParticipant && selectedMonth && (
+        <AddParticipantDialog
+          open={showAddParticipant}
+          onClose={() => setShowAddParticipant(false)}
+          onSuccess={() => {
+            setShowAddParticipant(false);
+            if (selectedMonth) {
+              fetchParticipants(selectedMonth.id);
+            }
+          }}
+          monthId={selectedMonth.id}
+        />
+      )}
+
+      {/* Edit Participant Dialog */}
+      {editParticipant && (
+        <EditParticipantDialog
+          open={!!editParticipant}
+          onClose={() => setEditParticipant(null)}
+          onSuccess={() => {
+            setEditParticipant(null);
+            if (selectedMonth) {
+              fetchParticipants(selectedMonth.id);
+            }
+          }}
+          participant={editParticipant}
+        />
+      )}
+
+      {/* Delete Participant Confirmation Dialog */}
+      <AlertDialog open={!!deleteParticipant} onOpenChange={(open) => !open && setDeleteParticipant(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar participante?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar a <strong>{deleteParticipant?.full_name}</strong>?
+              <p className="mt-2">
+                Esta acción eliminará su inscripción, restricciones dietéticas y cualquier asignación asociada.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingParticipant}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteParticipant}
+              disabled={deletingParticipant}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingParticipant ? 'Eliminando...' : 'Eliminar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1273,78 +1402,115 @@ export const MesaAbiertaAdmin = () => {
           {/* Participants Tab */}
           <TabsContent value="participants" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Lista de Participantes</CardTitle>
-                <CardDescription>
-                  {participants.length} participantes registrados para este mes
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <div>
+                  <CardTitle>Lista de Participantes</CardTitle>
+                  <CardDescription>
+                    {participants.length} participantes registrados para este mes
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setShowAddParticipant(true)}
+                  className="bg-casa-700 hover:bg-casa-800"
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Agregar Participante
+                </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {participants.map((participant) => (
-                    <div
-                      key={participant.id}
-                      className="p-4 bg-muted rounded-lg space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={participant.role_preference === 'host' ? 'default' : 'secondary'}>
-                            {participant.role_preference === 'host' ? 'Anfitrión' : 'Invitado'}
-                          </Badge>
-                          {participant.assigned_role && participant.assigned_role !== participant.role_preference && (
-                            <Badge variant="outline">
-                              Asignado como: {participant.assigned_role === 'host' ? 'Anfitrión' : 'Invitado'}
+                {participants.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No hay participantes registrados aún.</p>
+                    <p className="text-sm">Haz clic en "Agregar Participante" para agregar manualmente.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {participants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className="p-4 bg-muted rounded-lg space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant={participant.role_preference === 'host' ? 'default' : 'secondary'}>
+                              {participant.role_preference === 'host' ? 'Anfitrión' : 'Invitado'}
                             </Badge>
-                          )}
-                          {participant.has_plus_one && (
-                            <Badge variant="outline">+1</Badge>
-                          )}
-                        </div>
-                        <Badge variant="outline">{participant.status}</Badge>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span className="font-semibold">Nombre:</span> {participant.full_name}
-                        </div>
-                        <div>
-                          <span className="font-semibold">Email:</span> {participant.email}
-                        </div>
-                        {participant.phone_number && (
-                          <div>
-                            <span className="font-semibold">Teléfono:</span> {participant.phone_number}
-                          </div>
-                        )}
-                        {participant.host_address && (
-                          <div>
-                            <span className="font-semibold">Dirección:</span> {participant.host_address}
-                          </div>
-                        )}
-                        {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => !r.is_plus_one).length > 0 && (
-                          <div className="col-span-full">
-                            <span className="font-semibold">Restricciones:</span>{' '}
-                            {participant.mesa_abierta_dietary_restrictions
-                              .filter(r => !r.is_plus_one)
-                              .map(r => r.description || r.restriction_type)
-                              .join(', ')}
-                          </div>
-                        )}
-                        {participant.has_plus_one && participant.plus_one_name && (
-                          <div className="col-span-full">
-                            <span className="font-semibold">Acompañante:</span> {participant.plus_one_name}
-                            {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => r.is_plus_one).length > 0 && (
-                              <span className="text-muted-foreground">
-                                {' '}({participant.mesa_abierta_dietary_restrictions
-                                  .filter(r => r.is_plus_one)
-                                  .map(r => r.description || r.restriction_type)
-                                  .join(', ')})
-                              </span>
+                            {participant.assigned_role && participant.assigned_role !== participant.role_preference && (
+                              <Badge variant="outline">
+                                Asignado como: {participant.assigned_role === 'host' ? 'Anfitrión' : 'Invitado'}
+                              </Badge>
                             )}
+                            {participant.has_plus_one && (
+                              <Badge variant="outline">+1</Badge>
+                            )}
+                            <Badge variant="outline">{participant.status}</Badge>
                           </div>
-                        )}
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setEditParticipant(participant)}
+                              title="Editar participante"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteParticipant(participant)}
+                              title="Eliminar participante"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="font-semibold">Nombre:</span> {participant.full_name}
+                          </div>
+                          <div>
+                            <span className="font-semibold">Email:</span> {participant.email || 'Sin correo'}
+                          </div>
+                          {participant.phone_number && (
+                            <div>
+                              <span className="font-semibold">Teléfono:</span> {participant.phone_number}
+                            </div>
+                          )}
+                          {participant.host_address && (
+                            <div>
+                              <span className="font-semibold">Dirección:</span> {participant.host_address}
+                            </div>
+                          )}
+                          {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => !r.is_plus_one).length > 0 && (
+                            <div className="col-span-full">
+                              <span className="font-semibold">Restricciones:</span>{' '}
+                              {participant.mesa_abierta_dietary_restrictions
+                                .filter(r => !r.is_plus_one)
+                                .map(r => r.description || r.restriction_type)
+                                .join(', ')}
+                            </div>
+                          )}
+                          {participant.has_plus_one && participant.plus_one_name && (
+                            <div className="col-span-full">
+                              <span className="font-semibold">Acompañante:</span> {participant.plus_one_name}
+                              {participant.mesa_abierta_dietary_restrictions && participant.mesa_abierta_dietary_restrictions.filter(r => r.is_plus_one).length > 0 && (
+                                <span className="text-muted-foreground">
+                                  {' '}({participant.mesa_abierta_dietary_restrictions
+                                    .filter(r => r.is_plus_one)
+                                    .map(r => r.description || r.restriction_type)
+                                    .join(', ')})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
