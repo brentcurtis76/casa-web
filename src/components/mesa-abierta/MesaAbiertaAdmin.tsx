@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed, UserPlus } from 'lucide-react';
+import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed, UserPlus, ArrowRightLeft, MoveRight } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CreateMonthDialog } from './CreateMonthDialog';
 import { EditMonthDialog } from './EditMonthDialog';
 import { AddParticipantDialog } from './AddParticipantDialog';
@@ -73,6 +74,7 @@ interface DinnerMatch {
   dinner_date: string;
   dinner_time: string;
   guest_count: number;
+  host_food_assignment?: string;
   host: {
     id: string;
     full_name: string;
@@ -113,6 +115,45 @@ export const MesaAbiertaAdmin = () => {
   const [editParticipant, setEditParticipant] = useState<Participant | null>(null);
   const [deleteParticipant, setDeleteParticipant] = useState<Participant | null>(null);
   const [deletingParticipant, setDeletingParticipant] = useState(false);
+
+  // Move guest state
+  const [moveGuest, setMoveGuest] = useState<{
+    guestId: string;
+    guestName: string;
+    fromMatchId: string;
+    fromDinnerNumber: number;
+  } | null>(null);
+  const [targetMatchId, setTargetMatchId] = useState<string>('');
+  const [movingGuest, setMovingGuest] = useState(false);
+
+  // Change food assignment state
+  const [changeFoodAssignment, setChangeFoodAssignment] = useState<{
+    guestId: string;
+    guestName: string;
+    matchId: string;
+    currentAssignment: string;
+  } | null>(null);
+  const [newFoodAssignment, setNewFoodAssignment] = useState<string>('');
+  const [changingFood, setChangingFood] = useState(false);
+
+  // Convert host to guest state
+  const [convertHost, setConvertHost] = useState<{
+    hostParticipantId: string;
+    hostName: string;
+    matchId: string;
+  } | null>(null);
+  const [targetMatchForHost, setTargetMatchForHost] = useState<string>('');
+  const [hostFoodAssignment, setHostFoodAssignment] = useState<string>('');
+  const [convertingHost, setConvertingHost] = useState(false);
+
+  // Change host food assignment state
+  const [changeHostFoodAssignment, setChangeHostFoodAssignment] = useState<{
+    matchId: string;
+    hostName: string;
+    currentAssignment: string | null;
+  } | null>(null);
+  const [newHostFoodAssignment, setNewHostFoodAssignment] = useState<string>('');
+  const [changingHostFood, setChangingHostFood] = useState(false);
 
   // Check if user is admin
   useEffect(() => {
@@ -318,6 +359,7 @@ export const MesaAbiertaAdmin = () => {
           dinner_date: match.dinner_date,
           dinner_time: match.dinner_time,
           guest_count: match.guest_count,
+          host_food_assignment: match.host_food_assignment,
           host: {
             id: match.host_participant_id,
             full_name: hostProfile?.full_name || 'Sin nombre',
@@ -631,6 +673,252 @@ export const MesaAbiertaAdmin = () => {
     }
   };
 
+  const handleMoveGuest = async () => {
+    if (!moveGuest || !targetMatchId || !selectedMonth) return;
+
+    setMovingGuest(true);
+    try {
+      // Get the current assignment for this guest
+      const { data: currentAssignment, error: fetchError } = await supabase
+        .from('mesa_abierta_assignments')
+        .select('id, food_assignment')
+        .eq('guest_participant_id', moveGuest.guestId)
+        .eq('match_id', moveGuest.fromMatchId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Delete the old assignment
+      const { error: deleteError } = await supabase
+        .from('mesa_abierta_assignments')
+        .delete()
+        .eq('id', currentAssignment.id);
+
+      if (deleteError) throw deleteError;
+
+      // Create new assignment in target match
+      const { error: insertError } = await supabase
+        .from('mesa_abierta_assignments')
+        .insert({
+          match_id: targetMatchId,
+          guest_participant_id: moveGuest.guestId,
+          food_assignment: currentAssignment.food_assignment,
+        });
+
+      if (insertError) throw insertError;
+
+      // Update guest counts on both matches
+      const { error: decrementError } = await supabase
+        .from('mesa_abierta_matches')
+        .update({ guest_count: supabase.rpc('decrement', { x: 1 }) })
+        .eq('id', moveGuest.fromMatchId);
+
+      // Get current guest count and update manually
+      const { data: fromMatch } = await supabase
+        .from('mesa_abierta_matches')
+        .select('guest_count')
+        .eq('id', moveGuest.fromMatchId)
+        .single();
+
+      if (fromMatch) {
+        await supabase
+          .from('mesa_abierta_matches')
+          .update({ guest_count: Math.max(0, fromMatch.guest_count - 1) })
+          .eq('id', moveGuest.fromMatchId);
+      }
+
+      const { data: toMatch } = await supabase
+        .from('mesa_abierta_matches')
+        .select('guest_count')
+        .eq('id', targetMatchId)
+        .single();
+
+      if (toMatch) {
+        await supabase
+          .from('mesa_abierta_matches')
+          .update({ guest_count: toMatch.guest_count + 1 })
+          .eq('id', targetMatchId);
+      }
+
+      toast({
+        title: 'Invitado movido',
+        description: `${moveGuest.guestName} ha sido movido a otra cena`,
+      });
+
+      // Refresh dinner matches
+      await fetchDinnerMatches(selectedMonth.id);
+    } catch (error: any) {
+      console.error('Error moving guest:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo mover el invitado',
+        variant: 'destructive',
+      });
+    } finally {
+      setMovingGuest(false);
+      setMoveGuest(null);
+      setTargetMatchId('');
+    }
+  };
+
+  const handleChangeFoodAssignment = async () => {
+    if (!changeFoodAssignment || !newFoodAssignment || !selectedMonth) return;
+
+    setChangingFood(true);
+    try {
+      const { error } = await supabase
+        .from('mesa_abierta_assignments')
+        .update({ food_assignment: newFoodAssignment })
+        .eq('guest_participant_id', changeFoodAssignment.guestId)
+        .eq('match_id', changeFoodAssignment.matchId);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Asignación actualizada',
+        description: `${changeFoodAssignment.guestName} ahora trae ${
+          newFoodAssignment === 'main_course' ? 'Plato Principal' :
+          newFoodAssignment === 'salad' ? 'Ensalada' :
+          newFoodAssignment === 'drinks' ? 'Bebidas' :
+          newFoodAssignment === 'dessert' ? 'Postre' : newFoodAssignment
+        }`,
+      });
+
+      // Refresh dinner matches
+      await fetchDinnerMatches(selectedMonth.id);
+    } catch (error: any) {
+      console.error('Error changing food assignment:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo cambiar la asignación',
+        variant: 'destructive',
+      });
+    } finally {
+      setChangingFood(false);
+      setChangeFoodAssignment(null);
+      setNewFoodAssignment('');
+    }
+  };
+
+  const handleChangeHostFoodAssignment = async () => {
+    if (!changeHostFoodAssignment || !newHostFoodAssignment || !selectedMonth) return;
+
+    setChangingHostFood(true);
+    try {
+      const { error } = await supabase
+        .from('mesa_abierta_matches')
+        .update({ host_food_assignment: newHostFoodAssignment })
+        .eq('id', changeHostFoodAssignment.matchId);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Asignación actualizada',
+        description: `${changeHostFoodAssignment.hostName} ahora trae ${
+          newHostFoodAssignment === 'main_course' ? 'Plato Principal' :
+          newHostFoodAssignment === 'salad' ? 'Ensalada' :
+          newHostFoodAssignment === 'drinks' ? 'Bebidas' :
+          newHostFoodAssignment === 'dessert' ? 'Postre' : newHostFoodAssignment
+        }`,
+      });
+
+      // Refresh dinner matches
+      await fetchDinnerMatches(selectedMonth.id);
+    } catch (error: any) {
+      console.error('Error changing host food assignment:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo cambiar la asignación del anfitrión',
+        variant: 'destructive',
+      });
+    } finally {
+      setChangingHostFood(false);
+      setChangeHostFoodAssignment(null);
+      setNewHostFoodAssignment('');
+    }
+  };
+
+  const handleConvertHostToGuest = async () => {
+    if (!convertHost || !targetMatchForHost || !hostFoodAssignment || !selectedMonth) return;
+
+    setConvertingHost(true);
+    try {
+      // 1. Delete any remaining assignments from the host's match
+      const { data: remainingAssignments } = await supabase
+        .from('mesa_abierta_assignments')
+        .select('id')
+        .eq('match_id', convertHost.matchId);
+
+      if (remainingAssignments && remainingAssignments.length > 0) {
+        await supabase
+          .from('mesa_abierta_assignments')
+          .delete()
+          .eq('match_id', convertHost.matchId);
+      }
+
+      // 2. Delete the host's match
+      const { error: deleteMatchError } = await supabase
+        .from('mesa_abierta_matches')
+        .delete()
+        .eq('id', convertHost.matchId);
+
+      if (deleteMatchError) throw deleteMatchError;
+
+      // 3. Update the participant's assigned_role to 'guest'
+      const { error: updateParticipantError } = await supabase
+        .from('mesa_abierta_participants')
+        .update({ assigned_role: 'guest' })
+        .eq('id', convertHost.hostParticipantId);
+
+      if (updateParticipantError) throw updateParticipantError;
+
+      // 4. Create a new assignment for the former host as a guest
+      const { error: insertAssignmentError } = await supabase
+        .from('mesa_abierta_assignments')
+        .insert({
+          match_id: targetMatchForHost,
+          guest_participant_id: convertHost.hostParticipantId,
+          food_assignment: hostFoodAssignment,
+        });
+
+      if (insertAssignmentError) throw insertAssignmentError;
+
+      // 5. Update guest count on the target match
+      const { data: targetMatch } = await supabase
+        .from('mesa_abierta_matches')
+        .select('guest_count')
+        .eq('id', targetMatchForHost)
+        .single();
+
+      if (targetMatch) {
+        await supabase
+          .from('mesa_abierta_matches')
+          .update({ guest_count: targetMatch.guest_count + 1 })
+          .eq('id', targetMatchForHost);
+      }
+
+      toast({
+        title: 'Anfitrión convertido',
+        description: `${convertHost.hostName} ahora es invitado en otra cena`,
+      });
+
+      // Refresh dinner matches
+      await fetchDinnerMatches(selectedMonth.id);
+    } catch (error: any) {
+      console.error('Error converting host to guest:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo convertir el anfitrión',
+        variant: 'destructive',
+      });
+    } finally {
+      setConvertingHost(false);
+      setConvertHost(null);
+      setTargetMatchForHost('');
+      setHostFoodAssignment('');
+    }
+  };
+
   const sendNotifications = async () => {
     if (!selectedMonth) {
       toast({
@@ -939,6 +1227,195 @@ export const MesaAbiertaAdmin = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deletingParticipant ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Move Guest Dialog */}
+      <AlertDialog open={!!moveGuest} onOpenChange={(open) => !open && setMoveGuest(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mover Invitado</AlertDialogTitle>
+            <AlertDialogDescription>
+              Mover a <strong>{moveGuest?.guestName}</strong> de Cena #{moveGuest?.fromDinnerNumber} a otra cena.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">Seleccionar cena destino:</label>
+            <Select value={targetMatchId} onValueChange={setTargetMatchId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar cena..." />
+              </SelectTrigger>
+              <SelectContent>
+                {dinnerMatches
+                  .filter(d => d.id !== moveGuest?.fromMatchId)
+                  .map((dinner, index) => {
+                    const dinnerNumber = dinnerMatches.findIndex(d => d.id === dinner.id) + 1;
+                    return (
+                      <SelectItem key={dinner.id} value={dinner.id}>
+                        Cena #{dinnerNumber} - {dinner.host.full_name} ({dinner.guests.length} invitados)
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={movingGuest}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMoveGuest}
+              disabled={movingGuest || !targetMatchId}
+              className="bg-casa-700 hover:bg-casa-800"
+            >
+              {movingGuest ? 'Moviendo...' : 'Mover Invitado'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Change Food Assignment Dialog */}
+      <AlertDialog open={!!changeFoodAssignment} onOpenChange={(open) => !open && setChangeFoodAssignment(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiar Asignación de Comida</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cambiar lo que debe traer <strong>{changeFoodAssignment?.guestName}</strong>.
+              <br />
+              Asignación actual: <strong>{
+                changeFoodAssignment?.currentAssignment === 'main_course' ? 'Plato Principal' :
+                changeFoodAssignment?.currentAssignment === 'salad' ? 'Ensalada' :
+                changeFoodAssignment?.currentAssignment === 'drinks' ? 'Bebidas' :
+                changeFoodAssignment?.currentAssignment === 'dessert' ? 'Postre' : changeFoodAssignment?.currentAssignment
+              }</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">Nueva asignación:</label>
+            <Select value={newFoodAssignment} onValueChange={setNewFoodAssignment}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="main_course">Plato Principal</SelectItem>
+                <SelectItem value="salad">Ensalada</SelectItem>
+                <SelectItem value="drinks">Bebidas</SelectItem>
+                <SelectItem value="dessert">Postre</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingFood}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleChangeFoodAssignment}
+              disabled={changingFood || !newFoodAssignment}
+              className="bg-casa-700 hover:bg-casa-800"
+            >
+              {changingFood ? 'Guardando...' : 'Guardar Cambio'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Convert Host to Guest Dialog */}
+      <AlertDialog open={!!convertHost} onOpenChange={(open) => !open && setConvertHost(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convertir Anfitrión a Invitado</AlertDialogTitle>
+            <AlertDialogDescription>
+              Convertir a <strong>{convertHost?.hostName}</strong> de anfitrión a invitado.
+              <br />
+              <span className="text-orange-600">Esta acción eliminará su cena y lo moverá como invitado a otra cena.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Seleccionar cena destino:</label>
+              <Select value={targetMatchForHost} onValueChange={setTargetMatchForHost}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar cena..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {dinnerMatches
+                    .filter(d => d.id !== convertHost?.matchId)
+                    .map((dinner) => {
+                      const dinnerNumber = dinnerMatches.findIndex(d => d.id === dinner.id) + 1;
+                      return (
+                        <SelectItem key={dinner.id} value={dinner.id}>
+                          Cena #{dinnerNumber} - {dinner.host.full_name} ({dinner.guests.length} invitados)
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Asignar comida:</label>
+              <Select value={hostFoodAssignment} onValueChange={setHostFoodAssignment}>
+                <SelectTrigger>
+                  <SelectValue placeholder="¿Qué debe traer?" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="main_course">Plato Principal</SelectItem>
+                  <SelectItem value="salad">Ensalada</SelectItem>
+                  <SelectItem value="drinks">Bebidas</SelectItem>
+                  <SelectItem value="dessert">Postre</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={convertingHost}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConvertHostToGuest}
+              disabled={convertingHost || !targetMatchForHost || !hostFoodAssignment}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {convertingHost ? 'Convirtiendo...' : 'Convertir a Invitado'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Change Host Food Assignment Dialog */}
+      <AlertDialog open={!!changeHostFoodAssignment} onOpenChange={(open) => !open && setChangeHostFoodAssignment(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiar Asignación del Anfitrión</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cambiar lo que debe traer <strong>{changeHostFoodAssignment?.hostName}</strong>.
+              <br />
+              Asignación actual: <strong>{
+                changeHostFoodAssignment?.currentAssignment === 'main_course' ? 'Plato Principal' :
+                changeHostFoodAssignment?.currentAssignment === 'salad' ? 'Ensalada' :
+                changeHostFoodAssignment?.currentAssignment === 'drinks' ? 'Bebidas' :
+                changeHostFoodAssignment?.currentAssignment === 'dessert' ? 'Postre' :
+                changeHostFoodAssignment?.currentAssignment || 'Sin asignar'
+              }</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">Nueva asignación:</label>
+            <Select value={newHostFoodAssignment} onValueChange={setNewHostFoodAssignment}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="main_course">Plato Principal</SelectItem>
+                <SelectItem value="salad">Ensalada</SelectItem>
+                <SelectItem value="drinks">Bebidas</SelectItem>
+                <SelectItem value="dessert">Postre</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingHostFood}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleChangeHostFoodAssignment}
+              disabled={changingHostFood || !newHostFoodAssignment}
+              className="bg-casa-700 hover:bg-casa-800"
+            >
+              {changingHostFood ? 'Guardando...' : 'Guardar Cambio'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1316,12 +1793,33 @@ export const MesaAbiertaAdmin = () => {
                         </CardHeader>
                         <CardContent className="pt-4">
                           {/* Host Section */}
-                          <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Home className="h-5 w-5 text-green-700" />
-                              <span className="font-semibold text-green-800">Anfitrión</span>
-                              {dinner.host.has_plus_one && (
-                                <Badge variant="outline" className="text-green-700 border-green-300">+1</Badge>
+                          <div className={`mb-4 p-4 rounded-lg border ${dinner.guests.length === 0 ? 'bg-orange-50 border-orange-300' : 'bg-green-50 border-green-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Home className={`h-5 w-5 ${dinner.guests.length === 0 ? 'text-orange-700' : 'text-green-700'}`} />
+                                <span className={`font-semibold ${dinner.guests.length === 0 ? 'text-orange-800' : 'text-green-800'}`}>Anfitrión</span>
+                                {dinner.host.has_plus_one && (
+                                  <Badge variant="outline" className={dinner.guests.length === 0 ? 'text-orange-700 border-orange-300' : 'text-green-700 border-green-300'}>+1</Badge>
+                                )}
+                                {dinner.guests.length === 0 && (
+                                  <Badge variant="destructive" className="text-xs">Sin invitados</Badge>
+                                )}
+                              </div>
+                              {dinnerMatches.length > 1 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className={`text-xs ${dinner.guests.length === 0 ? 'border-orange-500 text-orange-600 hover:bg-orange-50' : 'border-green-500 text-green-600 hover:bg-green-50'}`}
+                                  onClick={() => setConvertHost({
+                                    hostParticipantId: dinner.host.id,
+                                    hostName: dinner.host.full_name,
+                                    matchId: dinner.id,
+                                  })}
+                                  title="Convertir a invitado y mover a otra cena"
+                                >
+                                  <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                  Mover como invitado
+                                </Button>
                               )}
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
@@ -1338,6 +1836,26 @@ export const MesaAbiertaAdmin = () => {
                                   <span className="font-medium">Dirección:</span> {dinner.host.host_address}
                                 </div>
                               )}
+                              <div className="col-span-full flex items-center gap-2 mt-1">
+                                <span className="font-medium">Trae:</span>
+                                <Badge
+                                  variant="secondary"
+                                  className={`capitalize cursor-pointer hover:bg-secondary/80 ${dinner.guests.length === 0 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'}`}
+                                  onClick={() => setChangeHostFoodAssignment({
+                                    matchId: dinner.id,
+                                    hostName: dinner.host.full_name,
+                                    currentAssignment: dinner.host_food_assignment || null,
+                                  })}
+                                  title="Clic para cambiar"
+                                >
+                                  {dinner.host_food_assignment === 'main_course' ? 'Plato Principal' :
+                                   dinner.host_food_assignment === 'salad' ? 'Ensalada' :
+                                   dinner.host_food_assignment === 'drinks' ? 'Bebidas' :
+                                   dinner.host_food_assignment === 'dessert' ? 'Postre' :
+                                   'Sin asignar'}
+                                  <Pencil className="h-3 w-3 ml-1" />
+                                </Badge>
+                              </div>
                             </div>
                           </div>
 
@@ -1359,12 +1877,41 @@ export const MesaAbiertaAdmin = () => {
                                         </Badge>
                                       )}
                                     </div>
-                                    <Badge variant="secondary" className="capitalize">
-                                      {guest.food_assignment === 'main_course' ? 'Plato Principal' :
-                                       guest.food_assignment === 'salad' ? 'Ensalada' :
-                                       guest.food_assignment === 'drinks' ? 'Bebidas' :
-                                       guest.food_assignment === 'dessert' ? 'Postre' : guest.food_assignment}
-                                    </Badge>
+                                    <div className="flex items-center gap-2">
+                                      <Badge
+                                        variant="secondary"
+                                        className="capitalize cursor-pointer hover:bg-secondary/80"
+                                        onClick={() => setChangeFoodAssignment({
+                                          guestId: guest.id,
+                                          guestName: guest.full_name,
+                                          matchId: dinner.id,
+                                          currentAssignment: guest.food_assignment,
+                                        })}
+                                        title="Clic para cambiar"
+                                      >
+                                        {guest.food_assignment === 'main_course' ? 'Plato Principal' :
+                                         guest.food_assignment === 'salad' ? 'Ensalada' :
+                                         guest.food_assignment === 'drinks' ? 'Bebidas' :
+                                         guest.food_assignment === 'dessert' ? 'Postre' : guest.food_assignment}
+                                        <Pencil className="h-3 w-3 ml-1" />
+                                      </Badge>
+                                      {dinnerMatches.length > 1 && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => setMoveGuest({
+                                            guestId: guest.id,
+                                            guestName: guest.full_name,
+                                            fromMatchId: dinner.id,
+                                            fromDinnerNumber: index + 1,
+                                          })}
+                                          title="Mover a otra cena"
+                                        >
+                                          <MoveRight className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
                                   {guest.phone_number && (
                                     <div className="text-sm text-muted-foreground">

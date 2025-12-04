@@ -44,6 +44,7 @@ export function MesaAbiertaSection() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [nextMonth, setNextMonth] = useState<NextMonth | null>(null);
+  const [closedMonth, setClosedMonth] = useState<NextMonth | null>(null); // Month with closed registration but upcoming dinner
   const [stats, setStats] = useState<Stats | null>(null);
   const [testimonials, setTestimonials] = useState<FeaturedTestimonial[]>([]);
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
@@ -59,20 +60,40 @@ export function MesaAbiertaSection() {
 
   const fetchNextMonth = async () => {
     try {
-      const { data, error } = await supabase
+      const now = new Date().toISOString();
+
+      // First, try to find a month with open registration
+      const { data: openMonth, error: openError } = await supabase
         .from('mesa_abierta_months')
         .select('*')
         .eq('status', 'open')
-        .gte('registration_deadline', new Date().toISOString())
+        .gte('registration_deadline', now)
         .order('month_date', { ascending: true })
         .limit(1)
         .single();
 
-      if (error) throw error;
+      if (openMonth && !openError) {
+        setNextMonth(openMonth);
+        setClosedMonth(null);
+        await fetchStats(openMonth.id);
+      } else {
+        // No open registration, check for upcoming dinner with closed registration
+        const { data: upcomingMonth, error: upcomingError } = await supabase
+          .from('mesa_abierta_months')
+          .select('*')
+          .in('status', ['open', 'matching', 'matched'])
+          .gte('dinner_date', now.split('T')[0]) // dinner_date is just a date, not timestamp
+          .order('dinner_date', { ascending: true })
+          .limit(1)
+          .single();
 
-      if (data) {
-        setNextMonth(data);
-        await fetchStats(data.id);
+        if (upcomingMonth && !upcomingError) {
+          setClosedMonth(upcomingMonth);
+          setNextMonth(null);
+        } else {
+          setNextMonth(null);
+          setClosedMonth(null);
+        }
       }
     } catch (error) {
       console.error('Error fetching next month:', error);
@@ -512,8 +533,56 @@ export function MesaAbiertaSection() {
           </motion.div>
         )}
 
+        {/* Registration Closed but Dinner Upcoming */}
+        {!nextMonth && closedMonth && !loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            viewport={{ once: true }}
+            className="mb-12"
+          >
+            <Card className="border-stone-200 shadow-lg bg-white/90 backdrop-blur-sm">
+              <CardContent className="p-8">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 flex items-center justify-center bg-amber-100 rounded-full mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-amber-600" />
+                  </div>
+                  <h3 className="text-2xl font-medium text-stone-800 mb-2">
+                    Inscripciones Cerradas
+                  </h3>
+                  <p className="text-stone-600 max-w-md mx-auto">
+                    Esta cena ya no está aceptando más inscripciones.
+                    Espera a que publiquemos la próxima fecha para inscribirte.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center gap-4 pt-4 border-t border-stone-200">
+                  <div className="flex items-center gap-2 text-stone-600">
+                    <Calendar className="w-5 h-5" />
+                    <span>Próxima cena: {format(new Date(closedMonth.dinner_date + 'T12:00:00'), "EEEE, d 'de' MMMM", { locale: es })}</span>
+                  </div>
+                </div>
+
+                {hasActiveParticipation && (
+                  <div className="mt-6 text-center">
+                    <Button
+                      onClick={() => navigate('/mesa-abierta/dashboard')}
+                      size="lg"
+                      className="bg-stone-800 hover:bg-stone-900 text-white px-8"
+                    >
+                      Ver Mi Participación
+                      <ExternalLink className="w-4 h-4 ml-2" />
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {/* No Active Month Message */}
-        {!nextMonth && !loading && (
+        {!nextMonth && !closedMonth && !loading && (
           <div className="text-center py-12">
             <Card className="border-stone-200 bg-white/80">
               <CardContent className="p-8">

@@ -326,7 +326,11 @@ serve(async (req) => {
       for (const host of hostStatus) {
         if (host.assignedGuests.length === 0) continue;
 
-        // Create match record
+        // Create match record with host food assignment
+        // Shuffle food options and assign one to the host
+        const hostFoodOptions = shuffle([...foodAssignments]);
+        const hostFoodAssignment = hostFoodOptions[0];
+
         const { data: match, error: matchError } = await supabase
           .from("mesa_abierta_matches")
           .insert({
@@ -335,6 +339,7 @@ serve(async (req) => {
             dinner_date: month.dinner_date,
             dinner_time: month.dinner_time || "19:00:00",
             guest_count: host.assignedGuests.length,
+            host_food_assignment: hostFoodAssignment,
           })
           .select()
           .single();

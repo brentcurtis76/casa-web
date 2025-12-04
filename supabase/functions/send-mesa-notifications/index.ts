@@ -208,6 +208,7 @@ serve(async (req) => {
         dinnerTime: match.dinner_time,
         guestList,
         guestCount: matchAssignments.length,
+        hostFoodAssignment: match.host_food_assignment,
       });
 
       if (hostEmailResult.success) {
@@ -377,8 +378,15 @@ async function sendHostEmail(data: {
   dinnerTime: string;
   guestList: string[];
   guestCount: number;
+  hostFoodAssignment?: string;
 }) {
   const subject = "Tu asignación como Anfitrión - La Mesa Abierta";
+
+  // Host food assignment text
+  const hostFoodText = data.hostFoodAssignment
+    ? `<p><strong>Tu contribución:</strong> ${translateFoodAssignment(data.hostFoodAssignment)}</p>`
+    : "";
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -400,6 +408,7 @@ async function sendHostEmail(data: {
         .content ul { padding-left: 20px; }
         .content ul li { margin: 8px 0; }
         .footer { text-align: center; padding: 20px; color: #666666; font-size: 12px; border-top: 1px solid #cccccc; }
+        .host-contribution { background: #e8f5e9; padding: 15px; margin: 15px 0; border: 1px solid #4caf50; border-radius: 4px; }
       </style>
     </head>
     <body>
@@ -415,6 +424,7 @@ async function sendHostEmail(data: {
 
           <p><strong>Fecha:</strong> ${new Date(data.dinnerDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <p><strong>Hora:</strong> ${data.dinnerTime}</p>
+          ${hostFoodText ? `<div class="host-contribution">${hostFoodText}</div>` : ""}
 
           <div class="guest-list">
             <h3>Tus invitados:</h3>
