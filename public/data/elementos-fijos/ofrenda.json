@@ -1,0 +1,23 @@
+{
+  "id": "ofrenda",
+  "title": "Ofrenda",
+  "type": "ofrenda",
+  "slides": [
+    {
+      "type": "title",
+      "content": "OFRENDA"
+    },
+    {
+      "type": "scripture",
+      "content": "Cada uno debe dar según lo que haya\ndecidido en su corazón, no de mala\ngana ni por obligación, porque Dios\nama al que da con alegría.",
+      "reference": "2 Corintios 9:7"
+    },
+    {
+      "type": "info",
+      "content": "Corporación Anglicana de Chile\nRut: 70.043.500-8\nBanco Santander\nCuenta: 73922194\nmail: eriffocontreras@gmail.com"
+    }
+  ],
+  "metadata": {
+    "editable": true
+  }
+}

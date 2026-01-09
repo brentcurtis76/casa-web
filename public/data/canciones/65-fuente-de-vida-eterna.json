@@ -1,0 +1,46 @@
+{
+  "id": "65-fuente-de-vida-eterna",
+  "number": 65,
+  "title": "Fuente de Vida Eterna",
+  "slug": "fuente-de-vida-eterna",
+  "startPage": 1027,
+  "endPage": 1033,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Fuente de la vida eterna\ny de toda bendición\nEnsalzar Tu gracia tierna\ndebe cada corazón"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Tu piedad inagotable\nabundante en perdorar\nÚnico ser adorable\ngloria a Tí debemos dar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Junto a voces ancestrales\nte quisiéramos cantar,\nEntonados por las huestes\nque a tus pies se han de postrar"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Almas que a buscar viniste,\nporque les tuviste amor\nDe ellas te compadeciste\ncon tiernísimo favor"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Toma nuestros corazones\nllénalos de tu verdad\nDe tu Espíritu, los dones,\ny de toda santidad"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Guíanos en obediencia,\nhumildad y puro amor\nNos ampare Tu presencia\noh bendito Salvador"
+    }
+  ],
+  "metadata": {
+    "verseCount": 6,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.722825"
+  }
+}

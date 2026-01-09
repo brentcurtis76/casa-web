@@ -1,0 +1,57 @@
+{
+  "id": "accion-de-gracias",
+  "title": "Acción de Gracias",
+  "type": "eucaristia",
+  "slides": [
+    {
+      "type": "title",
+      "content": "ACCIÓN DE\nGRACIAS"
+    },
+    {
+      "type": "liturgy-antiphonal",
+      "leader": "El Señor está aquí",
+      "response": "Su espíritu está con nosotros."
+    },
+    {
+      "type": "liturgy-antiphonal",
+      "leader": "Elevemos los corazones",
+      "response": "Los elevamos al Señor."
+    },
+    {
+      "type": "liturgy-antiphonal",
+      "leader": "Demos gracias al Señor, nuestro Dios",
+      "response": "Es justo darle gracias y alabanzas."
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "En verdad es digno y justo darte\ngracias en todo tiempo y lugar"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Padre omnipotente,\ncreador del cielo y tierra,\nmediante Jesucristo,\ntu único hijo."
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Por tanto, te alabamos uniendo\nnuestras voces con todos quienes\nhan venido antes que nosotros"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "y proclamando la gloria de tu nombre,\npor siempre cantamos este himno:"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Santo es el nombre de Cristo\nen quien tenemos esperanza"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "venimos a su mesa a\ncompartir de su vida plena"
+    },
+    {
+      "type": "title",
+      "content": "SANTA\nCENA"
+    }
+  ],
+  "metadata": {
+    "editable": false
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "id": "38-ensename-a-volar",
+  "number": 38,
+  "title": "Enséñame a volar",
+  "slug": "ensename-a-volar",
+  "startPage": 590,
+  "endPage": 599,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Enséñame a volar en tu viento\ny cómo el águila alturas alcanzar"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "y aunque no sepa cómo\nmantener el vuelo"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "sé que tu amor me sostendrá"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Tú puedes ver más allá de las\nmontañas"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "y sabes bien que camino\nhay que seguir"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "y no importa que yo\nno entienda todo"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "pues a tu voz yo seguiré"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Soberano Dios\nmi vida rindo a ti"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Sólo en tu viento volaré\nsólo en tu gracia viviré"
+    }
+  ],
+  "metadata": {
+    "verseCount": 9,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.651455"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "id": "31-atraeme-a-ti",
+  "number": 31,
+  "title": "Atráeme a ti",
+  "slug": "atraeme-a-ti",
+  "startPage": 472,
+  "endPage": 488,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Atráeme a ti\nNo me dejes ir"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Lo rindo todo a tus pies\ntú eres mi amigo fiel"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Yo te anhelo más\nSolamente a ti"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Pues nadie me abrazará\ncon tanto amor y compasión"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Guíame Señor\nde regreso a ti"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Te anhelo Dios\nSeñor te necesito"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Te anhelo Dios\nQuiero estar junto a ti"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Atráeme a ti\nNo me dejes ir"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Lo rindo todo a tus pies\ntú eres mi amigo fiel"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Yo te anhelo más\nSolamente a ti"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Pues nadie me abrazará\ncon tanto amor y compasión"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Guíame Señor\nde regreso a ti"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Te anhelo Dios\nSeñor te necesito"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Te anhelo Dios\nQuiero estar junto a ti"
+    },
+    {
+      "number": 15,
+      "type": "verse",
+      "content": "Te anhelo Dios\nSeñor te necesito"
+    },
+    {
+      "number": 16,
+      "type": "verse",
+      "content": "///Te anhelo Dios\nQuiero estar junto a ti///"
+    }
+  ],
+  "metadata": {
+    "verseCount": 16,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.626797"
+  }
+}

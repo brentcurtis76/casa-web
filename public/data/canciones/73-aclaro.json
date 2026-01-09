@@ -1,0 +1,41 @@
+{
+  "id": "73-aclaro",
+  "number": 73,
+  "title": "Aclaró",
+  "slug": "aclaro",
+  "startPage": 1093,
+  "endPage": 1098,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Mira como aclara en la cordillera,\nComo florece el resplandor del sol,\nComo la fría mañana se entibia,\nComo Dios nos da un día más de amor."
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Y su luz recorre campos y florestas,\nA cubrir hasta en el último rincón,\nPenetrando por tinieblas dando vida,\nY jamás detiene su calor."
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Aclaró en el último rincón de mi pieza,\nAclaró en el último rincón de mi corazón,\nAclaró la eterna oscuridad del camino,\nAclaró un día más de vida nos ofrece Dios."
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Y de nuevo despertamos a la vida,\nA entregarnos por entero a la labor,\nSi pudiera detener esta rutina\nY dar gracias porque existo hoy."
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Cambiaría como todo cambiaría,\nPor completa nuestra posición,\nDe egoísmos y de falsas apariencias,\nCambiaría nuestro falso amor."
+    }
+  ],
+  "metadata": {
+    "verseCount": 5,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.740584"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "id": "09-oh-tu-fidelidad",
+  "number": 9,
+  "title": "Oh tu fidelidad",
+  "slug": "oh-tu-fidelidad",
+  "startPage": 117,
+  "endPage": 129,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Oh Dios eterno tu misericordia\nni una sombra de duda tendrá"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Tu compasión y bondad nunca fallan\ny por los siglos el mismo serás."
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "La noche oscura, el Sol y la Luna,\nlas estaciones del año también."
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Unen su canto cual fieles criaturas,\nporque eres bueno,\npor siempre eres fiel."
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "¡Oh, tu fidelidad! ¡Oh, tu fidelidad!\nCada momento la veo en mí."
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Nada me falta, pues todo provees,\n¡Grande, Señor, es tu fidelidad!"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Tú me perdonas, me impartes el gozo,\ntierno me guías por sendas de paz."
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Eres mi fuerza, mi fe, mi reposo,\ny por los siglos mi Padre serás."
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "¡Oh, tu fidelidad! ¡Oh, tu fidelidad!\nCada momento la veo en mí."
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Nada me falta, pues todo provees,\n¡Grande, Señor, es tu fidelidad!"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "¡Oh, tu fidelidad! ¡Oh, tu fidelidad!\nCada momento la veo en mí."
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Nada me falta, pues todo provees,\n¡Grande, Señor, es tu fidelidad!"
+    }
+  ],
+  "metadata": {
+    "verseCount": 12,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.552962"
+  }
+}

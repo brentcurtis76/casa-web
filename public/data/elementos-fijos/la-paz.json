@@ -1,0 +1,35 @@
+{
+  "id": "la-paz",
+  "title": "La Paz",
+  "type": "paz",
+  "slides": [
+    {
+      "type": "title",
+      "content": "LA PAZ"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Cristo es nuestra paz.\nMediante su cruz nos ha\nreconciliado con Dios en\nun solo cuerpo."
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Unidos en Él compartimos\nsu paz y amor."
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "La paz de Dios\nsea con todos ustedes."
+    },
+    {
+      "type": "liturgy-response",
+      "content": "Y también contigo!"
+    },
+    {
+      "type": "instruction",
+      "content": "LA PAZ",
+      "note": "Momento para compartir la paz"
+    }
+  ],
+  "metadata": {
+    "editable": false
+  }
+}

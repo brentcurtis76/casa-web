@@ -1,0 +1,86 @@
+{
+  "id": "42-solo-el-amor",
+  "number": 42,
+  "title": "Sólo el amor",
+  "slug": "solo-el-amor",
+  "startPage": 655,
+  "endPage": 669,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Debes amar\nLa arcilla que va en tus manos"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Debes amar\nSu arena hasta la locura"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Y si no, no la emprendas\nQue será en vano"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Sólo el amor\nAlumbra lo que perdura"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Sólo el amor\nConvierte el milagro en barro"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Sólo el amor\nAlumbra lo que perdura"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Sólo el amor\nConvierte el milagro en barro"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Debes amar\nEl tiempo de los intentos"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Debes amar\nLa hora que nunca brilla"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Y si no,\nNo pretendas tocar lo cierto"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Sólo el amor\nEngendra la maravilla"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Sólo el amor\nConsigue encender lo muerto"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Sólo el amor\nEngendra la maravilla"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Sólo el amor\nConsigue encender lo muerto"
+    }
+  ],
+  "metadata": {
+    "verseCount": 14,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.663878"
+  }
+}

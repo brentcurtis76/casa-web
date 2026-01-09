@@ -1,0 +1,56 @@
+{
+  "id": "53-a-ti-me-rindo",
+  "number": 53,
+  "title": "A ti me rindo",
+  "slug": "a-ti-me-rindo",
+  "startPage": 854,
+  "endPage": 862,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Ante tí\npostrado estoy aquí\n// Te rindo mi ser //"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Con tu amor\nAtráeme Señor\n// vengo a tus pies //"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "A tí me rindo"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Lléname\nde Gracia inúndame\n// sacia mi sed //"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Mi corazón\nLevanta un clamor\n// Háblame Dios //"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "// A tí me rindo //\nTe quiero conocer\nMás de ti conocer"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Con tu aliento Dios\nsopla en mi interior\nCumple, Señor,\ntu voluntad en mí"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "A tí me rindo"
+    }
+  ],
+  "metadata": {
+    "verseCount": 8,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.691135"
+  }
+}

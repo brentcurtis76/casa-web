@@ -1,0 +1,46 @@
+{
+  "id": "05-oh-criaturas-del-senor",
+  "number": 5,
+  "title": "Oh criaturas del Señor",
+  "slug": "oh-criaturas-del-senor",
+  "startPage": 69,
+  "endPage": 75,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Oh, criaturas del Señor\ncanten con melodiosa voz\nAlabadle! Aleluya!"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Ardiente sol con tu fulgor\nOh, luna de suave esplendor\nAleluya! Aleluya! Aleluya! Aleluya"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Prodiga tierra maternal\nQue frutos brindas sin cesar.\nAlabadle! Aleluya!"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Aleluya!"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Con gratitud y con amor,\ncante la entera creación\nAlabadle! Aleluya!"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Al Padre, al Hijo redentor,\ny al Eternal Consolador\nAleluya! Aleluya! Aleluya! Aleluya"
+    }
+  ],
+  "metadata": {
+    "verseCount": 6,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.541375"
+  }
+}

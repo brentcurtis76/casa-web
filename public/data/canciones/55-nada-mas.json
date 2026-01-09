@@ -1,0 +1,71 @@
+{
+  "id": "55-nada-mas",
+  "number": 55,
+  "title": "Nada más",
+  "slug": "nada-mas",
+  "startPage": 874,
+  "endPage": 885,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Me envuelve tu presencia\nSolo quiero estar ante tus pies"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Me envuelve este momento santo\nY no me quiero ir"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "No busco bendiciones\nCristo no me debes nada a mí"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Más de lo que tú puedes hacer\nTe quiero a tí"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Lo siento\nPor andar por sentimientos"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Lo siento\nPor cantar sin adorar"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Llévame hasta el inicio\nAbro mi corazón a tí"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Lo siento\nPor buscar lo mío primero"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Lo siento\nPor olvidar que bastas tu"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Llévame hasta el inicio\nAbro mi corazón a tí"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "///: Y nada más, nada más\nNada bastará, te quiero a tí :///"
+    }
+  ],
+  "metadata": {
+    "verseCount": 11,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.694445"
+  }
+}

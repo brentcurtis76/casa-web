@@ -1,0 +1,518 @@
+{
+  "total": 73,
+  "generatedAt": "2026-01-06T18:47:58.967Z",
+  "source": "pdf-extracted",
+  "songs": [
+    {
+      "id": "01-el-espiritu",
+      "number": 1,
+      "title": "El espíritu",
+      "slug": "el-espiritu",
+      "verseCount": 8
+    },
+    {
+      "id": "02-canta-la-esperanza",
+      "number": 2,
+      "title": "Canta la esperanza",
+      "slug": "canta-la-esperanza",
+      "verseCount": 13
+    },
+    {
+      "id": "03-tu-modo",
+      "number": 3,
+      "title": "Tu modo",
+      "slug": "tu-modo",
+      "verseCount": 29
+    },
+    {
+      "id": "04-capitan",
+      "number": 4,
+      "title": "Capitán",
+      "slug": "capitan",
+      "verseCount": 13
+    },
+    {
+      "id": "05-oh-criaturas-del-senor",
+      "number": 5,
+      "title": "Oh criaturas del Señor",
+      "slug": "oh-criaturas-del-senor",
+      "verseCount": 6
+    },
+    {
+      "id": "06-danza-conmigo",
+      "number": 6,
+      "title": "Danza conmigo",
+      "slug": "danza-conmigo",
+      "verseCount": 12
+    },
+    {
+      "id": "07-abba-padre",
+      "number": 7,
+      "title": "Abba Padre",
+      "slug": "abba-padre",
+      "verseCount": 20
+    },
+    {
+      "id": "08-ahora-y-para-siempre",
+      "number": 8,
+      "title": "Ahora y para siempre",
+      "slug": "ahora-y-para-siempre",
+      "verseCount": 6
+    },
+    {
+      "id": "09-oh-tu-fidelidad",
+      "number": 9,
+      "title": "Oh tu fidelidad",
+      "slug": "oh-tu-fidelidad",
+      "verseCount": 12
+    },
+    {
+      "id": "10-tu-eres-dios",
+      "number": 10,
+      "title": "Tu eres Dios",
+      "slug": "tu-eres-dios",
+      "verseCount": 15
+    },
+    {
+      "id": "11-como-la-brisa",
+      "number": 11,
+      "title": "Como la brisa",
+      "slug": "como-la-brisa",
+      "verseCount": 16
+    },
+    {
+      "id": "12-senor-mi-dios",
+      "number": 12,
+      "title": "Señor mi Dios",
+      "slug": "senor-mi-dios",
+      "verseCount": 9
+    },
+    {
+      "id": "13-cristo-te-amamos",
+      "number": 13,
+      "title": "Cristo te amamos",
+      "slug": "cristo-te-amamos",
+      "verseCount": 14
+    },
+    {
+      "id": "14-sin-miedo",
+      "number": 14,
+      "title": "Sin miedo",
+      "slug": "sin-miedo",
+      "verseCount": 20
+    },
+    {
+      "id": "15-la-noche-paso",
+      "number": 15,
+      "title": "La noche pasó",
+      "slug": "la-noche-paso",
+      "verseCount": 14
+    },
+    {
+      "id": "16-ven-espiritu-de-dios",
+      "number": 16,
+      "title": "Ven, Espíritu de Dios",
+      "slug": "ven-espiritu-de-dios",
+      "verseCount": 1
+    },
+    {
+      "id": "17-tu-amor-y-tu-bondad",
+      "number": 17,
+      "title": "Tu amor y tu bondad",
+      "slug": "tu-amor-y-tu-bondad",
+      "verseCount": 16
+    },
+    {
+      "id": "18-tu-amor-me-asombra",
+      "number": 18,
+      "title": "Tu amor me asombra",
+      "slug": "tu-amor-me-asombra",
+      "verseCount": 6
+    },
+    {
+      "id": "19-brazos-del-padre",
+      "number": 19,
+      "title": "Brazos del Padre",
+      "slug": "brazos-del-padre",
+      "verseCount": 12
+    },
+    {
+      "id": "20-sumergeme",
+      "number": 20,
+      "title": "Sumérgeme",
+      "slug": "sumergeme",
+      "verseCount": 20
+    },
+    {
+      "id": "21-no-hay-paredes",
+      "number": 21,
+      "title": "No hay paredes",
+      "slug": "no-hay-paredes",
+      "verseCount": 20
+    },
+    {
+      "id": "22-instrumento-de-tu-paz",
+      "number": 22,
+      "title": "Instrumento de tu paz",
+      "slug": "instrumento-de-tu-paz",
+      "verseCount": 12
+    },
+    {
+      "id": "23-en-este-lugar",
+      "number": 23,
+      "title": "En este lugar",
+      "slug": "en-este-lugar",
+      "verseCount": 10
+    },
+    {
+      "id": "24-pequenas-aclaraciones",
+      "number": 24,
+      "title": "Pequeñas aclaraciones",
+      "slug": "pequenas-aclaraciones",
+      "verseCount": 16
+    },
+    {
+      "id": "25-como-ama",
+      "number": 25,
+      "title": "Como ama",
+      "slug": "como-ama",
+      "verseCount": 23
+    },
+    {
+      "id": "26-quiero-ver-su-amor",
+      "number": 26,
+      "title": "Quiero ver su amor",
+      "slug": "quiero-ver-su-amor",
+      "verseCount": 20
+    },
+    {
+      "id": "27-yo-vengo-a-ofrecer-mi-corazon",
+      "number": 27,
+      "title": "Yo vengo a ofrecer mi corazón",
+      "slug": "yo-vengo-a-ofrecer-mi-corazon",
+      "verseCount": 13
+    },
+    {
+      "id": "28-siempre-hay-lugar",
+      "number": 28,
+      "title": "Siempre hay lugar",
+      "slug": "siempre-hay-lugar",
+      "verseCount": 20
+    },
+    {
+      "id": "29-quiero-respirar",
+      "number": 29,
+      "title": "Quiero respirar",
+      "slug": "quiero-respirar",
+      "verseCount": 20
+    },
+    {
+      "id": "30-cuidame",
+      "number": 30,
+      "title": "Cuídame",
+      "slug": "cuidame",
+      "verseCount": 24
+    },
+    {
+      "id": "31-atraeme-a-ti",
+      "number": 31,
+      "title": "Atráeme a ti",
+      "slug": "atraeme-a-ti",
+      "verseCount": 16
+    },
+    {
+      "id": "32-me-guia-el",
+      "number": 32,
+      "title": "Me guía Él",
+      "slug": "me-guia-el",
+      "verseCount": 18
+    },
+    {
+      "id": "33-jardin",
+      "number": 33,
+      "title": "Jardín",
+      "slug": "jardin",
+      "verseCount": 4
+    },
+    {
+      "id": "34-tenemos-esperanza",
+      "number": 34,
+      "title": "Tenemos esperanza",
+      "slug": "tenemos-esperanza",
+      "verseCount": 41
+    },
+    {
+      "id": "35-fija-tus-ojos-en-cristo",
+      "number": 35,
+      "title": "Fija tus ojos en Cristo",
+      "slug": "fija-tus-ojos-en-cristo",
+      "verseCount": 16
+    },
+    {
+      "id": "36-quiero-andar-cerca-de-ti",
+      "number": 36,
+      "title": "Quiero andar cerca de ti",
+      "slug": "quiero-andar-cerca-de-ti",
+      "verseCount": 8
+    },
+    {
+      "id": "37-respirar",
+      "number": 37,
+      "title": "Respirar",
+      "slug": "respirar",
+      "verseCount": 8
+    },
+    {
+      "id": "38-ensename-a-volar",
+      "number": 38,
+      "title": "Enséñame a volar",
+      "slug": "ensename-a-volar",
+      "verseCount": 9
+    },
+    {
+      "id": "39-cante-al-senor",
+      "number": 39,
+      "title": "Cante al Señor",
+      "slug": "cante-al-senor",
+      "verseCount": 16
+    },
+    {
+      "id": "40-oceanos",
+      "number": 40,
+      "title": "Océanos",
+      "slug": "oceanos",
+      "verseCount": 14
+    },
+    {
+      "id": "41-ya-no-existe-el-miedo",
+      "number": 41,
+      "title": "Ya no existe el miedo",
+      "slug": "ya-no-existe-el-miedo",
+      "verseCount": 22
+    },
+    {
+      "id": "42-solo-el-amor",
+      "number": 42,
+      "title": "Sólo el amor",
+      "slug": "solo-el-amor",
+      "verseCount": 14
+    },
+    {
+      "id": "43-aun-en-medio-del-dolor",
+      "number": 43,
+      "title": "Aún en medio del dolor",
+      "slug": "aun-en-medio-del-dolor",
+      "verseCount": 21
+    },
+    {
+      "id": "44-abre-mis-ojos",
+      "number": 44,
+      "title": "Abre mis ojos",
+      "slug": "abre-mis-ojos",
+      "verseCount": 5
+    },
+    {
+      "id": "45-vamos-celebrando",
+      "number": 45,
+      "title": "Vamos celebrando",
+      "slug": "vamos-celebrando",
+      "verseCount": 28
+    },
+    {
+      "id": "46-el-buen-pastor",
+      "number": 46,
+      "title": "El buen pastor",
+      "slug": "el-buen-pastor",
+      "verseCount": 20
+    },
+    {
+      "id": "47-jesus-es-el-senor",
+      "number": 47,
+      "title": "Jesús es el Señor",
+      "slug": "jesus-es-el-senor",
+      "verseCount": 27
+    },
+    {
+      "id": "48-jesus-mi-buen-pastor",
+      "number": 48,
+      "title": "Jesús mi buen pastor",
+      "slug": "jesus-mi-buen-pastor",
+      "verseCount": 21
+    },
+    {
+      "id": "49-el-corazon-de-la-alabanza",
+      "number": 49,
+      "title": "El corazón de la alabanza",
+      "slug": "el-corazon-de-la-alabanza",
+      "verseCount": 14
+    },
+    {
+      "id": "50-noel",
+      "number": 50,
+      "title": "Noël",
+      "slug": "noel",
+      "verseCount": 15
+    },
+    {
+      "id": "51-venid-fieles-todos",
+      "number": 51,
+      "title": "Venid fieles todos",
+      "slug": "venid-fieles-todos",
+      "verseCount": 13
+    },
+    {
+      "id": "52-oh-ven-emmanuel",
+      "number": 52,
+      "title": "Oh Ven Emmanuel",
+      "slug": "oh-ven-emmanuel",
+      "verseCount": 10
+    },
+    {
+      "id": "53-a-ti-me-rindo",
+      "number": 53,
+      "title": "A ti me rindo",
+      "slug": "a-ti-me-rindo",
+      "verseCount": 8
+    },
+    {
+      "id": "54-amor-furioso",
+      "number": 54,
+      "title": "Amor furioso",
+      "slug": "amor-furioso",
+      "verseCount": 10
+    },
+    {
+      "id": "55-nada-mas",
+      "number": 55,
+      "title": "Nada más",
+      "slug": "nada-mas",
+      "verseCount": 11
+    },
+    {
+      "id": "56-nueva-vida",
+      "number": 56,
+      "title": "Nueva vida",
+      "slug": "nueva-vida",
+      "verseCount": 9
+    },
+    {
+      "id": "57-en-ti-confio",
+      "number": 57,
+      "title": "En tí confío",
+      "slug": "en-ti-confio",
+      "verseCount": 10
+    },
+    {
+      "id": "58-si-tu-amor",
+      "number": 58,
+      "title": "Sí, tu amor",
+      "slug": "si-tu-amor",
+      "verseCount": 25
+    },
+    {
+      "id": "59-inhala-exhala",
+      "number": 59,
+      "title": "Inhala, exhala",
+      "slug": "inhala-exhala",
+      "verseCount": 25
+    },
+    {
+      "id": "60-abba",
+      "number": 60,
+      "title": "Abba",
+      "slug": "abba",
+      "verseCount": 9
+    },
+    {
+      "id": "61-llevame-a-la-cruz",
+      "number": 61,
+      "title": "Llévame a la cruz",
+      "slug": "llevame-a-la-cruz",
+      "verseCount": 15
+    },
+    {
+      "id": "62-honrar-la-vida",
+      "number": 62,
+      "title": "Honrar la vida",
+      "slug": "honrar-la-vida",
+      "verseCount": 11
+    },
+    {
+      "id": "63-cuan-dulce-paz",
+      "number": 63,
+      "title": "Cuán dulce paz",
+      "slug": "cuan-dulce-paz",
+      "verseCount": 5
+    },
+    {
+      "id": "64-sublime-gracia",
+      "number": 64,
+      "title": "Sublime gracia",
+      "slug": "sublime-gracia",
+      "verseCount": 23
+    },
+    {
+      "id": "65-fuente-de-vida-eterna",
+      "number": 65,
+      "title": "Fuente de Vida Eterna",
+      "slug": "fuente-de-vida-eterna",
+      "verseCount": 6
+    },
+    {
+      "id": "66-santo-santo-santo",
+      "number": 66,
+      "title": "Santo, Santo, Santo",
+      "slug": "santo-santo-santo",
+      "verseCount": 6
+    },
+    {
+      "id": "67-gloria-cantemos",
+      "number": 67,
+      "title": "Gloria cantemos",
+      "slug": "gloria-cantemos",
+      "verseCount": 4
+    },
+    {
+      "id": "68-gratitud",
+      "number": 68,
+      "title": "Gratitud",
+      "slug": "gratitud",
+      "verseCount": 12
+    },
+    {
+      "id": "69-el-vacio",
+      "number": 69,
+      "title": "El Vacío",
+      "slug": "el-vacio",
+      "verseCount": 4
+    },
+    {
+      "id": "70-santa-la-noche",
+      "number": 70,
+      "title": "Santa la noche",
+      "slug": "santa-la-noche",
+      "verseCount": 10
+    },
+    {
+      "id": "71-pequena-aldea-de-belen",
+      "number": 71,
+      "title": "Pequeña Aldea de Belén",
+      "slug": "pequena-aldea-de-belen",
+      "verseCount": 9
+    },
+    {
+      "id": "72-maria-sabes-que",
+      "number": 72,
+      "title": "María sabes qué",
+      "slug": "maria-sabes-que",
+      "verseCount": 7
+    },
+    {
+      "id": "73-aclaro",
+      "number": 73,
+      "title": "Aclaró",
+      "slug": "aclaro",
+      "verseCount": 5
+    }
+  ]
+}

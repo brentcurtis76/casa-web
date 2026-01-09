@@ -1,0 +1,81 @@
+{
+  "id": "51-venid-fieles-todos",
+  "number": 51,
+  "title": "Venid fieles todos",
+  "slug": "venid-fieles-todos",
+  "startPage": 829,
+  "endPage": 842,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Venid fieles todos\na Belén marchemos"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "De gozo triunfantes\nY llenos de amor"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Y al Rey de los Cielos\nHumilde veremos"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "///: Venid y adoremos :///\nA Cristo el Señor"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "En pobre pesebre\nYace reclinado"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Al hombre ofreciendo\nEternal salvación"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "El Santo Mesías\nEl verbo humanado"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "///: Venid y adoremos :///\nA Cristo el Señor"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Cantad jubilosas\nCélicas criaturas"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Resuenen los cielos\nCon vuestra canción"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Al Dios bondadoso\nGloria en las alturas"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "///: Venid y adoremos :///\nA Cristo el Señor"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "///: Venid y adoremos :///\nA Cristo el Señor"
+    }
+  ],
+  "metadata": {
+    "verseCount": 13,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.687192"
+  }
+}

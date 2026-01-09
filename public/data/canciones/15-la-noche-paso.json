@@ -1,0 +1,86 @@
+{
+  "id": "15-la-noche-paso",
+  "number": 15,
+  "title": "La noche pasó",
+  "slug": "la-noche-paso",
+  "startPage": 209,
+  "endPage": 223,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "La noche pasó\ny el alba aparece"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "la noche pasó\ny el alba se abre ante nosotros"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "//Hemos de orar\ncon un sólo sentir//"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Al gozarnos en su amor\nnos gozamos en su amor"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "que este día nos dio\neste día nos dio"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "El alba llega\ncon la luz de su presencia"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "el alba llega\ny la luz de su presencia nos llena"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "//Hemos de orar\ncon un sólo sentir//"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Al gozarnos en su amor\nnos gozamos en su amor"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Ya es madrugada y un nuevo día\ndespierta el mirlo para cantar"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "puro es su canto esta mañana\ny sopla un viento de libertad"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "///este día nos dio///"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Al gozarnos en su amor\nnos gozamos en su amor"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "///este día nos dio///"
+    }
+  ],
+  "metadata": {
+    "verseCount": 14,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.576755"
+  }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- CASA Logo - Comunidad Anglicana San Andrés -->
+  <!-- Minimalist celtic cross with Anglican styling -->
+
+  <!-- Cross base -->
+  <rect x="92" y="50" width="16" height="130" fill="#1A1A1A" rx="2"/>
+  <rect x="55" y="80" width="90" height="16" fill="#1A1A1A" rx="2"/>
+
+  <!-- Celtic circle (nimbus) -->
+  <circle cx="100" cy="88" r="35" fill="none" stroke="#1A1A1A" stroke-width="8"/>
+
+  <!-- Inner decoration - amber accent -->
+  <circle cx="100" cy="88" r="20" fill="none" stroke="#D4A853" stroke-width="3"/>
+
+  <!-- Center dot -->
+  <circle cx="100" cy="88" r="4" fill="#D4A853"/>
+</svg>

@@ -1,0 +1,86 @@
+{
+  "id": "40-oceanos",
+  "number": 40,
+  "title": "Océanos",
+  "slug": "oceanos",
+  "startPage": 617,
+  "endPage": 631,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Tu voz me llama a las aguas\nDonde mis pies pueden fallar"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Y ahí te encuentro en lo incierto\nCaminaré sobre el mar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "A tu nombre clamaré\nEn ti mis ojos fijaré\nEn tempestad"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Descansaré en tu poder\nPues tuyo soy hasta el final"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Tu gracia abunda en la tormenta\nTu mano, Dios, me guiará"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Cuando hay temor en mi camino\nTu eres fiel y no cambiarás"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "A tu nombre clamaré\nEn ti mis ojos fijaré\nEn tempestad"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Descansaré en tu poder\nPues tuyo soy hasta el final"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Que tu Espíritu me guíe sin fronteras\nMás allá de las barreras\na dónde tu me llames"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Tú me llevas más allá de lo soñado\nDonde puedo estar confiado\nAl estar en tu presencia"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Que tu Espíritu me guíe sin fronteras\nMás allá de las barreras\na dónde tu me llames"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Tú me llevas más allá de lo soñado\nDonde puedo estar confiado\nAl estar en tu presencia"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "A tu nombre clamaré\nEn ti mis ojos fijaré\nEn tempestad"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Descansaré en tu poder\nPues tuyo soy hasta el final"
+    }
+  ],
+  "metadata": {
+    "verseCount": 14,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.658047"
+  }
+}

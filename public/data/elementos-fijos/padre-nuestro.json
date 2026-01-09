@@ -1,0 +1,38 @@
+{
+  "id": "padre-nuestro",
+  "title": "Padre Nuestro",
+  "type": "oracion-comunitaria",
+  "slides": [
+    {
+      "type": "title",
+      "content": "PADRE\nNUESTRO"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Padre nuestro,\nque estás en los cielos.\nSantificado sea tu nombre;"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Venga tu reino,\nhágase tu voluntad así en\nla tierra, como en el cielo."
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "El pan nuestro de cada día,\ndánoslo hoy y perdona\nnuestras ofensas,"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "así como nosotros perdonamos\na los que nos ofenden."
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "No nos dejes caer en tentación,\nmas líbranos del mal,"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "porque tuyo es el reino,\nel poder, y la gloria,\npor siempre jamás.\nAmén"
+    }
+  ],
+  "metadata": {
+    "editable": false
+  }
+}

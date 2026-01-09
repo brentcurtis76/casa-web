@@ -1,0 +1,41 @@
+{
+  "id": "63-cuan-dulce-paz",
+  "number": 63,
+  "title": "Cuán dulce paz",
+  "slug": "cuan-dulce-paz",
+  "startPage": 997,
+  "endPage": 1002,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Paz, paz, cuán dulce paz\nEs aquella que el Padre me da\nYo le ruego por siempre\nque inunde mi ser\nEn sus ondas de amor celestial"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Que tesoro yo tengo\nen la paz que me dio\ny en fondo de mi alma ha de estar\ntan segura que nadie quitarla podrá\nmientras mire los años pasar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Paz, paz, cuán dulce paz\nEs aquella que el Padre me da\nYo le ruego por siempre\nque inunde mi ser\nEn sus ondas de amor celestial"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Alma triste que en rudo conflicto te vez\nsola y débil tu senda seguir\nHaz de Cristo tu amor,\npues fiel siempre es\nY su paz tu podrás recibir\ny su paz tu podrás recibir"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Paz, paz, cuán dulce paz\nEs aquella que el Padre me da\nYo le ruego por siempre\nque inunde mi ser\nEn sus ondas de amor celestial\nEn sus ondas de amor celestial"
+    }
+  ],
+  "metadata": {
+    "verseCount": 5,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.715870"
+  }
+}

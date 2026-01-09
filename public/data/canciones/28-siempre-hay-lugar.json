@@ -1,0 +1,116 @@
+{
+  "id": "28-siempre-hay-lugar",
+  "number": 28,
+  "title": "Siempre hay lugar",
+  "slug": "siempre-hay-lugar",
+  "startPage": 405,
+  "endPage": 425,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Ven, la puerta está abierta\nLa mesa está servida"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Si hambre tienes siempre hay pan\nBebe agua hasta tu sed saciar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Ven, comparte en la esperanza\nConfíanos tu carga"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Si es que quieres descansar\nSi es que quieres conversar"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nSiempre hay lugar"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "A los pies de la cruz\nHay calor de hogar"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "En los brazos de Cristo encuentra\nalivio a tus heridas"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nsiempre hay lugar"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Ven, no importa tu pasado\nSi heriste o te dañaron"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Si has amado y has perdido\nSi necesitas de un amigo"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Ven, en la unión está la fuerza\nRespetando diferencias"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Que hay belleza en la variedad\nSomos todos de distinto andar"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nSiempre hay lugar"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "A los pies de la cruz\nHay calor de hogar"
+    },
+    {
+      "number": 15,
+      "type": "verse",
+      "content": "En los brazos de Cristo encuentra\nalivio a tus heridas"
+    },
+    {
+      "number": 16,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nsiempre hay lugar"
+    },
+    {
+      "number": 17,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nSiempre hay lugar"
+    },
+    {
+      "number": 18,
+      "type": "verse",
+      "content": "A los pies de la cruz\nHay calor de hogar"
+    },
+    {
+      "number": 19,
+      "type": "verse",
+      "content": "En los brazos de Cristo encuentra\nalivio a tus heridas"
+    },
+    {
+      "number": 20,
+      "type": "verse",
+      "content": "Que a los pies de Jesús\nsiempre hay lugar"
+    }
+  ],
+  "metadata": {
+    "verseCount": 20,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.617664"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "id": "54-amor-furioso",
+  "number": 54,
+  "title": "Amor furioso",
+  "slug": "amor-furioso",
+  "startPage": 863,
+  "endPage": 873,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Nada nos puede separar\nde su inmenso amor"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Hemos visto solo un destello\nhemos escuchado un susurro\nde su afecto y pasión"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Su amor es ancho es profundo\ny nos cubre"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Su amor es fuerte, es feroz\nes furioso"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Su amor es dulce, es salvaje\ny nos despierta a vivir"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "De tal manera el Padre nos amó\nque su Hijo por todos murió"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "El nos derrama su amor eterno\ny nos recibe como sus hijos\nsu amor nos busca"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Su amor es fuerte, es feroz\nes furioso"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Su amor es dulce, es salvaje\ny nos despierta a vivir"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "De tal manera el Padre nos amó\nque su Hijo por todos murió"
+    }
+  ],
+  "metadata": {
+    "verseCount": 10,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.692833"
+  }
+}

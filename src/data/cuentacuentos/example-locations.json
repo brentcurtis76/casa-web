@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "description": "Lugares de Chile de ejemplo para inspiración. El usuario puede escribir cualquier lugar.",
+  "categories": [
+    {
+      "category": "Costa",
+      "locations": [
+        "Bahía Inglesa",
+        "La Serena",
+        "Viña del Mar",
+        "Pichilemu",
+        "Puerto Varas",
+        "Chiloé",
+        "Caleta Tortel",
+        "Arica",
+        "Iquique",
+        "Coquimbo"
+      ]
+    },
+    {
+      "category": "Montaña/Valle",
+      "locations": [
+        "Valle del Elqui",
+        "Cajón del Maipo",
+        "Torres del Paine",
+        "San Pedro de Atacama",
+        "Villarrica",
+        "Pucón",
+        "Valle de Colchagua",
+        "Valle del Aconcagua",
+        "Farellones",
+        "Portillo"
+      ]
+    },
+    {
+      "category": "Altiplano/Desierto",
+      "locations": [
+        "Desierto de Atacama",
+        "Geysers del Tatio",
+        "Salar de Atacama",
+        "Valle de la Luna",
+        "Altiplano de Arica",
+        "Lagunas Altiplánicas",
+        "Mano del Desierto",
+        "Observatorio Paranal"
+      ]
+    },
+    {
+      "category": "Bosque/Sur",
+      "locations": [
+        "Parque Huerquehue",
+        "Bosque de Arrayanes",
+        "Selva Valdiviana",
+        "Carretera Austral",
+        "Lago General Carrera",
+        "Parque Queulat",
+        "Parque Alerce Costero",
+        "Reserva Huilo Huilo"
+      ]
+    },
+    {
+      "category": "Lagos",
+      "locations": [
+        "Lago Villarrica",
+        "Lago Llanquihue",
+        "Lago Todos los Santos",
+        "Lago Ranco",
+        "Lago Puyehue",
+        "Laguna San Rafael"
+      ]
+    },
+    {
+      "category": "Urbano",
+      "locations": [
+        "Valparaíso",
+        "Barrio Bellavista",
+        "Plaza de Armas de Santiago",
+        "Barrio Lastarria",
+        "Cerro Santa Lucía",
+        "Barrio Italia"
+      ]
+    }
+  ]
+}

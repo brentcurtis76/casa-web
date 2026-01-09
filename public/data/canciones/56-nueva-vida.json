@@ -1,0 +1,61 @@
+{
+  "id": "56-nueva-vida",
+  "number": 56,
+  "title": "Nueva vida",
+  "slug": "nueva-vida",
+  "startPage": 886,
+  "endPage": 895,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Tu vivo estás en mi corazón\nya no hay temor en tu gracia\nTu libertad me rescató"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Perdida estaba y te encontré\nyo clamo a ti y respondes\nperfecto amor, perfecto amor"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Mi temor, mis problemas, mi dolor\ntu cambiaste con tu amor\nnueva vida encontré en tí"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Tu secas todas mis lágrimas\ny calmas toda tormenta\nconmigo estás, conmigo estás"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Tu luz irrumpe en la oscuridad\nsi débil soy, tu eres fuerte\neres mi Dios, eres mi Dios"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Mi temor, mis problemas, mi dolor\ntu cambiaste con tu amor\nnueva vida encontré en tí"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "No me dejas, nunca fallas\nlo que soy es tuyo por siempre"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "No me dejas, nunca fallas\nte seguiré"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Mi temor, mis problemas, mi dolor\ntu cambiaste con tu amor\nnueva vida encontré en tí"
+    }
+  ],
+  "metadata": {
+    "verseCount": 9,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.697134"
+  }
+}

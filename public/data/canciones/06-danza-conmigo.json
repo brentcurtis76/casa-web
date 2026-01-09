@@ -1,0 +1,76 @@
+{
+  "id": "06-danza-conmigo",
+  "number": 6,
+  "title": "Danza conmigo",
+  "slug": "danza-conmigo",
+  "startPage": 76,
+  "endPage": 88,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Danza conmigo,\nAmado de mi alma\nEl Cantar De Los Cantares"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Enamórame,\nAmado de mi alma\nEl Cantar De Los Cantares"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Viniste a mi\nPor las colinas\nSaltando montañas"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Correré junto a tí\nMi amado tuyo es mi corazón"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Contigo iré\nEres mi amor, eres tan bello"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "El invierno pasó\nY el sol ya llegó"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Danza conmigo,\nAmado de mi alma\nEl Cantar De Los Cantares"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Enamórame,\nAmado de mi alma\nEl Cantar De Los Cantares"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Viniste a mi\nPor las colinas\nSaltando montañas"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Correré junto a tí\nMi amado tuyo es mi corazón"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Contigo iré\nEres mi amor, eres tan bello"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "El invierno pasó\nY el sol ya llegó"
+    }
+  ],
+  "metadata": {
+    "verseCount": 12,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.544050"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "72-maria-sabes-que",
+  "number": 72,
+  "title": "María sabes qué",
+  "slug": "maria-sabes-que",
+  "startPage": 1085,
+  "endPage": 1092,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "María, ¿sabes que tu hijo Jesús\ncaminará en las aguas?\nMaría, ¿sabes que tu hijo Jesús\nsalvará a la humanidad?"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "¿Sabes que tu hijo Jesús ha\nvenido a renovar\nLas fuerzas de aquellos que no\npueden continuar?"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "María, ¿sabes que tu hijo Jesús\ndará la vista al ciego?\nMaría, ¿sabes que tu hijo Jesús\ncalmará la tempestad?"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "¿Sabes que tu hijo Jesús del cielo\ndescendió?\nCuando besas su mejilla, también\nbesas la de Dios\nMaría, ¿sabes que...?"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "El ciego verá\nEl sordo oirá\nEl amor vendrá con Él\nLa paz traerá\nY podremos ser libres otra vez"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "oooooooh\nGloria a Él\nA Él, a Él, a Él oh-oh\nTú eres digno de loor, mi Dios\nNadie igual, Jesús\nAdorado Salvador, uh"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "María, ¿sabes que tu hijo Jesús\nes el hijo de Dios?\n¿Sabes que tu hijo Jesús sanará todo dolor?\n¿Sabes que tu hijo Jesús del cielo descendió?\nEl bebé que está en tus brazos\nes el gran \"yo soy\"\n¿Sabes que Él...?"
+    }
+  ],
+  "metadata": {
+    "verseCount": 7,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.737846"
+  }
+}

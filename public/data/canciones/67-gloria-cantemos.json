@@ -1,0 +1,36 @@
+{
+  "id": "67-gloria-cantemos",
+  "number": 67,
+  "title": "Gloria cantemos",
+  "slug": "gloria-cantemos",
+  "startPage": 1041,
+  "endPage": 1045,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "En Jesucristo, el Rey de Paz,\nEn horas negras de tempestad,\nHallan las almas dulce solaz,\nGrato consuelo, felicidad."
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Gloria cantemos al Redentor,\nQue por nosotros quiso morir;\nY que la gracia del Salvador\nSiempre dirija nuestro vivir."
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "En nuestras luchas, o en el dolor,\nEn tristes horas de tentación,\nCalma le infunde, santo vigor,\nNuevos alientos al corazón."
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Cuando en la lucha falta la fe,\nY el alma sienta desfallecer,\nCristo nos dice: “Siempre os daré\nGracia divina, santo poder."
+    }
+  ],
+  "metadata": {
+    "verseCount": 4,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.725741"
+  }
+}

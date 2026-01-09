@@ -1,0 +1,66 @@
+{
+  "id": "23-en-este-lugar",
+  "number": 23,
+  "title": "En este lugar",
+  "slug": "en-este-lugar",
+  "startPage": 318,
+  "endPage": 328,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Señor, sé que tu Espíritu está aquí\nY te invito a tomar control de mi"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Señor, vengo ante ti en humildad\nY con respeto en tu presencia\nquiero entrar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Señor, sé que tu Espíritu está aquí\nY te invito a tomar control de mi"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Señor, vengo ante ti en humildad\nY con respeto en tu presencia\nquiero entrar"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Largas horas\nhe tenido que esperar\npara pararme con mi pueblo\na adorar"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Luchas he tenido\nque enfrentar\ny mis fuerzas quiero recobrar\nen este lugar"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Señor, sé que tu Espíritu está aquí\nY te invito a tomar control de mi"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Señor, vengo ante ti en humildad\nY con respeto en tu presencia\nquiero entrar"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Largas horas\nhe tenido que esperar\npara pararme con mi pueblo\na adorar"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Luchas he tenido\nque enfrentar\ny mis fuerzas quiero recobrar\nen este lugar"
+    }
+  ],
+  "metadata": {
+    "verseCount": 10,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.594828"
+  }
+}

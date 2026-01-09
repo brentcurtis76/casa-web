@@ -1,0 +1,66 @@
+{
+  "id": "52-oh-ven-emmanuel",
+  "number": 52,
+  "title": "Oh Ven Emmanuel",
+  "slug": "oh-ven-emmanuel",
+  "startPage": 843,
+  "endPage": 853,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "¡Oh ven! ¡Oh ven, Emmanuel!\nDe la maldad rescata a Israel"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Que llora en triste desolación\nY espera ansioso su liberación"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "¡Alégrate, oh Israel!\nVendrá, ya viene, Emmanuel"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "¡Oh ven! ¡Oh ven, aurora celestial!\nY alúmbranos con tu verdad"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Disipa toda oscuridad\nY danos días de solaz"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "¡Alégrate, oh Israel!\nVendrá, ya viene, Emmanuel"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "¡Oh ven! ¡oh ven, glorioso rey de Sión!\nY ten tu trono en cada corazón"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Rescátanos de la maldad\nY enséñanos tu amor y tu bondad"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "¡Alégrate, oh Israel!\nVendrá, ya viene, Emmanuel"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "¡Alégrate, oh Israel!\nVendrá, ya viene, Emmanuel"
+    }
+  ],
+  "metadata": {
+    "verseCount": 10,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.689486"
+  }
+}

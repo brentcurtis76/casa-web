@@ -1,0 +1,56 @@
+{
+  "id": "bendicion-final",
+  "title": "Bendición Final",
+  "type": "bendicion",
+  "slides": [
+    {
+      "type": "title",
+      "content": "BENDICIÓN\nFINAL"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Salgamos al mundo en paz;\ntengamos buen ánimo;"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "retengamos firmemente lo bueno\nno paguemos a nadie mal por mal;"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "fortalezcamos a los desanimados;\nsostengamos a los débiles;"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "ayudemos a los afligidos;\nhonremos a todas y todos;"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "Amemos y sirvamos al Señor,\nregocijándonos en el poder del\nEspíritu Santo;"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "y la bendición de Dios,\nel Padre, el Hijo y el Espíritu Santo,"
+    },
+    {
+      "type": "liturgy-leader",
+      "content": "sea sobre nosotros y viva con\nnosotros por siempre, Amén"
+    },
+    {
+      "type": "liturgy-antiphonal",
+      "leader": "Salgamos con gozo\nen el poder del Espíritu.",
+      "response": "Gloria a Dios!\nBendito para siempre."
+    },
+    {
+      "type": "liturgy-antiphonal",
+      "leader": "Amigos, amigas...\nvamos a servir al Señor con alegría.",
+      "response": "Amén. Serviremos al\nSeñor con alegría."
+    },
+    {
+      "type": "closing",
+      "content": "Aleluya!!"
+    }
+  ],
+  "metadata": {
+    "editable": false
+  }
+}

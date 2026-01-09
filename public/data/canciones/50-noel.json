@@ -1,0 +1,91 @@
+{
+  "id": "50-noel",
+  "number": 50,
+  "title": "Noël",
+  "slug": "noel",
+  "startPage": 813,
+  "endPage": 828,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Su amor, divino amor\nUna estrella es la señal"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Reverencia al redentor\nQue es paz para la humanidad"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Un niño ha nacido ya\nAhora y siempre reinará"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Noël, Noël\nMira lo que ha hecho Dios"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Noël, Noël\nImpresionante es su amor!"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Del mundo la luz\nSe nos entregó\nNoël"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Ser divino y mortal\nDesde antes de la humanidad"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Salvo él nació y sufrió\nY por nosotros él murió"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Cristo es nuestro Señor\nAhora y siempre reinará"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Noël, Noël\nMira lo que ha hecho Dios"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Noël, Noël\nImpresionante es su amor!"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Del mundo la luz\nSe nos entregó\nNoël"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Noël, Noël\nMira lo que ha hecho Dios"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Noël, Noël\nImpresionante es su amor!"
+    },
+    {
+      "number": 15,
+      "type": "verse",
+      "content": "Del mundo la luz\nSe nos entregó\nNoël"
+    }
+  ],
+  "metadata": {
+    "verseCount": 15,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.684969"
+  }
+}

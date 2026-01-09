@@ -1,0 +1,46 @@
+{
+  "id": "66-santo-santo-santo",
+  "number": 66,
+  "title": "Santo, Santo, Santo",
+  "slug": "santo-santo-santo",
+  "startPage": 1034,
+  "endPage": 1040,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "¡Santo! ¡Santo! ¡Santo!\nSeñor omnipotente,\nSiempre el labio mío loores te dará."
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "¡Santo! ¡Santo! ¡Santo!\nTe adoro reverente,\nDios en tres personas bendita Trinidad."
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "¡Santo! ¡Santo! ¡Santo!\nPor más que estés velado\nE imposible sea Tu gloria contemplar;"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Santo, Tu eres solo,\ny nada hay a Tu lado\nEn poder perfecto, pureza y caridad."
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "¡Santo! ¡Santo! ¡Santo!\nLa gloria de Tu nombre\nVemos en Tus obras\nen cielo, tierra y mar;"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "¡Santo! ¡Santo! ¡Santo!\nte adorará todo hombre,\nDios en tres personas, bendita Trinidad"
+    }
+  ],
+  "metadata": {
+    "verseCount": 6,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.724561"
+  }
+}

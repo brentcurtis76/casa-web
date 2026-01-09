@@ -1,0 +1,81 @@
+{
+  "id": "02-canta-la-esperanza",
+  "number": 2,
+  "title": "Canta la esperanza",
+  "slug": "canta-la-esperanza",
+  "startPage": 11,
+  "endPage": 24,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Yo voy creciendo y sé\nque la vida es bella\ny si no lo sé\nlo descubriré"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Voy conociendo amigos\nconociendo amigas\ny con cada día aprendiendo más"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Mira un nuevo un día llega\ngracias por la vida\npuedo aportar"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Oye, canta la esperanza\ndanos más confianza\npara caminar"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Yo voy creciendo y sé\nque la vida es bella\ny si no lo sé\nlo descubriré"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Mira un nuevo un día llega\ngracias por la vida\npuedo aportar"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Oye, canta la esperanza\ndanos más confianza\npara caminar"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Hoy, desde donde estoy\ny por donde voy\nsoy alguien amado\ny yo tengo paz"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Mira un nuevo un día llega\ngracias por la vida\npuedo respirar"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Oye, canta la esperanza\ngano más confianza\npara caminar"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Mira un nuevo un día llega\ngracias por la vida\npuedo aportar"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Oye, canta la esperanza\ndanos más confianza\npara caminar"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Mira, nuevo día, gracias, respirar\nOye, canta, esperanza, caminar\nMira, nuevo día, gracias, respirar\nOye, canta, esperanza, caminar"
+    }
+  ],
+  "metadata": {
+    "verseCount": 13,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.526447"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "id": "13-cristo-te-amamos",
+  "number": 13,
+  "title": "Cristo te amamos",
+  "slug": "cristo-te-amamos",
+  "startPage": 173,
+  "endPage": 187,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "La Tierra pasará\ntu amor se mantendrá\nsolo es tu gracia mi piedra angular"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Lo muerto levantarás\nTú siempre brillarás\nLa oscuridad no Prevalecerá"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Por lo que Tú has hecho en amor\nRespondemos a Ti\nCantamos Dios"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Cristo te amamos\n¡Cuánto te amamos!\nNuestro corazón hoy te adora a Ti"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Tú la esperanza das\nEl huérfano tiene hogar\nLo perdido encuentra su lugar en Ti"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Levantas nuestro mirar\nAl débil fuerza le das\nA los huesos secos das vida en Ti,\nJesús"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Por lo que tú has hecho en amor\nRespondemos a Ti\nCantamos Dios"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Por lo que tú has hecho en amor\nRespondemos a Ti\nCantamos Dios"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Cristo te amamos\n¡Cuánto te amamos!\nNuestro corazón hoy te adora a Ti"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Nuestro afecto y devoción\nPonemos a tus pies, oh Cristo"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "///Nuestro afecto y devoción\nPonemos a tus pies, oh Cristo///"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Cristo te amamos\n¡Cuánto te amamos!\nNuestro corazón hoy te adora a Ti"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Cristo te amamos\n¡Cuánto te amamos!\nNuestro corazón hoy te adora a Ti"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "///Te adora a Ti///"
+    }
+  ],
+  "metadata": {
+    "verseCount": 14,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.570199"
+  }
+}

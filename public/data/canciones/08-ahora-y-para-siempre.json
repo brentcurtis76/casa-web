@@ -1,0 +1,46 @@
+{
+  "id": "08-ahora-y-para-siempre",
+  "number": 8,
+  "title": "Ahora y para siempre",
+  "slug": "ahora-y-para-siempre",
+  "startPage": 110,
+  "endPage": 116,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "//Santo Espíritu,\ndanos paz, danos paz//"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Ahora y para siempre\n///Amén///"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "//Misericordioso Dios,\nperdónanos, perdónanos//"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "//Por lo que hemos hecho\ny dejado de hacer\ndejado de hacer//"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "//Oh hijo de Dios,\nrescátanos, rescátanos//"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "//de nuestro egoísmo\ny de nuestra vanidad,\nde nuestra vanidad//"
+    }
+  ],
+  "metadata": {
+    "verseCount": 6,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.550871"
+  }
+}

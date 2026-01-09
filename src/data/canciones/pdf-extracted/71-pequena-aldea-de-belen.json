@@ -1,0 +1,61 @@
+{
+  "id": "71-pequena-aldea-de-belen",
+  "number": 71,
+  "title": "Pequeña Aldea de Belén",
+  "slug": "pequena-aldea-de-belen",
+  "startPage": 1075,
+  "endPage": 1084,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Pequeña aldea de Belén\nAfortunada tú\nPues en tus campos brilla hoy\nLa sempiterna luz"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "El hijo tan deseado\nCon santa expectación\nÉl esperado salvador\nEn ti Belén nació"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Humilde aldea de Belén\nEn ti ángeles están\nCuidando todos con amor\nAl niño sin igual"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Las estrellas brillando\nle cantan al nacer\ny el cielo da la gloria a Dios\nY paz a todo ser"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Cuan bello y silencioso es\neste regalo de amor\nque Dios entrega a todo ser\nternura y redención"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Difícil de aceptar\npara el poderoso\nlos mansos lo recibirán\ny Cristo nacerá"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Oh santo niño de Belén\ndesciende con tu paz\nen nuestras almas nace hoy\nsanando todo mal"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Los ángeles del cielo\nte anuncian al nacer\nven en nosotros a morar\nOh Cristo Emanuel"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "El esperado Salvador\nen ti Belén nació"
+    }
+  ],
+  "metadata": {
+    "verseCount": 9,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.733177"
+  }
+}

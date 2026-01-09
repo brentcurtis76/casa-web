@@ -1,0 +1,61 @@
+{
+  "id": "12-senor-mi-dios",
+  "number": 12,
+  "title": "Señor mi Dios",
+  "slug": "senor-mi-dios",
+  "startPage": 163,
+  "endPage": 172,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Señor mi Dios,\nal contemplar los cielos,\nel firmamento y las estrellas mil"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Al oír tu voz\nen los potentes truenos\nY ver brillar el sol en su cenit"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "//Mi corazón se llena de emoción\ncuan grande eres oh Señor//"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Al recorrer\nlos montes y los valles\nY ver las bellas flores al pasar"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Al escuchar el canto de las aves\ny el murmurar del claro manantial"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "//Mi corazón se llena de emoción\ncuan grande eres oh Señor//"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Y hasta que Cristo vuelva\ncon toda gloria\nA restaurar su entera creación"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Le adoraré cantando la grandeza\nde su poder y su infinito amor"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "//Mi corazón se llena de emoción\ncuan grande eres oh Señor//"
+    }
+  ],
+  "metadata": {
+    "verseCount": 9,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.563904"
+  }
+}

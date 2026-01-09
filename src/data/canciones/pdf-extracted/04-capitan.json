@@ -1,0 +1,81 @@
+{
+  "id": "04-capitan",
+  "number": 4,
+  "title": "Capitán",
+  "slug": "capitan",
+  "startPage": 55,
+  "endPage": 68,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "En aguas profundas\nme harás embarcar\nTu voz me guía en la oscuridad"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "y si de tu curso me intento alejar\nCon un susurro endereza mi andar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Como el viento Tú abrirás los cielos\nCruzaré el violento mar"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Tu palabra Dios, guiará mi viaje\nRecordándome quien fui…"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "…y quien soy ahora"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Perdido en el medio de la tempestad\nTu brújula el norte me hará encontrar"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Jesús, mi Señor, eres mi capitán\nTe debo mi vida y mi lealtad"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Como el viento Tú abrirás los cielos\nCruzaré el violento mar"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Tu palabra Dios, guiará mi viaje\nRecordándome quien fui…"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "…y quien soy ahora"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Como el viento Tú abrirás los cielos\nCruzaré el violento mar"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Tu palabra Dios, guiará mi viaje\nRecordándome quien fui…"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "…y quien soy ahora"
+    }
+  ],
+  "metadata": {
+    "verseCount": 13,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.536487"
+  }
+}

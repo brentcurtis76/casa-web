@@ -1,0 +1,41 @@
+{
+  "id": "44-abre-mis-ojos",
+  "number": 44,
+  "title": "Abre mis ojos",
+  "slug": "abre-mis-ojos",
+  "startPage": 692,
+  "endPage": 697,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Abre mis ojos, Señor\nLos ojos de mi corazón\nYo quiero verte, déjame verte"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "En lo alto te veré\nBrillando en la luz de tu gloria"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Derrama de tu amor y poder\nCantamos: Santo, Santo, Santo\nYo quiero verte"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "/// Santo, Santo, Santo ///\nDéjame verte"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "/// Santo, Santo, Santo ///\nYo quiero verte"
+    }
+  ],
+  "metadata": {
+    "verseCount": 5,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.667819"
+  }
+}

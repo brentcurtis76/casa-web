@@ -1,0 +1,56 @@
+{
+  "id": "01-el-espiritu",
+  "number": 1,
+  "title": "El espíritu",
+  "slug": "el-espiritu",
+  "startPage": 2,
+  "endPage": 10,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "El Espíritu anda en el aire,\nse pasea por las cabezas\nY me trajo una certeza y también\nuna canción"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "El Espíritu me dio la mano,\nme llevó a lo más profundo\nMe miró fijo a los ojos\ny me dijo este soy yo"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Dijo ven acercate a la fiesta\nVen acercate al calor\nAquí danzamos a la llama\nAl compas de mi tambor"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "El Espíritu bajó conmigo,\nme guio por los pasillos\nY con un soplo al oído\nse metió en mi corazón"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "El Espíritu se transformaba,\nme mostro mil luces y caras\nEn su noche me invitaba a\nsumarme al resplandor"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Dijo ven acercate a la fiesta\nVen acercate al fogón\nAquí danzamos a la llama\nAl compas de mi tambor"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Ven acercate a la fiesta\nVen acercate al calor\nAquí danzamos a la llama\nAl compas de mi tambor"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Acercate a la fiesta\nVen acercate al fogón\nAquí puedes tenerlo todo\nSi lo quieres de corazón"
+    }
+  ],
+  "metadata": {
+    "verseCount": 8,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.520824"
+  }
+}

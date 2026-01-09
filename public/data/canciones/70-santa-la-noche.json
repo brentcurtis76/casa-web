@@ -1,0 +1,66 @@
+{
+  "id": "70-santa-la-noche",
+  "number": 70,
+  "title": "Santa la noche",
+  "slug": "santa-la-noche",
+  "startPage": 1064,
+  "endPage": 1074,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Santa la noche,\nhermosas las estrellas\nLa noche cuando nació el Señor"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "El mundo envuelto\nestuvo en sus querellas\nhasta que Dios nos mandó al\nSalvador"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Una esperanza todo el mundo siente\nla luz de un nuevo día sin igual"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "con gratitud, postrados adoradle\noír, de lo alto la voz angelical"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "oíd, cantar, nació el Salvador"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Nos enseñó a amarnos unos a otros\nSu ley amor, su evangelio trae paz"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Nos enseñó que\nhermanos somos todos\nY de opresión El nos lleva a Su luz"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Gozosos hoy con gratitud cantando\nAl nombre dulce del Señor load"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Hoy su poder y gloria proclamando,\nA Cristo dad gloria, honor y majestad"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "oíd, cantar, nació el Salvador"
+    }
+  ],
+  "metadata": {
+    "verseCount": 10,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.731240"
+  }
+}

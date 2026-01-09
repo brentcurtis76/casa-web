@@ -1,0 +1,61 @@
+{
+  "id": "60-abba",
+  "number": 60,
+  "title": "Abba",
+  "slug": "abba",
+  "startPage": 959,
+  "endPage": 968,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Yo no busco perfección\nni la gran ejecución\nmi deseo eterno ha sido\nel tener tu corazón"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Hijo deja de intentar,\nno hay más nada que ganar\ntodo lo que tengo es tuyo\nvuelve a casa a descansar"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "He puesto la mesa\nel vino y el pan\nhijo, regresa a la intimidad"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Yo no dejo de esperar,\nno me canso de llamar\nte soñé desde el principio\nte amaré hasta el final"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Ya no hay más condenación\nsolo hay gracia y hay perdón\ntu conoces el camino\nque por sangre ya se abrió"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "He puesto la mesa\nel vino y el pan\nhijo, regresa a la intimidad"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Nada que hagas\ncambia mi amor\nhijo complaces mi corazón"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Abba, Abba\nvengo de regreso a casa"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Abba, Abba\nsolo en ti descansa mi alma"
+    }
+  ],
+  "metadata": {
+    "verseCount": 9,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.709959"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "69-el-vacio",
+  "number": 69,
+  "title": "El Vacío",
+  "slug": "el-vacio",
+  "startPage": 1059,
+  "endPage": 1063,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "////:Hablas y ahuyentas\nmis tinieblas:////"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Espero aquí, tu mano en mí\nla tormenta calmará\ny al despejar\nllenas el vacío en mí"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "//:Brilla en mí\ntu luz, tu luz://"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "////:Hablas y ahuyentas\nmis tinieblas:////"
+    }
+  ],
+  "metadata": {
+    "verseCount": 4,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.729069"
+  }
+}

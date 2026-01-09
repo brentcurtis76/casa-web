@@ -1,0 +1,76 @@
+{
+  "id": "68-gratitud",
+  "number": 68,
+  "title": "Gratitud",
+  "slug": "gratitud",
+  "startPage": 1046,
+  "endPage": 1058,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Qué puedo decir\nQué puedo ofrecer\nCómo expresar\nHoy mi gratitud"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Darte mi canción\nUna y otra vez\nY aunque terminará\nTú nunca lo harás"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Y levanto mi voz\nEntrego mi adoración\nNo tengo más que un\nAleluya, aleluya"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Sé que mucho no es\nLo que tengo, lo vengo a ofrecer\nSolo mi alma y un aleluya\nAleluya"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Eres la razón\nMi respuesta hoy\nCon todo lo que soy\nTe alabo Dios"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Y levanto mi voz\nTe Entrego mi voz y canción\nNo tengo más que un\nAleluya, aleluya"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Sé que mucho no es\nlo que tengo lo rindo a tus pies\nSolo mi alma y un aleluya\nAleluya"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Ven corazón\nNo seas tímido\nlevanta tu voz\na todo pulmón vierte tu adoración\nVamos alábalo"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Y levanto mi voz\nEntrego mi adoración\nNo tengo más que un\nAleluya, aleluya"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Sé que mucho no es\nLo que tengo, lo vengo a ofrecer\nSolo mi alma y un aleluya\nAleluya"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "EL VACIO"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "////:Hablas y ahuyentas\nmis tinieblas:////"
+    }
+  ],
+  "metadata": {
+    "verseCount": 12,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.727762"
+  }
+}

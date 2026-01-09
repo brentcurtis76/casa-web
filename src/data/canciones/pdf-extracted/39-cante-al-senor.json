@@ -1,0 +1,96 @@
+{
+  "id": "39-cante-al-senor",
+  "number": 39,
+  "title": "Cante al Señor",
+  "slug": "cante-al-senor",
+  "startPage": 600,
+  "endPage": 616,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Mi Cristo, mi Rey\nNadie es como tu"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Toda mi vida, quiero exaltar\nLas maravillas de tu amor"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Consuelo, refugio\nTorre de fuerza y poder"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Todo mi ser, lo que yo soy\nNunca cese de adorar"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Cante al Señor toda la creación\nHonra y poder,\nMajestad sean al Rey"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Montes caerán y el mar rugirá\nAl sonar de su nombre"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Canto con gozo al mirar tu poder\nPor siempre yo te amaré y diré"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Incomparables promesas me das\nSeñor"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Mi Cristo, mi Rey\nNadie es como tu"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Toda mi vida, quiero exaltar\nLas maravillas de tu amor"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Consuelo, refugio\nTorre de fuerza y poder"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Todo mi ser, lo que yo soy\nNunca cese de adorar"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Cante al Señor toda la creación\nHonra y poder,\nMajestad sean al Rey"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Montes caerán y el mar rugirá\nAl sonar de su nombre"
+    },
+    {
+      "number": 15,
+      "type": "verse",
+      "content": "Canto con gozo al mirar tu poder\nPor siempre yo te amaré y diré"
+    },
+    {
+      "number": 16,
+      "type": "verse",
+      "content": "///Incomparables promesas\nme das///\nSeñor"
+    }
+  ],
+  "metadata": {
+    "verseCount": 16,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.655075"
+  }
+}

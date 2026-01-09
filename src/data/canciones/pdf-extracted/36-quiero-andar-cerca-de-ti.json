@@ -1,0 +1,56 @@
+{
+  "id": "36-quiero-andar-cerca-de-ti",
+  "number": 36,
+  "title": "Quiero andar cerca de ti",
+  "slug": "quiero-andar-cerca-de-ti",
+  "startPage": 572,
+  "endPage": 580,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Quiero andar cerca de Ti\nJunto a Ti quiero vivir"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Diario andar cerca de Ti,\nSi Tú estás: Señor, junto a mi"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Aunque débil soy, Señor\nTu poder me da valor"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "¿Quién mis cargas llevará?\nSolo Tú, Señor, solo Tú"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "A través del mundo cruel\nQuiero siempre serte fiel"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Guíame ¡Oh, buen Pastor!,\nJunto a Ti: Señor, junto a Ti"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Cuando ya mi frágil ser,\nCese aquí de padecer"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Satisfecho yo estaré,\nSi Tú estás: Señor, junto a mi"
+    }
+  ],
+  "metadata": {
+    "verseCount": 8,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.646429"
+  }
+}

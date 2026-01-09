@@ -1,0 +1,46 @@
+{
+  "id": "18-tu-amor-me-asombra",
+  "number": 18,
+  "title": "Tu amor me asombra",
+  "slug": "tu-amor-me-asombra",
+  "startPage": 243,
+  "endPage": 249,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Tu amor me asombra,\nes firme y constante\nComo una montaña,\nfirme a mis pies"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Es tan impresionante,\ncomo me sostienes\nSi estoy abrumado,\nme cubre tu amor"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "// Aleluya, aleluya, aleluya\nTú me haces cantar //"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Tu amor me sorprende,\nsiento que se extiende\nGozo incomparable,\ninunda mi ser"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Siempre que te veo,\ntu bondad percibo\nY tus melodías nacen en mi ser"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "// Aleluya, aleluya, aleluya\nTú me haces cantar //"
+    }
+  ],
+  "metadata": {
+    "verseCount": 6,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.581904"
+  }
+}

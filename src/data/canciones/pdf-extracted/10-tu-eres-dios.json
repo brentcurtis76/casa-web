@@ -1,0 +1,91 @@
+{
+  "id": "10-tu-eres-dios",
+  "number": 10,
+  "title": "Tu eres Dios",
+  "slug": "tu-eres-dios",
+  "startPage": 130,
+  "endPage": 145,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "Desde el fondo del mar\ndel mas alto lugar"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "del mas hondo abismo\nte alabaré"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "Desde mi corazón\nfuerte o débil esté"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "Cada instante de mi vida\ncon gozo yo diré:"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "Que tú eres la roca eterna,\nSeñor sobre cielo y tierra,\nTú eres Dios"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "Que toda criatura adore\nQue toda nación se postre\na ti Señor"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Desde el fondo del mar\ndel mas alto lugar"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "del mas hondo abismo\nte alabaré"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "Desde mi corazón\nfuerte o débil esté"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "Cada instante de mi vida\ncon gozo yo diré:"
+    },
+    {
+      "number": 11,
+      "type": "verse",
+      "content": "Que tú eres la roca eterna\nSeñor sobre cielo y tierra\nTú eres Dios"
+    },
+    {
+      "number": 12,
+      "type": "verse",
+      "content": "Que toda criatura adore\nQue toda nación se postre\na ti Señor"
+    },
+    {
+      "number": 13,
+      "type": "verse",
+      "content": "Que tú eres la roca eterna\nSeñor sobre cielo y tierra\nTú eres Dios"
+    },
+    {
+      "number": 14,
+      "type": "verse",
+      "content": "Que toda criatura adore\nQue toda nación se postre\na ti Señor"
+    },
+    {
+      "number": 15,
+      "type": "verse",
+      "content": "Tú eres Dios"
+    }
+  ],
+  "metadata": {
+    "verseCount": 15,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.555908"
+  }
+}

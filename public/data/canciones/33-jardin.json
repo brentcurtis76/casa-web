@@ -1,0 +1,36 @@
+{
+  "id": "33-jardin",
+  "number": 33,
+  "title": "Jardín",
+  "slug": "jardin",
+  "startPage": 508,
+  "endPage": 512,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "///Traigo mi corazón///\nmis dudas y mi desazón"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "Me has dado protección\ncobijo en mi aflicción"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "contienes mi dolor\nllévame a tu jardín"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "me has invitado a tu jardín"
+    }
+  ],
+  "metadata": {
+    "verseCount": 4,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.633483"
+  }
+}

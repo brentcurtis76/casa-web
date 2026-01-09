@@ -1,0 +1,42 @@
+{
+  "total": 6,
+  "generatedAt": "2026-01-06T16:00:00.000Z",
+  "elements": [
+    {
+      "id": "la-paz",
+      "title": "La Paz",
+      "type": "paz",
+      "slideCount": 6
+    },
+    {
+      "id": "padre-nuestro",
+      "title": "Padre Nuestro",
+      "type": "oracion-comunitaria",
+      "slideCount": 7
+    },
+    {
+      "id": "santa-cena",
+      "title": "Santa Cena",
+      "type": "comunion",
+      "slideCount": 8
+    },
+    {
+      "id": "accion-de-gracias",
+      "title": "Acción de Gracias",
+      "type": "eucaristia",
+      "slideCount": 11
+    },
+    {
+      "id": "ofrenda",
+      "title": "Ofrenda",
+      "type": "ofrenda",
+      "slideCount": 3
+    },
+    {
+      "id": "bendicion-final",
+      "title": "Bendición Final",
+      "type": "bendicion",
+      "slideCount": 11
+    }
+  ]
+}

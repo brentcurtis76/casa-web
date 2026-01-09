@@ -1,0 +1,90 @@
+{
+  "version": "1.0",
+  "total": 14,
+  "styles": [
+    {
+      "id": "ghibli",
+      "name": "Studio Ghibli",
+      "prompt": "Studio Ghibli animation style, soft watercolor backgrounds, detailed natural environments, warm lighting, whimsical atmosphere, hand-drawn aesthetic",
+      "description": "Estilo suave y cálido con fondos acuarelados"
+    },
+    {
+      "id": "pixar",
+      "name": "Pixar",
+      "prompt": "Pixar 3D animation style, expressive characters, vibrant colors, cinematic lighting, detailed textures, emotional storytelling",
+      "description": "Animación 3D expresiva y colorida"
+    },
+    {
+      "id": "disney-classic",
+      "name": "Disney Clásico",
+      "prompt": "Classic Disney 2D animation style, golden age aesthetic, fluid lines, warm colors, fairytale atmosphere, hand-painted backgrounds",
+      "description": "Animación 2D tradicional estilo cuentos de hadas"
+    },
+    {
+      "id": "dreamworks",
+      "name": "DreamWorks",
+      "prompt": "DreamWorks animation style, dynamic poses, bold colors, expressive faces, cinematic composition, playful energy",
+      "description": "Animación dinámica y expresiva"
+    },
+    {
+      "id": "storybook",
+      "name": "Libro de Cuentos",
+      "prompt": "Children's storybook illustration style, soft pastel colors, gentle brushstrokes, cozy atmosphere, whimsical details, picture book aesthetic",
+      "description": "Ilustración clásica de libro infantil"
+    },
+    {
+      "id": "watercolor",
+      "name": "Acuarela Infantil",
+      "prompt": "Children's watercolor illustration, soft washes, gentle colors, dreamy atmosphere, delicate lines, artistic and tender",
+      "description": "Acuarelas suaves y delicadas"
+    },
+    {
+      "id": "eric-carle",
+      "name": "Estilo Eric Carle",
+      "prompt": "Eric Carle collage illustration style, bold colors, textured paper cutouts, simple shapes, vibrant and playful, The Very Hungry Caterpillar aesthetic",
+      "description": "Collage colorido con texturas de papel"
+    },
+    {
+      "id": "quentin-blake",
+      "name": "Estilo Quentin Blake",
+      "prompt": "Quentin Blake illustration style, loose pen and ink drawings, energetic lines, splashes of watercolor, whimsical and expressive characters, Roald Dahl book aesthetic",
+      "description": "Dibujos sueltos y expresivos con tinta"
+    },
+    {
+      "id": "papercut",
+      "name": "Papel Recortado",
+      "prompt": "Paper cut-out illustration style, layered paper effect, soft shadows, colorful shapes, handcrafted aesthetic, dimensional depth",
+      "description": "Efecto de papel recortado en capas"
+    },
+    {
+      "id": "claymation",
+      "name": "Claymation",
+      "prompt": "Claymation stop-motion style, 3D clay figures, textured surfaces, warm lighting, handcrafted charm, Aardman animation aesthetic",
+      "description": "Estilo plastilina/stop motion"
+    },
+    {
+      "id": "folk-art",
+      "name": "Arte Folk Latinoamericano",
+      "prompt": "Latin American folk art style, vibrant colors, decorative patterns, naive art aesthetic, cultural motifs, warm and festive",
+      "description": "Arte popular latinoamericano colorido"
+    },
+    {
+      "id": "anime-soft",
+      "name": "Anime Suave",
+      "prompt": "Soft anime illustration style, big expressive eyes, pastel colors, gentle lighting, kawaii aesthetic, heartwarming atmosphere",
+      "description": "Anime tierno con colores pastel"
+    },
+    {
+      "id": "cartoon-network",
+      "name": "Cartoon Network",
+      "prompt": "Modern cartoon style, bold outlines, flat colors, geometric shapes, playful proportions, Adventure Time / Steven Universe aesthetic",
+      "description": "Dibujo animado moderno y geométrico"
+    },
+    {
+      "id": "beatrix-potter",
+      "name": "Estilo Beatrix Potter",
+      "prompt": "Beatrix Potter illustration style, detailed naturalistic animals, soft watercolors, English countryside aesthetic, gentle and refined, Peter Rabbit style",
+      "description": "Acuarelas naturalistas estilo clásico inglés"
+    }
+  ]
+}

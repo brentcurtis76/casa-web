@@ -1,0 +1,66 @@
+{
+  "id": "57-en-ti-confio",
+  "number": 57,
+  "title": "En tí confío",
+  "slug": "en-ti-confio",
+  "startPage": 896,
+  "endPage": 906,
+  "verses": [
+    {
+      "number": 1,
+      "type": "verse",
+      "content": "En tu presencia, hallamos paz"
+    },
+    {
+      "number": 2,
+      "type": "verse",
+      "content": "En tu silencio, amor sin final"
+    },
+    {
+      "number": 3,
+      "type": "verse",
+      "content": "En tu sacrificio, libertad"
+    },
+    {
+      "number": 4,
+      "type": "verse",
+      "content": "En tu dolor, sombra y claridad"
+    },
+    {
+      "number": 5,
+      "type": "verse",
+      "content": "///: Jesús, en tí confío :///\nJesús"
+    },
+    {
+      "number": 6,
+      "type": "verse",
+      "content": "En tu mirada, compasión"
+    },
+    {
+      "number": 7,
+      "type": "verse",
+      "content": "Que acoge las dudas\ny ahuyenta el temor"
+    },
+    {
+      "number": 8,
+      "type": "verse",
+      "content": "Tu mano extendida,\nrefugio y calor"
+    },
+    {
+      "number": 9,
+      "type": "verse",
+      "content": "En tu abrazo, renovación"
+    },
+    {
+      "number": 10,
+      "type": "verse",
+      "content": "///: Jesús, en tí confío :///\nJesús"
+    }
+  ],
+  "metadata": {
+    "verseCount": 10,
+    "hasChorus": false,
+    "source": "pdf",
+    "extractedAt": "2026-01-06T14:37:32.698805"
+  }
+}

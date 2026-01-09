@@ -1,0 +1,42 @@
+{
+  "id": "santa-cena",
+  "title": "Santa Cena",
+  "type": "comunion",
+  "slides": [
+    {
+      "type": "title",
+      "content": "SANTA\nCENA"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "No presumimos venir a ésta tu\nmesa, misericordioso Señor,"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "confiados en nuestra rectitud\nsino en tu gracia divina."
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "No somos dignos de recoger las\nmigajas debajo de tu mesa."
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Mas Tú eres el Señor\ncuya misericordia nunca falla,"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Concédenos, entonces,\nPadre nuestro, de tal manera\nrecibir con fe este pan y esta copa,"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "Que podamos participar del\ncuerpo y de la sangre de tu\namado hijo Jesucristo"
+    },
+    {
+      "type": "prayer-congregational",
+      "content": "y que vivamos siempre en\nÉl y Él en nosotros."
+    }
+  ],
+  "metadata": {
+    "editable": false
+  }
+}
