@@ -70,7 +70,7 @@ function Hero() {
       className="py-20 md:py-32 bg-casa-50 noise-texture overflow-hidden"
       aria-labelledby="bienvenidos-heading"
     >
-      <div className="container mx-auto px-4">
+      <div className="container-custom">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-20 items-center">
           {/* Text Content */}
           <motion.div
@@ -189,7 +189,7 @@ function Hero() {
 
             {/* Cross image - overlapping left side with polaroid effect */}
             <motion.div
-              className="absolute top-[15%] left-0 w-[45%] md:w-[40%] h-[55%] image-polaroid rounded-2xl overflow-hidden z-20"
+              className="absolute top-[15%] left-0 w-[45%] md:w-[40%] h-[48%] image-polaroid rounded-2xl overflow-hidden z-20"
               style={{ y: y2 }}
               custom={0.15}
               variants={imageVariants}
@@ -204,7 +204,7 @@ function Hero() {
             >
               <img
                 alt="La cruz de nuestra iglesia"
-                className="w-full h-full object-cover object-[100%_30%] scale-[1.60] rotate-[5deg]"
+                className="w-full h-full object-cover object-[85%_30%] scale-[1.60] rotate-[5deg]"
                 src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/public/images/iglesia.jpg"
                 loading="eager"
               />

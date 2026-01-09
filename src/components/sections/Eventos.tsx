@@ -99,7 +99,7 @@ export function Eventos() {
       <div className="absolute bottom-20 left-10 w-24 h-24 border border-casa-200/30 rounded-full opacity-40" />
       <div className="absolute top-40 left-0 w-2 h-24 bg-gradient-to-b from-amber-200/40 to-transparent" />
 
-      <div className="container mx-auto px-4 relative z-10">
+      <div className="container-custom relative z-10">
         {/* Header */}
         <motion.div
           className="text-center mb-14"

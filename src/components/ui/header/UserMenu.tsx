@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, User, Settings, Calendar, UtensilsCrossed } from "lucide-react";
+import { LogOut, User, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -10,7 +10,6 @@ import {
     DropdownMenuItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-    DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -55,24 +54,14 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                     Mi Perfil
                 </Button>
                 {isAdmin && (
-                    <>
-                        <Button
-                            variant="outline"
-                            onClick={() => navigate('/admin/events')}
-                            className="w-full"
-                        >
-                            <Calendar className="mr-2 h-4 w-4" />
-                            Admin Eventos
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => navigate('/mesa-abierta/admin')}
-                            className="w-full"
-                        >
-                            <UtensilsCrossed className="mr-2 h-4 w-4" />
-                            Admin Mesa Abierta
-                        </Button>
-                    </>
+                    <Button
+                        variant="outline"
+                        onClick={() => navigate('/admin')}
+                        className="w-full"
+                    >
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Panel de Administración
+                    </Button>
                 )}
                 <Button variant="outline" onClick={logout} className="w-full">
                     <LogOut className="mr-2 h-4 w-4" />
@@ -100,16 +89,9 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                 {isAdmin && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">
-                            Administración
-                        </DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => navigate('/admin/events')}>
-                            <Calendar className="mr-2 h-4 w-4" />
-                            <span>Eventos</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate('/mesa-abierta/admin')}>
-                            <UtensilsCrossed className="mr-2 h-4 w-4" />
-                            <span>Mesa Abierta</span>
+                        <DropdownMenuItem onClick={() => navigate('/admin')}>
+                            <LayoutDashboard className="mr-2 h-4 w-4" />
+                            <span>Panel de Administración</span>
                         </DropdownMenuItem>
                     </>
                 )}

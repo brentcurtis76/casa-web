@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -7,8 +7,28 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Calendar, Upload, X, Star, Loader2 } from 'lucide-react';
+import { Calendar, Upload, X, Star, Loader2, FolderOpen, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+
+interface GraphicsItem {
+  id: string;
+  format: string;
+  image_url: string;
+}
+
+interface GraphicsBatch {
+  id: string;
+  name: string;
+  event_type: string;
+  event_date: string | null;
+  created_at: string;
+  items?: GraphicsItem[];
+}
 
 interface Event {
   id: string;
@@ -45,6 +65,57 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
   });
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(event?.image_url || null);
+
+  // Saved graphics state
+  const [savedBatches, setSavedBatches] = useState<GraphicsBatch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [showSavedGraphics, setShowSavedGraphics] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+
+  // Load saved graphics batches when dialog opens
+  useEffect(() => {
+    if (open) {
+      loadSavedBatches();
+    }
+  }, [open]);
+
+  const loadSavedBatches = async () => {
+    setLoadingBatches(true);
+    try {
+      // Load batches with their items
+      const { data: batches, error } = await supabase
+        .from('casa_graphics_batches')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Load items for each batch
+      const batchesWithItems = await Promise.all(
+        (batches || []).map(async (batch) => {
+          const { data: items } = await supabase
+            .from('casa_graphics_items')
+            .select('id, format, image_url')
+            .eq('batch_id', batch.id)
+            .in('format', ['instagram_post', 'facebook_post']); // Only show square-ish formats for events
+          return { ...batch, items: items || [] };
+        })
+      );
+
+      setSavedBatches(batchesWithItems.filter(b => b.items && b.items.length > 0));
+    } catch (err) {
+      console.error('Error loading saved batches:', err);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  const handleSelectSavedGraphic = (imageUrl: string, batchId: string) => {
+    setFormData(prev => ({ ...prev, image_url: imageUrl }));
+    setPreviewUrl(imageUrl);
+    setSelectedBatchId(batchId);
+    setShowSavedGraphics(false);
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -324,25 +395,85 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
                 </Button>
               </div>
             ) : (
-              <div
-                className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {uploading ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Subiendo...</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Upload className="h-8 w-8 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      Haz clic para subir una imagen
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      PNG, JPG hasta 5MB
-                    </span>
-                  </div>
+              <div className="space-y-3">
+                {/* Upload option */}
+                <div
+                  className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploading ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Subiendo...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Upload className="h-8 w-8 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        Haz clic para subir una imagen
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        PNG, JPG hasta 5MB
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Saved graphics option */}
+                {savedBatches.length > 0 && (
+                  <Collapsible open={showSavedGraphics} onOpenChange={setShowSavedGraphics}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        <span className="flex items-center gap-2">
+                          <FolderOpen className="h-4 w-4" />
+                          Usar gráfico guardado ({savedBatches.length})
+                        </span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showSavedGraphics ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2">
+                      <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-3">
+                        {loadingBatches ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : (
+                          savedBatches.map((batch) => (
+                            <div key={batch.id} className="space-y-2">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {batch.name}
+                                {batch.event_date && ` • ${batch.event_date}`}
+                              </p>
+                              <div className="flex gap-2 overflow-x-auto pb-1">
+                                {batch.items?.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => handleSelectSavedGraphic(item.image_url, batch.id)}
+                                    className={`flex-shrink-0 w-20 h-20 rounded-md overflow-hidden border-2 transition-colors ${
+                                      selectedBatchId === batch.id && formData.image_url === item.image_url
+                                        ? 'border-amber-500'
+                                        : 'border-transparent hover:border-amber-300'
+                                    }`}
+                                  >
+                                    <img
+                                      src={item.image_url}
+                                      alt={item.format}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 )}
               </div>
             )}

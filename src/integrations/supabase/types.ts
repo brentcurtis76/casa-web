@@ -545,6 +545,88 @@ export type Database = {
           }
         ]
       }
+      casa_graphics_batches: {
+        Row: {
+          id: string
+          name: string
+          event_type: Database['public']['Enums']['graphics_event_type']
+          event_date: string | null
+          event_time: string | null
+          event_location: string | null
+          illustration_base64: string | null
+          prompt_used: string | null
+          created_by: string | null
+          created_at: string
+          metadata: Json
+        }
+        Insert: {
+          id?: string
+          name: string
+          event_type?: Database['public']['Enums']['graphics_event_type']
+          event_date?: string | null
+          event_time?: string | null
+          event_location?: string | null
+          illustration_base64?: string | null
+          prompt_used?: string | null
+          created_by?: string | null
+          created_at?: string
+          metadata?: Json
+        }
+        Update: {
+          id?: string
+          name?: string
+          event_type?: Database['public']['Enums']['graphics_event_type']
+          event_date?: string | null
+          event_time?: string | null
+          event_location?: string | null
+          illustration_base64?: string | null
+          prompt_used?: string | null
+          created_by?: string | null
+          created_at?: string
+          metadata?: Json
+        }
+        Relationships: []
+      }
+      casa_graphics_items: {
+        Row: {
+          id: string
+          batch_id: string
+          format: Database['public']['Enums']['graphics_format_v2']
+          title: string
+          image_url: string
+          width: number
+          height: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          batch_id: string
+          format: Database['public']['Enums']['graphics_format_v2']
+          title: string
+          image_url: string
+          width: number
+          height: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          batch_id?: string
+          format?: Database['public']['Enums']['graphics_format_v2']
+          title?: string
+          image_url?: string
+          width?: number
+          height?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "casa_graphics_items_batch_id_fkey"
+            columns: ["batch_id"]
+            referencedRelation: "casa_graphics_batches"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -568,6 +650,8 @@ export type Database = {
       mesa_abierta_message_status: 'queued' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'undelivered'
       mesa_abierta_whatsapp_type: 'confirmation' | 'reminder_7days' | 'reminder_1day' | 'assignment_host' | 'assignment_guest' | 'feedback_request' | 'emergency' | 'custom'
       mesa_abierta_admin_role: 'super_admin' | 'coordinator'
+      graphics_format_v2: 'ppt_4_3' | 'instagram_post' | 'instagram_story' | 'facebook_post'
+      graphics_event_type: 'mesa_abierta' | 'culto_dominical' | 'estudio_biblico' | 'retiro' | 'navidad' | 'cuaresma' | 'pascua' | 'bautismo' | 'comunidad' | 'musica' | 'oracion' | 'generic'
     }
     CompositeTypes: {
       [_ in never]: never
