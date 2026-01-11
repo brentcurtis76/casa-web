@@ -19,7 +19,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  ArrowLeft,
   Loader2,
   Save,
   Check,
@@ -33,6 +32,7 @@ import {
   Star,
   Pencil,
 } from 'lucide-react';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 
 // Season icons mapping
 const SEASON_ICONS: Record<string, React.ReactNode> = {
@@ -256,30 +256,15 @@ export function LiturgicalSeasonAdmin() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigate('/admin')}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-semibold text-gray-900">
-                  Temporada Litúrgica
-                </h1>
-                <p className="text-sm text-gray-500">
-                  Configura el mensaje del Hero en la página principal
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AdminPageHeader
+        title="Temporada Litúrgica"
+        subtitle="Configura el mensaje del Hero en la página principal"
+        breadcrumbs={[
+          { label: 'Liturgia' },
+          { label: 'Temporadas' },
+        ]}
+        backTo="/admin"
+      />
 
       <div className="container mx-auto px-4 py-8">
         {loading ? (

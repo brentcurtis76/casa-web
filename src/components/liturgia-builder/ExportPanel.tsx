@@ -1,30 +1,24 @@
 /**
  * ExportPanel - Panel de exportación para liturgias
- * Permite exportar a múltiples formatos: PPTX, Google Slides, Keynote, PDF
+ * Permite presentar liturgia y descargar materiales para familias y celebrantes
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import {
   Download,
-  FileText,
-  Presentation,
   Loader2,
   Check,
-  ExternalLink,
-  Apple,
   BookOpen,
+  Play,
+  Monitor,
+  Heart,
+  ExternalLink,
 } from 'lucide-react';
 import type { LiturgyElement, LiturgyElementType, LiturgyContext } from '@/types/shared/liturgy';
+import type { Story } from '@/types/shared/story';
 import { exportLiturgy } from '@/lib/liturgia/exportService';
-
-// Google Slides icon component
-const GoogleSlidesIcon = () => (
-  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="3" width="18" height="18" rx="2" fill="#FBBC04" />
-    <rect x="6" y="9" width="12" height="6" rx="1" fill="white" />
-  </svg>
-);
+import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
 
 interface ExportPanelProps {
   elements: Map<LiturgyElementType, LiturgyElement>;
@@ -33,63 +27,33 @@ interface ExportPanelProps {
   onExportComplete?: (format: string) => void;
 }
 
-type ExportFormat = 'pptx' | 'google-slides' | 'keynote' | 'pdf-projection' | 'pdf-celebrant';
-
-interface ExportOption {
-  id: ExportFormat;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  color: string;
-}
-
-const EXPORT_OPTIONS: ExportOption[] = [
-  {
-    id: 'google-slides',
-    title: 'Google Slides',
-    description: 'Exportar PPTX para abrir en Google Drive',
-    icon: <GoogleSlidesIcon />,
-    color: '#FBBC04',
-  },
-  {
-    id: 'pptx',
-    title: 'PowerPoint',
-    description: 'Descargar archivo .pptx',
-    icon: <Presentation size={24} />,
-    color: '#D24726',
-  },
-  {
-    id: 'keynote',
-    title: 'Keynote',
-    description: 'Compatible con Keynote (Mac)',
-    icon: <Apple size={24} />,
-    color: '#007AFF',
-  },
-  {
-    id: 'pdf-projection',
-    title: 'PDF Proyección',
-    description: 'Todos los slides para proyectar',
-    icon: <FileText size={24} />,
-    color: '#E53935',
-  },
-  {
-    id: 'pdf-celebrant',
-    title: 'Guía del Celebrante',
-    description: 'PDF con textos para iPad/impreso',
-    icon: <BookOpen size={24} />,
-    color: CASA_BRAND.colors.primary.amber,
-  },
-];
-
 const ExportPanel: React.FC<ExportPanelProps> = ({
   elements,
   elementOrder,
   liturgyContext,
   onExportComplete,
 }) => {
-  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
-  const [completedFormats, setCompletedFormats] = useState<Set<ExportFormat>>(new Set());
+  const [exportingCelebrant, setExportingCelebrant] = useState(false);
+  const [celebrantCompleted, setCelebrantCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Story PDF export state
+  const [exportingStoryPDF, setExportingStoryPDF] = useState(false);
+  const [storyPDFCompleted, setStoryPDFCompleted] = useState(false);
+  const [storyPDFProgress, setStoryPDFProgress] = useState({ value: 0, message: '' });
+
+  // Detect if there's a story in the elements
+  const storyData = useMemo(() => {
+    const cuentacuentosElement = elements.get('cuentacuentos');
+    const story = cuentacuentosElement?.config?.storyData as Story | undefined;
+    // Story is valid if it has cover image and at least one scene with image
+    const isValid = !!(
+      story?.coverImageUrl &&
+      story?.scenes?.length > 0 &&
+      story?.scenes?.some((s) => s.selectedImageUrl)
+    );
+    return isValid ? story : null;
+  }, [elements]);
 
   // Count slides
   const totalSlides = elementOrder.reduce((count, type) => {
@@ -98,33 +62,65 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     return count + slides.length;
   }, 0);
 
-  // Handle export
-  const handleExport = async (format: ExportFormat) => {
-    setExportingFormat(format);
+  // Handle celebrant guide export
+  const handleExportCelebrant = async () => {
+    setExportingCelebrant(true);
     setError(null);
 
     try {
       await exportLiturgy({
-        format,
+        format: 'pdf-celebrant',
         elements,
         elementOrder,
         liturgyContext,
       });
 
-      setCompletedFormats((prev) => new Set(prev).add(format));
-      onExportComplete?.(format);
-
-      // Show instructions for Google Slides
-      if (format === 'google-slides') {
-        // The PPTX will be downloaded, user needs to upload to Drive
-        alert('El archivo PPTX ha sido descargado. Para usar en Google Slides:\n\n1. Ve a drive.google.com\n2. Arrastra el archivo descargado\n3. Haz clic derecho → "Abrir con" → "Google Slides"');
-      }
+      setCelebrantCompleted(true);
+      onExportComplete?.('pdf-celebrant');
     } catch (err) {
       console.error('Export error:', err);
       setError(err instanceof Error ? err.message : 'Error al exportar');
     } finally {
-      setExportingFormat(null);
+      setExportingCelebrant(false);
     }
+  };
+
+  // Handle story PDF export
+  const handleExportStoryPDF = async () => {
+    if (!storyData) return;
+
+    setExportingStoryPDF(true);
+    setError(null);
+    setStoryPDFProgress({ value: 0, message: 'Iniciando...' });
+
+    try {
+      const blob = await exportStoryToPDF(storyData, (value, message) => {
+        setStoryPDFProgress({ value, message });
+      });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${storyData.title.replace(/\s+/g, '_')}_cuento.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setStoryPDFCompleted(true);
+      onExportComplete?.('story-pdf');
+    } catch (err) {
+      console.error('Story PDF export error:', err);
+      setError(err instanceof Error ? err.message : 'Error al exportar el cuento');
+    } finally {
+      setExportingStoryPDF(false);
+    }
+  };
+
+  // Open presenter in new tab
+  const handleOpenPresenter = () => {
+    window.open('/presenter', '_blank');
   };
 
   const liturgyTitle = liturgyContext?.title || 'Liturgia';
@@ -138,45 +134,65 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="text-center pb-6 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+      {/* Presenter Section */}
+      <div
+        className="p-6 rounded-xl text-center"
+        style={{
+          background: `linear-gradient(135deg, ${CASA_BRAND.colors.primary.black} 0%, ${CASA_BRAND.colors.secondary.carbon} 100%)`,
+        }}
+      >
         <div
           className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
-          style={{ backgroundColor: `${CASA_BRAND.colors.primary.amber}20` }}
+          style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
         >
-          <Download size={28} style={{ color: CASA_BRAND.colors.primary.amber }} />
+          <Monitor size={28} style={{ color: CASA_BRAND.colors.primary.black }} />
         </div>
         <h2
           style={{
             fontFamily: CASA_BRAND.fonts.heading,
             fontSize: '24px',
             fontWeight: 300,
-            color: CASA_BRAND.colors.primary.black,
+            color: CASA_BRAND.colors.primary.white,
             letterSpacing: '0.05em',
           }}
         >
-          Exportar Liturgia
+          Presentar Liturgia
         </h2>
         <p
-          className="mt-2"
+          className="mt-2 mb-4"
           style={{
             fontFamily: CASA_BRAND.fonts.body,
             fontSize: '14px',
-            color: CASA_BRAND.colors.secondary.grayMedium,
+            color: CASA_BRAND.colors.secondary.grayLight,
           }}
         >
           {liturgyTitle}
           {liturgyDate && ` • ${liturgyDate}`}
+          {' • '}{totalSlides} slides
         </p>
+        <button
+          onClick={handleOpenPresenter}
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all hover:scale-105"
+          style={{
+            backgroundColor: CASA_BRAND.colors.primary.amber,
+            color: CASA_BRAND.colors.primary.black,
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '16px',
+          }}
+        >
+          <Play size={20} />
+          Abrir Presentador
+          <ExternalLink size={16} />
+        </button>
         <p
-          className="mt-1"
+          className="mt-3"
           style={{
             fontFamily: CASA_BRAND.fonts.body,
-            fontSize: '13px',
+            fontSize: '12px',
             color: CASA_BRAND.colors.secondary.grayMedium,
           }}
         >
-          {totalSlides} slides en total
+          Se abrirá en una nueva pestaña
         </p>
       </div>
 
@@ -193,112 +209,195 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         </div>
       )}
 
-      {/* Export Options Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        {EXPORT_OPTIONS.map((option) => {
-          const isExporting = exportingFormat === option.id;
-          const isCompleted = completedFormats.has(option.id);
-
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => handleExport(option.id)}
-              disabled={isExporting || exportingFormat !== null}
-              className={`p-6 rounded-xl border-2 text-center transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-                isCompleted ? 'border-amber-400' : 'border-transparent'
-              }`}
-              style={{
-                backgroundColor: CASA_BRAND.colors.primary.white,
-                borderColor: isCompleted ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
-              }}
-            >
-              {/* Icon */}
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{
-                  backgroundColor: `${option.color}15`,
-                  color: option.color,
-                }}
-              >
-                {isExporting ? (
-                  <Loader2 size={24} className="animate-spin" />
-                ) : isCompleted ? (
-                  <Check size={24} style={{ color: CASA_BRAND.colors.primary.amber }} />
-                ) : (
-                  option.icon
-                )}
-              </div>
-
-              {/* Title */}
-              <h3
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                {option.title}
-              </h3>
-
-              {/* Description */}
-              <p
-                className="mt-1"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '12px',
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                }}
-              >
-                {isExporting ? 'Exportando...' : option.description}
-              </p>
-
-              {/* Completed indicator */}
-              {isCompleted && (
-                <p
-                  className="mt-2 text-xs"
-                  style={{ color: CASA_BRAND.colors.primary.amber }}
-                >
-                  ✓ Descargado
-                </p>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Instructions */}
-      <div
-        className="p-4 rounded-lg"
-        style={{
-          backgroundColor: `${CASA_BRAND.colors.primary.amber}10`,
-          border: `1px solid ${CASA_BRAND.colors.primary.amber}30`,
-        }}
-      >
-        <h4
-          className="flex items-center gap-2 mb-2"
+      {/* Downloadables Section */}
+      <div className="space-y-4">
+        <h3
+          className="text-center"
           style={{
             fontFamily: CASA_BRAND.fonts.body,
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: 600,
             color: CASA_BRAND.colors.primary.black,
           }}
         >
-          <ExternalLink size={16} style={{ color: CASA_BRAND.colors.primary.amber }} />
-          Instrucciones
-        </h4>
-        <ul
-          className="space-y-1 text-sm"
+          Materiales para descargar
+        </h3>
+
+        {/* Story PDF - Only show if there's a valid story */}
+        {storyData && (
+          <div
+            className="p-5 rounded-xl"
+            style={{
+              background: `linear-gradient(135deg, ${CASA_BRAND.colors.primary.amber}15 0%, ${CASA_BRAND.colors.primary.amber}05 100%)`,
+              border: `2px solid ${CASA_BRAND.colors.primary.amber}40`,
+            }}
+          >
+            <div className="flex items-start gap-4">
+              {/* Icon */}
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+              >
+                <Heart size={22} style={{ color: CASA_BRAND.colors.primary.white }} />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1">
+                <h4
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.heading,
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: CASA_BRAND.colors.primary.black,
+                  }}
+                >
+                  Cuento para Familias
+                </h4>
+                <p
+                  className="mt-1"
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                    color: CASA_BRAND.colors.secondary.grayDark,
+                  }}
+                >
+                  PDF ilustrado de "{storyData.title}" para leer en casa
+                </p>
+
+                {/* Progress bar when exporting */}
+                {exportingStoryPDF && (
+                  <div className="mt-3">
+                    <div
+                      className="h-2 rounded-full overflow-hidden"
+                      style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight }}
+                    >
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${storyPDFProgress.value}%`,
+                          backgroundColor: CASA_BRAND.colors.primary.amber,
+                        }}
+                      />
+                    </div>
+                    <p
+                      className="mt-1 text-sm"
+                      style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                    >
+                      {storyPDFProgress.message}
+                    </p>
+                  </div>
+                )}
+
+                {/* Download button */}
+                <button
+                  onClick={handleExportStoryPDF}
+                  disabled={exportingStoryPDF}
+                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  style={{
+                    backgroundColor: CASA_BRAND.colors.primary.amber,
+                    color: CASA_BRAND.colors.primary.white,
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                  }}
+                >
+                  {exportingStoryPDF ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Generando...
+                    </>
+                  ) : storyPDFCompleted ? (
+                    <>
+                      <Check size={16} />
+                      Descargado
+                    </>
+                  ) : (
+                    <>
+                      <Download size={16} />
+                      Descargar PDF
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Celebrant Guide */}
+        <div
+          className="p-5 rounded-xl"
           style={{
-            fontFamily: CASA_BRAND.fonts.body,
-            color: CASA_BRAND.colors.secondary.grayDark,
+            backgroundColor: CASA_BRAND.colors.primary.white,
+            border: `1px solid ${CASA_BRAND.colors.secondary.grayLight}`,
           }}
         >
-          <li>• <strong>Google Slides / Keynote:</strong> Descarga el PPTX y ábrelo en la aplicación deseada</li>
-          <li>• <strong>PDF Proyección:</strong> Contiene todos los slides para proyectar</li>
-          <li>• <strong>Guía del Celebrante:</strong> Documento con textos para leer, optimizado para iPad</li>
-        </ul>
+          <div className="flex items-start gap-4">
+            {/* Icon */}
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: `${CASA_BRAND.colors.primary.amber}20` }}
+            >
+              <BookOpen size={22} style={{ color: CASA_BRAND.colors.primary.amber }} />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1">
+              <h4
+                style={{
+                  fontFamily: CASA_BRAND.fonts.heading,
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                Guía del Celebrante
+              </h4>
+              <p
+                className="mt-1"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '13px',
+                  color: CASA_BRAND.colors.secondary.grayDark,
+                }}
+              >
+                PDF con todos los textos, optimizado para iPad o impresión
+              </p>
+
+              {/* Download button */}
+              <button
+                onClick={handleExportCelebrant}
+                disabled={exportingCelebrant}
+                className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                style={{
+                  backgroundColor: celebrantCompleted
+                    ? CASA_BRAND.colors.secondary.grayLight
+                    : CASA_BRAND.colors.primary.amber,
+                  color: celebrantCompleted
+                    ? CASA_BRAND.colors.primary.black
+                    : CASA_BRAND.colors.primary.white,
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '13px',
+                }}
+              >
+                {exportingCelebrant ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Generando...
+                  </>
+                ) : celebrantCompleted ? (
+                  <>
+                    <Check size={16} />
+                    Descargado
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} />
+                    Descargar PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

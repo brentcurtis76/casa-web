@@ -193,7 +193,7 @@ const Portadas: React.FC<PortadasProps> = ({
     const reflectionGroupId = uuidv4();
 
     // Get current season name
-    const seasonName = getSeason(new Date(context.date)).toUpperCase();
+    const seasonName = currentSeason.name.toUpperCase();
 
     // Main Cover Slide - includes illustration and config for proper rendering
     const mainSlide: Slide = {
@@ -271,6 +271,8 @@ const Portadas: React.FC<PortadasProps> = ({
 
   // Export both slides
   const exportSlides = () => {
+    console.log('[Portadas] exportSlides called, selectedIllustration:', !!selectedIllustration);
+
     if (!selectedIllustration) {
       toast({
         title: 'Selecciona una ilustración',
@@ -281,11 +283,17 @@ const Portadas: React.FC<PortadasProps> = ({
     }
 
     const { main, reflection } = generateSlides();
+    console.log('[Portadas] Generated slides:', {
+      mainSlides: main.slides.length,
+      reflectionSlides: reflection.slides.length,
+      hasImage: !!main.slides[0]?.content?.imageUrl,
+    });
+
     onSlidesGenerated?.(main, reflection);
 
     toast({
-      title: 'Portadas generadas',
-      description: 'Ambas portadas usan la misma ilustración',
+      title: '✓ Portadas guardadas',
+      description: 'Ahora guarda la liturgia para persistir los cambios',
     });
   };
 
@@ -997,7 +1005,7 @@ const Portadas: React.FC<PortadasProps> = ({
       )}
 
       {/* Selection Status and Export */}
-      {illustrations.length > 0 && (
+      {(illustrations.length > 0 || selectedIllustration) && (
         <div className="flex items-center justify-between pt-4 border-t border-gray-200">
           <div className="flex items-center gap-4">
             <p

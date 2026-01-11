@@ -7,10 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/auth/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  ArrowLeft,
   Church,
   Music,
   BookOpen,
@@ -22,8 +20,11 @@ import {
   Sparkles,
   ScrollText,
   Layers,
+  Presentation,
+  ExternalLink,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 
 interface ModuleCard {
   id: string;
@@ -34,6 +35,7 @@ interface ModuleCard {
   category: 'general' | 'liturgia';
   status: 'available' | 'coming-soon';
   stats?: string;
+  openInNewTab?: boolean;
 }
 
 const AdminDashboard: React.FC = () => {
@@ -76,6 +78,16 @@ const AdminDashboard: React.FC = () => {
 
   const modules: ModuleCard[] = [
     // General Modules
+    {
+      id: 'presenter',
+      title: 'Presentador',
+      description: 'Abre el presentador de liturgias en pantalla completa para proyectar en el servicio.',
+      icon: <Presentation className="h-8 w-8" />,
+      route: '/presenter',
+      category: 'general',
+      status: 'available',
+      openInNewTab: true,
+    },
     {
       id: 'eventos',
       title: 'Eventos',
@@ -169,6 +181,14 @@ const AdminDashboard: React.FC = () => {
     return null;
   }
 
+  const handleModuleClick = (module: ModuleCard) => {
+    if (module.openInNewTab) {
+      window.open(module.route, '_blank');
+    } else {
+      navigate(module.route);
+    }
+  };
+
   const renderModuleCard = (module: ModuleCard) => {
     const isAvailable = module.status === 'available';
 
@@ -180,7 +200,7 @@ const AdminDashboard: React.FC = () => {
             ? 'cursor-pointer hover:shadow-lg hover:border-amber-300 group'
             : 'opacity-60 cursor-not-allowed'
         }`}
-        onClick={() => isAvailable && navigate(module.route)}
+        onClick={() => isAvailable && handleModuleClick(module)}
       >
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
@@ -200,9 +220,15 @@ const AdminDashboard: React.FC = () => {
               {module.icon}
             </div>
             {isAvailable ? (
-              <ChevronRight
-                className="h-5 w-5 text-gray-300 group-hover:text-amber-500 transition-colors"
-              />
+              module.openInNewTab ? (
+                <ExternalLink
+                  className="h-5 w-5 text-gray-300 group-hover:text-amber-500 transition-colors"
+                />
+              ) : (
+                <ChevronRight
+                  className="h-5 w-5 text-gray-300 group-hover:text-amber-500 transition-colors"
+                />
+              )
             ) : (
               <span
                 className="text-xs px-2 py-1 rounded-full"
@@ -254,40 +280,12 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/')}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1
-                className="text-3xl font-light"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.heading,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                Panel de Administración
-              </h1>
-              <p
-                className="mt-1 text-sm"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                }}
-              >
-                Herramientas para gestionar CASA
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AdminPageHeader
+        title="Panel de Administración"
+        subtitle="Herramientas para gestionar CASA"
+        backTo="/"
+        sticky={false}
+      />
 
       {/* Content */}
       <div className="container mx-auto px-4 py-8">

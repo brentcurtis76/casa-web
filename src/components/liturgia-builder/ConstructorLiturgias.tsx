@@ -34,6 +34,7 @@ import {
   Flame,
   Baby,
   Church,
+  Monitor,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type {
@@ -711,6 +712,10 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           portadasConfig={portadasConfig}
           onConfigChange={handlePortadasConfigChange}
           onSlidesGenerated={(mainSlides, reflectionSlides) => {
+            console.log('[ConstructorLiturgias] Received portada slides:', {
+              mainSlides: mainSlides.slides.length,
+              reflectionSlides: reflectionSlides.slides.length,
+            });
             handleElementSlides('portada-principal', mainSlides);
             handleElementSlides('portada-reflexion', reflectionSlides);
           }}
@@ -1065,7 +1070,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     { id: 'contexto', label: 'Contexto', icon: <FileText size={16} /> },
     { id: 'elementos', label: 'Elementos', icon: <Settings size={16} /> },
     { id: 'preview', label: 'Vista Previa', icon: <Eye size={16} /> },
-    { id: 'export', label: 'Exportar', icon: <Download size={16} /> },
+    { id: 'export', label: 'Presentar', icon: <Monitor size={16} /> },
   ];
 
   return (
@@ -1233,26 +1238,28 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             Anterior
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              const currentIndex = steps.findIndex((s) => s.id === currentStep);
-              if (currentIndex < steps.length - 1) {
-                setCurrentStep(steps[currentIndex + 1].id);
-              }
-            }}
-            disabled={currentStep === 'export'}
-            className="flex items-center gap-2 px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: CASA_BRAND.colors.primary.amber,
-              color: CASA_BRAND.colors.primary.white,
-              fontFamily: CASA_BRAND.fonts.body,
-              fontSize: '14px',
-            }}
-          >
-            Siguiente
-            <ChevronRight size={16} />
-          </button>
+          {/* Hide "Siguiente" on last step (export) */}
+          {currentStep !== 'export' && (
+            <button
+              type="button"
+              onClick={() => {
+                const currentIndex = steps.findIndex((s) => s.id === currentStep);
+                if (currentIndex < steps.length - 1) {
+                  setCurrentStep(steps[currentIndex + 1].id);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-full transition-colors"
+              style={{
+                backgroundColor: CASA_BRAND.colors.primary.amber,
+                color: CASA_BRAND.colors.primary.white,
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '14px',
+              }}
+            >
+              Siguiente
+              <ChevronRight size={16} />
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -1,21 +1,26 @@
 import { AuthProvider } from '@/components/auth/AuthContext';
-import { Footer } from '@/components/layout/Footer';
-import { Header1 } from '@/components/ui/header';
 import { EventsAdmin } from '@/components/events/EventsAdmin';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 
 const EventsAdminPage = () => {
   return (
     <AuthProvider>
-      <div className="min-h-screen flex flex-col">
-        <Header1 />
-        <main className="pt-24 pb-12 flex-1">
-          <div className="container mx-auto px-4">
-            <div className="max-w-6xl mx-auto">
-              <EventsAdmin />
-            </div>
+      <div className="min-h-screen bg-gray-50">
+        <AdminPageHeader
+          title="Gestión de Eventos"
+          subtitle="Crea, edita y publica eventos para la comunidad"
+          breadcrumbs={[
+            { label: 'General' },
+            { label: 'Eventos' },
+          ]}
+          backTo="/admin"
+        />
+
+        <main className="container mx-auto px-4 py-8">
+          <div className="max-w-6xl mx-auto">
+            <EventsAdmin />
           </div>
         </main>
-        <Footer />
       </div>
     </AuthProvider>
   );

@@ -11,13 +11,11 @@ import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
-  ArrowLeft,
   Plus,
   FileText,
   Trash2,
   Calendar,
   Loader2,
-  Home,
   AlertTriangle,
 } from 'lucide-react';
 import {
@@ -31,6 +29,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { CASA_BRAND } from '@/lib/brand-kit';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import ConstructorLiturgias from '@/components/liturgia-builder/ConstructorLiturgias';
 import {
   saveLiturgy,
@@ -307,56 +306,16 @@ const ConstructorLiturgiasPage: React.FC = () => {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Header */}
-        <div className="bg-white border-b sticky top-0 z-10">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBackToList}
-                  title="Volver a la lista"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <div>
-                  <h1
-                    className="text-xl font-light"
-                    style={{
-                      fontFamily: CASA_BRAND.fonts.heading,
-                      color: CASA_BRAND.colors.primary.black,
-                    }}
-                  >
-                    Constructor de Liturgias
-                  </h1>
-                  <p
-                    className="text-sm flex items-center gap-2"
-                    style={{
-                      fontFamily: CASA_BRAND.fonts.body,
-                      color: CASA_BRAND.colors.secondary.grayMedium,
-                    }}
-                  >
-                    {selectedLiturgy ? 'Editando liturgia' : 'Nueva liturgia'}
-                    {isDirty && (
-                      <span className="text-amber-500 text-xs">(sin guardar)</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Dashboard button */}
-              <Button
-                variant="outline"
-                onClick={handleBackToDashboard}
-                className="flex items-center gap-2"
-              >
-                <Home className="h-4 w-4" />
-                Dashboard
-              </Button>
-            </div>
-          </div>
-        </div>
+        <AdminPageHeader
+          title="Constructor de Liturgias"
+          subtitle={selectedLiturgy ? 'Editando liturgia' : 'Nueva liturgia'}
+          breadcrumbs={[
+            { label: 'Liturgia', href: '/admin/liturgia/constructor' },
+            { label: 'Constructor' },
+          ]}
+          onBack={handleBackToList}
+          hasUnsavedChanges={isDirty}
+        />
 
         {/* Content */}
         <div className="container mx-auto px-4 py-8">
@@ -375,54 +334,28 @@ const ConstructorLiturgiasPage: React.FC = () => {
   // List view
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigate('/admin')}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1
-                  className="text-xl font-light"
-                  style={{
-                    fontFamily: CASA_BRAND.fonts.heading,
-                    color: CASA_BRAND.colors.primary.black,
-                  }}
-                >
-                  Mis Liturgias
-                </h1>
-                <p
-                  className="text-sm"
-                  style={{
-                    fontFamily: CASA_BRAND.fonts.body,
-                    color: CASA_BRAND.colors.secondary.grayMedium,
-                  }}
-                >
-                  {liturgies.length} liturgia{liturgies.length !== 1 ? 's' : ''} guardada{liturgies.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleNewLiturgy}
-              className="flex items-center gap-2"
-              style={{
-                backgroundColor: CASA_BRAND.colors.primary.amber,
-                color: CASA_BRAND.colors.primary.white,
-              }}
-            >
-              <Plus size={18} />
-              Nueva Liturgia
-            </Button>
-          </div>
-        </div>
-      </div>
+      <AdminPageHeader
+        title="Mis Liturgias"
+        subtitle={`${liturgies.length} liturgia${liturgies.length !== 1 ? 's' : ''} guardada${liturgies.length !== 1 ? 's' : ''}`}
+        breadcrumbs={[
+          { label: 'Liturgia' },
+          { label: 'Mis Liturgias' },
+        ]}
+        backTo="/admin"
+        actions={
+          <Button
+            onClick={handleNewLiturgy}
+            className="flex items-center gap-2"
+            style={{
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            <Plus size={18} />
+            Nueva Liturgia
+          </Button>
+        }
+      />
 
       {/* Content */}
       <div className="container mx-auto px-4 py-8">

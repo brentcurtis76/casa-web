@@ -4,15 +4,12 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { FixedElementsList, FixedElementViewer } from '@/components/elementos-fijos';
 import type { FixedElement } from '@/types/shared/fixed-elements';
 
 const ElementosFijosPage: React.FC = () => {
-  const navigate = useNavigate();
   const [selectedElement, setSelectedElement] = useState<FixedElement | null>(null);
 
   const handleSelectElement = (element: FixedElement) => {
@@ -25,40 +22,15 @@ const ElementosFijosPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/admin')}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1
-                className="text-3xl font-light"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.heading,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                Elementos Fijos
-              </h1>
-              <p
-                className="mt-1 text-sm"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                }}
-              >
-                Textos litúrgicos que se repiten cada domingo
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AdminPageHeader
+        title="Elementos Fijos"
+        subtitle="Textos litúrgicos que se repiten cada domingo"
+        breadcrumbs={[
+          { label: 'Liturgia' },
+          { label: 'Elementos Fijos' },
+        ]}
+        backTo="/admin"
+      />
 
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
