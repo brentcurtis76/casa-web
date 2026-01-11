@@ -33,6 +33,7 @@ import {
   Code,
   X,
   Plus,
+  Upload,
 } from 'lucide-react';
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
@@ -123,10 +124,13 @@ const ImageSelector: React.FC<{
   options: string[];
   selectedIndex: number | null;
   onSelect: (index: number) => void;
+  onSave?: () => Promise<void>;
   onRegenerate?: () => void;
   isGenerating: boolean;
+  isSaving?: boolean;
+  savedMessage?: string | null;
   label: string;
-}> = ({ options, selectedIndex, onSelect, onRegenerate, isGenerating, label }) => {
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, isGenerating, isSaving, savedMessage, label }) => {
   if (isGenerating) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -144,10 +148,20 @@ const ImageSelector: React.FC<{
     );
   }
 
+  // Detectar si el valor es una URL o base64
+  const getImageSrc = (value: string): string => {
+    // Si ya es una URL (http/https) o data URL, usarla directamente
+    if (value.startsWith('http') || value.startsWith('data:')) {
+      return value;
+    }
+    // Si es base64 puro, agregar el prefijo
+    return `data:image/png;base64,${value}`;
+  };
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        {options.map((base64, index) => (
+        {options.map((imageValue, index) => (
           <button
             key={index}
             type="button"
@@ -160,7 +174,7 @@ const ImageSelector: React.FC<{
             }}
           >
             <img
-              src={`data:image/png;base64,${base64}`}
+              src={getImageSrc(imageValue)}
               alt={`Opción ${index + 1}`}
               className="w-full aspect-[4/3] object-cover"
             />
@@ -175,6 +189,47 @@ const ImageSelector: React.FC<{
           </button>
         ))}
       </div>
+
+      {/* Botón Guardar - aparece cuando hay selección */}
+      {selectedIndex !== null && onSave && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isSaving}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            style={{
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Check size={16} />
+                Guardar selección
+              </>
+            )}
+          </button>
+          {savedMessage && (
+            <div
+              className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm"
+              style={{
+                backgroundColor: `${CASA_BRAND.colors.primary.amber}15`,
+                color: CASA_BRAND.colors.primary.amber,
+              }}
+            >
+              <CheckCircle size={16} />
+              {savedMessage}
+            </div>
+          )}
+        </div>
+      )}
+
       {onRegenerate && (
         <button
           type="button"
@@ -191,6 +246,74 @@ const ImageSelector: React.FC<{
         </button>
       )}
     </div>
+  );
+};
+
+/**
+ * Componente para subir imagen manualmente
+ */
+const ImageUploadButton: React.FC<{
+  onUpload: (base64: string) => void;
+  label: string;
+  disabled?: boolean;
+}> = ({ onUpload, label, disabled }) => {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar que sea una imagen
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen');
+      return;
+    }
+
+    // Validar tamaño (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen es muy grande. Máximo 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Extraer solo el base64 (sin el prefijo data:image/...)
+      const base64 = result.split(',')[1];
+      onUpload(base64);
+    };
+    reader.readAsDataURL(file);
+
+    // Limpiar el input para permitir subir el mismo archivo de nuevo
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+        style={{
+          backgroundColor: CASA_BRAND.colors.primary.white,
+          borderColor: CASA_BRAND.colors.secondary.grayLight,
+          color: CASA_BRAND.colors.secondary.grayDark,
+        }}
+      >
+        <Upload size={14} />
+        Subir {label}
+      </button>
+    </>
   );
 };
 
@@ -337,10 +460,22 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [endOptions, setEndOptions] = useState<string[]>([]);
   const [selectedEnd, setSelectedEnd] = useState<number | null>(null);
 
+  // Estado de guardado manual de imágenes
+  const [savingCharacter, setSavingCharacter] = useState<string | null>(null);
+  const [savedCharacterMessage, setSavedCharacterMessage] = useState<Record<string, string | null>>({});
+  const [savingScene, setSavingScene] = useState<number | null>(null);
+  const [savedSceneMessage, setSavedSceneMessage] = useState<Record<number, string | null>>({});
+  const [savingCover, setSavingCover] = useState(false);
+  const [savedCoverMessage, setSavedCoverMessage] = useState<string | null>(null);
+  const [savingEnd, setSavingEnd] = useState(false);
+  const [savedEndMessage, setSavedEndMessage] = useState<string | null>(null);
+
   // Estado para ver/editar prompts y referencias de escenas
   const [expandedScenePrompts, setExpandedScenePrompts] = useState<Record<number, boolean>>({});
   const [sceneExcludedCharacters, setSceneExcludedCharacters] = useState<Record<number, string[]>>({});
+  const [sceneIncludedCharacters, setSceneIncludedCharacters] = useState<Record<number, string[]>>({}); // Personajes agregados manualmente
   const [editingScenePrompt, setEditingScenePrompt] = useState<Record<number, string>>({});
+  const [showCharacterPicker, setShowCharacterPicker] = useState<number | null>(null); // Número de escena para picker
 
   // Estado de UI
   const [showPreview, setShowPreview] = useState(true);
@@ -363,7 +498,61 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     declineRecovery,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
+  // Efecto para inicializar estados de imágenes cuando hay un initialStory
+  useEffect(() => {
+    if (!initialStory) return;
+
+    // Inicializar character sheets con las imágenes existentes
+    const charSheetOpts: Record<string, string[]> = {};
+    const charSheetSelected: Record<string, number> = {};
+    initialStory.characters?.forEach(char => {
+      if (char.characterSheetUrl) {
+        charSheetOpts[char.id] = [char.characterSheetUrl];
+        charSheetSelected[char.id] = 0;
+      }
+    });
+    if (Object.keys(charSheetOpts).length > 0) {
+      setCharacterSheetOptions(charSheetOpts);
+      setSelectedCharacterSheets(charSheetSelected);
+    }
+
+    // Inicializar scene images con las imágenes existentes
+    const sceneOpts: Record<number, string[]> = {};
+    const sceneSelected: Record<number, number> = {};
+    initialStory.scenes?.forEach(scene => {
+      if (scene.selectedImageUrl) {
+        sceneOpts[scene.number] = [scene.selectedImageUrl];
+        sceneSelected[scene.number] = 0;
+      }
+    });
+    if (Object.keys(sceneOpts).length > 0) {
+      setSceneImageOptions(sceneOpts);
+      setSelectedSceneImages(sceneSelected);
+    }
+
+    // Inicializar cover y end
+    if (initialStory.coverImageUrl) {
+      setCoverOptions([initialStory.coverImageUrl]);
+      setSelectedCover(0);
+    }
+    if (initialStory.endImageUrl) {
+      setEndOptions([initialStory.endImageUrl]);
+      setSelectedEnd(0);
+    }
+
+    console.log('[CuentacuentoEditor] Initialized image states from initialStory');
+
+    // Si el cuento ya está completo, eliminar cualquier borrador viejo
+    if (initialStory.metadata.status === 'ready') {
+      deleteDraft();
+      console.log('[CuentacuentoEditor] Deleted old draft - story is already complete');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Solo al montar - initialStory es estable
+
   // Efecto para guardar automáticamente cuando cambia el estado
+  // NOTA: saveDraft tiene identidad estable (usa refs internamente) por lo que
+  // NO debe incluirse en las dependencias para evitar ciclos infinitos
   useEffect(() => {
     // Solo guardar si hay progreso real (no en config inicial ni complete)
     if (currentStep === 'config' || currentStep === 'complete') return;
@@ -388,6 +577,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       endOptions,
       selectedEnd,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentStep,
     story,
@@ -399,7 +589,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     selectedCover,
     endOptions,
     selectedEnd,
-    saveDraft,
+    // saveDraft se omite intencionalmente - tiene identidad estable via refs
     location,
     customLocation,
     characters,
@@ -418,9 +608,47 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setIllustrationStyle(draftData.config.illustrationStyle);
     setAdditionalNotes(draftData.config.additionalNotes);
 
-    // Restaurar cuento
+    // Restaurar cuento con imágenes reconstruidas
     if (draftData.story) {
-      setStory(draftData.story);
+      // Reconstruir URLs de imágenes seleccionadas en el story
+      const restoredStory: Story = {
+        ...draftData.story,
+        // Reconstruir character sheets seleccionados
+        characters: draftData.story.characters?.map(c => {
+          const options = draftData.characterSheetOptions[c.id];
+          const selectedIdx = draftData.selectedCharacterSheets[c.id];
+          return {
+            ...c,
+            characterSheetUrl: options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl,
+          };
+        }),
+        // Reconstruir imágenes de escenas seleccionadas
+        // Si hay opciones pero no hay selección, usar la primera imagen (índice 0)
+        scenes: draftData.story.scenes?.map(s => {
+          const options = draftData.sceneImageOptions[s.number];
+          const selectedIdx = draftData.selectedSceneImages[s.number];
+          return {
+            ...s,
+            selectedImageUrl: options?.length > 0
+              ? options[selectedIdx !== undefined ? selectedIdx : 0]
+              : s.selectedImageUrl,
+          };
+        }),
+        // Reconstruir portada y fin (usar primera opción si no hay selección)
+        coverImageUrl: draftData.coverOptions?.length > 0
+          ? draftData.coverOptions[draftData.selectedCover ?? 0]
+          : draftData.story.coverImageUrl,
+        endImageUrl: draftData.endOptions?.length > 0
+          ? draftData.endOptions[draftData.selectedEnd ?? 0]
+          : draftData.story.endImageUrl,
+      };
+      setStory(restoredStory);
+
+      // Regenerar preview slides con las imágenes restauradas
+      const slides = createPreviewSlideGroup(restoredStory);
+      setPreviewSlides(slides as unknown as SlideGroup);
+
+      console.log(`[CuentacuentoEditor] Restored story with ${restoredStory.scenes?.filter(s => s.selectedImageUrl).length || 0} scene images`);
     }
 
     // Restaurar character sheets
@@ -531,21 +759,33 @@ Instrucciones críticas:
   }, [story, detectCharactersInScene, characterSheetOptions, selectedCharacterSheets]);
 
   // Obtener personajes con sus referencias para una escena
-  const getCharactersWithReferences = useCallback((scene: StoryScene, excludedIds: string[] = []) => {
+  // Incluye tanto los detectados automáticamente como los agregados manualmente
+  const getCharactersWithReferences = useCallback((scene: StoryScene, excludedIds: string[] = [], includedIds: string[] = []) => {
     if (!story) return [];
 
     const detected = detectCharactersInScene(scene, story.characters);
-    return detected.map(c => {
+    const detectedIds = detected.map(c => c.id);
+
+    // Agregar personajes incluidos manualmente que no fueron detectados
+    const manuallyIncluded = story.characters.filter(c =>
+      includedIds.includes(c.id) && !detectedIds.includes(c.id)
+    );
+
+    const allCharacters = [...detected, ...manuallyIncluded];
+
+    return allCharacters.map(c => {
       const options = characterSheetOptions[c.id];
       const selectedIdx = selectedCharacterSheets[c.id];
       const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
       const isExcluded = excludedIds.includes(c.id);
+      const isManuallyAdded = includedIds.includes(c.id) && !detectedIds.includes(c.id);
 
       return {
         ...c,
         referenceImage: isExcluded ? undefined : referenceImage,
         hasReference: !!referenceImage && !isExcluded,
         isExcluded,
+        isManuallyAdded,
       };
     });
   }, [story, detectCharactersInScene, characterSheetOptions, selectedCharacterSheets]);
@@ -732,24 +972,22 @@ Instrucciones críticas:
     setError(null);
 
     try {
-      // Obtener personajes excluidos para esta escena
+      // Obtener personajes excluidos e incluidos manualmente para esta escena
       const excludedIds = sceneExcludedCharacters[scene.number] || [];
+      const includedIds = sceneIncludedCharacters[scene.number] || [];
+
+      // Obtener personajes con referencias usando la misma lógica que el UI
+      const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
 
       // Incluir las imágenes de referencia (character sheets) seleccionadas
       // Solo para personajes no excluidos
-      const charactersWithReferences = story.characters
-        .filter(c => !excludedIds.includes(c.id))
-        .map(c => {
-          const options = characterSheetOptions[c.id];
-          const selectedIdx = selectedCharacterSheets[c.id];
-          const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-
-          return {
-            name: c.name,
-            visualDescription: c.visualDescription,
-            referenceImage: referenceImage,
-          };
-        });
+      const charactersWithReferences = charactersWithRefs
+        .filter(c => !c.isExcluded)
+        .map(c => ({
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage: c.referenceImage,
+        }));
 
       // Usar prompt personalizado si se proporciona
       const sceneData = customPrompt
@@ -788,7 +1026,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, getCharactersWithReferences]);
 
   // Generar portada
   const handleGenerateCover = useCallback(async () => {
@@ -867,6 +1105,327 @@ Instrucciones críticas:
       setGeneratingEnd(false);
     }
   }, [story]);
+
+  // Subir imagen de personaje manualmente
+  const handleUploadCharacterImage = useCallback((characterId: string, base64: string) => {
+    setCharacterSheetOptions(prev => {
+      const existing = prev[characterId] || [];
+      const newOptions = [...existing, base64];
+      // Auto-seleccionar la imagen subida (última en el array)
+      setSelectedCharacterSheets(prevSelected => ({
+        ...prevSelected,
+        [characterId]: newOptions.length - 1
+      }));
+      return { ...prev, [characterId]: newOptions };
+    });
+  }, []);
+
+  // Subir imagen de escena manualmente
+  const handleUploadSceneImage = useCallback((sceneNumber: number, base64: string) => {
+    setSceneImageOptions(prev => {
+      const existing = prev[sceneNumber] || [];
+      const newOptions = [...existing, base64];
+      // Auto-seleccionar la imagen subida
+      setSelectedSceneImages(prevSelected => ({
+        ...prevSelected,
+        [sceneNumber]: newOptions.length - 1
+      }));
+      return { ...prev, [sceneNumber]: newOptions };
+    });
+  }, []);
+
+  // Subir portada manualmente
+  const handleUploadCover = useCallback((base64: string) => {
+    setCoverOptions(prev => {
+      const newOptions = [...prev, base64];
+      // Auto-seleccionar la imagen subida
+      setSelectedCover(newOptions.length - 1);
+      return newOptions;
+    });
+  }, []);
+
+  // Subir imagen final manualmente
+  const handleUploadEnd = useCallback((base64: string) => {
+    setEndOptions(prev => {
+      const newOptions = [...prev, base64];
+      // Auto-seleccionar la imagen subida
+      setSelectedEnd(newOptions.length - 1);
+      return newOptions;
+    });
+  }, []);
+
+  // Guardar imagen de personaje seleccionada a Supabase
+  const handleSaveCharacterImage = useCallback(async (characterId: string) => {
+    const selectedIdx = selectedCharacterSheets[characterId];
+    const options = characterSheetOptions[characterId];
+    if (selectedIdx === undefined || !options || !options[selectedIdx]) return;
+
+    setSavingCharacter(characterId);
+    setSavedCharacterMessage(prev => ({ ...prev, [characterId]: null }));
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No autenticado');
+
+      const selectedImage = options[selectedIdx];
+
+      // Si ya es una URL (no base64), ya está guardada - pero igual reducir a solo esta imagen
+      if (selectedImage.startsWith('http')) {
+        // Mantener SOLO esta imagen, eliminar las demás
+        setCharacterSheetOptions(prev => ({
+          ...prev,
+          [characterId]: [selectedImage]
+        }));
+        setSelectedCharacterSheets(prev => ({
+          ...prev,
+          [characterId]: 0
+        }));
+        setSavedCharacterMessage(prev => ({ ...prev, [characterId]: 'Imagen ya guardada' }));
+        setTimeout(() => setSavedCharacterMessage(prev => ({ ...prev, [characterId]: null })), 3000);
+        return;
+      }
+
+      // Subir solo la imagen seleccionada
+      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+      const byteCharacters = atob(selectedImage);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+
+      const path = `${user.id}/${context.id}/characters/${characterId}_selected.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .upload(path, blob, { contentType: mimeType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Obtener URL firmada y actualizar el estado
+      const { data: urlData } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .createSignedUrl(path, 86400);
+
+      if (urlData?.signedUrl) {
+        // Mantener SOLO la imagen guardada, eliminar las demás opciones
+        setCharacterSheetOptions(prev => ({
+          ...prev,
+          [characterId]: [urlData.signedUrl]
+        }));
+        // Actualizar el índice de selección a 0 ya que ahora solo hay una imagen
+        setSelectedCharacterSheets(prev => ({
+          ...prev,
+          [characterId]: 0
+        }));
+      }
+
+      setSavedCharacterMessage(prev => ({ ...prev, [characterId]: 'Imagen guardada exitosamente' }));
+      setTimeout(() => setSavedCharacterMessage(prev => ({ ...prev, [characterId]: null })), 3000);
+    } catch (err) {
+      console.error('Error saving character image:', err);
+      setSavedCharacterMessage(prev => ({ ...prev, [characterId]: 'Error al guardar' }));
+    } finally {
+      setSavingCharacter(null);
+    }
+  }, [characterSheetOptions, selectedCharacterSheets, context.id]);
+
+  // Guardar imagen de escena seleccionada a Supabase
+  const handleSaveSceneImage = useCallback(async (sceneNumber: number) => {
+    const selectedIdx = selectedSceneImages[sceneNumber];
+    const options = sceneImageOptions[sceneNumber];
+    if (selectedIdx === undefined || !options || !options[selectedIdx]) return;
+
+    setSavingScene(sceneNumber);
+    setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: null }));
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No autenticado');
+
+      const selectedImage = options[selectedIdx];
+
+      // Si ya es URL, mantener solo esta imagen
+      if (selectedImage.startsWith('http')) {
+        setSceneImageOptions(prev => ({
+          ...prev,
+          [sceneNumber]: [selectedImage]
+        }));
+        setSelectedSceneImages(prev => ({
+          ...prev,
+          [sceneNumber]: 0
+        }));
+        setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Imagen ya guardada' }));
+        setTimeout(() => setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: null })), 3000);
+        return;
+      }
+
+      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+      const byteCharacters = atob(selectedImage);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+
+      const path = `${user.id}/${context.id}/scenes/scene${sceneNumber}_selected.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .upload(path, blob, { contentType: mimeType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .createSignedUrl(path, 86400);
+
+      if (urlData?.signedUrl) {
+        // Mantener SOLO la imagen guardada, eliminar las demás opciones
+        setSceneImageOptions(prev => ({
+          ...prev,
+          [sceneNumber]: [urlData.signedUrl]
+        }));
+        // Actualizar el índice de selección a 0 ya que ahora solo hay una imagen
+        setSelectedSceneImages(prev => ({
+          ...prev,
+          [sceneNumber]: 0
+        }));
+      }
+
+      setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Imagen guardada exitosamente' }));
+      setTimeout(() => setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: null })), 3000);
+    } catch (err) {
+      console.error('Error saving scene image:', err);
+      setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Error al guardar' }));
+    } finally {
+      setSavingScene(null);
+    }
+  }, [sceneImageOptions, selectedSceneImages, context.id]);
+
+  // Guardar portada seleccionada a Supabase
+  const handleSaveCover = useCallback(async () => {
+    if (selectedCover === null || !coverOptions[selectedCover]) return;
+
+    setSavingCover(true);
+    setSavedCoverMessage(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No autenticado');
+
+      const selectedImage = coverOptions[selectedCover];
+
+      // Si ya es URL, mantener solo esta imagen
+      if (selectedImage.startsWith('http')) {
+        setCoverOptions([selectedImage]);
+        setSelectedCover(0);
+        setSavedCoverMessage('Portada ya guardada');
+        setTimeout(() => setSavedCoverMessage(null), 3000);
+        return;
+      }
+
+      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+      const byteCharacters = atob(selectedImage);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+
+      const path = `${user.id}/${context.id}/cover/cover_selected.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .upload(path, blob, { contentType: mimeType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .createSignedUrl(path, 86400);
+
+      if (urlData?.signedUrl) {
+        // Mantener SOLO la imagen guardada, eliminar las demás opciones
+        setCoverOptions([urlData.signedUrl]);
+        setSelectedCover(0);
+      }
+
+      setSavedCoverMessage('Portada guardada exitosamente');
+      setTimeout(() => setSavedCoverMessage(null), 3000);
+    } catch (err) {
+      console.error('Error saving cover:', err);
+      setSavedCoverMessage('Error al guardar');
+    } finally {
+      setSavingCover(false);
+    }
+  }, [coverOptions, selectedCover, context.id]);
+
+  // Guardar imagen final seleccionada a Supabase
+  const handleSaveEnd = useCallback(async () => {
+    if (selectedEnd === null || !endOptions[selectedEnd]) return;
+
+    setSavingEnd(true);
+    setSavedEndMessage(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No autenticado');
+
+      const selectedImage = endOptions[selectedEnd];
+
+      // Si ya es URL, mantener solo esta imagen
+      if (selectedImage.startsWith('http')) {
+        setEndOptions([selectedImage]);
+        setSelectedEnd(0);
+        setSavedEndMessage('Imagen ya guardada');
+        setTimeout(() => setSavedEndMessage(null), 3000);
+        return;
+      }
+
+      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+      const byteCharacters = atob(selectedImage);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+
+      const path = `${user.id}/${context.id}/end/end_selected.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .upload(path, blob, { contentType: mimeType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .createSignedUrl(path, 86400);
+
+      if (urlData?.signedUrl) {
+        // Mantener SOLO la imagen guardada, eliminar las demás opciones
+        setEndOptions([urlData.signedUrl]);
+        setSelectedEnd(0);
+      }
+
+      setSavedEndMessage('Imagen guardada exitosamente');
+      setTimeout(() => setSavedEndMessage(null), 3000);
+    } catch (err) {
+      console.error('Error saving end image:', err);
+      setSavedEndMessage('Error al guardar');
+    } finally {
+      setSavingEnd(false);
+    }
+  }, [endOptions, selectedEnd, context.id]);
 
   // Aprobar cuento y avanzar a personajes
   const handleApproveStory = useCallback(() => {
@@ -984,6 +1543,12 @@ Instrucciones críticas:
     setSelectedCover(null);
     setEndOptions([]);
     setSelectedEnd(null);
+  }, []);
+
+  // Editar cuento existente (sin borrar)
+  const handleEditStory = useCallback(() => {
+    setConfirmed(false);
+    setCurrentStep('scenes'); // Ir a escenas para poder editar imágenes
   }, []);
 
   // Renderizar paso actual
@@ -1457,7 +2022,7 @@ Instrucciones críticas:
                   {character.role === 'protagonist' ? 'Protagonista' : 'Secundario'}
                 </span>
               </div>
-              {!characterSheetOptions[character.id]?.length && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index)}
@@ -1467,11 +2032,18 @@ Instrucciones críticas:
                 >
                   {generatingCharacterIndex === index ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : characterSheetOptions[character.id]?.length ? (
+                    <><RefreshCw size={14} /> Regenerar</>
                   ) : (
                     <><Camera size={14} /> Generar</>
                   )}
                 </button>
-              )}
+                <ImageUploadButton
+                  onUpload={(base64) => handleUploadCharacterImage(character.id, base64)}
+                  label="imagen"
+                  disabled={generatingCharacterIndex !== null}
+                />
+              </div>
             </div>
 
             <p className="text-xs mb-3" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
@@ -1483,8 +2055,11 @@ Instrucciones críticas:
                 options={characterSheetOptions[character.id]}
                 selectedIndex={selectedCharacterSheets[character.id] ?? null}
                 onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
+                onSave={() => handleSaveCharacterImage(character.id)}
                 onRegenerate={() => handleGenerateCharacterSheet(character, index)}
                 isGenerating={generatingCharacterIndex === index}
+                isSaving={savingCharacter === character.id}
+                savedMessage={savedCharacterMessage[character.id]}
                 label="character sheet"
               />
             )}
@@ -1561,6 +2136,26 @@ Instrucciones críticas:
       });
     };
 
+    // Agregar un personaje manualmente a las referencias de una escena
+    const addCharacterToScene = (sceneNumber: number, characterId: string) => {
+      setSceneIncludedCharacters(prev => {
+        const currentIncluded = prev[sceneNumber] || [];
+        if (!currentIncluded.includes(characterId)) {
+          return { ...prev, [sceneNumber]: [...currentIncluded, characterId] };
+        }
+        return prev;
+      });
+      setShowCharacterPicker(null);
+    };
+
+    // Remover un personaje agregado manualmente
+    const removeManualCharacter = (sceneNumber: number, characterId: string) => {
+      setSceneIncludedCharacters(prev => {
+        const currentIncluded = prev[sceneNumber] || [];
+        return { ...prev, [sceneNumber]: currentIncluded.filter(id => id !== characterId) };
+      });
+    };
+
     return (
       <div className="space-y-4">
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
@@ -1573,8 +2168,14 @@ Instrucciones críticas:
           {story.scenes.map((scene) => {
             const isExpanded = expandedScenePrompts[scene.number];
             const excludedIds = sceneExcludedCharacters[scene.number] || [];
-            const charactersWithRefs = getCharactersWithReferences(scene, excludedIds);
+            const includedIds = sceneIncludedCharacters[scene.number] || [];
+            const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
             const hasAnyReference = charactersWithRefs.some(c => c.hasReference);
+
+            // Personajes disponibles para agregar (que no están ya en la lista)
+            const availableToAdd = story.characters.filter(c =>
+              !charactersWithRefs.some(ref => ref.id === c.id)
+            );
 
             return (
               <div key={scene.number} className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
@@ -1624,6 +2225,12 @@ Instrucciones críticas:
                           <><Camera size={14} /> Generar</>
                         )}
                       </button>
+                      {/* Botón subir imagen */}
+                      <ImageUploadButton
+                        onUpload={(base64) => handleUploadSceneImage(scene.number, base64)}
+                        label="imagen"
+                        disabled={generatingSceneIndex !== null}
+                      />
                     </div>
                   </div>
 
@@ -1667,7 +2274,7 @@ Instrucciones críticas:
                               {/* Imagen de referencia o placeholder */}
                               {char.referenceImage && !char.isExcluded ? (
                                 <img
-                                  src={`data:image/png;base64,${char.referenceImage}`}
+                                  src={char.referenceImage.startsWith('http') ? char.referenceImage : `data:image/png;base64,${char.referenceImage}`}
                                   alt={char.name}
                                   className="w-full aspect-square object-cover"
                                 />
@@ -1691,25 +2298,43 @@ Instrucciones críticas:
                                 {char.name}
                               </div>
 
-                              {/* Botón para excluir/incluir */}
+                              {/* Botón para excluir/incluir o remover si es agregado manualmente */}
                               <button
                                 type="button"
-                                onClick={() => toggleCharacterExclusion(scene.number, char.id)}
+                                onClick={() => {
+                                  if (char.isManuallyAdded) {
+                                    removeManualCharacter(scene.number, char.id);
+                                  } else {
+                                    toggleCharacterExclusion(scene.number, char.id);
+                                  }
+                                }}
                                 className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors"
                                 style={{
-                                  backgroundColor: char.isExcluded ? '#EF4444' : CASA_BRAND.colors.primary.amber,
+                                  backgroundColor: char.isManuallyAdded ? '#3B82F6' : char.isExcluded ? '#EF4444' : CASA_BRAND.colors.primary.amber,
                                 }}
-                                title={char.isExcluded ? 'Incluir en referencias' : 'Excluir de referencias'}
+                                title={char.isManuallyAdded ? 'Remover personaje agregado' : char.isExcluded ? 'Incluir en referencias' : 'Excluir de referencias'}
                               >
-                                {char.isExcluded ? (
+                                {char.isManuallyAdded ? (
+                                  <X size={14} color="white" />
+                                ) : char.isExcluded ? (
                                   <Plus size={14} color="white" />
                                 ) : (
                                   <X size={14} color="white" />
                                 )}
                               </button>
 
+                              {/* Indicador si es agregado manualmente */}
+                              {char.isManuallyAdded && (
+                                <div
+                                  className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs"
+                                  style={{ backgroundColor: '#3B82F6', color: 'white' }}
+                                >
+                                  Agregado
+                                </div>
+                              )}
+
                               {/* Indicador si no tiene referencia */}
-                              {!char.referenceImage && !char.isExcluded && (
+                              {!char.referenceImage && !char.isExcluded && !char.isManuallyAdded && (
                                 <div
                                   className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs"
                                   style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}
@@ -1719,6 +2344,73 @@ Instrucciones críticas:
                               )}
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {/* Botón para agregar personaje */}
+                      {availableToAdd.length > 0 && (
+                        <div className="mt-3 relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowCharacterPicker(showCharacterPicker === scene.number ? null : scene.number)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors border"
+                            style={{
+                              borderColor: CASA_BRAND.colors.secondary.grayLight,
+                              color: CASA_BRAND.colors.secondary.grayDark,
+                              backgroundColor: CASA_BRAND.colors.primary.white,
+                            }}
+                          >
+                            <Plus size={12} />
+                            Agregar referencia ({availableToAdd.length} disponibles)
+                          </button>
+
+                          {/* Dropdown de personajes disponibles */}
+                          {showCharacterPicker === scene.number && (
+                            <div
+                              className="absolute top-full left-0 mt-1 z-10 rounded-lg shadow-lg border overflow-hidden"
+                              style={{
+                                backgroundColor: CASA_BRAND.colors.primary.white,
+                                borderColor: CASA_BRAND.colors.secondary.grayLight,
+                                minWidth: '200px',
+                              }}
+                            >
+                              {availableToAdd.map(char => {
+                                const charOptions = characterSheetOptions[char.id];
+                                const charSelectedIdx = selectedCharacterSheets[char.id];
+                                const charImage = charOptions && charSelectedIdx !== undefined ? charOptions[charSelectedIdx] : null;
+
+                                return (
+                                  <button
+                                    key={char.id}
+                                    type="button"
+                                    onClick={() => addCharacterToScene(scene.number, char.id)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors"
+                                  >
+                                    {charImage ? (
+                                      <img
+                                        src={charImage.startsWith('http') ? charImage : `data:image/png;base64,${charImage}`}
+                                        alt={char.name}
+                                        className="w-8 h-8 rounded object-cover"
+                                      />
+                                    ) : (
+                                      <div
+                                        className="w-8 h-8 rounded flex items-center justify-center"
+                                        style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight }}
+                                      >
+                                        <User size={14} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                                      </div>
+                                    )}
+                                    <span style={{ color: CASA_BRAND.colors.primary.black }}>{char.name}</span>
+                                    {!charImage && (
+                                      <span className="text-xs px-1 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>
+                                        Sin imagen
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1786,8 +2478,11 @@ Instrucciones críticas:
                       options={sceneImageOptions[scene.number]}
                       selectedIndex={selectedSceneImages[scene.number] ?? null}
                       onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
+                      onSave={() => handleSaveSceneImage(scene.number)}
                       onRegenerate={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
                       isGenerating={generatingSceneIndex === scene.number}
+                      isSaving={savingScene === scene.number}
+                      savedMessage={savedSceneMessage[scene.number]}
                       label={`escena ${scene.number}`}
                     />
                   </div>
@@ -1852,7 +2547,7 @@ Instrucciones críticas:
               Portada
               {selectedCover !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
             </h5>
-            {coverOptions.length === 0 && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleGenerateCover}
@@ -1860,9 +2555,20 @@ Instrucciones críticas:
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                 style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
               >
-                {generatingCover ? <><Loader2 size={14} className="animate-spin" /> Generando...</> : <><Camera size={14} /> Generar portada</>}
+                {generatingCover ? (
+                  <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                ) : coverOptions.length > 0 ? (
+                  <><RefreshCw size={14} /> Regenerar</>
+                ) : (
+                  <><Camera size={14} /> Generar portada</>
+                )}
               </button>
-            )}
+              <ImageUploadButton
+                onUpload={handleUploadCover}
+                label="portada"
+                disabled={generatingCover}
+              />
+            </div>
           </div>
 
           {coverOptions.length > 0 ? (
@@ -1870,13 +2576,16 @@ Instrucciones críticas:
               options={coverOptions}
               selectedIndex={selectedCover}
               onSelect={setSelectedCover}
+              onSave={handleSaveCover}
               onRegenerate={handleGenerateCover}
               isGenerating={generatingCover}
+              isSaving={savingCover}
+              savedMessage={savedCoverMessage}
               label="portada"
             />
           ) : (
             <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
-              Genera opciones de portada para seleccionar
+              Genera o sube opciones de portada para seleccionar
             </div>
           )}
         </div>
@@ -1889,7 +2598,7 @@ Instrucciones críticas:
               Imagen final "Fin"
               {selectedEnd !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
             </h5>
-            {endOptions.length === 0 && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleGenerateEnd}
@@ -1897,9 +2606,20 @@ Instrucciones críticas:
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                 style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
               >
-                {generatingEnd ? <><Loader2 size={14} className="animate-spin" /> Generando...</> : <><Camera size={14} /> Generar "Fin"</>}
+                {generatingEnd ? (
+                  <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                ) : endOptions.length > 0 ? (
+                  <><RefreshCw size={14} /> Regenerar</>
+                ) : (
+                  <><Camera size={14} /> Generar "Fin"</>
+                )}
               </button>
-            )}
+              <ImageUploadButton
+                onUpload={handleUploadEnd}
+                label="imagen"
+                disabled={generatingEnd}
+              />
+            </div>
           </div>
 
           {endOptions.length > 0 ? (
@@ -1907,13 +2627,16 @@ Instrucciones críticas:
               options={endOptions}
               selectedIndex={selectedEnd}
               onSelect={setSelectedEnd}
+              onSave={handleSaveEnd}
               onRegenerate={handleGenerateEnd}
               isGenerating={generatingEnd}
+              isSaving={savingEnd}
+              savedMessage={savedEndMessage}
               label="imagen final"
             />
           ) : (
             <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
-              Genera opciones de imagen final para seleccionar
+              Genera o sube opciones de imagen final para seleccionar
             </div>
           )}
         </div>
@@ -1972,26 +2695,26 @@ Instrucciones críticas:
         <div className="grid grid-cols-4 gap-2">
           {story.coverImageUrl && (
             <div className="relative rounded-lg overflow-hidden">
-              <img src={`data:image/png;base64,${story.coverImageUrl}`} alt="Portada" className="w-full aspect-[4/3] object-cover" />
+              <img src={story.coverImageUrl.startsWith('http') ? story.coverImageUrl : `data:image/png;base64,${story.coverImageUrl}`} alt="Portada" className="w-full aspect-[4/3] object-cover" />
               <span className="absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded bg-black/50 text-white">Portada</span>
             </div>
           )}
           {story.scenes.slice(0, 2).map(scene => scene.selectedImageUrl && (
             <div key={scene.number} className="relative rounded-lg overflow-hidden">
-              <img src={`data:image/png;base64,${scene.selectedImageUrl}`} alt={`Escena ${scene.number}`} className="w-full aspect-[4/3] object-cover" />
+              <img src={scene.selectedImageUrl.startsWith('http') ? scene.selectedImageUrl : `data:image/png;base64,${scene.selectedImageUrl}`} alt={`Escena ${scene.number}`} className="w-full aspect-[4/3] object-cover" />
               <span className="absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded bg-black/50 text-white">Esc. {scene.number}</span>
             </div>
           ))}
           {story.endImageUrl && (
             <div className="relative rounded-lg overflow-hidden">
-              <img src={`data:image/png;base64,${story.endImageUrl}`} alt="Fin" className="w-full aspect-[4/3] object-cover" />
+              <img src={story.endImageUrl.startsWith('http') ? story.endImageUrl : `data:image/png;base64,${story.endImageUrl}`} alt="Fin" className="w-full aspect-[4/3] object-cover" />
               <span className="absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded bg-black/50 text-white">Fin</span>
             </div>
           )}
         </div>
 
         {/* Botones */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             type="button"
             onClick={handleRegenerate}
@@ -2000,6 +2723,15 @@ Instrucciones críticas:
           >
             <RefreshCw size={18} />
             Crear nuevo cuento
+          </button>
+          <button
+            type="button"
+            onClick={handleEditStory}
+            className="flex items-center gap-2 px-4 py-3 rounded-lg transition-colors border"
+            style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
+          >
+            <Edit3 size={18} />
+            Editar cuento
           </button>
           {onNavigateToFullEditor && (
             <button
@@ -2030,8 +2762,8 @@ Instrucciones críticas:
 
   return (
     <div className="space-y-6">
-      {/* Modal de recuperación de borrador */}
-      {showRecoveryPrompt && draft && (
+      {/* Modal de recuperación de borrador - no mostrar si el cuento ya está completo */}
+      {showRecoveryPrompt && draft && !confirmed && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={handleDeclineRecovery}
