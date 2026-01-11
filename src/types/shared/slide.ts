@@ -46,6 +46,7 @@ export interface Slide {
     groupTotal: number;          // Total de slides en el grupo
     batchId?: string;            // ID del batch de gráficos (para anuncios)
   };
+  notes?: string;                // Notas del presentador para este slide
 }
 
 /**

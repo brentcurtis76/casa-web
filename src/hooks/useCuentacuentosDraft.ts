@@ -50,6 +50,30 @@ async function uploadImage(
   base64Data: string
 ): Promise<string | null> {
   try {
+    // Si ya es una URL, no necesita subirse - extraer el path si es de nuestro bucket
+    if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
+      // Es una URL - verificar si es de nuestro bucket de Supabase
+      const bucketUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object`;
+      if (base64Data.includes(bucketUrl) || base64Data.includes('/storage/v1/')) {
+        // Extraer el path del storage de la URL
+        const match = base64Data.match(/cuentacuentos-drafts\/([^?]+)/);
+        if (match) {
+          return match[1]; // Retornar solo el path relativo
+        }
+      }
+      // Es una URL externa - no podemos procesarla, retornar null
+      console.log('[useCuentacuentosDraft] Skipping external URL:', base64Data.slice(0, 50));
+      return null;
+    }
+
+    // Si es un data URL, extraer el base64
+    if (base64Data.startsWith('data:')) {
+      const parts = base64Data.split(',');
+      if (parts.length > 1) {
+        base64Data = parts[1];
+      }
+    }
+
     // Detectar tipo de imagen
     const mimeType = base64Data.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
     const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
@@ -86,7 +110,25 @@ async function uploadImage(
 }
 
 /**
+ * Obtiene una URL firmada de una imagen en Supabase Storage
+ * Las URLs firmadas funcionan con buckets privados y expiran después de un tiempo
+ * Usamos 24 horas (86400 segundos) de expiración
+ */
+async function getSignedUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .createSignedUrl(path, 86400); // 24 horas de expiración
+
+  if (error || !data?.signedUrl) {
+    console.error('[useCuentacuentosDraft] Error creating signed URL:', error);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+/**
  * Descarga una imagen de Supabase Storage y la convierte a base64
+ * @deprecated Usar getPublicUrl en su lugar para mejor rendimiento
  */
 async function downloadImage(path: string): Promise<string | null> {
   try {
@@ -167,7 +209,9 @@ async function saveImagesToStorage(
 }
 
 /**
- * Carga todas las imágenes de Storage a base64
+ * Carga todas las imágenes de Storage como URLs firmadas (no base64)
+ * Esto es mucho más rápido que descargar y convertir a base64
+ * Las URLs firmadas funcionan con buckets privados
  */
 async function loadImagesFromStorage(
   paths: {
@@ -187,36 +231,28 @@ async function loadImagesFromStorage(
   const coverOptions: string[] = [];
   const endOptions: string[] = [];
 
-  // Cargar character sheets
+  // Generar URLs firmadas para character sheets (en paralelo)
   for (const [charId, pathList] of Object.entries(paths.characterSheetPaths || {})) {
-    characterSheetOptions[charId] = [];
-    for (const path of pathList) {
-      const base64 = await downloadImage(path);
-      if (base64) characterSheetOptions[charId].push(base64);
-    }
+    const urls = await Promise.all(pathList.map(path => getSignedUrl(path)));
+    characterSheetOptions[charId] = urls.filter((url): url is string => url !== null);
   }
 
-  // Cargar scene images
+  // Generar URLs firmadas para scene images (en paralelo)
   for (const [sceneNum, pathList] of Object.entries(paths.sceneImagePaths || {})) {
     const num = Number(sceneNum);
-    sceneImageOptions[num] = [];
-    for (const path of pathList) {
-      const base64 = await downloadImage(path);
-      if (base64) sceneImageOptions[num].push(base64);
-    }
+    const urls = await Promise.all(pathList.map(path => getSignedUrl(path)));
+    sceneImageOptions[num] = urls.filter((url): url is string => url !== null);
   }
 
-  // Cargar cover options
-  for (const path of paths.coverPaths || []) {
-    const base64 = await downloadImage(path);
-    if (base64) coverOptions.push(base64);
-  }
+  // Generar URLs firmadas para cover options (en paralelo)
+  const coverUrls = await Promise.all((paths.coverPaths || []).map(path => getSignedUrl(path)));
+  coverOptions.push(...coverUrls.filter((url): url is string => url !== null));
 
-  // Cargar end options
-  for (const path of paths.endPaths || []) {
-    const base64 = await downloadImage(path);
-    if (base64) endOptions.push(base64);
-  }
+  // Generar URLs firmadas para end options (en paralelo)
+  const endUrls = await Promise.all((paths.endPaths || []).map(path => getSignedUrl(path)));
+  endOptions.push(...endUrls.filter((url): url is string => url !== null));
+
+  console.log(`[useCuentacuentosDraft] Generated signed URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
 
   return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions };
 }
@@ -232,8 +268,63 @@ async function saveDraftToSupabase(
   try {
     console.log(`[useCuentacuentosDraft] Saving draft to Supabase, step: ${draft.currentStep}`);
 
-    // Primero subir las imágenes a Storage
-    const imagePaths = await saveImagesToStorage(userId, liturgyId, draft);
+    // Primero obtener los paths existentes para no sobrescribirlos
+    const { data: existingDraft } = await supabase
+      .from('cuentacuentos_drafts')
+      .select('image_paths')
+      .eq('liturgia_id', liturgyId)
+      .eq('user_id', userId)
+      .single();
+
+    const existingPaths = (existingDraft?.image_paths as {
+      characterSheetPaths?: Record<string, string[]>;
+      sceneImagePaths?: Record<number, string[]>;
+      coverPaths?: string[];
+      endPaths?: string[];
+    }) || {
+      characterSheetPaths: {},
+      sceneImagePaths: {},
+      coverPaths: [],
+      endPaths: [],
+    };
+
+    // Subir SOLO las imágenes nuevas (las que están en memoria)
+    const newImagePaths = await saveImagesToStorage(userId, liturgyId, draft);
+
+    // Merge: mantener paths existentes y agregar SOLO nuevos que tengan contenido
+    // Filtrar newImagePaths para excluir arrays vacíos que sobrescribirían los existentes
+    const filteredNewScenePaths: Record<string, string[]> = {};
+    for (const [key, paths] of Object.entries(newImagePaths.sceneImagePaths)) {
+      if (paths && paths.length > 0) {
+        filteredNewScenePaths[key] = paths;
+      }
+    }
+
+    const filteredNewCharacterPaths: Record<string, string[]> = {};
+    for (const [key, paths] of Object.entries(newImagePaths.characterSheetPaths)) {
+      if (paths && paths.length > 0) {
+        filteredNewCharacterPaths[key] = paths;
+      }
+    }
+
+    const mergedPaths = {
+      characterSheetPaths: {
+        ...existingPaths.characterSheetPaths,
+        ...filteredNewCharacterPaths,
+      },
+      sceneImagePaths: {
+        ...existingPaths.sceneImagePaths,
+        ...filteredNewScenePaths,
+      },
+      coverPaths: newImagePaths.coverPaths.length > 0
+        ? newImagePaths.coverPaths
+        : existingPaths.coverPaths || [],
+      endPaths: newImagePaths.endPaths.length > 0
+        ? newImagePaths.endPaths
+        : existingPaths.endPaths || [],
+    };
+
+    console.log(`[useCuentacuentosDraft] Merged paths - existing scenes: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, new scenes: ${Object.keys(newImagePaths.sceneImagePaths).length}, total: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
 
     // Preparar story sin imágenes base64 (limpiar characterSheetUrl y selectedImageUrl)
     const cleanStory = draft.story ? {
@@ -267,8 +358,8 @@ async function saveDraftToSupabase(
         selected_scene_images: draft.selectedSceneImages,
         selected_cover: draft.selectedCover,
         selected_end: draft.selectedEnd,
-        // Guardar los paths de las imágenes en config para poder recuperarlas
-        image_paths: imagePaths,
+        // Guardar los paths MERGED para no perder los existentes
+        image_paths: mergedPaths,
       } as Record<string, unknown>, {
         onConflict: 'liturgia_id,user_id',
       });
@@ -278,7 +369,7 @@ async function saveDraftToSupabase(
       return false;
     }
 
-    console.log(`[useCuentacuentosDraft] Draft saved successfully, scenes: ${Object.keys(draft.sceneImageOptions || {}).length}`);
+    console.log(`[useCuentacuentosDraft] Draft saved successfully, total scene paths: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
     return true;
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error saving draft:', err);
@@ -324,9 +415,9 @@ async function loadDraftFromSupabase(
     };
 
     if (imagePaths) {
-      console.log('[useCuentacuentosDraft] Loading images from storage...');
+      console.log('[useCuentacuentosDraft] Loading images from storage as signed URLs...');
       imageOptions = await loadImagesFromStorage(imagePaths);
-      console.log(`[useCuentacuentosDraft] Loaded ${Object.keys(imageOptions.sceneImageOptions).length} scene image sets`);
+      console.log(`[useCuentacuentosDraft] Loaded ${Object.keys(imageOptions.sceneImageOptions).length} scene image sets as URLs`);
     }
 
     const draft: CuentacuentosDraftFull = {
@@ -437,6 +528,24 @@ export function useCuentacuentosDraft({
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSavingRef = useRef(false);
 
+  // Refs para evitar ciclos de dependencia - mantienen valores actuales sin causar re-renders
+  const draftRef = useRef<CuentacuentosDraftFull | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const liturgyIdRef = useRef(liturgyId);
+
+  // Mantener refs sincronizadas con el estado
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
+
+  useEffect(() => {
+    liturgyIdRef.current = liturgyId;
+  }, [liturgyId]);
+
   // Obtener usuario actual
   useEffect(() => {
     const getUser = async () => {
@@ -475,9 +584,14 @@ export function useCuentacuentosDraft({
     };
   }, [liturgyId, userId]);
 
-  // Guardar borrador con debounce
+  // Guardar borrador con debounce - usa refs para evitar ciclos de dependencia
+  // IMPORTANTE: Esta función tiene identidad estable (no cambia entre renders)
   const saveDraft = useCallback((data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => {
-    if (!userId) return;
+    // Usar refs para acceder a valores actuales sin crear dependencias
+    const currentUserId = userIdRef.current;
+    const currentLiturgyId = liturgyIdRef.current;
+
+    if (!currentUserId) return;
 
     // Acumular datos pendientes
     pendingDataRef.current = { ...pendingDataRef.current, ...data };
@@ -493,8 +607,11 @@ export function useCuentacuentosDraft({
         isSavingRef.current = true;
         setIsSaving(true);
 
+        // Usar draftRef.current para obtener el draft actual sin crear dependencia
+        const currentDraft = draftRef.current;
+
         const fullDraft: CuentacuentosDraftFull = {
-          liturgyId,
+          liturgyId: currentLiturgyId,
           currentStep: 'config',
           config: {
             location: '',
@@ -513,14 +630,14 @@ export function useCuentacuentosDraft({
           selectedCover: null,
           endOptions: [],
           selectedEnd: null,
-          ...draft,
+          ...currentDraft,
           ...pendingDataRef.current,
           savedAt: new Date().toISOString(),
           version: 1,
         };
 
         try {
-          const success = await saveDraftToSupabase(userId, liturgyId, fullDraft);
+          const success = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
           if (success) {
             setDraft(fullDraft);
             setLastSavedAt(fullDraft.savedAt);
@@ -534,7 +651,7 @@ export function useCuentacuentosDraft({
         }
       }
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
-  }, [liturgyId, draft, userId]);
+  }, []); // Sin dependencias - usa refs para valores actuales
 
   // Cargar borrador manualmente
   const loadDraftAsync = useCallback(async () => {

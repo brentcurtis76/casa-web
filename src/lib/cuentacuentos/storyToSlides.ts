@@ -32,6 +32,7 @@ interface StorySlide extends Omit<Slide, 'type'> {
     imageUrl?: string;
     narratorText?: string;
   };
+  notes?: string; // Notas del presentador (texto de la escena para el narrador)
 }
 
 /**
@@ -54,13 +55,13 @@ export function storyToSlides(story: Story): StorySlideGroup {
   const totalSlides = 1 + story.scenes.length + 1;
   let order = 1;
 
-  // Slide de portada
+  // Slide de portada - SOLO IMAGEN
   if (story.coverImageUrl) {
     slides.push({
       id: generateId(),
       type: 'story-cover',
       content: {
-        primary: story.title,
+        primary: '', // Sin texto visible - la portada es solo imagen
         imageUrl: story.coverImageUrl,
       },
       style: {
@@ -74,6 +75,7 @@ export function storyToSlides(story: Story): StorySlideGroup {
         order: order++,
         groupTotal: totalSlides,
       },
+      notes: `📖 ${story.title}\n\nComienza el cuento...`,
     });
   }
 
@@ -99,17 +101,18 @@ export function storyToSlides(story: Story): StorySlideGroup {
           order: order++,
           groupTotal: totalSlides,
         },
+        notes: scene.text, // Texto de la escena como nota del presentador
       });
     }
   });
 
-  // Slide final
+  // Slide final - SOLO IMAGEN (el "Fin" está en la imagen generada)
   if (story.endImageUrl) {
     slides.push({
       id: generateId(),
       type: 'story-end',
       content: {
-        primary: 'Fin',
+        primary: '', // Sin texto visible - la imagen ya tiene "Fin"
         imageUrl: story.endImageUrl,
       },
       style: {
@@ -123,6 +126,7 @@ export function storyToSlides(story: Story): StorySlideGroup {
         order: order++,
         groupTotal: totalSlides,
       },
+      notes: '🎬 Fin del cuento',
     });
   }
 
@@ -147,12 +151,12 @@ export function createPreviewSlideGroup(story: Story): StorySlideGroup {
   const totalSlides = 1 + story.scenes.length + 1;
   let order = 1;
 
-  // Slide de portada (placeholder si no hay imagen)
+  // Slide de portada - SOLO IMAGEN (el título va en la imagen generada)
   slides.push({
     id: generateId(),
     type: 'story-cover',
     content: {
-      primary: story.title,
+      primary: '', // Sin texto visible - la portada es solo imagen
       imageUrl: story.coverImageUrl || undefined,
     },
     style: {
@@ -166,18 +170,18 @@ export function createPreviewSlideGroup(story: Story): StorySlideGroup {
       order: order++,
       groupTotal: totalSlides,
     },
+    notes: `📖 ${story.title}\n\nComienza el cuento...`,
   });
 
-  // Slides de escenas
+  // Slides de escenas - SOLO IMAGEN (el texto va en narratorText para el narrador)
   story.scenes.forEach((scene) => {
     slides.push({
       id: generateId(),
       type: 'story-scene',
       content: {
-        primary: `Escena ${scene.number}`,
-        secondary: scene.text,
+        primary: '', // Sin texto visible - solo imagen
         imageUrl: scene.selectedImageUrl || undefined,
-        narratorText: scene.text,
+        narratorText: scene.text, // Texto para el narrador (no se muestra en el slide)
       },
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
@@ -190,15 +194,16 @@ export function createPreviewSlideGroup(story: Story): StorySlideGroup {
         order: order++,
         groupTotal: totalSlides,
       },
+      notes: scene.text, // Texto de la escena como nota del presentador
     });
   });
 
-  // Slide final
+  // Slide final - SOLO IMAGEN
   slides.push({
     id: generateId(),
     type: 'story-end',
     content: {
-      primary: 'Fin',
+      primary: '', // Sin texto visible - la imagen ya tiene "Fin"
       imageUrl: story.endImageUrl || undefined,
     },
     style: {
@@ -212,6 +217,7 @@ export function createPreviewSlideGroup(story: Story): StorySlideGroup {
       order: order++,
       groupTotal: totalSlides,
     },
+    notes: '🎬 Fin del cuento',
   });
 
   return {

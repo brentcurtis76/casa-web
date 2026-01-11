@@ -8,9 +8,6 @@ import React from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { Slide } from '@/types/shared/slide';
 
-// Path to CASA logo
-const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
-
 interface UniversalSlideProps {
   slide: Slide;
   scale?: number;
@@ -50,6 +47,16 @@ const Separator: React.FC<{ scale?: number }> = ({ scale = 1 }) => (
 /**
  * Renderiza una portada principal
  */
+// Helper global para obtener la URL correcta de la imagen
+const getImageSrc = (url: string): string => {
+  // Si ya es una URL (http/https) o data URL, usarla directamente
+  if (url.startsWith('http') || url.startsWith('data:')) {
+    return url;
+  }
+  // Si es base64 puro, agregar el prefijo
+  return `data:image/png;base64,${url}`;
+};
+
 const renderPortadaMain = (slide: Slide, scale: number) => {
   const hasIllustration = slide.content.imageUrl;
 
@@ -62,9 +69,7 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
           style={{ opacity: 0.9 }}
         >
           <img
-            src={slide.content.imageUrl!.startsWith('data:')
-              ? slide.content.imageUrl
-              : `data:image/png;base64,${slide.content.imageUrl}`}
+            src={getImageSrc(slide.content.imageUrl!)}
             alt="Ilustración"
             style={{
               width: '100%',
@@ -74,25 +79,6 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
           />
         </div>
       )}
-
-      {/* Logo */}
-      <div
-        className="absolute"
-        style={{
-          top: `${24 * scale}px`,
-          left: `${24 * scale}px`,
-        }}
-      >
-        <img
-          src={CASA_LOGO_PATH}
-          alt="CASA Logo"
-          style={{
-            width: `${48 * scale}px`,
-            height: `${48 * scale}px`,
-            opacity: 0.8,
-          }}
-        />
-      </div>
 
       {/* Content - bottom right */}
       <div
@@ -175,9 +161,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
           style={{ opacity: 0.9 }}
         >
           <img
-            src={slide.content.imageUrl!.startsWith('data:')
-              ? slide.content.imageUrl
-              : `data:image/png;base64,${slide.content.imageUrl}`}
+            src={getImageSrc(slide.content.imageUrl!)}
             alt="Ilustración"
             style={{
               width: '100%',
@@ -187,25 +171,6 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
           />
         </div>
       )}
-
-      {/* Logo */}
-      <div
-        className="absolute"
-        style={{
-          top: `${24 * scale}px`,
-          left: `${24 * scale}px`,
-        }}
-      >
-        <img
-          src={CASA_LOGO_PATH}
-          alt="CASA Logo"
-          style={{
-            width: `${48 * scale}px`,
-            height: `${48 * scale}px`,
-            opacity: 0.8,
-          }}
-        />
-      </div>
 
       {/* Content - bottom right */}
       <div
@@ -537,6 +502,72 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
       return <div className="h-full" />;
     }
 
+    // Slides de cuentacuentos - SOLO IMAGEN, sin texto
+    if (type === 'story-cover' || type === 'story-scene' || type === 'story-end') {
+      const hasImage = slide.content.imageUrl;
+
+      if (hasImage) {
+        // Mostrar solo la imagen a pantalla completa
+        return (
+          <div className="w-full h-full">
+            <img
+              src={getImageSrc(slide.content.imageUrl!)}
+              alt={type === 'story-cover' ? 'Portada' : type === 'story-end' ? 'Fin' : 'Escena'}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+            />
+          </div>
+        );
+      } else {
+        // Placeholder cuando no hay imagen
+        return (
+          <div
+            className="flex flex-col items-center justify-center h-full"
+            style={{
+              backgroundColor: CASA_BRAND.colors.secondary.grayLight + '30',
+            }}
+          >
+            <div
+              style={{
+                width: `${64 * scale}px`,
+                height: `${64 * scale}px`,
+                borderRadius: '50%',
+                backgroundColor: CASA_BRAND.colors.secondary.grayLight,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: `${16 * scale}px`,
+              }}
+            >
+              <span style={{ fontSize: `${32 * scale}px` }}>🖼️</span>
+            </div>
+            <p
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: `${14 * scale}px`,
+                color: CASA_BRAND.colors.secondary.grayMedium,
+              }}
+            >
+              {type === 'story-cover' ? 'Portada del cuento' : type === 'story-end' ? 'Imagen final' : 'Imagen de escena'}
+            </p>
+            <p
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: `${11 * scale}px`,
+                color: CASA_BRAND.colors.secondary.grayLight,
+                marginTop: `${4 * scale}px`,
+              }}
+            >
+              (Pendiente de generar)
+            </p>
+          </div>
+        );
+      }
+    }
+
     // Default: mostrar contenido genérico
     return (
       <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
@@ -573,9 +604,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     );
   };
 
-  // Las portadas tienen su propio logo
   const isPortada = isPortadaMain || isPortadaReflexion;
-  const showLogo = !isPortada && slide.type !== 'song-title' && slide.type !== 'title';
 
   return (
     <div
@@ -588,22 +617,6 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
       }}
     >
-      {/* Logo CASA (solo para slides que no son portadas ni títulos) */}
-      {showLogo && (
-        <img
-          src={CASA_LOGO_PATH}
-          alt="CASA"
-          style={{
-            position: 'absolute',
-            top: CASA_BRAND.slide.padding * scale,
-            right: CASA_BRAND.slide.padding * scale,
-            width: 32 * scale,
-            height: 32 * scale,
-            opacity: 0.8,
-          }}
-        />
-      )}
-
       {/* Contenido */}
       {renderContent()}
 
