@@ -10,30 +10,22 @@ import type { PresentationData, FlattenedElement } from './types';
 const CUENTACUENTOS_BUCKET = 'cuentacuentos-drafts';
 
 /**
- * Regenera una signed URL para una imagen de cuentacuentos
- * Las imágenes se guardan con signed URLs que expiran en 24 horas
- * Esta función detecta si una URL ha expirado y genera una nueva
+ * Convierte una signed URL expirada a una URL pública
+ * El bucket ahora es público, así que las URLs no necesitan token
  */
-async function refreshSignedUrl(imageUrl: string): Promise<string> {
+function convertToPublicUrl(imageUrl: string): string {
   if (!imageUrl) return imageUrl;
 
-  // Si es una URL de Supabase Storage con token, intentar regenerar
+  // Si es una URL de Supabase Storage con token, convertir a URL pública
   if (imageUrl.includes('/storage/v1/') && imageUrl.includes('token=')) {
-    try {
-      // Extraer el path del storage de la URL
-      const match = imageUrl.match(/cuentacuentos-drafts\/([^?]+)/);
-      if (match) {
-        const path = match[1];
-        const { data, error } = await supabase.storage
-          .from(CUENTACUENTOS_BUCKET)
-          .createSignedUrl(path, 86400); // 24 horas
-
-        if (!error && data?.signedUrl) {
-          return data.signedUrl;
-        }
-      }
-    } catch (err) {
-      console.warn('[presentationService] Failed to refresh signed URL:', err);
+    // Extraer el path del storage de la URL
+    const match = imageUrl.match(/cuentacuentos-drafts\/([^?]+)/);
+    if (match) {
+      const path = match[1];
+      const { data } = supabase.storage
+        .from(CUENTACUENTOS_BUCKET)
+        .getPublicUrl(path);
+      return data.publicUrl;
     }
   }
 
@@ -41,31 +33,23 @@ async function refreshSignedUrl(imageUrl: string): Promise<string> {
 }
 
 /**
- * Procesa los slides de cuentacuentos para regenerar signed URLs expiradas
+ * Procesa los slides de cuentacuentos para convertir signed URLs a públicas
  */
-async function refreshCuentacuentosSlides(slides: Slide[]): Promise<Slide[]> {
-  const refreshedSlides: Slide[] = [];
-
-  for (const slide of slides) {
+function convertCuentacuentosSlides(slides: Slide[]): Slide[] {
+  return slides.map(slide => {
     if (slide.type === 'story-cover' || slide.type === 'story-scene' || slide.type === 'story-end') {
       if (slide.content.imageUrl) {
-        const refreshedUrl = await refreshSignedUrl(slide.content.imageUrl);
-        refreshedSlides.push({
+        return {
           ...slide,
           content: {
             ...slide.content,
-            imageUrl: refreshedUrl,
+            imageUrl: convertToPublicUrl(slide.content.imageUrl),
           },
-        });
-      } else {
-        refreshedSlides.push(slide);
+        };
       }
-    } else {
-      refreshedSlides.push(slide);
     }
-  }
-
-  return refreshedSlides;
+    return slide;
+  });
 }
 
 /**
@@ -195,10 +179,10 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       });
 
       if (slideArray.length > 0) {
-        // Para cuentacuentos, regenerar signed URLs que pueden haber expirado
+        // Para cuentacuentos, convertir signed URLs expiradas a URLs públicas
         if (elemento.tipo === 'cuentacuentos') {
-          slideArray = await refreshCuentacuentosSlides(slideArray);
-          console.log('[presentationService] Refreshed cuentacuentos signed URLs');
+          slideArray = convertCuentacuentosSlides(slideArray);
+          console.log('[presentationService] Converted cuentacuentos to public URLs');
         }
 
         // Agregar slides al array aplanado

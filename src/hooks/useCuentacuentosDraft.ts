@@ -110,20 +110,15 @@ async function uploadImage(
 }
 
 /**
- * Obtiene una URL firmada de una imagen en Supabase Storage
- * Las URLs firmadas funcionan con buckets privados y expiran después de un tiempo
- * Usamos 24 horas (86400 segundos) de expiración
+ * Obtiene una URL pública de una imagen en Supabase Storage
+ * El bucket es público, así que las URLs no expiran
  */
-async function getSignedUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage
+function getPublicUrl(path: string): string {
+  const { data } = supabase.storage
     .from(BUCKET_NAME)
-    .createSignedUrl(path, 86400); // 24 horas de expiración
+    .getPublicUrl(path);
 
-  if (error || !data?.signedUrl) {
-    console.error('[useCuentacuentosDraft] Error creating signed URL:', error);
-    return null;
-  }
-  return data.signedUrl;
+  return data.publicUrl;
 }
 
 /**
@@ -231,28 +226,28 @@ async function loadImagesFromStorage(
   const coverOptions: string[] = [];
   const endOptions: string[] = [];
 
-  // Generar URLs firmadas para character sheets (en paralelo)
+  // Generar URLs públicas para character sheets
   for (const [charId, pathList] of Object.entries(paths.characterSheetPaths || {})) {
-    const urls = await Promise.all(pathList.map(path => getSignedUrl(path)));
-    characterSheetOptions[charId] = urls.filter((url): url is string => url !== null);
+    const urls = pathList.map(path => getPublicUrl(path));
+    characterSheetOptions[charId] = urls;
   }
 
-  // Generar URLs firmadas para scene images (en paralelo)
+  // Generar URLs públicas para scene images
   for (const [sceneNum, pathList] of Object.entries(paths.sceneImagePaths || {})) {
     const num = Number(sceneNum);
-    const urls = await Promise.all(pathList.map(path => getSignedUrl(path)));
-    sceneImageOptions[num] = urls.filter((url): url is string => url !== null);
+    const urls = pathList.map(path => getPublicUrl(path));
+    sceneImageOptions[num] = urls;
   }
 
-  // Generar URLs firmadas para cover options (en paralelo)
-  const coverUrls = await Promise.all((paths.coverPaths || []).map(path => getSignedUrl(path)));
-  coverOptions.push(...coverUrls.filter((url): url is string => url !== null));
+  // Generar URLs públicas para cover options
+  const coverUrls = (paths.coverPaths || []).map(path => getPublicUrl(path));
+  coverOptions.push(...coverUrls);
 
-  // Generar URLs firmadas para end options (en paralelo)
-  const endUrls = await Promise.all((paths.endPaths || []).map(path => getSignedUrl(path)));
-  endOptions.push(...endUrls.filter((url): url is string => url !== null));
+  // Generar URLs públicas para end options
+  const endUrls = (paths.endPaths || []).map(path => getPublicUrl(path));
+  endOptions.push(...endUrls);
 
-  console.log(`[useCuentacuentosDraft] Generated signed URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
+  console.log(`[useCuentacuentosDraft] Generated public URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
 
   return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions };
 }
