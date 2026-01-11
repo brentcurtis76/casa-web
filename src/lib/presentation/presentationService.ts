@@ -7,6 +7,67 @@ import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { LiturgyElement, LiturgyElementType } from '@/types/shared/liturgy';
 import type { PresentationData, FlattenedElement } from './types';
 
+const CUENTACUENTOS_BUCKET = 'cuentacuentos-drafts';
+
+/**
+ * Regenera una signed URL para una imagen de cuentacuentos
+ * Las imágenes se guardan con signed URLs que expiran en 24 horas
+ * Esta función detecta si una URL ha expirado y genera una nueva
+ */
+async function refreshSignedUrl(imageUrl: string): Promise<string> {
+  if (!imageUrl) return imageUrl;
+
+  // Si es una URL de Supabase Storage con token, intentar regenerar
+  if (imageUrl.includes('/storage/v1/') && imageUrl.includes('token=')) {
+    try {
+      // Extraer el path del storage de la URL
+      const match = imageUrl.match(/cuentacuentos-drafts\/([^?]+)/);
+      if (match) {
+        const path = match[1];
+        const { data, error } = await supabase.storage
+          .from(CUENTACUENTOS_BUCKET)
+          .createSignedUrl(path, 86400); // 24 horas
+
+        if (!error && data?.signedUrl) {
+          return data.signedUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('[presentationService] Failed to refresh signed URL:', err);
+    }
+  }
+
+  return imageUrl;
+}
+
+/**
+ * Procesa los slides de cuentacuentos para regenerar signed URLs expiradas
+ */
+async function refreshCuentacuentosSlides(slides: Slide[]): Promise<Slide[]> {
+  const refreshedSlides: Slide[] = [];
+
+  for (const slide of slides) {
+    if (slide.type === 'story-cover' || slide.type === 'story-scene' || slide.type === 'story-end') {
+      if (slide.content.imageUrl) {
+        const refreshedUrl = await refreshSignedUrl(slide.content.imageUrl);
+        refreshedSlides.push({
+          ...slide,
+          content: {
+            ...slide.content,
+            imageUrl: refreshedUrl,
+          },
+        });
+      } else {
+        refreshedSlides.push(slide);
+      }
+    } else {
+      refreshedSlides.push(slide);
+    }
+  }
+
+  return refreshedSlides;
+}
+
 /**
  * Resumen de liturgia para el selector
  */
@@ -134,6 +195,12 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       });
 
       if (slideArray.length > 0) {
+        // Para cuentacuentos, regenerar signed URLs que pueden haber expirado
+        if (elemento.tipo === 'cuentacuentos') {
+          slideArray = await refreshCuentacuentosSlides(slideArray);
+          console.log('[presentationService] Refreshed cuentacuentos signed URLs');
+        }
+
         // Agregar slides al array aplanado
         slides.push(...slideArray);
 
