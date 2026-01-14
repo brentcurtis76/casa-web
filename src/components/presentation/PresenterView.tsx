@@ -1,6 +1,10 @@
 /**
  * PresenterView - Vista principal del presentador
  * Controla la presentacion y sincroniza con la vista de salida
+ *
+ * SISTEMA SIMPLIFICADO (v2):
+ * - Logo: updateLogo(), setLogoScope()
+ * - TextOverlay: addTextOverlay(), updateTextOverlay(), removeTextOverlay()
  */
 
 import React, { useCallback, useState, useRef, useEffect } from 'react';
@@ -19,7 +23,6 @@ import { PresenterNotes } from './PresenterNotes';
 import { CollapsiblePanel } from './CollapsiblePanel';
 import { RecoveryModal } from './RecoveryModal';
 import { ExitWarningModal } from './ExitWarningModal';
-import { PropsPanel } from './PropsPanel';
 import { usePresentationSync } from '@/hooks/presentation/usePresentationSync';
 import { usePresentationState } from '@/hooks/presentation/usePresentationState';
 import { useKeyboardShortcuts } from '@/hooks/presentation/useKeyboardShortcuts';
@@ -27,9 +30,9 @@ import { useAutoSave, getSavedPresentationState, clearSavedPresentationState, ty
 import { useNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { loadLiturgyForPresentation } from '@/lib/presentation/presentationService';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayStyle } from '@/lib/presentation/types';
-import { getEffectiveLogoSettings } from '@/lib/presentation/types';
-import { FolderOpen, Loader2, FileText, MessageSquare, Image as ImageIcon, Type, Crosshair } from 'lucide-react';
+import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, OverlayScope, LogoState } from '@/lib/presentation/types';
+import { shouldShowLogo, getVisibleTextOverlays, getAllOverlaysForSlide, DEFAULT_TEXT_OVERLAY_STYLE, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE } from '@/lib/presentation/types';
+import { FolderOpen, Loader2, FileText, MessageSquare, Image as ImageIcon, Type } from 'lucide-react';
 
 export const PresenterView: React.FC = () => {
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -43,7 +46,7 @@ export const PresenterView: React.FC = () => {
   const syncStateRef = useRef<((state: import('@/lib/presentation/types').PresentationState) => void) | null>(null);
   const recoveryCheckedRef = useRef(false);
 
-  // Presentation state
+  // Presentation state (SIMPLIFICADO)
   const {
     state,
     loadLiturgy,
@@ -58,33 +61,24 @@ export const PresenterView: React.FC = () => {
     setBlack,
     showLowerThird,
     hideLowerThird,
-    updateLogoGlobal,
-    setLogoOverride,
-    removeLogoOverride,
-    applyLogoToAll,
+    // Logo (simplificado)
+    updateLogo,
+    setLogoScope,
+    setLogoState,
+    // Slide editing
     editSlideContent,
     clearSlideEdit,
     duplicateSlide,
     deleteSlide,
+    // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
-    setTextOverlayOverride,
-    removeTextOverlayOverride,
-    clearTextOverlayOverrides,
+    setTextOverlayState,
+    // Utilities
     currentSlide,
     currentElement,
     totalSlides,
-    setLogoState,
-    setTextOverlayState,
-    // Scene/Props
-    updateSceneForElement,
-    showProp,
-    hideProp,
-    hideAllProps,
-    currentLook,
-    armedProps,
-    activeProps,
   } = usePresentationState();
 
   // Auto-save presentation state to localStorage
@@ -128,13 +122,6 @@ export const PresenterView: React.FC = () => {
   useEffect(() => {
     syncStateRef.current = syncState;
   }, [syncState]);
-
-  // Update scene state when element changes
-  useEffect(() => {
-    if (state.data && state.currentElementIndex >= 0) {
-      updateSceneForElement(state.currentElementIndex);
-    }
-  }, [state.currentElementIndex, state.data, updateSceneForElement]);
 
   // Load a liturgy
   const handleSelectLiturgy = async (liturgyId: string) => {
@@ -294,21 +281,8 @@ export const PresenterView: React.FC = () => {
       if (state.data) {
         send({ type: 'LITURGY_LOADED', data: state.data });
         send({ type: 'SLIDE_CHANGE', slideIndex: state.currentSlideIndex });
-        send({ type: 'LOGO_UPDATE', logoState: state.logoState });
-        send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-        // Sync scene state - send current look and active props
-        if (state.sceneState.currentLook && currentElement) {
-          send({
-            type: 'SCENE_CHANGE',
-            elementId: state.sceneState.currentElementId || '',
-            look: state.sceneState.currentLook,
-            context: state.sceneState.placeholderContext,
-          });
-          // Sync active props
-          state.sceneState.activeProps.forEach((propId) => {
-            send({ type: 'PROP_SHOW', propId });
-          });
-        }
+        send({ type: 'LOGO_UPDATE', logoState: state.logoState ?? DEFAULT_LOGO_STATE });
+        send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState ?? { overlays: [] } });
         if (state.isLive) {
           send({ type: 'GO_LIVE' });
         }
@@ -317,7 +291,7 @@ export const PresenterView: React.FC = () => {
         }
       }
     }, 1000);
-  }, [state, send, currentElement]);
+  }, [state, send]);
 
   // Lower-third controls
   const handleSendLowerThird = useCallback((
@@ -334,48 +308,32 @@ export const PresenterView: React.FC = () => {
     send({ type: 'HIDE_LOWER_THIRD' });
   }, [hideLowerThird, send]);
 
-  // Logo controls with sync
-  const handleUpdateLogoGlobal = useCallback((settings: Partial<LogoSettings>) => {
-    updateLogoGlobal(settings);
-    // Sync after update - we need to send the new state
-    setTimeout(() => {
-      const newState = {
-        ...state.logoState,
-        global: { ...state.logoState.global, ...settings },
-      };
-      send({ type: 'LOGO_UPDATE', logoState: newState });
-    }, 0);
-  }, [updateLogoGlobal, send, state.logoState]);
+  // ============ LOGO HANDLERS (SIMPLIFICADO) ============
 
-  const handleSetLogoOverride = useCallback((slideIndex: number, settings: Partial<LogoSettings>) => {
-    setLogoOverride(slideIndex, settings);
-    setTimeout(() => {
-      const newState = {
-        ...state.logoState,
-        overrides: {
-          ...state.logoState.overrides,
-          [slideIndex]: { ...state.logoState.overrides[slideIndex], ...settings },
-        },
-      };
-      send({ type: 'LOGO_UPDATE', logoState: newState });
-    }, 0);
-  }, [setLogoOverride, send, state.logoState]);
+  // Actualizar settings del logo
+  const handleUpdateLogo = useCallback((settings: Partial<LogoSettings>) => {
+    updateLogo(settings);
+    // Sync después del update
+    const currentSettings = state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings;
+    const newLogoState: LogoState = {
+      settings: { ...currentSettings, ...settings },
+      scope: state.logoState?.scope ?? { type: 'all' },
+    };
+    send({ type: 'LOGO_UPDATE', logoState: newLogoState });
+  }, [updateLogo, send, state.logoState]);
 
-  const handleRemoveLogoOverride = useCallback((slideIndex: number) => {
-    removeLogoOverride(slideIndex);
-    setTimeout(() => {
-      const newOverrides = { ...state.logoState.overrides };
-      delete newOverrides[slideIndex];
-      send({ type: 'LOGO_UPDATE', logoState: { ...state.logoState, overrides: newOverrides } });
-    }, 0);
-  }, [removeLogoOverride, send, state.logoState]);
+  // Cambiar el scope del logo
+  const handleSetLogoScope = useCallback((scope: OverlayScope) => {
+    setLogoScope(scope);
+    const newLogoState: LogoState = {
+      settings: state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings,
+      scope,
+    };
+    send({ type: 'LOGO_UPDATE', logoState: newLogoState });
+  }, [setLogoScope, send, state.logoState]);
 
-  const handleApplyLogoToAll = useCallback((settings: LogoSettings) => {
-    applyLogoToAll(settings);
-    send({ type: 'LOGO_UPDATE', logoState: { global: settings, overrides: {} } });
-  }, [applyLogoToAll, send]);
+  // ============ SLIDE EDITING ============
 
-  // Slide editing handlers
   const handleEditSlide = useCallback((index: number) => {
     setEditingSlideIndex(index);
     setEditorOpen(true);
@@ -434,76 +392,42 @@ export const PresenterView: React.FC = () => {
     }, 50);
   }, [deleteSlide, state.data, state.tempEdits, state.currentSlideIndex, send]);
 
-  // Text overlay handlers with sync
-  const handleAddTextOverlay = useCallback((
-    content: string,
-    position?: { x: number; y: number },
-    style?: Partial<TextOverlayStyle>
-  ) => {
-    addTextOverlay(content, position, style);
-    // Sync after state update
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
+  // ============ TEXT OVERLAY HANDLERS (SIMPLIFICADO) ============
+
+  // Agregar nuevo text overlay (con scope incluido)
+  const handleAddTextOverlay = useCallback((overlay: TextOverlay) => {
+    addTextOverlay(overlay);
+    // Calcular nuevo estado para sync (state.textOverlayState es el valor anterior)
+    const currentOverlays = state.textOverlayState?.overlays ?? [];
+    const newState: TextOverlayState = {
+      overlays: [...currentOverlays, overlay],
+    };
+    send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [addTextOverlay, state.textOverlayState, send]);
 
+  // Actualizar text overlay
   const handleUpdateTextOverlay = useCallback((id: string, updates: Partial<TextOverlay>) => {
     updateTextOverlay(id, updates);
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
+    // Calcular nuevo estado para sync
+    const currentOverlays = state.textOverlayState?.overlays ?? [];
+    const newState: TextOverlayState = {
+      overlays: currentOverlays.map((o) =>
+        o.id === id ? { ...o, ...updates } : o
+      ),
+    };
+    send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [updateTextOverlay, state.textOverlayState, send]);
 
+  // Eliminar text overlay
   const handleRemoveTextOverlay = useCallback((id: string) => {
     removeTextOverlay(id);
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
+    // Calcular nuevo estado para sync
+    const currentOverlays = state.textOverlayState?.overlays ?? [];
+    const newState: TextOverlayState = {
+      overlays: currentOverlays.filter((o) => o.id !== id),
+    };
+    send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [removeTextOverlay, state.textOverlayState, send]);
-
-  const handleSetTextOverlayOverride = useCallback((
-    slideIndex: number,
-    overlayId: string,
-    override: Partial<TextOverlay>
-  ) => {
-    setTextOverlayOverride(slideIndex, overlayId, override);
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
-  }, [setTextOverlayOverride, state.textOverlayState, send]);
-
-  const handleRemoveTextOverlayOverride = useCallback((slideIndex: number, overlayId: string) => {
-    removeTextOverlayOverride(slideIndex, overlayId);
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
-  }, [removeTextOverlayOverride, state.textOverlayState, send]);
-
-  const handleClearTextOverlayOverrides = useCallback((slideIndex: number) => {
-    clearTextOverlayOverrides(slideIndex);
-    setTimeout(() => {
-      send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState });
-    }, 50);
-  }, [clearTextOverlayOverrides, state.textOverlayState, send]);
-
-  // Scene/Props handlers with sync
-  const handleShowProp = useCallback((propId: string) => {
-    showProp(propId);
-    send({ type: 'PROP_SHOW', propId });
-  }, [showProp, send]);
-
-  const handleHideProp = useCallback((propId: string) => {
-    hideProp(propId);
-    send({ type: 'PROP_HIDE', propId });
-  }, [hideProp, send]);
-
-  const handleHideAllProps = useCallback(() => {
-    hideAllProps();
-    // Send individual hide messages for each active prop
-    activeProps.forEach((prop) => {
-      send({ type: 'PROP_HIDE', propId: prop.id });
-    });
-  }, [hideAllProps, activeProps, send]);
 
   // Get the slide being edited
   const editingSlide = editingSlideIndex !== null && state.data
@@ -520,6 +444,21 @@ export const PresenterView: React.FC = () => {
     onBlack: handleToggleBlack,
     onFullscreen: () => send({ type: 'FULLSCREEN_TOGGLE' }),
   });
+
+  // Determinar si mostrar logo en el slide actual
+  const showLogoOnCurrentSlide = shouldShowLogo(
+    state.logoState ?? DEFAULT_LOGO_STATE,
+    state.currentSlideIndex,
+    state.data?.elements || []
+  );
+
+  // Obtener TODOS los text overlays para el slide actual (para preview en presenter)
+  // Incluye overlays con visible: false para que el usuario pueda posicionarlos
+  const allOverlaysForSlide = getAllOverlaysForSlide(
+    state.textOverlayState ?? DEFAULT_TEXT_OVERLAY_STATE,
+    state.currentSlideIndex,
+    state.data?.elements || []
+  );
 
   return (
     <div
@@ -621,7 +560,11 @@ export const PresenterView: React.FC = () => {
               totalSlides={totalSlides}
               isLive={state.isLive}
               isBlack={state.isBlack}
-              logoSettings={getEffectiveLogoSettings(state.logoState, state.currentSlideIndex)}
+              logoSettings={showLogoOnCurrentSlide
+                ? (state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings)
+                : { ...(state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings), visible: false }}
+              textOverlays={allOverlaysForSlide}
+              onTextOverlayPositionChange={(id, position) => updateTextOverlay(id, { position })}
             />
           </div>
 
@@ -631,8 +574,6 @@ export const PresenterView: React.FC = () => {
               slides={state.data?.slides || []}
               currentIndex={state.currentSlideIndex}
               onSlideClick={handleGoToSlide}
-              logoOverrides={state.logoState.overrides}
-              textOverlayOverrides={state.textOverlayState.overrides}
               tempEdits={state.tempEdits}
               onEdit={handleEditSlide}
               onDuplicate={handleDuplicateSlide}
@@ -686,76 +627,33 @@ export const PresenterView: React.FC = () => {
               />
             </CollapsiblePanel>
 
-            {/* Scene Props - expanded by default when props exist */}
-            <CollapsiblePanel
-              title="Props"
-              icon={<Crosshair size={16} />}
-              defaultOpen={true}
-              badge={
-                <>
-                  {armedProps.length > 0 && (
-                    <span
-                      className="px-2 py-0.5 rounded text-xs"
-                      style={{
-                        backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                        color: CASA_BRAND.colors.primary.amber,
-                      }}
-                    >
-                      {armedProps.length} armado{armedProps.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {activeProps.length > 0 && (
-                    <span
-                      className="px-2 py-0.5 rounded text-xs ml-1 animate-pulse"
-                      style={{
-                        backgroundColor: '#22c55e30',
-                        color: '#22c55e',
-                      }}
-                    >
-                      {activeProps.length} activo{activeProps.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </>
-              }
-            >
-              <PropsPanel
-                currentLook={currentLook}
-                armedProps={armedProps}
-                activeProps={activeProps}
-                onShowProp={handleShowProp}
-                onHideProp={handleHideProp}
-                onHideAllProps={handleHideAllProps}
-                compact
-              />
-            </CollapsiblePanel>
-
             {/* Logo Controls - collapsed by default */}
             <CollapsiblePanel
               title="Logo CASA"
               icon={<ImageIcon size={16} />}
               defaultOpen={false}
               badge={
-                state.currentSlideIndex in state.logoState.overrides ? (
+                state.logoState?.settings?.visible ? (
                   <span
                     className="px-2 py-0.5 rounded text-xs"
                     style={{
-                      backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                      color: CASA_BRAND.colors.primary.amber,
+                      backgroundColor: '#22c55e30',
+                      color: '#22c55e',
                     }}
                   >
-                    Override
+                    ON
                   </span>
                 ) : null
               }
             >
               <LogoControls
-                logoState={state.logoState}
+                logoState={state.logoState ?? DEFAULT_LOGO_STATE}
                 currentSlideIndex={state.currentSlideIndex}
                 currentSlide={currentSlide}
-                onUpdateGlobal={handleUpdateLogoGlobal}
-                onSetOverride={handleSetLogoOverride}
-                onRemoveOverride={handleRemoveLogoOverride}
-                onApplyToAll={handleApplyLogoToAll}
+                currentElement={currentElement}
+                elements={state.data?.elements || []}
+                onUpdateLogo={handleUpdateLogo}
+                onSetScope={handleSetLogoScope}
                 compact
               />
             </CollapsiblePanel>
@@ -766,41 +664,27 @@ export const PresenterView: React.FC = () => {
               icon={<Type size={16} />}
               defaultOpen={false}
               badge={
-                <>
-                  {state.textOverlayState.global.length > 0 && (
-                    <span
-                      className="px-2 py-0.5 rounded text-xs"
-                      style={{
-                        backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                        color: CASA_BRAND.colors.secondary.grayMedium,
-                      }}
-                    >
-                      {state.textOverlayState.global.length}
-                    </span>
-                  )}
-                  {state.currentSlideIndex in state.textOverlayState.overrides && (
-                    <span
-                      className="px-2 py-0.5 rounded text-xs ml-1"
-                      style={{
-                        backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                        color: CASA_BRAND.colors.primary.amber,
-                      }}
-                    >
-                      Override
-                    </span>
-                  )}
-                </>
+                (state.textOverlayState?.overlays?.length ?? 0) > 0 ? (
+                  <span
+                    className="px-2 py-0.5 rounded text-xs"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                      color: CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    {state.textOverlayState?.overlays?.length ?? 0}
+                  </span>
+                ) : null
               }
             >
               <TextOverlayControls
-                textOverlayState={state.textOverlayState}
+                textOverlayState={state.textOverlayState ?? { overlays: [] }}
                 currentSlideIndex={state.currentSlideIndex}
+                currentElement={currentElement}
+                elements={state.data?.elements || []}
                 onAdd={handleAddTextOverlay}
                 onUpdate={handleUpdateTextOverlay}
                 onRemove={handleRemoveTextOverlay}
-                onSetOverride={handleSetTextOverlayOverride}
-                onRemoveOverride={handleRemoveTextOverlayOverride}
-                onClearOverrides={handleClearTextOverlayOverrides}
                 compact
               />
             </CollapsiblePanel>

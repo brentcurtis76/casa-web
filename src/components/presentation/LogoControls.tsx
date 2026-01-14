@@ -1,8 +1,10 @@
 /**
  * LogoControls - Panel de control del logo en PresenterView
  * Permite ajustar posición, tamaño y visibilidad del logo
- * Soporta configuración global y overrides por slide
- * Soporta modo compact para uso dentro de CollapsiblePanel
+ *
+ * SISTEMA SIMPLIFICADO (v2):
+ * - settings: configuración visual (visible, position, size)
+ * - scope: dónde se aplica (all o elements)
  */
 
 import React, { useState, useRef, useCallback } from 'react';
@@ -14,13 +16,13 @@ import {
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
-  RotateCcw,
-  Check,
   Globe,
-  FileText,
+  Layers,
 } from 'lucide-react';
-import type { LogoState, LogoSettings, LogoPosition } from '@/lib/presentation/types';
+import type { LogoState, LogoSettings, LogoPosition, FlattenedElement, OverlayScope } from '@/lib/presentation/types';
+import { getScopeLabel, shouldShowLogo } from '@/lib/presentation/types';
 import type { Slide } from '@/types/shared/slide';
+import { ApplyScopeDropdown } from './ApplyScopeDropdown';
 
 // Path to CASA logo
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
@@ -29,10 +31,14 @@ interface LogoControlsProps {
   logoState: LogoState;
   currentSlideIndex: number;
   currentSlide: Slide | null;
-  onUpdateGlobal: (settings: Partial<LogoSettings>) => void;
-  onSetOverride: (slideIndex: number, settings: Partial<LogoSettings>) => void;
-  onRemoveOverride: (slideIndex: number) => void;
-  onApplyToAll: (settings: LogoSettings) => void;
+  /** Elemento actual (el que contiene el slide actual) */
+  currentElement: FlattenedElement | null;
+  /** Lista de todos los elementos */
+  elements: FlattenedElement[];
+  /** Actualiza la configuración del logo */
+  onUpdateLogo: (settings: Partial<LogoSettings>) => void;
+  /** Cambia el scope del logo */
+  onSetScope: (scope: OverlayScope) => void;
   /** When true, renders without header/expand (for use inside CollapsiblePanel) */
   compact?: boolean;
 }
@@ -41,26 +47,24 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
   logoState,
   currentSlideIndex,
   currentSlide,
-  onUpdateGlobal,
-  onSetOverride,
-  onRemoveOverride,
-  onApplyToAll,
+  currentElement,
+  elements,
+  onUpdateLogo,
+  onSetScope,
   compact = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // Check if current slide has an override
-  const hasOverride = currentSlideIndex in logoState.overrides;
-  const currentOverride = logoState.overrides[currentSlideIndex];
+  // Configuración actual del logo
+  const { settings, scope } = logoState;
 
-  // Get effective settings for current slide
-  const effectiveSettings: LogoSettings = {
-    visible: currentOverride?.visible ?? logoState.global.visible,
-    position: currentOverride?.position ?? logoState.global.position,
-    size: currentOverride?.size ?? logoState.global.size,
-  };
+  // Label descriptivo del scope actual
+  const scopeLabel = getScopeLabel(scope, elements);
+
+  // ¿El logo es visible en el slide actual? (basado en scope)
+  const isVisibleOnCurrentSlide = shouldShowLogo(logoState, currentSlideIndex, elements);
 
   // Handle drag on preview
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -80,12 +84,7 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
         y: Math.round(y),
       };
 
-      // If we have an override, update the override; otherwise update global
-      if (hasOverride) {
-        onSetOverride(currentSlideIndex, { position: newPosition });
-      } else {
-        onUpdateGlobal({ position: newPosition });
-      }
+      onUpdateLogo({ position: newPosition });
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
@@ -103,252 +102,241 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [hasOverride, currentSlideIndex, onSetOverride, onUpdateGlobal]);
+  }, [onUpdateLogo]);
 
   // Handle size change
   const handleSizeChange = (value: number[]) => {
-    const newSize = value[0];
-    if (hasOverride) {
-      onSetOverride(currentSlideIndex, { size: newSize });
-    } else {
-      onUpdateGlobal({ size: newSize });
-    }
+    onUpdateLogo({ size: value[0] });
   };
 
-  // Handle visibility toggle
-  const handleVisibilityChange = (visible: boolean) => {
-    if (hasOverride) {
-      onSetOverride(currentSlideIndex, { visible });
-    } else {
-      onUpdateGlobal({ visible });
-    }
-  };
+  // Handle visibility toggle for current slide/element
+  // This toggle controls whether the logo shows on the CURRENT slide
+  const handleVisibilityChange = (shouldShow: boolean) => {
+    if (shouldShow) {
+      // Turn ON: Enable visibility if not already, and ensure current element is in scope
+      if (!settings.visible) {
+        onUpdateLogo({ visible: true });
+      }
 
-  // Apply current settings to this slide only
-  const handleApplyToSlide = () => {
-    onSetOverride(currentSlideIndex, {
-      visible: effectiveSettings.visible,
-      position: effectiveSettings.position,
-      size: effectiveSettings.size,
-    });
+      // If scope is 'elements' and current element is not included, add it
+      if (scope.type === 'elements' && currentElement) {
+        if (!scope.elementIds.includes(currentElement.id)) {
+          onSetScope({ type: 'elements', elementIds: [...scope.elementIds, currentElement.id] });
+        }
+      } else if (scope.type === 'element' && currentElement) {
+        // If scope is single element and it's different, switch to current
+        if (scope.elementId !== currentElement.id) {
+          onSetScope({ type: 'element', elementId: currentElement.id });
+        }
+      } else if (scope.type === 'slide') {
+        // If scope is single slide and it's different, switch to current
+        if (scope.slideIndex !== currentSlideIndex) {
+          onSetScope({ type: 'slide', slideIndex: currentSlideIndex });
+        }
+      }
+      // If scope is 'all' and visibility is on, logo will show (no change needed)
+    } else {
+      // Turn OFF: Remove current element/slide from scope
+      if (scope.type === 'all') {
+        // Switching from 'all' to all elements except current
+        if (currentElement) {
+          const otherElementIds = elements
+            .filter(e => e.id !== currentElement.id)
+            .map(e => e.id);
+          onSetScope({ type: 'elements', elementIds: otherElementIds });
+        }
+      } else if (scope.type === 'elements' && currentElement) {
+        // Remove current element from the list
+        const newIds = scope.elementIds.filter(id => id !== currentElement.id);
+        onSetScope({ type: 'elements', elementIds: newIds });
+      } else if (scope.type === 'element') {
+        // Single element scope - set to no elements
+        onSetScope({ type: 'elements', elementIds: [] });
+      } else if (scope.type === 'slide') {
+        // Single slide scope - set to no elements
+        onSetScope({ type: 'elements', elementIds: [] });
+      }
+    }
   };
 
   // Preview dimensions (4:3 aspect ratio)
   const previewWidth = 200;
   const previewHeight = 150;
-  const logoPreviewSize = (effectiveSettings.size / 100) * previewWidth;
-  const logoPreviewX = (effectiveSettings.position.x / 100) * previewWidth - logoPreviewSize / 2;
-  const logoPreviewY = (effectiveSettings.position.y / 100) * previewHeight - logoPreviewSize / 2;
+  const logoPreviewSize = (settings.size / 100) * previewWidth;
+  const logoPreviewX = (settings.position.x / 100) * previewWidth - logoPreviewSize / 2;
+  const logoPreviewY = (settings.position.y / 100) * previewHeight - logoPreviewSize / 2;
 
   const content = (
     <div className="space-y-4">
-          {/* Mini preview with draggable logo */}
-          <div>
-            <p
-              className="text-xs mb-2"
-              style={{
-                color: CASA_BRAND.colors.secondary.grayMedium,
-                fontFamily: CASA_BRAND.fonts.body,
-              }}
-            >
-              Arrastra el logo para reposicionar
-            </p>
-            <div
-              ref={previewRef}
-              onMouseDown={handleMouseDown}
-              className="relative rounded-lg overflow-hidden cursor-crosshair"
-              style={{
-                width: previewWidth,
-                height: previewHeight,
-                backgroundColor: currentSlide?.style?.backgroundColor || CASA_BRAND.colors.primary.white,
-                border: isDragging
-                  ? `2px solid ${CASA_BRAND.colors.primary.amber}`
-                  : `2px solid ${CASA_BRAND.colors.secondary.grayDark}`,
-              }}
-            >
-              {/* Slide content preview (simplified) */}
-              <div
-                className="absolute inset-0 flex items-center justify-center text-xs"
-                style={{
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                  fontFamily: CASA_BRAND.fonts.body,
-                }}
-              >
-                {currentSlide?.content?.primary?.substring(0, 30) || 'Slide Preview'}
-              </div>
-
-              {/* Logo preview */}
-              {effectiveSettings.visible && (
-                <img
-                  src={CASA_LOGO_PATH}
-                  alt="Logo"
-                  style={{
-                    position: 'absolute',
-                    left: Math.max(0, Math.min(previewWidth - logoPreviewSize, logoPreviewX)),
-                    top: Math.max(0, Math.min(previewHeight - logoPreviewSize, logoPreviewY)),
-                    width: logoPreviewSize,
-                    height: logoPreviewSize,
-                    opacity: 0.85,
-                    pointerEvents: 'none',
-                    objectFit: 'contain',
-                  }}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Visibility toggle */}
-          <div className="flex items-center justify-between">
-            <span
-              style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '13px',
-                color: CASA_BRAND.colors.primary.white,
-              }}
-            >
-              Mostrar Logo
-            </span>
-            <Switch
-              checked={effectiveSettings.visible}
-              onCheckedChange={handleVisibilityChange}
-              className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
-              thumbClassName="border-2 border-gray-400"
-            />
-          </div>
-
-          {/* Size slider */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '13px',
-                  color: CASA_BRAND.colors.primary.white,
-                }}
-              >
-                Tamaño
-              </span>
-              <span
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '12px',
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                }}
-              >
-                {effectiveSettings.size}%
-              </span>
-            </div>
-            <Slider
-              value={[effectiveSettings.size]}
-              onValueChange={handleSizeChange}
-              min={5}
-              max={25}
-              step={1}
-              className="w-full"
-              trackClassName="bg-gray-700"
-              rangeClassName="bg-white"
-              thumbClassName="border-white bg-gray-900"
-            />
-          </div>
-
-          {/* Position info */}
+      {/* Mini preview with draggable logo */}
+      <div>
+        <p
+          className="text-xs mb-2"
+          style={{
+            color: CASA_BRAND.colors.secondary.grayMedium,
+            fontFamily: CASA_BRAND.fonts.body,
+          }}
+        >
+          Arrastra el logo para reposicionar
+        </p>
+        <div
+          ref={previewRef}
+          onMouseDown={handleMouseDown}
+          className="relative rounded-lg overflow-hidden cursor-crosshair"
+          style={{
+            width: previewWidth,
+            height: previewHeight,
+            backgroundColor: currentSlide?.style?.backgroundColor || CASA_BRAND.colors.primary.white,
+            border: isDragging
+              ? `2px solid ${CASA_BRAND.colors.primary.amber}`
+              : `2px solid ${CASA_BRAND.colors.secondary.grayDark}`,
+          }}
+        >
+          {/* Slide content preview (simplified) */}
           <div
-            className="text-xs"
+            className="absolute inset-0 flex items-center justify-center text-xs"
             style={{
               color: CASA_BRAND.colors.secondary.grayMedium,
               fontFamily: CASA_BRAND.fonts.body,
             }}
           >
-            Posición: ({effectiveSettings.position.x}%, {effectiveSettings.position.y}%)
+            {currentSlide?.content?.primary?.substring(0, 30) || 'Slide Preview'}
           </div>
 
-          {/* Mode indicator */}
-          <div
-            className="flex items-center gap-2 p-2 rounded"
+          {/* Logo preview - shows based on current slide visibility */}
+          {isVisibleOnCurrentSlide && (
+            <img
+              src={CASA_LOGO_PATH}
+              alt="Logo"
+              style={{
+                position: 'absolute',
+                left: Math.max(0, Math.min(previewWidth - logoPreviewSize, logoPreviewX)),
+                top: Math.max(0, Math.min(previewHeight - logoPreviewSize, logoPreviewY)),
+                width: logoPreviewSize,
+                height: logoPreviewSize,
+                opacity: 0.85,
+                pointerEvents: 'none',
+                objectFit: 'contain',
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Visibility toggle - shows if logo is visible on CURRENT slide */}
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span
             style={{
-              backgroundColor: CASA_BRAND.colors.primary.black,
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '13px',
+              color: CASA_BRAND.colors.primary.white,
             }}
           >
-            {hasOverride ? (
-              <>
-                <FileText size={14} style={{ color: CASA_BRAND.colors.primary.amber }} />
-                <span
-                  style={{
-                    fontFamily: CASA_BRAND.fonts.body,
-                    fontSize: '12px',
-                    color: CASA_BRAND.colors.primary.amber,
-                  }}
-                >
-                  Este slide (override)
-                </span>
-              </>
-            ) : (
-              <>
-                <Globe size={14} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
-                <span
-                  style={{
-                    fontFamily: CASA_BRAND.fonts.body,
-                    fontSize: '12px',
-                    color: CASA_BRAND.colors.secondary.grayMedium,
-                  }}
-                >
-                  Global (todos los slides)
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="space-y-2">
-            {!hasOverride && (
-              <Button
-                onClick={handleApplyToSlide}
-                variant="outline"
-                size="sm"
-                className="w-full gap-2 hover:bg-white/10"
-                style={{
-                  borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                  backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                  color: CASA_BRAND.colors.primary.white,
-                }}
-              >
-                <FileText size={14} />
-                Aplicar solo a este slide
-              </Button>
-            )}
-
-            {hasOverride && (
-              <Button
-                onClick={() => onRemoveOverride(currentSlideIndex)}
-                variant="outline"
-                size="sm"
-                className="w-full gap-2 hover:bg-white/10"
-                style={{
-                  borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                  backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                  color: CASA_BRAND.colors.primary.white,
-                }}
-              >
-                <RotateCcw size={14} />
-                Restablecer a global
-              </Button>
-            )}
-
-            <Button
-              onClick={() => onApplyToAll(effectiveSettings)}
-              variant="outline"
-              size="sm"
-              className="w-full gap-2 hover:bg-white/10"
+            Mostrar en este elemento
+          </span>
+          {currentElement && (
+            <span
               style={{
-                borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                color: CASA_BRAND.colors.primary.white,
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '11px',
+                color: CASA_BRAND.colors.secondary.grayMedium,
               }}
             >
-              <Check size={14} />
-              Aplicar a todos
-            </Button>
-          </div>
+              {currentElement.title}
+            </span>
+          )}
+        </div>
+        <Switch
+          checked={isVisibleOnCurrentSlide}
+          onCheckedChange={handleVisibilityChange}
+          className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
+          thumbClassName="border-2 border-gray-400"
+        />
+      </div>
+
+      {/* Size slider */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '13px',
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            Tamaño
+          </span>
+          <span
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '12px',
+              color: CASA_BRAND.colors.secondary.grayMedium,
+            }}
+          >
+            {settings.size}%
+          </span>
+        </div>
+        <Slider
+          value={[settings.size]}
+          onValueChange={handleSizeChange}
+          min={5}
+          max={25}
+          step={1}
+          className="w-full"
+          trackClassName="bg-gray-700"
+          rangeClassName="bg-white"
+          thumbClassName="border-white bg-gray-900"
+        />
+      </div>
+
+      {/* Position info */}
+      <div
+        className="text-xs"
+        style={{
+          color: CASA_BRAND.colors.secondary.grayMedium,
+          fontFamily: CASA_BRAND.fonts.body,
+        }}
+      >
+        Posición: ({settings.position.x}%, {settings.position.y}%)
+      </div>
+
+      {/* Scope indicator */}
+      <div
+        className="flex items-center gap-2 p-2 rounded"
+        style={{
+          backgroundColor: CASA_BRAND.colors.primary.black,
+        }}
+      >
+        {scope.type === 'all' ? (
+          <Globe size={14} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+        ) : (
+          <Layers size={14} style={{ color: CASA_BRAND.colors.primary.amber }} />
+        )}
+        <span
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '12px',
+            color: scope.type === 'all'
+              ? CASA_BRAND.colors.secondary.grayMedium
+              : CASA_BRAND.colors.primary.amber,
+          }}
+        >
+          {scopeLabel}
+        </span>
+      </div>
+
+      {/* Scope dropdown */}
+      <ApplyScopeDropdown
+        elements={elements}
+        currentElement={currentElement}
+        currentSlideIndex={currentSlideIndex}
+        onApply={onSetScope}
+        currentScope={scope}
+        buttonText="Cambiar alcance..."
+        variant="outline"
+        compact
+      />
     </div>
   );
 
@@ -381,7 +369,7 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
           >
             Logo CASA
           </span>
-          {hasOverride && (
+          {scope.type === 'elements' && (
             <span
               className="px-2 py-0.5 rounded text-xs"
               style={{
@@ -389,7 +377,7 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
                 color: CASA_BRAND.colors.primary.amber,
               }}
             >
-              Override
+              {scope.elementIds.length} elementos
             </span>
           )}
         </div>

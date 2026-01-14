@@ -1,15 +1,15 @@
 /**
  * Tipos para el sistema de presentación CASA
  * Define estructuras para sincronización entre Presenter y Output views
+ *
+ * SISTEMA SIMPLIFICADO (v2):
+ * - Logo: settings + scope (sin overrides legacy)
+ * - TextOverlay: cada overlay tiene su propio scope
+ * - Solo 2 tipos de scope: 'all' o 'elements'
  */
 
 import type { Slide } from '@/types/shared/slide';
 import type { LiturgyElementType } from '@/types/shared/liturgy';
-import type { SceneState, Look, PlaceholderContext } from './sceneTypes';
-import { INITIAL_SCENE_STATE } from './sceneTypes';
-
-// Re-export scene types for convenience
-export type { SceneState, Look, PlaceholderContext } from './sceneTypes';
 
 /**
  * Elemento aplanado de la liturgia para navegación
@@ -53,6 +53,24 @@ export type LowerThirdTemplate =
   | 'mover-auto'       // "Mover auto patente ___"
   | 'llamada-urgente'; // "Llamada urgente para ___"
 
+// ============================================
+// SISTEMA DE OVERLAYS SIMPLIFICADO
+// ============================================
+
+/**
+ * Alcance de aplicación de un overlay
+ * 4 opciones disponibles:
+ * - all: Toda la presentación
+ * - slide: Diapositiva específica
+ * - element: Elemento actual (un solo elemento)
+ * - elements: Elementos específicos seleccionados (múltiples)
+ */
+export type OverlayScope =
+  | { type: 'all' }
+  | { type: 'slide'; slideIndex: number }
+  | { type: 'element'; elementId: string }
+  | { type: 'elements'; elementIds: string[] };
+
 /**
  * Posición del logo (porcentaje 0-100)
  */
@@ -71,37 +89,75 @@ export interface LogoSettings {
 }
 
 /**
- * Estado completo del logo con overrides por slide
+ * Estado completo del logo (SIMPLIFICADO)
+ * - settings: configuración visual
+ * - scope: dónde se aplica
  */
 export interface LogoState {
-  global: LogoSettings;
-  overrides: Record<number, Partial<LogoSettings>>; // slideIndex -> override
+  settings: LogoSettings;
+  scope: OverlayScope;
 }
 
 /**
  * Valores por defecto del logo
  */
 export const DEFAULT_LOGO_STATE: LogoState = {
-  global: {
-    visible: true,
+  settings: {
+    visible: false,
     position: { x: 85, y: 90 }, // esquina inferior derecha
     size: 12, // 12% del ancho
   },
-  overrides: {},
+  scope: { type: 'all' },
 };
 
 /**
- * Calcula los settings efectivos del logo para un slide
+ * Helper: Determina si un scope aplica a un slide específico
  */
-export function getEffectiveLogoSettings(state: LogoState, slideIndex: number): LogoSettings {
-  const override = state.overrides[slideIndex];
-  if (!override) return state.global;
-  return {
-    visible: override.visible ?? state.global.visible,
-    position: override.position ?? state.global.position,
-    size: override.size ?? state.global.size,
-  };
+export function isSlideInScope(
+  scope: OverlayScope,
+  slideIndex: number,
+  elements: FlattenedElement[]
+): boolean {
+  if (!scope) return true; // Default to showing if scope is missing
+
+  switch (scope.type) {
+    case 'all':
+      return true;
+    case 'slide':
+      return scope.slideIndex === slideIndex;
+    case 'element': {
+      const element = elements.find((e) => e.id === scope.elementId);
+      return element
+        ? slideIndex >= element.startSlideIndex && slideIndex <= element.endSlideIndex
+        : false;
+    }
+    case 'elements': {
+      const currentElement = elements.find(
+        (e) => slideIndex >= e.startSlideIndex && slideIndex <= e.endSlideIndex
+      );
+      return currentElement ? scope.elementIds?.includes(currentElement.id) ?? false : false;
+    }
+    default:
+      return true;
+  }
 }
+
+/**
+ * Determina si el logo debe mostrarse en un slide específico
+ */
+export function shouldShowLogo(
+  logoState: LogoState,
+  slideIndex: number,
+  elements: FlattenedElement[]
+): boolean {
+  // Defensive check for undefined/malformed state (e.g., stale localStorage)
+  if (!logoState?.settings?.visible) return false;
+  return isSlideInScope(logoState.scope, slideIndex, elements);
+}
+
+// ============================================
+// TEXT OVERLAYS
+// ============================================
 
 /**
  * Colores disponibles para text overlays (del brand-kit)
@@ -143,7 +199,8 @@ export interface TextOverlayStyle {
 }
 
 /**
- * Un texto overlay individual
+ * Un texto overlay individual (SIMPLIFICADO)
+ * Cada overlay tiene su propio scope
  */
 export interface TextOverlay {
   id: string;
@@ -151,22 +208,22 @@ export interface TextOverlay {
   position: { x: number; y: number }; // percentage 0-100
   style: TextOverlayStyle;
   visible: boolean;
+  scope: OverlayScope; // cada overlay define dónde se muestra
 }
 
 /**
- * Estado completo de text overlays con overrides por slide
+ * Estado de text overlays (SIMPLIFICADO)
+ * Solo un array de overlays, cada uno con su scope
  */
 export interface TextOverlayState {
-  global: TextOverlay[]; // max 10 overlays
-  overrides: Record<number, Partial<TextOverlay>[]>; // slideIndex -> overlay overrides (matched by id)
+  overlays: TextOverlay[];
 }
 
 /**
  * Valores por defecto para text overlays
  */
 export const DEFAULT_TEXT_OVERLAY_STATE: TextOverlayState = {
-  global: [],
-  overrides: {},
+  overlays: [],
 };
 
 /**
@@ -184,21 +241,79 @@ export const DEFAULT_TEXT_OVERLAY_STYLE: TextOverlayStyle = {
 };
 
 /**
- * Calcula los text overlays efectivos para un slide
+ * Obtiene los text overlays visibles para un slide específico
+ * (Solo los que tienen visible: true)
  */
-export function getEffectiveTextOverlays(state: TextOverlayState, slideIndex: number): TextOverlay[] {
-  const overrides = state.overrides[slideIndex] || [];
-  return state.global.map(overlay => {
-    const override = overrides.find(o => o.id === overlay.id);
-    if (!override) return overlay;
-    return {
-      ...overlay,
-      ...override,
-      position: override.position ?? overlay.position,
-      style: override.style ? { ...overlay.style, ...override.style } : overlay.style,
-    };
+export function getVisibleTextOverlays(
+  state: TextOverlayState,
+  slideIndex: number,
+  elements: FlattenedElement[]
+): TextOverlay[] {
+  // Defensive check for undefined/malformed state
+  if (!state?.overlays || !Array.isArray(state.overlays)) return [];
+
+  return state.overlays.filter((overlay) => {
+    if (!overlay?.visible) return false;
+    return isSlideInScope(overlay.scope, slideIndex, elements);
   });
 }
+
+/**
+ * Obtiene TODOS los text overlays que aplican a un slide específico
+ * (Incluye los que tienen visible: false, para preview en presenter)
+ */
+export function getAllOverlaysForSlide(
+  state: TextOverlayState,
+  slideIndex: number,
+  elements: FlattenedElement[]
+): TextOverlay[] {
+  // Defensive check for undefined/malformed state
+  if (!state?.overlays || !Array.isArray(state.overlays)) return [];
+
+  return state.overlays.filter((overlay) => {
+    if (!overlay) return false;
+    return isSlideInScope(overlay.scope, slideIndex, elements);
+  });
+}
+
+/**
+ * Helper para obtener label descriptivo del scope
+ */
+export function getScopeLabel(
+  scope: OverlayScope,
+  elements: FlattenedElement[],
+  slideIndex?: number
+): string {
+  if (!scope) return 'Toda la presentación';
+
+  switch (scope.type) {
+    case 'all':
+      return 'Toda la presentación';
+    case 'slide':
+      return `Diapositiva ${scope.slideIndex + 1}`;
+    case 'element': {
+      const element = elements.find((e) => e.id === scope.elementId);
+      return element ? element.title : 'Elemento';
+    }
+    case 'elements': {
+      const count = scope.elementIds.length;
+      if (count === 0) {
+        return 'Ningún elemento';
+      }
+      if (count === 1) {
+        const element = elements.find((e) => e.id === scope.elementIds[0]);
+        return element ? element.title : '1 elemento';
+      }
+      return `${count} elementos`;
+    }
+    default:
+      return 'Toda la presentación';
+  }
+}
+
+// ============================================
+// EDICIONES TEMPORALES
+// ============================================
 
 /**
  * Edición temporal de un slide (solo sesión, no se guarda en DB)
@@ -228,6 +343,10 @@ export function applyTempEdits(slide: Slide, tempEdits: Record<string, TempSlide
   };
 }
 
+// ============================================
+// ESTADO DE PRESENTACIÓN
+// ============================================
+
 /**
  * Estado completo de la presentación
  */
@@ -237,11 +356,11 @@ export interface PresentationState {
   currentElementIndex: number;
   isLive: boolean;
   isBlack: boolean;
+  previewOverlays: boolean; // muestra overlays en OutputView sin estar live
   lowerThird: LowerThirdState;
   logoState: LogoState;
   textOverlayState: TextOverlayState;
   tempEdits: Record<string, TempSlideEdit>; // slideId -> edits temporales
-  sceneState: SceneState; // Scene/Props system state
 }
 
 /**
@@ -261,11 +380,7 @@ export type SyncMessage =
   | { type: 'LOGO_UPDATE'; logoState: LogoState }
   | { type: 'SLIDES_UPDATE'; slides: Slide[]; tempEdits: Record<string, TempSlideEdit> }
   | { type: 'TEXT_OVERLAYS_UPDATE'; textOverlayState: TextOverlayState }
-  // Scene/Props sync messages
-  | { type: 'SCENE_CHANGE'; elementId: string; look: Look; context: PlaceholderContext }
-  | { type: 'PROP_SHOW'; propId: string }
-  | { type: 'PROP_HIDE'; propId: string }
-  | { type: 'PROPS_UPDATE'; activeProps: string[]; armedProps: string[] };
+  | { type: 'PREVIEW_OVERLAYS'; enabled: boolean };
 
 /**
  * Rol del participante en la sincronización
@@ -290,6 +405,7 @@ export const INITIAL_PRESENTATION_STATE: PresentationState = {
   currentElementIndex: 0,
   isLive: false,
   isBlack: false,
+  previewOverlays: false,
   lowerThird: {
     visible: false,
     message: '',
@@ -298,5 +414,4 @@ export const INITIAL_PRESENTATION_STATE: PresentationState = {
   logoState: DEFAULT_LOGO_STATE,
   textOverlayState: DEFAULT_TEXT_OVERLAY_STATE,
   tempEdits: {},
-  sceneState: INITIAL_SCENE_STATE,
 };

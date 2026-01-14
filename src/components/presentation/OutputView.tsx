@@ -1,6 +1,10 @@
 /**
  * OutputView - Vista de salida para proyector
  * Recibe comandos del Presenter y muestra slides en pantalla completa
+ *
+ * SISTEMA SIMPLIFICADO (v2):
+ * - Usa shouldShowLogo() para determinar si mostrar logo
+ * - Usa getVisibleTextOverlays() para obtener textos visibles
  */
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
@@ -13,10 +17,8 @@ import { useKeyboardShortcuts } from '@/hooks/presentation/useKeyboardShortcuts'
 import { useFullscreen } from '@/hooks/presentation/useFullscreen';
 import { useOutputNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { PresentationState, SyncMessage, PresentationData, TextOverlay } from '@/lib/presentation/types';
-import { INITIAL_PRESENTATION_STATE, getEffectiveLogoSettings, applyTempEdits, getEffectiveTextOverlays, DEFAULT_TEXT_OVERLAY_STYLE } from '@/lib/presentation/types';
-import { INITIAL_SCENE_STATE } from '@/lib/presentation/sceneTypes';
-import type { Prop, PropConfig, TextOverlayPropConfig, LowerThirdPropConfig, LogoVariationPropConfig } from '@/lib/presentation/sceneTypes';
+import type { PresentationState, SyncMessage } from '@/lib/presentation/types';
+import { INITIAL_PRESENTATION_STATE, shouldShowLogo, applyTempEdits, getVisibleTextOverlays, DEFAULT_LOGO_STATE } from '@/lib/presentation/types';
 import type { Slide } from '@/types/shared/slide';
 
 export const OutputView: React.FC = () => {
@@ -111,11 +113,7 @@ export const OutputView: React.FC = () => {
         break;
 
       case 'STATE_SYNC':
-        // Ensure sceneState exists (backward compatibility with old saved states)
-        setState({
-          ...message.state,
-          sceneState: message.state.sceneState || INITIAL_SCENE_STATE,
-        });
+        setState(message.state);
         break;
 
       case 'FULLSCREEN_TOGGLE':
@@ -144,70 +142,10 @@ export const OutputView: React.FC = () => {
         }));
         break;
 
-      // Scene/Props messages
-      case 'SCENE_CHANGE':
+      case 'PREVIEW_OVERLAYS':
         setState((prev) => ({
           ...prev,
-          sceneState: {
-            ...(prev.sceneState || INITIAL_SCENE_STATE),
-            currentElementId: message.elementId,
-            currentLook: message.look,
-            placeholderContext: message.context,
-            // Auto props are immediately active
-            activeProps: message.look?.props
-              ?.filter((p) => p.trigger === 'auto')
-              .map((p) => p.id) || [],
-            armedProps: message.look?.props
-              ?.filter((p) => p.trigger === 'armed')
-              .map((p) => p.id) || [],
-          },
-        }));
-        break;
-
-      case 'PROP_SHOW':
-        setState((prev) => {
-          const sceneState = prev.sceneState || INITIAL_SCENE_STATE;
-          return {
-            ...prev,
-            sceneState: {
-              ...sceneState,
-              activeProps: sceneState.activeProps.includes(message.propId)
-                ? sceneState.activeProps
-                : [...sceneState.activeProps, message.propId],
-              armedProps: sceneState.armedProps.filter((id) => id !== message.propId),
-            },
-          };
-        });
-        break;
-
-      case 'PROP_HIDE':
-        setState((prev) => {
-          const sceneState = prev.sceneState || INITIAL_SCENE_STATE;
-          // Find the prop to check if it should go back to armed
-          const prop = sceneState.currentLook?.props.find((p) => p.id === message.propId);
-          const wasArmed = prop?.trigger === 'armed';
-          return {
-            ...prev,
-            sceneState: {
-              ...sceneState,
-              activeProps: sceneState.activeProps.filter((id) => id !== message.propId),
-              // Re-arm if the prop was originally armed
-              armedProps: wasArmed && !sceneState.armedProps.includes(message.propId)
-                ? [...sceneState.armedProps, message.propId]
-                : sceneState.armedProps,
-            },
-          };
-        });
-        break;
-
-      case 'PROPS_UPDATE':
-        setState((prev) => ({
-          ...prev,
-          sceneState: {
-            ...(prev.sceneState || INITIAL_SCENE_STATE),
-            activeProps: message.activeProps,
-            armedProps: message.armedProps,
-          },
+          previewOverlays: message.enabled,
         }));
         break;
     }
@@ -246,63 +184,23 @@ export const OutputView: React.FC = () => {
   const rawSlide: Slide | null = state.data?.slides[state.currentSlideIndex] || null;
   const currentSlide: Slide | null = rawSlide ? applyTempEdits(rawSlide, state.tempEdits) : null;
 
-  // Get active scene props and convert to display format
-  const getActiveSceneTextOverlays = useCallback((): TextOverlay[] => {
-    const sceneState = state.sceneState || INITIAL_SCENE_STATE;
-    if (!sceneState.currentLook) return [];
+  // Get elements for scope resolution
+  const elements = state.data?.elements || [];
 
-    return sceneState.currentLook.props
-      .filter((prop) =>
-        prop.type === 'text-overlay' &&
-        sceneState.activeProps.includes(prop.id)
-      )
-      .map((prop) => {
-        const config = prop.config as TextOverlayPropConfig;
-        return {
-          id: `scene-${prop.id}`,
-          content: config.content,
-          position: config.position,
-          style: config.style || DEFAULT_TEXT_OVERLAY_STYLE,
-          visible: true,
-        };
-      });
-  }, [state.sceneState]);
+  // Determine if logo should show on current slide (with fallback for stale/missing state)
+  const logoState = state.logoState ?? DEFAULT_LOGO_STATE;
+  const showLogo = shouldShowLogo(logoState, state.currentSlideIndex, elements);
 
-  // Check if there's an active lower-third from scene props
-  const getActiveSceneLowerThird = useCallback(() => {
-    const sceneState = state.sceneState || INITIAL_SCENE_STATE;
-    if (!sceneState.currentLook) return null;
+  // Get visible text overlays for current slide (with fallback for stale/missing state)
+  const textOverlayState = state.textOverlayState ?? { overlays: [] };
+  const textOverlays = getVisibleTextOverlays(textOverlayState, state.currentSlideIndex, elements);
 
-    const lowerThirdProp = sceneState.currentLook.props.find(
-      (prop) =>
-        prop.type === 'lower-third' &&
-        sceneState.activeProps.includes(prop.id)
-    );
+  // Check if we should show content (live OR preview mode with data)
+  const isPreviewMode = state.previewOverlays === true;
+  const shouldShowContent = state.data && (state.isLive || isPreviewMode);
 
-    if (!lowerThirdProp) return null;
-
-    const config = lowerThirdProp.config as LowerThirdPropConfig;
-    return {
-      visible: true,
-      message: config.message,
-      duration: config.duration,
-      template: config.template,
-    };
-  }, [state.sceneState]);
-
-  // Combine global lower-third state with scene lower-third
-  const effectiveLowerThird = state.lowerThird.visible
-    ? state.lowerThird
-    : (getActiveSceneLowerThird() || state.lowerThird);
-
-  // Combine global text overlays with scene text overlays
-  const allTextOverlays = [
-    ...getEffectiveTextOverlays(state.textOverlayState, state.currentSlideIndex),
-    ...getActiveSceneTextOverlays(),
-  ];
-
-  // Waiting screen when not live or no data
-  if (!state.isLive || !state.data) {
+  // Waiting screen when no data or not live/preview
+  if (!shouldShowContent) {
     return (
       <div
         ref={containerRef}
@@ -325,7 +223,7 @@ export const OutputView: React.FC = () => {
               color: CASA_BRAND.colors.secondary.grayMedium,
             }}
           >
-            Esperando conexion del presentador...
+            Esperando conexión del presentador...
           </p>
           <button
             onClick={toggleFullscreen}
@@ -365,6 +263,23 @@ export const OutputView: React.FC = () => {
         backgroundColor: CASA_BRAND.colors.primary.black,
       }}
     >
+      {/* Preview mode indicator */}
+      {isPreviewMode && !state.isLive && (
+        <div
+          className="absolute top-4 left-4 z-50 px-3 py-1.5 rounded-md"
+          style={{
+            backgroundColor: `${CASA_BRAND.colors.primary.amber}30`,
+            color: CASA_BRAND.colors.primary.amber,
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '14px',
+            fontWeight: 600,
+            border: `1px solid ${CASA_BRAND.colors.primary.amber}50`,
+          }}
+        >
+          VISTA PREVIA
+        </div>
+      )}
+
       {/* Slide container */}
       <div className="relative">
         {currentSlide && (
@@ -375,15 +290,17 @@ export const OutputView: React.FC = () => {
           />
         )}
 
-        {/* Logo overlay */}
-        <LogoOverlay
-          settings={getEffectiveLogoSettings(state.logoState, state.currentSlideIndex)}
-          slideWidth={CASA_BRAND.slide.width * scale}
-          slideHeight={CASA_BRAND.slide.height * scale}
-        />
+        {/* Logo overlay - only show if shouldShowLogo returns true */}
+        {showLogo && (
+          <LogoOverlay
+            settings={logoState.settings}
+            slideWidth={CASA_BRAND.slide.width * scale}
+            slideHeight={CASA_BRAND.slide.height * scale}
+          />
+        )}
 
-        {/* Text overlays (global + scene props) */}
-        {allTextOverlays.map((overlay) => (
+        {/* Text overlays */}
+        {textOverlays.map((overlay) => (
           <TextOverlayDisplay
             key={overlay.id}
             overlay={overlay}
@@ -392,9 +309,9 @@ export const OutputView: React.FC = () => {
           />
         ))}
 
-        {/* Lower-third overlay (global or scene prop) */}
+        {/* Lower-third overlay */}
         <LowerThirdDisplay
-          state={effectiveLowerThird}
+          state={state.lowerThird}
           onDismiss={handleDismissLowerThird}
         />
       </div>

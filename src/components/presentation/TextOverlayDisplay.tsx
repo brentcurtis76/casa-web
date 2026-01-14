@@ -12,6 +12,10 @@ interface TextOverlayDisplayProps {
   overlay: TextOverlay;
   slideWidth: number;
   slideHeight: number;
+  /** Whether this overlay is currently being dragged */
+  isDragging?: boolean;
+  /** Show hidden overlays (visible: false) with preview styling - for presenter view */
+  showHidden?: boolean;
 }
 
 /**
@@ -38,9 +42,13 @@ export const TextOverlayDisplay: React.FC<TextOverlayDisplayProps> = ({
   overlay,
   slideWidth,
   slideHeight,
+  isDragging = false,
+  showHidden = false,
 }) => {
-  if (!overlay.visible) return null;
+  // If not visible and not showing hidden overlays, don't render
+  if (!overlay.visible && !showHidden) return null;
 
+  const isHiddenPreview = !overlay.visible && showHidden;
   const { content, position, style } = overlay;
 
   // Calcular posición en píxeles
@@ -64,12 +72,14 @@ export const TextOverlayDisplay: React.FC<TextOverlayDisplayProps> = ({
 
   return (
     <div
-      className="absolute pointer-events-none"
+      className="absolute"
       style={{
         left: x,
         top: y,
         transform: `translate(${translateX}, -50%)`,
-        zIndex: 10,
+        zIndex: isDragging ? 100 : 10,
+        pointerEvents: 'auto',
+        opacity: isHiddenPreview ? 0.5 : 1,
       }}
     >
       <div
@@ -87,6 +97,13 @@ export const TextOverlayDisplay: React.FC<TextOverlayDisplayProps> = ({
           borderRadius: hasBackground ? '0.25em' : 0,
           whiteSpace: 'pre-wrap',
           lineHeight: 1.3,
+          outline: isDragging
+            ? `2px solid ${CASA_BRAND.colors.primary.amber}`
+            : isHiddenPreview
+            ? `2px dashed ${CASA_BRAND.colors.secondary.grayMedium}`
+            : 'none',
+          outlineOffset: '4px',
+          boxShadow: isDragging ? `0 0 20px ${CASA_BRAND.colors.primary.amber}40` : 'none',
         }}
       >
         {content}

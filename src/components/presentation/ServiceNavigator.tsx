@@ -7,9 +7,7 @@ import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { FlattenedElement } from '@/lib/presentation/types';
-import { Music, BookOpen, Hand, Church, Gift, Megaphone, Heart, Image, Sparkles } from 'lucide-react';
-import { hasDefaultTemplate, getDefaultLook } from '@/lib/presentation/defaultTemplates';
-import type { LiturgyElementType } from '@/types/shared/liturgy';
+import { Music, BookOpen, Hand, Church, Gift, Megaphone, Heart, Image } from 'lucide-react';
 
 interface ServiceNavigatorProps {
   elements: FlattenedElement[];
@@ -68,9 +66,6 @@ export const ServiceNavigator: React.FC<ServiceNavigatorProps> = ({
           {elements.map((element, index) => {
             const isActive = index === currentElementIndex;
             const Icon = getElementIcon(element.type);
-            const hasScene = hasDefaultTemplate(element.type as LiturgyElementType);
-            const look = hasScene ? getDefaultLook(element.type as LiturgyElementType) : null;
-            const propCount = look?.props.length || 0;
 
             return (
               <button
@@ -95,34 +90,19 @@ export const ServiceNavigator: React.FC<ServiceNavigatorProps> = ({
                   }}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p
-                      className="truncate flex-1"
-                      style={{
-                        fontFamily: CASA_BRAND.fonts.body,
-                        fontSize: '13px',
-                        fontWeight: isActive ? 600 : 400,
-                        color: isActive
-                          ? CASA_BRAND.colors.primary.white
-                          : CASA_BRAND.colors.secondary.grayLight,
-                      }}
-                    >
-                      {element.title}
-                    </p>
-                    {hasScene && propCount > 0 && (
-                      <span
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
-                        style={{
-                          backgroundColor: CASA_BRAND.colors.primary.amber + '20',
-                          color: CASA_BRAND.colors.primary.amber,
-                        }}
-                        title={`${propCount} prop${propCount !== 1 ? 's' : ''} configurado${propCount !== 1 ? 's' : ''}`}
-                      >
-                        <Sparkles size={10} />
-                        {propCount}
-                      </span>
-                    )}
-                  </div>
+                  <p
+                    className="truncate"
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '13px',
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive
+                        ? CASA_BRAND.colors.primary.white
+                        : CASA_BRAND.colors.secondary.grayLight,
+                    }}
+                  >
+                    {element.title}
+                  </p>
                   <p
                     style={{
                       fontFamily: CASA_BRAND.fonts.body,

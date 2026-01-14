@@ -1,6 +1,10 @@
 /**
  * Hook para manejar el estado de la presentacion
  * Centraliza la logica de navegacion y control
+ *
+ * SISTEMA SIMPLIFICADO (v2):
+ * - Logo: updateLogo(), setLogoScope()
+ * - TextOverlay: addTextOverlay(), updateTextOverlay(), removeTextOverlay()
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -14,14 +18,9 @@ import type {
   TextOverlay,
   TextOverlayState,
   TextOverlayStyle,
-  SceneState,
-  PlaceholderContext,
+  OverlayScope,
 } from '@/lib/presentation/types';
 import { INITIAL_PRESENTATION_STATE, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_TEXT_OVERLAY_STYLE } from '@/lib/presentation/types';
-import { INITIAL_SCENE_STATE } from '@/lib/presentation/sceneTypes';
-import type { Look, Prop } from '@/lib/presentation/sceneTypes';
-import { resolveLookForElement, buildPlaceholderContext, resolveLookPlaceholders } from '@/lib/presentation/sceneService';
-import { getAutoProps, getArmedProps } from '@/lib/presentation/sceneTypes';
 import type { Slide } from '@/types/shared/slide';
 import { findElementForSlide } from '@/lib/presentation/presentationService';
 
@@ -43,16 +42,16 @@ interface UsePresentationStateReturn {
   goLive: () => void;
   toggleBlack: () => void;
   setBlack: (black: boolean) => void;
+  togglePreviewOverlays: () => void;
+  setPreviewOverlays: (enabled: boolean) => void;
 
   // Lower-thirds
   showLowerThird: (message: string, duration?: number, template?: LowerThirdTemplate) => void;
   hideLowerThird: () => void;
 
-  // Logo
-  updateLogoGlobal: (settings: Partial<LogoSettings>) => void;
-  setLogoOverride: (slideIndex: number, settings: Partial<LogoSettings>) => void;
-  removeLogoOverride: (slideIndex: number) => void;
-  applyLogoToAll: (settings: LogoSettings) => void;
+  // Logo (SIMPLIFICADO)
+  updateLogo: (settings: Partial<LogoSettings>) => void;
+  setLogoScope: (scope: OverlayScope) => void;
   setLogoState: (logoState: LogoState) => void;
 
   // Edición temporal de slides
@@ -63,61 +62,65 @@ interface UsePresentationStateReturn {
   setTempEdits: (tempEdits: Record<string, TempSlideEdit>) => void;
   updateSlides: (slides: Slide[]) => void;
 
-  // Text overlays
-  addTextOverlay: (content: string, position?: { x: number; y: number }, style?: Partial<TextOverlayStyle>) => void;
+  // Text overlays (SIMPLIFICADO)
+  addTextOverlay: (overlay: TextOverlay) => void;
   updateTextOverlay: (id: string, updates: Partial<TextOverlay>) => void;
   removeTextOverlay: (id: string) => void;
-  setTextOverlayOverride: (slideIndex: number, overlayId: string, override: Partial<TextOverlay>) => void;
-  removeTextOverlayOverride: (slideIndex: number, overlayId: string) => void;
-  clearTextOverlayOverrides: (slideIndex: number) => void;
   setTextOverlayState: (state: TextOverlayState) => void;
-  reorderTextOverlays: (fromIndex: number, toIndex: number) => void;
-
-  // Scene/Props system
-  setSceneState: (sceneState: SceneState) => void;
-  updateSceneForElement: (elementIndex: number) => void;
-  showProp: (propId: string) => void;
-  hideProp: (propId: string) => void;
-  hideAllProps: () => void;
-  getResolvedProp: (propId: string) => Prop | null;
 
   // Utilidades
   currentSlide: PresentationData['slides'][0] | null;
   currentElement: PresentationData['elements'][0] | null;
-  currentLook: Look | null;
-  armedProps: Prop[];
-  activeProps: Prop[];
   totalSlides: number;
 }
 
-const LOGO_SETTINGS_KEY = 'casa-presentation-logo-settings';
+const LOGO_STATE_KEY = 'casa-presentation-logo-state';
 const TEXT_OVERLAYS_KEY = 'casa-presentation-text-overlays';
 
 /**
- * Cargar configuración de logo desde localStorage
+ * Cargar estado de logo desde localStorage
+ * Migra formato antiguo (global/overrides/scopes) al nuevo (settings/scope)
  */
-function loadLogoSettingsFromStorage(): LogoSettings | null {
+function loadLogoStateFromStorage(): LogoState | null {
   if (typeof window === 'undefined') return null;
   try {
-    const saved = localStorage.getItem(LOGO_SETTINGS_KEY);
+    const saved = localStorage.getItem(LOGO_STATE_KEY);
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+
+      // Check if this is the OLD format (has 'global' instead of 'settings')
+      if (parsed.global && !parsed.settings) {
+        console.log('Migrating old logo state format to new format');
+        // Migrate to new format
+        return {
+          settings: parsed.global,
+          scope: { type: 'all' },
+        };
+      }
+
+      // Validate new format has required fields
+      if (!parsed.settings || !parsed.scope) {
+        console.warn('Invalid logo state in localStorage, using default');
+        return null;
+      }
+
+      return parsed;
     }
   } catch (e) {
-    console.warn('Error loading logo settings from localStorage:', e);
+    console.warn('Error loading logo state from localStorage:', e);
   }
   return null;
 }
 
 /**
- * Guardar configuración de logo en localStorage
+ * Guardar estado de logo en localStorage
  */
-function saveLogoSettingsToStorage(settings: LogoSettings): void {
+function saveLogoStateToStorage(state: LogoState): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LOGO_SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(LOGO_STATE_KEY, JSON.stringify(state));
   } catch (e) {
-    console.warn('Error saving logo settings to localStorage:', e);
+    console.warn('Error saving logo state to localStorage:', e);
   }
 }
 
@@ -155,27 +158,28 @@ function saveTextOverlaysToStorage(overlays: TextOverlay[]): void {
 export function usePresentationState(): UsePresentationStateReturn {
   const [state, setState] = useState<PresentationState>(() => {
     // Intentar cargar configuraciones guardadas
-    const savedLogoSettings = loadLogoSettingsFromStorage();
+    const savedLogoState = loadLogoStateFromStorage();
     const savedTextOverlays = loadTextOverlaysFromStorage();
 
-    let initialState = INITIAL_PRESENTATION_STATE;
+    // Start with a deep copy to avoid mutation issues
+    let initialState: PresentationState = {
+      ...INITIAL_PRESENTATION_STATE,
+      logoState: { ...DEFAULT_LOGO_STATE },
+      textOverlayState: { ...DEFAULT_TEXT_OVERLAY_STATE },
+    };
 
-    if (savedLogoSettings) {
+    if (savedLogoState?.settings && savedLogoState?.scope) {
       initialState = {
         ...initialState,
-        logoState: {
-          global: savedLogoSettings,
-          overrides: {},
-        },
+        logoState: savedLogoState,
       };
     }
 
-    if (savedTextOverlays) {
+    if (savedTextOverlays && Array.isArray(savedTextOverlays)) {
       initialState = {
         ...initialState,
         textOverlayState: {
-          global: savedTextOverlays,
-          overrides: {},
+          overlays: savedTextOverlays,
         },
       };
     }
@@ -183,15 +187,19 @@ export function usePresentationState(): UsePresentationStateReturn {
     return initialState;
   });
 
-  // Guardar configuración de logo cuando cambie
+  // Guardar estado de logo cuando cambie (con check defensivo)
   useEffect(() => {
-    saveLogoSettingsToStorage(state.logoState.global);
-  }, [state.logoState.global]);
+    if (state.logoState?.settings && state.logoState?.scope) {
+      saveLogoStateToStorage(state.logoState);
+    }
+  }, [state.logoState]);
 
-  // Guardar text overlays cuando cambien
+  // Guardar text overlays cuando cambien (con check defensivo)
   useEffect(() => {
-    saveTextOverlaysToStorage(state.textOverlayState.global);
-  }, [state.textOverlayState.global]);
+    if (state.textOverlayState?.overlays && Array.isArray(state.textOverlayState.overlays)) {
+      saveTextOverlaysToStorage(state.textOverlayState.overlays);
+    }
+  }, [state.textOverlayState?.overlays]);
 
   // Cargar liturgia
   const loadLiturgy = useCallback((data: PresentationData) => {
@@ -289,6 +297,7 @@ export function usePresentationState(): UsePresentationStateReturn {
       ...prev,
       isLive: !prev.isLive,
       isBlack: prev.isLive ? prev.isBlack : false, // Solo quita negro al activar
+      previewOverlays: prev.isLive ? prev.previewOverlays : false, // Desactivar preview al ir en vivo
     }));
   }, []);
 
@@ -305,6 +314,22 @@ export function usePresentationState(): UsePresentationStateReturn {
     setState((prev) => ({
       ...prev,
       isBlack: black,
+    }));
+  }, []);
+
+  // Alternar vista previa de overlays
+  const togglePreviewOverlays = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      previewOverlays: !prev.previewOverlays,
+    }));
+  }, []);
+
+  // Establecer vista previa de overlays
+  const setPreviewOverlays = useCallback((enabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      previewOverlays: enabled,
     }));
   }, []);
 
@@ -336,61 +361,38 @@ export function usePresentationState(): UsePresentationStateReturn {
     }));
   }, []);
 
-  // Actualizar configuración global del logo
-  const updateLogoGlobal = useCallback((settings: Partial<LogoSettings>) => {
-    setState((prev) => ({
-      ...prev,
-      logoState: {
-        ...prev.logoState,
-        global: {
-          ...prev.logoState.global,
-          ...settings,
-        },
-      },
-    }));
-  }, []);
+  // ============ LOGO ACTIONS (SIMPLIFICADO) ============
 
-  // Establecer override de logo para un slide específico
-  const setLogoOverride = useCallback((slideIndex: number, settings: Partial<LogoSettings>) => {
-    setState((prev) => ({
-      ...prev,
-      logoState: {
-        ...prev.logoState,
-        overrides: {
-          ...prev.logoState.overrides,
-          [slideIndex]: {
-            ...prev.logoState.overrides[slideIndex],
-            ...settings,
-          },
-        },
-      },
-    }));
-  }, []);
-
-  // Remover override de logo de un slide
-  const removeLogoOverride = useCallback((slideIndex: number) => {
+  // Actualizar configuración del logo
+  const updateLogo = useCallback((settings: Partial<LogoSettings>) => {
     setState((prev) => {
-      const newOverrides = { ...prev.logoState.overrides };
-      delete newOverrides[slideIndex];
+      const currentSettings = prev.logoState?.settings ?? DEFAULT_LOGO_STATE.settings;
+      const currentScope = prev.logoState?.scope ?? DEFAULT_LOGO_STATE.scope;
       return {
         ...prev,
         logoState: {
-          ...prev.logoState,
-          overrides: newOverrides,
+          settings: {
+            ...currentSettings,
+            ...settings,
+          },
+          scope: currentScope,
         },
       };
     });
   }, []);
 
-  // Aplicar configuración de logo a todos los slides (como nuevo global)
-  const applyLogoToAll = useCallback((settings: LogoSettings) => {
-    setState((prev) => ({
-      ...prev,
-      logoState: {
-        global: settings,
-        overrides: {}, // Limpiar todos los overrides
-      },
-    }));
+  // Establecer el scope del logo
+  const setLogoScope = useCallback((scope: OverlayScope) => {
+    setState((prev) => {
+      const currentSettings = prev.logoState?.settings ?? DEFAULT_LOGO_STATE.settings;
+      return {
+        ...prev,
+        logoState: {
+          settings: currentSettings,
+          scope,
+        },
+      };
+    });
   }, []);
 
   // Establecer estado completo del logo (para sincronización)
@@ -400,6 +402,8 @@ export function usePresentationState(): UsePresentationStateReturn {
       logoState,
     }));
   }, []);
+
+  // ============ SLIDE EDITING ============
 
   // Editar contenido de slide temporalmente
   const editSlideContent = useCallback((slideId: string, content: TempSlideEdit['content']) => {
@@ -549,31 +553,19 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
-  // ============ TEXT OVERLAY ACTIONS ============
+  // ============ TEXT OVERLAY ACTIONS (SIMPLIFICADO) ============
 
-  // Agregar nuevo text overlay
-  const addTextOverlay = useCallback((
-    content: string,
-    position: { x: number; y: number } = { x: 50, y: 50 },
-    style: Partial<TextOverlayStyle> = {}
-  ) => {
+  // Agregar nuevo text overlay (con scope incluido)
+  const addTextOverlay = useCallback((overlay: TextOverlay) => {
     setState((prev) => {
+      const currentOverlays = prev.textOverlayState?.overlays ?? [];
       // Máximo 10 overlays
-      if (prev.textOverlayState.global.length >= 10) return prev;
-
-      const newOverlay: TextOverlay = {
-        id: `text-overlay-${Date.now()}`,
-        content,
-        position,
-        style: { ...DEFAULT_TEXT_OVERLAY_STYLE, ...style },
-        visible: true,
-      };
+      if (currentOverlays.length >= 10) return prev;
 
       return {
         ...prev,
         textOverlayState: {
-          ...prev.textOverlayState,
-          global: [...prev.textOverlayState.global, newOverlay],
+          overlays: [...currentOverlays, overlay],
         },
       };
     });
@@ -581,113 +573,33 @@ export function usePresentationState(): UsePresentationStateReturn {
 
   // Actualizar un text overlay existente
   const updateTextOverlay = useCallback((id: string, updates: Partial<TextOverlay>) => {
-    setState((prev) => ({
-      ...prev,
-      textOverlayState: {
-        ...prev.textOverlayState,
-        global: prev.textOverlayState.global.map((overlay) =>
-          overlay.id === id
-            ? {
-                ...overlay,
-                ...updates,
-                style: updates.style ? { ...overlay.style, ...updates.style } : overlay.style,
-              }
-            : overlay
-        ),
-      },
-    }));
+    setState((prev) => {
+      const currentOverlays = prev.textOverlayState?.overlays ?? [];
+      return {
+        ...prev,
+        textOverlayState: {
+          overlays: currentOverlays.map((overlay) =>
+            overlay.id === id
+              ? {
+                  ...overlay,
+                  ...updates,
+                  style: updates.style ? { ...overlay.style, ...updates.style } : overlay.style,
+                }
+              : overlay
+          ),
+        },
+      };
+    });
   }, []);
 
   // Eliminar un text overlay
   const removeTextOverlay = useCallback((id: string) => {
     setState((prev) => {
-      // También eliminar todos los overrides de este overlay
-      const newOverrides: Record<number, Partial<TextOverlay>[]> = {};
-      Object.entries(prev.textOverlayState.overrides).forEach(([slideIndex, overrides]) => {
-        const filtered = overrides.filter((o) => o.id !== id);
-        if (filtered.length > 0) {
-          newOverrides[Number(slideIndex)] = filtered;
-        }
-      });
-
+      const currentOverlays = prev.textOverlayState?.overlays ?? [];
       return {
         ...prev,
         textOverlayState: {
-          global: prev.textOverlayState.global.filter((o) => o.id !== id),
-          overrides: newOverrides,
-        },
-      };
-    });
-  }, []);
-
-  // Establecer override de text overlay para un slide específico
-  const setTextOverlayOverride = useCallback((
-    slideIndex: number,
-    overlayId: string,
-    override: Partial<TextOverlay>
-  ) => {
-    setState((prev) => {
-      const currentOverrides = prev.textOverlayState.overrides[slideIndex] || [];
-      const existingIndex = currentOverrides.findIndex((o) => o.id === overlayId);
-
-      let newOverrides: Partial<TextOverlay>[];
-      if (existingIndex >= 0) {
-        // Actualizar override existente
-        newOverrides = currentOverrides.map((o, i) =>
-          i === existingIndex ? { ...o, ...override, id: overlayId } : o
-        );
-      } else {
-        // Agregar nuevo override
-        newOverrides = [...currentOverrides, { ...override, id: overlayId }];
-      }
-
-      return {
-        ...prev,
-        textOverlayState: {
-          ...prev.textOverlayState,
-          overrides: {
-            ...prev.textOverlayState.overrides,
-            [slideIndex]: newOverrides,
-          },
-        },
-      };
-    });
-  }, []);
-
-  // Eliminar override de text overlay de un slide
-  const removeTextOverlayOverride = useCallback((slideIndex: number, overlayId: string) => {
-    setState((prev) => {
-      const currentOverrides = prev.textOverlayState.overrides[slideIndex] || [];
-      const filtered = currentOverrides.filter((o) => o.id !== overlayId);
-
-      const newOverrides = { ...prev.textOverlayState.overrides };
-      if (filtered.length > 0) {
-        newOverrides[slideIndex] = filtered;
-      } else {
-        delete newOverrides[slideIndex];
-      }
-
-      return {
-        ...prev,
-        textOverlayState: {
-          ...prev.textOverlayState,
-          overrides: newOverrides,
-        },
-      };
-    });
-  }, []);
-
-  // Limpiar todos los overrides de text overlays de un slide
-  const clearTextOverlayOverrides = useCallback((slideIndex: number) => {
-    setState((prev) => {
-      const newOverrides = { ...prev.textOverlayState.overrides };
-      delete newOverrides[slideIndex];
-
-      return {
-        ...prev,
-        textOverlayState: {
-          ...prev.textOverlayState,
-          overrides: newOverrides,
+          overlays: currentOverlays.filter((o) => o.id !== id),
         },
       };
     });
@@ -701,133 +613,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     }));
   }, []);
 
-  // Reordenar text overlays
-  const reorderTextOverlays = useCallback((fromIndex: number, toIndex: number) => {
-    setState((prev) => {
-      const overlays = [...prev.textOverlayState.global];
-      const [moved] = overlays.splice(fromIndex, 1);
-      overlays.splice(toIndex, 0, moved);
-
-      return {
-        ...prev,
-        textOverlayState: {
-          ...prev.textOverlayState,
-          global: overlays,
-        },
-      };
-    });
-  }, []);
-
-  // ============ END TEXT OVERLAY ACTIONS ============
-
-  // ============ SCENE/PROPS ACTIONS ============
-
-  // Set scene state (for sync)
-  const setSceneState = useCallback((sceneState: SceneState) => {
-    setState((prev) => ({
-      ...prev,
-      sceneState,
-    }));
-  }, []);
-
-  // Update scene when navigating to a new element
-  const updateSceneForElement = useCallback((elementIndex: number) => {
-    setState((prev) => {
-      if (!prev.data || !prev.data.elements[elementIndex]) {
-        return {
-          ...prev,
-          sceneState: INITIAL_SCENE_STATE,
-        };
-      }
-
-      const element = prev.data.elements[elementIndex];
-      const look = resolveLookForElement(element.type, null);
-
-      if (!look) {
-        return {
-          ...prev,
-          sceneState: {
-            currentElementId: element.id,
-            currentLook: null,
-            activeProps: [],
-            armedProps: [],
-            placeholderContext: buildPlaceholderContext(element, prev.data.liturgyDate),
-          },
-        };
-      }
-
-      // Build placeholder context
-      const placeholderContext = buildPlaceholderContext(element, prev.data.liturgyDate);
-
-      // Resolve placeholders in the look
-      const resolvedLook = resolveLookPlaceholders(look, placeholderContext);
-
-      // Get auto and armed props
-      const autoProps = getAutoProps(resolvedLook);
-      const armedPropsList = getArmedProps(resolvedLook);
-
-      return {
-        ...prev,
-        sceneState: {
-          currentElementId: element.id,
-          currentLook: resolvedLook,
-          activeProps: autoProps.map((p) => p.id), // Auto-show these
-          armedProps: armedPropsList.map((p) => p.id),
-          placeholderContext,
-        },
-      };
-    });
-  }, []);
-
-  // Show a prop (move from armed to active)
-  const showProp = useCallback((propId: string) => {
-    setState((prev) => {
-      const newArmed = prev.sceneState.armedProps.filter((id) => id !== propId);
-      const newActive = prev.sceneState.activeProps.includes(propId)
-        ? prev.sceneState.activeProps
-        : [...prev.sceneState.activeProps, propId];
-
-      return {
-        ...prev,
-        sceneState: {
-          ...prev.sceneState,
-          armedProps: newArmed,
-          activeProps: newActive,
-        },
-      };
-    });
-  }, []);
-
-  // Hide a prop (remove from active)
-  const hideProp = useCallback((propId: string) => {
-    setState((prev) => ({
-      ...prev,
-      sceneState: {
-        ...prev.sceneState,
-        activeProps: prev.sceneState.activeProps.filter((id) => id !== propId),
-      },
-    }));
-  }, []);
-
-  // Hide all props
-  const hideAllProps = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      sceneState: {
-        ...prev.sceneState,
-        activeProps: [],
-      },
-    }));
-  }, []);
-
-  // Get a resolved prop by ID
-  const getResolvedProp = useCallback((propId: string): Prop | null => {
-    const look = state.sceneState.currentLook;
-    if (!look) return null;
-    return look.props.find((p) => p.id === propId) ?? null;
-  }, [state.sceneState.currentLook]);
-
-  // ============ END SCENE/PROPS ACTIONS ============
+  // ============ COMPUTED VALUES ============
 
   // Slide actual (con ediciones temporales aplicadas)
   const currentSlide = useMemo(() => {
@@ -859,29 +645,6 @@ export function usePresentationState(): UsePresentationStateReturn {
     return state.data?.slides.length || 0;
   }, [state.data]);
 
-  // Current look from scene state
-  const currentLook = useMemo(() => {
-    return state.sceneState.currentLook;
-  }, [state.sceneState.currentLook]);
-
-  // Armed props (resolved from current look)
-  const armedProps = useMemo((): Prop[] => {
-    const look = state.sceneState.currentLook;
-    if (!look) return [];
-    return state.sceneState.armedProps
-      .map((id) => look.props.find((p) => p.id === id))
-      .filter((p): p is Prop => p !== undefined);
-  }, [state.sceneState.currentLook, state.sceneState.armedProps]);
-
-  // Active props (resolved from current look)
-  const activeProps = useMemo((): Prop[] => {
-    const look = state.sceneState.currentLook;
-    if (!look) return [];
-    return state.sceneState.activeProps
-      .map((id) => look.props.find((p) => p.id === id))
-      .filter((p): p is Prop => p !== undefined);
-  }, [state.sceneState.currentLook, state.sceneState.activeProps]);
-
   return {
     state,
     loadLiturgy,
@@ -894,40 +657,29 @@ export function usePresentationState(): UsePresentationStateReturn {
     goLive,
     toggleBlack,
     setBlack,
+    togglePreviewOverlays,
+    setPreviewOverlays,
     showLowerThird,
     hideLowerThird,
-    updateLogoGlobal,
-    setLogoOverride,
-    removeLogoOverride,
-    applyLogoToAll,
+    // Logo (simplificado)
+    updateLogo,
+    setLogoScope,
     setLogoState,
+    // Slide editing
     editSlideContent,
     clearSlideEdit,
     duplicateSlide,
     deleteSlide,
     setTempEdits,
     updateSlides,
+    // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
-    setTextOverlayOverride,
-    removeTextOverlayOverride,
-    clearTextOverlayOverrides,
     setTextOverlayState,
-    reorderTextOverlays,
-    // Scene/Props
-    setSceneState,
-    updateSceneForElement,
-    showProp,
-    hideProp,
-    hideAllProps,
-    getResolvedProp,
     // Utilities
     currentSlide,
     currentElement,
-    currentLook,
-    armedProps,
-    activeProps,
     totalSlides,
   };
 }

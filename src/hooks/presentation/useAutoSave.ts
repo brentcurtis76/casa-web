@@ -76,13 +76,14 @@ export function useAutoSave(state: PresentationState): void {
 /**
  * Retrieves saved presentation state from localStorage
  * Returns null if no state exists or if it's too old
+ * Migrates old format to new format if necessary
  */
 export function getSavedPresentationState(): SavedPresentationState | null {
   try {
     const saved = localStorage.getItem(PRESENTATION_STATE_KEY);
     if (!saved) return null;
 
-    const parsed: SavedPresentationState = JSON.parse(saved);
+    const parsed = JSON.parse(saved);
 
     // Check if state is too old (more than 4 hours)
     if (Date.now() - parsed.savedAt > MAX_STATE_AGE_MS) {
@@ -90,7 +91,30 @@ export function getSavedPresentationState(): SavedPresentationState | null {
       return null;
     }
 
-    return parsed;
+    // Migrate old logoState format (global -> settings)
+    if (parsed.logoState?.global && !parsed.logoState?.settings) {
+      parsed.logoState = {
+        settings: parsed.logoState.global,
+        scope: { type: 'all' as const },
+      };
+    }
+
+    // Migrate old textOverlayState format (ensure overlays array exists)
+    if (parsed.textOverlayState && !Array.isArray(parsed.textOverlayState.overlays)) {
+      // Old format might have had global/overrides/scopes
+      parsed.textOverlayState = {
+        overlays: parsed.textOverlayState.global ? [] : (parsed.textOverlayState.overlays || []),
+      };
+    }
+
+    // Validate required fields exist
+    if (!parsed.logoState?.settings || !parsed.textOverlayState?.overlays) {
+      console.warn('Invalid saved state format, clearing');
+      clearSavedPresentationState();
+      return null;
+    }
+
+    return parsed as SavedPresentationState;
   } catch (err) {
     console.error('Failed to read saved presentation state:', err);
     return null;
