@@ -30,7 +30,7 @@ const ILLUSTRATION_STYLES: Record<string, string> = {
 interface Character {
   name: string;
   visualDescription: string;
-  referenceImage?: string; // base64 de la imagen de referencia
+  referenceImage?: string;
 }
 
 interface Scene {
@@ -43,9 +43,6 @@ interface Location {
   description: string;
 }
 
-/**
- * Detecta qué personajes aparecen en una escena basándose en el texto y descripción visual
- */
 function detectCharactersInScene(
   scene: Scene,
   characters: Character[]
@@ -54,8 +51,6 @@ function detectCharactersInScene(
 
   return characters.filter(character => {
     const charName = character.name.toLowerCase();
-    // Buscar el nombre del personaje en el texto de la escena
-    // También buscar variaciones comunes (sin artículos, diminutivos, etc.)
     const nameVariations = [
       charName,
       charName.replace(/^el\s+/i, ''),
@@ -72,10 +67,6 @@ function detectCharactersInScene(
   });
 }
 
-/**
- * Construye el prompt para generar una imagen de escena
- * Solo incluye los personajes que aparecen en la escena
- */
 function buildScenePrompt(
   styleId: string,
   scene: Scene,
@@ -84,12 +75,10 @@ function buildScenePrompt(
 ): string {
   const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
-  // Construir descripciones de personajes que SÍ aparecen en la escena
   const characterDescriptions = charactersInScene.length > 0
     ? charactersInScene.map(c => `- ${c.name}: ${c.visualDescription}`).join('\n')
     : 'No specific characters in this scene';
 
-  // Instrucción especial si hay imágenes de referencia
   const referenceInstruction = charactersInScene.some(c => c.referenceImage)
     ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
     : '';
@@ -119,9 +108,6 @@ CRITICAL instructions:
 `.trim();
 }
 
-/**
- * Construye el prompt para character sheet
- */
 function buildCharacterSheetPrompt(
   styleId: string,
   character: { name: string; description: string; visualDescription: string }
@@ -146,9 +132,6 @@ Important:
 `.trim();
 }
 
-/**
- * Construye el prompt para la portada
- */
 function buildCoverPrompt(
   styleId: string,
   title: string,
@@ -177,9 +160,6 @@ Important:
 `.trim();
 }
 
-/**
- * Construye el prompt para la imagen final "Fin"
- */
 function buildEndPrompt(styleId: string): string {
   const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
@@ -197,50 +177,65 @@ No characters, just the text and decorative elements.
 `.trim();
 }
 
-/**
- * Valida que un string base64 sea una imagen válida
- */
 function isValidImageBase64(base64: string): boolean {
   if (!base64 || typeof base64 !== 'string') return false;
   return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/');
 }
 
-/**
- * Verifica si un string es una URL
- */
 function isUrl(str: string): boolean {
   return str?.startsWith('http://') || str?.startsWith('https://');
 }
 
-/**
- * Descarga una imagen desde URL y la convierte a base64
- */
 async function downloadImageToBase64(url: string): Promise<string> {
-  try {
-    console.log(`[generate-scene-images] Downloading image from URL: ${url.slice(0, 100)}...`);
+  console.log(`[generate-scene-images] downloadImageToBase64 START - URL: ${url.slice(0, 150)}`);
 
-    const response = await fetch(url);
+  try {
+    const fetchUrl = url;
+    console.log(`[generate-scene-images] Fetching from: ${fetchUrl}`);
+
+    const response = await fetch(fetchUrl, {
+      headers: {
+        'Accept': 'image/*',
+      },
+    });
+
+    console.log(`[generate-scene-images] Fetch response: status=${response.status}, ok=${response.ok}, type=${response.headers.get('content-type')}`);
+
     if (!response.ok) {
-      console.error(`[generate-scene-images] Failed to download image: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Could not read error body');
+      console.error(`[generate-scene-images] Failed to download image: ${response.status} ${response.statusText}`, errorText.slice(0, 200));
+      return '';
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('image')) {
+      console.error(`[generate-scene-images] Response is not an image: ${contentType}`);
       return '';
     }
 
     const arrayBuffer = await response.arrayBuffer();
+    console.log(`[generate-scene-images] Downloaded ${arrayBuffer.byteLength} bytes`);
+
+    if (arrayBuffer.byteLength === 0) {
+      console.error(`[generate-scene-images] Downloaded image is empty`);
+      return '';
+    }
+
     const uint8Array = new Uint8Array(arrayBuffer);
 
-    // Convertir a base64
     let binary = '';
     for (let i = 0; i < uint8Array.length; i++) {
       binary += String.fromCharCode(uint8Array[i]);
     }
     const base64 = btoa(binary);
 
-    console.log(`[generate-scene-images] Downloaded image, base64 length: ${base64.length}, starts with: ${base64.slice(0, 20)}`);
+    console.log(`[generate-scene-images] Converted to base64: length=${base64.length}, prefix=${base64.slice(0, 30)}`);
 
     if (isValidImageBase64(base64)) {
+      console.log(`[generate-scene-images] downloadImageToBase64 SUCCESS - valid base64 image`);
       return base64;
     } else {
-      console.error(`[generate-scene-images] Downloaded image is not valid PNG/JPEG base64`);
+      console.error(`[generate-scene-images] Downloaded image is not valid PNG/JPEG - prefix: ${base64.slice(0, 50)}`);
       return '';
     }
   } catch (err) {
@@ -249,25 +244,38 @@ async function downloadImageToBase64(url: string): Promise<string> {
   }
 }
 
-/**
- * Procesa una imagen de referencia: si es URL la descarga, si es base64 la valida
- */
 async function processReferenceImage(imageData: string): Promise<string> {
-  if (!imageData) return '';
-
-  if (isUrl(imageData)) {
-    return await downloadImageToBase64(imageData);
-  } else if (isValidImageBase64(imageData)) {
-    return imageData;
+  if (!imageData) {
+    console.log(`[generate-scene-images] processReferenceImage: no imageData provided`);
+    return '';
   }
 
+  console.log(`[generate-scene-images] processReferenceImage: input type=${isUrl(imageData) ? 'URL' : 'base64'}, length=${imageData.length}, prefix=${imageData.slice(0, 60)}`);
+
+  if (isUrl(imageData)) {
+    const result = await downloadImageToBase64(imageData);
+    console.log(`[generate-scene-images] processReferenceImage: URL download result length=${result.length}, valid=${isValidImageBase64(result)}`);
+    return result;
+  } else if (isValidImageBase64(imageData)) {
+    console.log(`[generate-scene-images] processReferenceImage: already valid base64`);
+    return imageData;
+  } else if (imageData.startsWith('data:')) {
+    const parts = imageData.split(',');
+    if (parts.length > 1) {
+      const base64Part = parts[1];
+      if (isValidImageBase64(base64Part)) {
+        console.log(`[generate-scene-images] processReferenceImage: extracted base64 from data URL`);
+        return base64Part;
+      }
+    }
+    console.log(`[generate-scene-images] processReferenceImage: could not extract valid base64 from data URL`);
+    return '';
+  }
+
+  console.log(`[generate-scene-images] processReferenceImage: invalid format, not URL or base64`);
   return '';
 }
 
-/**
- * Genera una imagen usando Nano Banana Pro
- * Soporta imágenes de referencia para consistencia de personajes
- */
 async function generateImage(
   prompt: string,
   variation: number = 0,
@@ -277,17 +285,31 @@ async function generateImage(
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
-    // Construir las partes del contenido
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
-    // Log detallado para diagnóstico
     console.log(`[generateImage] Starting with ${referenceImages.length} reference images, variation ${variation}`);
 
-    // Agregar imágenes de referencia primero (si las hay)
     let imagesAdded = 0;
+    const hasSceneRef = characterDescriptions[0]?.includes('SCENE STYLE REFERENCE');
+
     if (referenceImages.length > 0) {
-      // Agregar instrucción detallada sobre las referencias
-      const refInstruction = `CRITICAL CHARACTER REFERENCE IMAGES:
+
+      let refInstruction: string;
+      if (hasSceneRef) {
+        refInstruction = `CRITICAL REFERENCE IMAGES:
+The FIRST image is a SCENE STYLE REFERENCE - use it to guide the visual style, composition, lighting, colors, and atmosphere of the generated scene.
+${referenceImages.length > 1 ? `The remaining ${referenceImages.length - 1} image(s) show the EXACT appearance of characters.` : ''}
+
+For character references, you MUST copy these visual details EXACTLY:
+- Face shape, features, and expression style
+- Hair color, style, and length
+- Skin tone and body proportions
+- Clothing colors, patterns, and style
+- Any distinctive accessories or features
+
+Study each reference carefully before generating.`;
+      } else {
+        refInstruction = `CRITICAL CHARACTER REFERENCE IMAGES:
 The following ${referenceImages.length} image(s) show the EXACT appearance of characters that must appear in the generated scene.
 You MUST copy these visual details EXACTLY:
 - Face shape, features, and expression style
@@ -297,21 +319,25 @@ You MUST copy these visual details EXACTLY:
 - Any distinctive accessories or features
 
 Study each reference carefully before generating. The characters in your output MUST be visually identical to these references.`;
+      }
 
       parts.push({ text: refInstruction });
 
-      // Agregar cada imagen de referencia con su descripción
       for (let i = 0; i < referenceImages.length && i < 14; i++) {
         const imgData = referenceImages[i];
         const imgPrefix = imgData?.slice(0, 30) || 'empty';
-        console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, prefix="${imgPrefix}"`);
+        const isSceneRef = characterDescriptions[i]?.includes('SCENE STYLE REFERENCE');
+        console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, prefix="${imgPrefix}", isSceneRef=${isSceneRef}`);
 
         if (isValidImageBase64(imgData)) {
           const mimeType = imgData.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
 
-          // Agregar etiqueta para la imagen
           if (characterDescriptions[i]) {
-            parts.push({ text: `Character reference ${i + 1} - ${characterDescriptions[i]}:` });
+            if (isSceneRef) {
+              parts.push({ text: `STYLE REFERENCE IMAGE - Copy the visual style, colors, lighting, and atmosphere from this image:` });
+            } else {
+              parts.push({ text: `Character reference ${i + 1} - ${characterDescriptions[i]}:` });
+            }
           }
 
           parts.push({
@@ -321,7 +347,7 @@ Study each reference carefully before generating. The characters in your output 
             }
           });
           imagesAdded++;
-          console.log(`[generateImage] Added reference image ${i + 1} as ${mimeType}`);
+          console.log(`[generateImage] Added reference image ${i + 1} as ${mimeType}, isSceneRef=${isSceneRef}`);
         } else {
           console.log(`[generateImage] Reference image ${i + 1} INVALID - not PNG/JPEG base64`);
         }
@@ -330,22 +356,30 @@ Study each reference carefully before generating. The characters in your output 
 
     console.log(`[generateImage] Total images added to request: ${imagesAdded}`);
 
-    // Agregar el prompt principal con énfasis en consistencia
     let finalPrompt = prompt;
 
     if (imagesAdded > 0) {
-      finalPrompt = `REMEMBER: The characters MUST match the reference images provided above EXACTLY.
+      if (hasSceneRef) {
+        finalPrompt = `CRITICAL: You MUST use the STYLE REFERENCE IMAGE above to match the visual style, color palette, lighting, and artistic atmosphere. Generate a scene that looks like it belongs in the same visual world as the reference.
 
 ${prompt}`;
+      } else {
+        finalPrompt = `REMEMBER: The characters MUST match the reference images provided above EXACTLY.
+
+${prompt}`;
+      }
     }
 
     if (variation > 0) {
-      finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition, poses, and background details. However, the characters MUST remain VISUALLY IDENTICAL to their reference images - same face, same hair, same clothes, same colors.`;
+      if (imagesAdded > 0 && characterDescriptions[0]?.includes('SCENE STYLE REFERENCE')) {
+        finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition and poses, but MAINTAIN THE SAME VISUAL STYLE as the reference image - same color palette, same lighting style, same artistic atmosphere.`;
+      } else {
+        finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition, poses, and background details. However, the characters MUST remain VISUALLY IDENTICAL to their reference images - same face, same hair, same clothes, same colors.`;
+      }
     }
 
     parts.push({ text: finalPrompt });
 
-    // Log detallado del request
     const textParts = parts.filter(p => p.text).length;
     const imageParts = parts.filter(p => p.inlineData).length;
     console.log(`[generateImage] Sending request to Gemini with ${parts.length} total parts: ${textParts} text, ${imageParts} images`);
@@ -368,28 +402,23 @@ ${prompt}`;
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[generate-scene-images] API Error (${response.status}):`, errorText);
-      // Propagar el error para que el usuario lo vea
       throw new Error(`Gemini API error: ${response.status} - ${errorText.slice(0, 200)}`);
     }
 
     const data = await response.json();
 
-    // Log completo de la respuesta para debugging
     console.log(`[generate-scene-images] Full API response:`, JSON.stringify(data, null, 2).slice(0, 3000));
 
-    // Verificar si hay error en la respuesta
     if (data.error) {
       console.error(`[generate-scene-images] API returned error:`, JSON.stringify(data.error));
       throw new Error(`Gemini error: ${data.error.message || JSON.stringify(data.error)}`);
     }
 
-    // Verificar si hay promptFeedback (bloqueo de contenido)
     if (data.promptFeedback?.blockReason) {
       console.error(`[generate-scene-images] Content blocked:`, data.promptFeedback.blockReason);
       throw new Error(`Content blocked by Gemini: ${data.promptFeedback.blockReason}`);
     }
 
-    // Extraer imagen de la respuesta
     if (data.candidates && data.candidates[0]?.content?.parts) {
       console.log(`[generate-scene-images] Found ${data.candidates[0].content.parts.length} parts in response`);
       for (const part of data.candidates[0].content.parts) {
@@ -416,7 +445,6 @@ ${prompt}`;
     return '';
   } catch (err) {
     console.error(`[generate-scene-images] Error in generateImage:`, err);
-    // Re-throw para que el error se propague
     throw err;
   }
 }
@@ -439,7 +467,20 @@ serve(async (req) => {
     const requestData = await req.json();
     const { type, styleId, count = 4 } = requestData;
 
+    console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
     console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}`);
+
+    if (type === 'scene') {
+      const { sceneReferenceImage, characters } = requestData;
+      console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
+      if (sceneReferenceImage) {
+        console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage length: ${sceneReferenceImage.length}`);
+        console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage prefix: ${sceneReferenceImage.slice(0, 50)}`);
+        console.log(`[generate-scene-images] REQUEST CHECK - isURL: ${sceneReferenceImage.startsWith('http')}`);
+      }
+      console.log(`[generate-scene-images] REQUEST CHECK - characters count: ${characters?.length || 0}`);
+      console.log(`[generate-scene-images] REQUEST CHECK - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+    }
 
     let prompt: string;
     let referenceImages: string[] = [];
@@ -447,38 +488,61 @@ serve(async (req) => {
 
     switch (type) {
       case 'scene': {
-        const { scene, characters, location } = requestData;
+        const { scene, characters, location, sceneReferenceImage } = requestData;
         if (!scene || !location) {
           throw new Error('Se requiere scene y location para generar escena');
         }
 
-        // El frontend ya hizo la detección + inclusión manual + exclusión de personajes
-        // Usamos directamente la lista que nos envía
         const charactersInScene: Character[] = characters || [];
 
         console.log(`[generate-scene-images] Scene text: "${scene.text.slice(0, 100)}..."`);
         console.log(`[generate-scene-images] Characters for this scene (from frontend): ${charactersInScene.map(c => c.name).join(', ') || 'none'}`);
 
-        // Recopilar y procesar imágenes de referencia de los personajes
-        // Soporta tanto URLs (imágenes guardadas) como base64 (imágenes recién generadas)
         const charactersWithImages = charactersInScene.filter(c => c.referenceImage);
         console.log(`[generate-scene-images] Characters with reference images: ${charactersWithImages.map(c => `${c.name} (${isUrl(c.referenceImage!) ? 'URL' : 'base64'})`).join(', ') || 'none'}`);
 
-        // Procesar imágenes y mantener las descripciones de personajes en el mismo orden
+        console.log(`[generate-scene-images] Characters with reference images to process:`);
+        charactersWithImages.forEach((c, i) => {
+          console.log(`  ${i + 1}. ${c.name}: type=${isUrl(c.referenceImage!) ? 'URL' : 'base64'}, length=${c.referenceImage!.length}, prefix=${c.referenceImage!.slice(0, 80)}`);
+        });
+
         const processedResults = await Promise.all(
-          charactersWithImages.map(async (c) => ({
-            image: await processReferenceImage(c.referenceImage!),
-            description: `${c.name}: ${c.visualDescription}`,
-          }))
+          charactersWithImages.map(async (c) => {
+            console.log(`[generate-scene-images] Processing reference for ${c.name}...`);
+            const image = await processReferenceImage(c.referenceImage!);
+            console.log(`[generate-scene-images] Processed ${c.name}: result length=${image.length}, valid=${isValidImageBase64(image)}`);
+            return {
+              image,
+              description: `${c.name}: ${c.visualDescription}`,
+            };
+          })
         );
 
-        // Filtrar los que tienen imagen válida y mantener sincronizado con descripciones
+        console.log(`[generate-scene-images] Processing complete. Results:`);
+        processedResults.forEach((r, i) => {
+          console.log(`  ${i + 1}. ${r.description.slice(0, 50)}: image length=${r.image.length}, valid=${isValidImageBase64(r.image)}`);
+        });
+
         const validResults = processedResults.filter(r => r.image !== '');
         referenceImages = validResults.map(r => r.image);
         characterDescriptions = validResults.map(r => r.description);
 
         console.log(`[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
         console.log(`[generate-scene-images] Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
+
+        if (sceneReferenceImage) {
+          console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
+          const processedSceneRef = await processReferenceImage(sceneReferenceImage);
+          if (processedSceneRef) {
+            referenceImages.unshift(processedSceneRef);
+            characterDescriptions.unshift('SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere');
+            console.log(`[generate-scene-images] Scene reference image added successfully! Total refs now: ${referenceImages.length}`);
+          } else {
+            console.log(`[generate-scene-images] Scene reference image processing FAILED`);
+          }
+        } else {
+          console.log(`[generate-scene-images] No scene reference image provided`);
+        }
 
         prompt = buildScenePrompt(styleId, scene, charactersInScene, location);
         break;
@@ -494,27 +558,119 @@ serve(async (req) => {
       }
 
       case 'cover': {
-        const { title, protagonist, location, referenceImage } = requestData;
+        // IGUAL QUE SCENE: usar characters y sceneReferenceImage
+        const { title, protagonist, location, characters, sceneReferenceImage, customPrompt } = requestData;
         if (!title || !protagonist || !location) {
           throw new Error('Se requiere title, protagonist y location para generar portada');
         }
-        prompt = buildCoverPrompt(styleId, title, protagonist, location);
 
-        // Usar imagen de referencia del protagonista si está disponible
-        // Soporta tanto URLs como base64
-        if (referenceImage) {
-          console.log(`[generate-scene-images] Cover reference image type: ${isUrl(referenceImage) ? 'URL' : 'base64'}`);
-          const processedImage = await processReferenceImage(referenceImage);
-          if (processedImage) {
-            referenceImages = [processedImage];
-            console.log(`[generate-scene-images] Cover reference image processed successfully`);
+        console.log(`[generate-scene-images] COVER - characters count: ${characters?.length || 0}`);
+        console.log(`[generate-scene-images] COVER - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+        console.log(`[generate-scene-images] COVER - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
+
+        if (customPrompt) {
+          const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+          prompt = `${stylePrompt}
+
+PORTADA DEL CUENTO: "${title}"
+
+Ubicación: ${location.name}. ${location.description || ''}
+
+${customPrompt}
+
+Instrucciones críticas:
+- Composición atractiva para portada de libro infantil
+- El título "${title}" NO debe aparecer en la imagen
+- Escena brillante y bien iluminada
+- Imágenes apropiadas para niños 5-10 años
+- **ABSOLUTAMENTE SIN TEXTO, SIN PALABRAS, SIN LETRAS EN LA IMAGEN**
+- Atmósfera cálida y acogedora`;
+          console.log(`[generate-scene-images] Cover using custom prompt`);
+        } else {
+          prompt = buildCoverPrompt(styleId, title, protagonist, location);
+        }
+
+        const charactersInCover: Character[] = characters || [];
+        const charactersWithImages = charactersInCover.filter(c => c.referenceImage);
+
+        console.log(`[generate-scene-images] Cover characters with reference images: ${charactersWithImages.map(c => `${c.name} (${isUrl(c.referenceImage!) ? 'URL' : 'base64'})`).join(', ') || 'none'}`);
+
+        console.log(`[generate-scene-images] Cover characters with reference images to process:`);
+        charactersWithImages.forEach((c, i) => {
+          console.log(`  ${i + 1}. ${c.name}: type=${isUrl(c.referenceImage!) ? 'URL' : 'base64'}, length=${c.referenceImage!.length}, prefix=${c.referenceImage!.slice(0, 80)}`);
+        });
+
+        const processedResults = await Promise.all(
+          charactersWithImages.map(async (c) => {
+            console.log(`[generate-scene-images] Processing cover reference for ${c.name}...`);
+            const image = await processReferenceImage(c.referenceImage!);
+            console.log(`[generate-scene-images] Processed cover ${c.name}: result length=${image.length}, valid=${isValidImageBase64(image)}`);
+            return {
+              image,
+              description: `${c.name}: ${c.visualDescription}`,
+            };
+          })
+        );
+
+        console.log(`[generate-scene-images] Cover processing complete. Results:`);
+        processedResults.forEach((r, i) => {
+          console.log(`  ${i + 1}. ${r.description.slice(0, 50)}: image length=${r.image.length}, valid=${isValidImageBase64(r.image)}`);
+        });
+
+        const validResults = processedResults.filter(r => r.image !== '');
+        referenceImages = validResults.map(r => r.image);
+        characterDescriptions = validResults.map(r => r.description);
+
+        console.log(`[generate-scene-images] Cover reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
+
+        if (sceneReferenceImage) {
+          console.log(`[generate-scene-images] Cover style reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
+          const processedSceneRef = await processReferenceImage(sceneReferenceImage);
+          if (processedSceneRef) {
+            referenceImages.unshift(processedSceneRef);
+            characterDescriptions.unshift('COVER STYLE REFERENCE - Use this image as visual style reference for colors, lighting, composition, and atmosphere');
+            console.log(`[generate-scene-images] Cover style reference image added successfully! Total refs now: ${referenceImages.length}`);
+          } else {
+            console.log(`[generate-scene-images] Cover style reference image processing FAILED`);
           }
+        } else {
+          console.log(`[generate-scene-images] No cover style reference image provided`);
         }
         break;
       }
 
       case 'end': {
-        prompt = buildEndPrompt(styleId);
+        const { referenceImage: endReferenceImage, customPrompt: endCustomPrompt } = requestData;
+
+        if (endCustomPrompt) {
+          const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+          prompt = `${stylePrompt}
+
+IMAGEN FINAL "FIN" PARA CUENTO INFANTIL
+
+${endCustomPrompt}
+
+Instrucciones críticas:
+- Composición atractiva para página final de libro infantil
+- Escena brillante y bien iluminada
+- Atmósfera de cierre y satisfacción
+- Imágenes apropiadas para niños 5-10 años
+- **ABSOLUTAMENTE SIN TEXTO, SIN PALABRAS, SIN LETRAS EN LA IMAGEN**
+- Puede ser abstracta o con elementos del cuento`;
+          console.log(`[generate-scene-images] End using custom prompt`);
+        } else {
+          prompt = buildEndPrompt(styleId);
+        }
+
+        if (endReferenceImage) {
+          console.log(`[generate-scene-images] End reference image type: ${isUrl(endReferenceImage) ? 'URL' : 'base64'}`);
+          const processedImage = await processReferenceImage(endReferenceImage);
+          if (processedImage) {
+            referenceImages.push(processedImage);
+            characterDescriptions.push('END STYLE REFERENCE - Use this image as visual style reference for the final image');
+            console.log(`[generate-scene-images] End reference image processed successfully`);
+          }
+        }
         break;
       }
 
@@ -523,18 +679,19 @@ serve(async (req) => {
     }
 
     console.log(`[generate-scene-images] Prompt (${type}):`, prompt.slice(0, 300) + '...');
-    console.log(`[generate-scene-images] Passing ${referenceImages.length} reference images to Gemini`);
+    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini`);
+    console.log(`[generate-scene-images] FINAL STATE - Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
+    referenceImages.forEach((img, idx) => {
+      console.log(`[generate-scene-images] FINAL ref image ${idx}: length=${img?.length || 0}, isValid=${isValidImageBase64(img)}, prefix=${img?.slice(0, 20) || 'empty'}`);
+    });
 
-    // Generar múltiples variaciones en paralelo
     const promises = [];
     for (let i = 0; i < Math.min(count, 4); i++) {
       promises.push(generateImage(prompt, i, referenceImages, characterDescriptions));
     }
 
-    // Usar allSettled para capturar errores individuales
     const settledResults = await Promise.allSettled(promises);
 
-    // Procesar resultados
     const images: string[] = [];
     const errors: string[] = [];
 
@@ -554,12 +711,11 @@ serve(async (req) => {
       console.log(`[generate-scene-images] Errors: ${errors.join(' | ')}`);
     }
 
-    // Si no hay imágenes pero hay errores, devolver el error
     if (images.length === 0 && errors.length > 0) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: errors[0], // Mostrar el primer error
+          error: errors[0],
           errors,
           images: [],
           referenceImagesCount: referenceImages.length,
@@ -591,13 +747,13 @@ serve(async (req) => {
       }
     );
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[generate-scene-images] Error:', error);
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || 'Error generando imágenes',
+        error: error instanceof Error ? error.message : 'Error generando imágenes',
         images: [],
       }),
       {

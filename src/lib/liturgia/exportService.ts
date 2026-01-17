@@ -273,34 +273,35 @@ async function exportToCelebrantPDF(
   let elementNumber = 1;
 
   for (const elementType of elementOrder) {
-    const element = elements.get(elementType);
-    if (!element) continue;
-    if (element.status === 'skipped') continue;
+    try {
+      const element = elements.get(elementType);
+      if (!element) continue;
+      if (element.status === 'skipped') continue;
 
-    const slideGroup = element.editedSlides || element.slides;
-    const slideCount = slideGroup?.slides?.length || 0;
+      const slideGroup = element.editedSlides || element.slides;
+      const slideCount = slideGroup?.slides?.length || 0;
 
-    // Encabezado del elemento
-    checkNewPage(25);
+      // Encabezado del elemento
+      checkNewPage(25);
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12);
-    pdf.setTextColor(CASA_BRAND.colors.primary.amber);
-    pdf.text(`${elementNumber}.`, margin, currentY);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(CASA_BRAND.colors.primary.amber);
+      pdf.text(`${elementNumber}.`, margin, currentY);
 
-    pdf.setTextColor(CASA_BRAND.colors.primary.black);
-    const elementLabel = getElementLabel(elementType);
-    const elementTitle = slideGroup?.title || element.title || elementLabel;
-    pdf.text(elementTitle.toUpperCase(), margin + 8, currentY);
+      pdf.setTextColor(CASA_BRAND.colors.primary.black);
+      const elementLabel = getElementLabel(elementType);
+      const elementTitle = slideGroup?.title || element.title || elementLabel;
+      pdf.text(elementTitle.toUpperCase(), margin + 8, currentY);
 
-    currentY += 8;
+      currentY += 8;
 
-    pdf.setDrawColor(CASA_BRAND.colors.secondary.grayLight);
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, currentY, pageWidth - margin, currentY);
-    currentY += 6;
+      pdf.setDrawColor(CASA_BRAND.colors.secondary.grayLight);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 6;
 
-    const category = getElementCategory(elementType);
+      const category = getElementCategory(elementType);
 
     if (category === 'cancion') {
       checkNewPage(15);
@@ -506,6 +507,16 @@ async function exportToCelebrantPDF(
 
     currentY += 8;
     elementNumber++;
+    } catch (err) {
+      console.error(`[exportService] Error processing element ${elementType}:`, err);
+      // Continue with next element even if this one fails
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor('#DC2626'); // Red color for error
+      pdf.text(`[Error al procesar ${elementType}]`, margin, currentY);
+      currentY += 12;
+      elementNumber++;
+    }
   }
 
   const fileName = generateFileName(liturgyContext, 'pdf').replace('.pdf', '_Celebrante.pdf');

@@ -34,18 +34,32 @@ import {
   X,
   Plus,
   Upload,
+  MessageSquare,
 } from 'lucide-react';
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
 import type { Story, StoryCharacter, StoryScene, StoryStatus } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Trash2 } from 'lucide-react';
 
 interface CuentacuentoEditorProps {
   context: LiturgyContext;
   initialStory?: Story;
   initialSlides?: SlideGroup;
   onStoryCreated: (story: Story, slides: SlideGroup) => void;
+  onStoryDeleted?: () => void;
   onNavigateToFullEditor?: () => void;
 }
 
@@ -403,6 +417,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   initialStory,
   initialSlides,
   onStoryCreated,
+  onStoryDeleted,
   onNavigateToFullEditor,
 }) => {
   // Determinar paso inicial basado en estado del story
@@ -476,6 +491,17 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [sceneIncludedCharacters, setSceneIncludedCharacters] = useState<Record<number, string[]>>({}); // Personajes agregados manualmente
   const [editingScenePrompt, setEditingScenePrompt] = useState<Record<number, string>>({});
   const [showCharacterPicker, setShowCharacterPicker] = useState<number | null>(null); // Número de escena para picker
+  const [sceneReferenceImages, setSceneReferenceImages] = useState<Record<number, string>>({}); // Imagen de referencia manual por escena
+
+  // Estado para ver/editar prompts y referencias de portada y fin
+  const [showCoverPromptEditor, setShowCoverPromptEditor] = useState(false);
+  const [showEndPromptEditor, setShowEndPromptEditor] = useState(false);
+  const [editingCoverPrompt, setEditingCoverPrompt] = useState('');
+  const [editingEndPrompt, setEditingEndPrompt] = useState('');
+  const [coverReferenceImage, setCoverReferenceImage] = useState<string | null>(null);
+  const [endReferenceImage, setEndReferenceImage] = useState<string | null>(null);
+  const [coverExcludedCharacters, setCoverExcludedCharacters] = useState<string[]>([]);
+  const [coverIncludedCharacters, setCoverIncludedCharacters] = useState<string[]>([]);
 
   // Estado de UI
   const [showPreview, setShowPreview] = useState(true);
@@ -485,6 +511,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [loadingPrompt, setLoadingPrompt] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initialStory && initialStory.metadata.status === 'ready');
 
+  // Estado para refinamiento del cuento
+  const [storyFeedback, setStoryFeedback] = useState('');
+  const [refinementType, setRefinementType] = useState<'general' | 'characters' | 'plot' | 'scenes' | 'spiritual' | 'length' | 'tone'>('general');
+  const [isRefining, setIsRefining] = useState(false);
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+
   // Hook de auto-guardado
   const {
     hasDraft,
@@ -493,14 +525,28 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     isSaving,
     saveDraft,
     deleteDraft,
+    deleteStoryImages,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
+    saveDraftNow,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
+  // Estado del diálogo de confirmación de eliminación
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Efecto para inicializar estados de imágenes cuando hay un initialStory
+  // IMPORTANTE: Solo inicializar si NO hay un draft con imágenes que recuperar
   useEffect(() => {
     if (!initialStory) return;
+
+    // Verificar si hay escenas sin imágenes en initialStory
+    const scenesWithoutImages = initialStory.scenes?.filter(s => !s.selectedImageUrl).length || 0;
+    const totalScenes = initialStory.scenes?.length || 0;
+    const hasMissingSceneImages = scenesWithoutImages > 0 && totalScenes > 0;
+
+    console.log(`[CuentacuentoEditor] initialStory has ${totalScenes - scenesWithoutImages}/${totalScenes} scene images`);
 
     // Inicializar character sheets con las imágenes existentes
     const charSheetOpts: Record<string, string[]> = {};
@@ -542,10 +588,13 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
 
     console.log('[CuentacuentoEditor] Initialized image states from initialStory');
 
-    // Si el cuento ya está completo, eliminar cualquier borrador viejo
-    if (initialStory.metadata.status === 'ready') {
+    // Si el cuento ya está completo Y tiene todas las imágenes, eliminar cualquier borrador viejo
+    // NO borrar el draft si faltan imágenes - las necesitamos recuperar del draft
+    if (initialStory.metadata.status === 'ready' && !hasMissingSceneImages) {
       deleteDraft();
-      console.log('[CuentacuentoEditor] Deleted old draft - story is already complete');
+      console.log('[CuentacuentoEditor] Deleted old draft - story is complete with all images');
+    } else if (hasMissingSceneImages) {
+      console.log('[CuentacuentoEditor] Keeping draft - story is missing scene images, will try to recover from draft');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Solo al montar - initialStory es estable
@@ -624,9 +673,13 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
         }),
         // Reconstruir imágenes de escenas seleccionadas
         // Si hay opciones pero no hay selección, usar la primera imagen (índice 0)
+        // NOTA: Las keys pueden venir como números o strings desde JSON, intentar ambos
         scenes: draftData.story.scenes?.map(s => {
-          const options = draftData.sceneImageOptions[s.number];
-          const selectedIdx = draftData.selectedSceneImages[s.number];
+          const sceneOpts = draftData.sceneImageOptions as Record<string | number, string[]>;
+          const options = sceneOpts[s.number] || sceneOpts[String(s.number)];
+          const selectedOpts = draftData.selectedSceneImages as Record<string | number, number>;
+          const selectedIdx = selectedOpts[s.number] ?? selectedOpts[String(s.number)];
+          console.log(`[CuentacuentoEditor] Restoring scene ${s.number}: options=${options?.length || 0}, selectedIdx=${selectedIdx}`);
           return {
             ...s,
             selectedImageUrl: options?.length > 0
@@ -655,9 +708,19 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setCharacterSheetOptions(draftData.characterSheetOptions);
     setSelectedCharacterSheets(draftData.selectedCharacterSheets);
 
-    // Restaurar scene images
-    setSceneImageOptions(draftData.sceneImageOptions);
-    setSelectedSceneImages(draftData.selectedSceneImages);
+    // Restaurar scene images - normalizar keys a números
+    const normalizedSceneOpts: Record<number, string[]> = {};
+    for (const [key, value] of Object.entries(draftData.sceneImageOptions || {})) {
+      normalizedSceneOpts[Number(key)] = value;
+    }
+    console.log(`[CuentacuentoEditor] Normalized scene options:`, Object.keys(normalizedSceneOpts));
+    setSceneImageOptions(normalizedSceneOpts);
+
+    const normalizedSelectedScenes: Record<number, number> = {};
+    for (const [key, value] of Object.entries(draftData.selectedSceneImages || {})) {
+      normalizedSelectedScenes[Number(key)] = value as number;
+    }
+    setSelectedSceneImages(normalizedSelectedScenes);
 
     // Restaurar cover/end
     setCoverOptions(draftData.coverOptions);
@@ -671,6 +734,58 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
 
     console.log(`[CuentacuentoEditor] Restored from draft, step: ${draftData.currentStep}`);
   }, []);
+
+  // Efecto para auto-recuperar imágenes de escenas del draft cuando faltan en initialStory
+  // Este efecto corre cuando el draft se carga y detecta que hay imágenes en el draft pero no en el story
+  // Usa una ref para evitar ciclos infinitos con story
+  const hasAutoRecoveredRef = React.useRef(false);
+  useEffect(() => {
+    if (!draft || !initialStory || hasAutoRecoveredRef.current) return;
+
+    // Verificar si initialStory tiene escenas sin imágenes
+    const scenesWithoutImages = initialStory.scenes?.filter(s => !s.selectedImageUrl).length || 0;
+    if (scenesWithoutImages === 0) return; // Todas las escenas tienen imágenes, no hacer nada
+
+    // Verificar si el draft tiene imágenes de escenas
+    const draftSceneCount = Object.keys(draft.sceneImageOptions || {}).length;
+    if (draftSceneCount === 0) return; // El draft no tiene imágenes, no hacer nada
+
+    // Marcar como ya recuperado para evitar ciclos
+    hasAutoRecoveredRef.current = true;
+
+    console.log(`[CuentacuentoEditor] Auto-recovering ${draftSceneCount} scene images from draft (${scenesWithoutImages} missing in initialStory)`);
+
+    // Normalizar y aplicar las imágenes del draft
+    const normalizedSceneOpts: Record<number, string[]> = {};
+    for (const [key, value] of Object.entries(draft.sceneImageOptions || {})) {
+      normalizedSceneOpts[Number(key)] = value;
+    }
+    setSceneImageOptions(normalizedSceneOpts);
+
+    const normalizedSelectedScenes: Record<number, number> = {};
+    for (const [key, value] of Object.entries(draft.selectedSceneImages || {})) {
+      normalizedSelectedScenes[Number(key)] = value as number;
+    }
+    setSelectedSceneImages(normalizedSelectedScenes);
+
+    // También actualizar el story con las URLs de las imágenes recuperadas
+    setStory(prevStory => {
+      if (!prevStory) return prevStory;
+      const updatedScenes = prevStory.scenes.map(scene => {
+        const options = normalizedSceneOpts[scene.number];
+        const selectedIdx = normalizedSelectedScenes[scene.number] ?? 0;
+        const selectedUrl = options && options.length > 0 ? options[selectedIdx] : scene.selectedImageUrl;
+        return { ...scene, selectedImageUrl: selectedUrl };
+      });
+
+      console.log(`[CuentacuentoEditor] Updated story with ${updatedScenes.filter(s => s.selectedImageUrl).length} scene images from draft`);
+
+      return {
+        ...prevStory,
+        scenes: updatedScenes,
+      };
+    });
+  }, [draft, initialStory]);
 
   // Manejar aceptación de recuperación
   const handleAcceptRecovery = useCallback(() => {
@@ -925,6 +1040,144 @@ Instrucciones críticas:
     }
   }, [context, getRequestBody, selectedLocation, characters, illustrationStyle]);
 
+  // Refinar cuento con feedback
+  const handleRefineStory = useCallback(async () => {
+    if (!story || !storyFeedback.trim()) {
+      setError('Por favor ingresa tu feedback para refinar el cuento');
+      return;
+    }
+
+    setIsRefining(true);
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('refine-story', {
+        body: {
+          currentStory: {
+            title: story.title,
+            summary: story.summary,
+            characters: story.characters.map(c => ({
+              name: c.name,
+              role: c.role,
+              description: c.description,
+              visualDescription: c.visualDescription,
+            })),
+            scenes: story.scenes.map(s => ({
+              number: s.number,
+              text: s.text,
+              visualDescription: s.visualDescription,
+            })),
+            spiritualConnection: story.spiritualConnection,
+          },
+          feedback: storyFeedback,
+          refinementType,
+          liturgyContext: {
+            title: context?.title,
+            summary: context?.summary,
+          },
+        },
+      });
+
+      if (fnError) throw fnError;
+
+      if (!data?.success || !data.story) {
+        throw new Error(data?.error || 'Error al refinar el cuento');
+      }
+
+      // Actualizar el cuento con la versión refinada
+      // Preservar IDs de personajes y escenas para mantener imágenes generadas
+      const refinedStory: Story = {
+        ...story,
+        title: data.story.title,
+        summary: data.story.summary,
+        spiritualConnection: data.story.spiritualConnection,
+        characters: data.story.characters.map((c: any, i: number) => ({
+          ...story.characters[i], // Preservar ID y character sheet
+          name: c.name,
+          role: c.role,
+          description: c.description,
+          visualDescription: c.visualDescription,
+        })),
+        scenes: data.story.scenes.map((s: any, i: number) => ({
+          ...story.scenes[i], // Preservar ID y selectedImageUrl
+          number: s.number,
+          text: s.text,
+          visualDescription: s.visualDescription,
+        })),
+        metadata: {
+          ...story.metadata,
+          status: 'story-generated',
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      setStory(refinedStory);
+      setStoryFeedback('');
+      setShowFeedbackPanel(false);
+
+      // Mostrar mensaje de éxito con las notas de refinamiento
+      if (data.refinementNotes) {
+        console.log('[CuentacuentoEditor] Cuento refinado:', data.refinementNotes);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al refinar el cuento');
+    } finally {
+      setIsRefining(false);
+    }
+  }, [story, storyFeedback, refinementType, context]);
+
+  // Eliminar cuento completamente (historia + imágenes + draft)
+  const handleDeleteStory = useCallback(async () => {
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      console.log('[CuentacuentoEditor] Deleting story and all associated images...');
+
+      // 1. Eliminar imágenes del Storage y el draft
+      const success = await deleteStoryImages();
+
+      if (!success) {
+        throw new Error('No se pudieron eliminar las imágenes del cuento');
+      }
+
+      // 2. Limpiar todo el estado local
+      setStory(null);
+      setPreviewSlides(null);
+      setCharacterSheetOptions({});
+      setSelectedCharacterSheets({});
+      setSceneImageOptions({});
+      setSelectedSceneImages({});
+      setCoverOptions([]);
+      setSelectedCover(null);
+      setEndOptions([]);
+      setSelectedEnd(null);
+      setCurrentStep('config');
+      setShowForm(true);
+      setConfirmed(false);
+      setLocation('');
+      setCustomLocation('');
+      setCharacters('');
+      setStyle('reflexivo');
+      setIllustrationStyle('ghibli');
+      setAdditionalNotes('');
+
+      // 3. Notificar al padre para que limpie el elemento de la liturgia
+      if (onStoryDeleted) {
+        onStoryDeleted();
+      }
+
+      console.log('[CuentacuentoEditor] Story deleted successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar el cuento');
+      console.error('[CuentacuentoEditor] Error deleting story:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  }, [deleteStoryImages, onStoryDeleted]);
+
   // Generar character sheet para un personaje
   const handleGenerateCharacterSheet = useCallback(async (character: StoryCharacter, index: number) => {
     if (!story) return;
@@ -952,17 +1205,28 @@ Instrucciones críticas:
         throw new Error(data?.error || 'No se pudieron generar imágenes');
       }
 
-      setCharacterSheetOptions(prev => ({
-        ...prev,
+      // Actualizar estado local
+      const newCharacterSheetOptions = {
+        ...characterSheetOptions,
         [character.id]: data.images,
-      }));
+      };
+      setCharacterSheetOptions(newCharacterSheetOptions);
+
+      // Guardar inmediatamente al storage (sin esperar debounce)
+      console.log(`[CuentacuentoEditor] Saving character ${character.name} images immediately...`);
+      await saveDraftNow({
+        currentStep,
+        characterSheetOptions: newCharacterSheetOptions,
+        selectedCharacterSheets,
+      });
+      console.log(`[CuentacuentoEditor] Character ${character.name} images saved!`);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando character sheet');
     } finally {
       setGeneratingCharacterIndex(null);
     }
-  }, [story]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, currentStep, saveDraftNow]);
 
   // Generar imagen para una escena
   const handleGenerateSceneImage = useCallback(async (scene: StoryScene, customPrompt?: string) => {
@@ -994,6 +1258,18 @@ Instrucciones críticas:
         ? { text: scene.text, visualDescription: customPrompt }
         : { text: scene.text, visualDescription: scene.visualDescription };
 
+      // Obtener imagen de referencia manual para esta escena (si existe)
+      const sceneRefImage = sceneReferenceImages[scene.number];
+
+      // Log para debug
+      console.log(`[CuentacuentoEditor] Generating scene ${scene.number}:`, {
+        hasSceneRefImage: !!sceneRefImage,
+        sceneRefImageLength: sceneRefImage?.length || 0,
+        sceneRefImagePrefix: sceneRefImage?.slice(0, 50) || 'none',
+        charactersCount: charactersWithReferences.length,
+        charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
+      });
+
       const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
         body: {
           type: 'scene',
@@ -1001,8 +1277,17 @@ Instrucciones críticas:
           scene: sceneData,
           characters: charactersWithReferences,
           location: story.location,
+          sceneReferenceImage: sceneRefImage, // Imagen de referencia manual
           count: 4,
         },
+      });
+
+      // Log de respuesta
+      console.log(`[CuentacuentoEditor] Response for scene ${scene.number}:`, {
+        success: data?.success,
+        imagesCount: data?.images?.length || 0,
+        referenceImagesCount: data?.referenceImagesCount,
+        error: data?.error,
       });
 
       if (fnError) throw fnError;
@@ -1016,36 +1301,113 @@ Instrucciones críticas:
         console.log(`[CuentacuentoEditor] Escena ${scene.number} - Personajes detectados:`, data.charactersDetected);
       }
 
-      setSceneImageOptions(prev => ({
-        ...prev,
+      // Actualizar estado local
+      const newSceneImageOptions = {
+        ...sceneImageOptions,
         [scene.number]: data.images,
-      }));
+      };
+      setSceneImageOptions(newSceneImageOptions);
+
+      // Guardar inmediatamente al storage (sin esperar debounce)
+      console.log(`[CuentacuentoEditor] Saving scene ${scene.number} images immediately...`);
+      await saveDraftNow({
+        currentStep,
+        sceneImageOptions: newSceneImageOptions,
+        selectedSceneImages,
+      });
+      console.log(`[CuentacuentoEditor] Scene ${scene.number} images saved!`);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen de escena');
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, getCharactersWithReferences]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
+
+  // Construir el prompt de portada para preview
+  const buildCoverPromptPreview = useCallback((): string => {
+    if (!story) return '';
+
+    const STYLE_PROMPTS: Record<string, string> = {
+      'ghibli': 'Studio Ghibli animation style, soft watercolor backgrounds, detailed natural environments, warm lighting, whimsical atmosphere, hand-drawn aesthetic',
+      'pixar': 'Pixar 3D animation style, expressive characters, vibrant colors, cinematic lighting, detailed textures, emotional storytelling',
+      'disney-classic': 'Classic Disney 2D animation style, golden age aesthetic, fluid lines, warm colors, fairytale atmosphere, hand-painted backgrounds',
+      'storybook': "Children's storybook illustration style, soft pastel colors, gentle brushstrokes, cozy atmosphere, whimsical details, picture book aesthetic",
+      'watercolor': "Children's watercolor illustration, soft washes, gentle colors, dreamy atmosphere, delicate lines, artistic and tender",
+      'eric-carle': 'Eric Carle collage illustration style, bold colors, textured paper cutouts, simple shapes, vibrant and playful',
+      'folk-art': 'Latin American folk art style, vibrant colors, decorative patterns, naive art aesthetic, cultural motifs, warm and festive',
+      'anime-soft': 'Soft anime illustration style, big expressive eyes, pastel colors, gentle lighting, kawaii aesthetic, heartwarming atmosphere',
+    };
+
+    const stylePrompt = STYLE_PROMPTS[story.illustrationStyle] || STYLE_PROMPTS['storybook'];
+    const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
+
+    // Obtener personajes NO excluidos para la portada
+    const includedCharacters = story.characters.filter(c =>
+      !coverExcludedCharacters.includes(c.id)
+    );
+
+    const characterDescriptions = includedCharacters.length > 0
+      ? includedCharacters.map(c => `- ${c.name}: ${c.visualDescription || c.description}`).join('\n')
+      : 'No hay personajes específicos';
+
+    return `${stylePrompt}
+
+PORTADA DEL CUENTO: "${story.title}"
+
+Ubicación: ${story.location?.name || 'Chile'}. ${story.location?.description || ''}
+
+Personajes principales:
+${characterDescriptions}
+
+${editingCoverPrompt || `Escena de portada que capture la esencia del cuento, mostrando al protagonista ${protagonist?.name || 'principal'} en un momento característico de la historia.`}
+
+Instrucciones críticas:
+- Composición atractiva para portada de libro infantil
+- El título "${story.title}" NO debe aparecer en la imagen
+- Escena brillante y bien iluminada
+- Imágenes apropiadas para niños 5-10 años
+- SIN TEXTO NI PALABRAS en la imagen
+- Atmósfera cálida y acogedora`;
+  }, [story, coverExcludedCharacters, editingCoverPrompt]);
 
   // Generar portada
-  const handleGenerateCover = useCallback(async () => {
+  const handleGenerateCover = useCallback(async (customPrompt?: string) => {
     if (!story) return;
 
     setGeneratingCover(true);
     setError(null);
 
     try {
+      // Usar EXACTAMENTE la misma lógica que handleGenerateSceneImage
+      const excludedIds = coverExcludedCharacters;
+
+      // Construir personajes con referencias igual que en escenas
+      const charactersWithReferences = story.characters
+        .filter(c => !excludedIds.includes(c.id))
+        .map(c => {
+          const options = characterSheetOptions[c.id];
+          const selectedIdx = selectedCharacterSheets[c.id];
+          const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+          return {
+            name: c.name,
+            visualDescription: c.visualDescription,
+            referenceImage,
+          };
+        });
+
       const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
 
-      // Obtener imagen de referencia del protagonista
-      let protagonistReference: string | undefined;
-      if (protagonist) {
-        const options = characterSheetOptions[protagonist.id];
-        const selectedIdx = selectedCharacterSheets[protagonist.id];
-        protagonistReference = options && selectedIdx !== undefined ? options[selectedIdx] : protagonist.characterSheetUrl;
-      }
+      // Log para debug (igual que en escenas)
+      console.log(`[CuentacuentoEditor] Generating cover:`, {
+        hasCoverRefImage: !!coverReferenceImage,
+        coverRefImageLength: coverReferenceImage?.length || 0,
+        coverRefImagePrefix: coverReferenceImage?.slice(0, 50) || 'none',
+        charactersCount: charactersWithReferences.length,
+        charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
+      });
 
+      // Enviar EXACTAMENTE igual que escenas: characters + sceneReferenceImage
       const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
         body: {
           type: 'cover',
@@ -1055,9 +1417,21 @@ Instrucciones críticas:
             visualDescription: protagonist?.visualDescription || 'A friendly child character',
           },
           location: story.location,
-          referenceImage: protagonistReference, // Imagen de referencia del protagonista
+          // IGUAL QUE ESCENAS: usar "characters" en lugar de "characterReferences"
+          characters: charactersWithReferences,
+          // IGUAL QUE ESCENAS: usar "sceneReferenceImage" en lugar de "referenceImage"
+          sceneReferenceImage: coverReferenceImage,
+          customPrompt: customPrompt || editingCoverPrompt || undefined,
           count: 4,
         },
+      });
+
+      // Log de respuesta (igual que en escenas)
+      console.log(`[CuentacuentoEditor] Response for cover:`, {
+        success: data?.success,
+        imagesCount: data?.images?.length || 0,
+        referenceImagesCount: data?.referenceImagesCount,
+        error: data?.error,
       });
 
       if (fnError) throw fnError;
@@ -1073,22 +1447,65 @@ Instrucciones críticas:
     } finally {
       setGeneratingCover(false);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt]);
+
+  // Construir el prompt de fin para preview
+  const buildEndPromptPreview = useCallback((): string => {
+    if (!story) return '';
+
+    const STYLE_PROMPTS: Record<string, string> = {
+      'ghibli': 'Studio Ghibli animation style, soft watercolor backgrounds, detailed natural environments, warm lighting, whimsical atmosphere, hand-drawn aesthetic',
+      'pixar': 'Pixar 3D animation style, expressive characters, vibrant colors, cinematic lighting, detailed textures, emotional storytelling',
+      'disney-classic': 'Classic Disney 2D animation style, golden age aesthetic, fluid lines, warm colors, fairytale atmosphere, hand-painted backgrounds',
+      'storybook': "Children's storybook illustration style, soft pastel colors, gentle brushstrokes, cozy atmosphere, whimsical details, picture book aesthetic",
+      'watercolor': "Children's watercolor illustration, soft washes, gentle colors, dreamy atmosphere, delicate lines, artistic and tender",
+      'eric-carle': 'Eric Carle collage illustration style, bold colors, textured paper cutouts, simple shapes, vibrant and playful',
+      'folk-art': 'Latin American folk art style, vibrant colors, decorative patterns, naive art aesthetic, cultural motifs, warm and festive',
+      'anime-soft': 'Soft anime illustration style, big expressive eyes, pastel colors, gentle lighting, kawaii aesthetic, heartwarming atmosphere',
+    };
+
+    const stylePrompt = STYLE_PROMPTS[story.illustrationStyle] || STYLE_PROMPTS['storybook'];
+
+    return `${stylePrompt}
+
+IMAGEN FINAL "FIN" PARA CUENTO INFANTIL
+
+${editingEndPrompt || `Una imagen acogedora y conclusiva que transmita el final feliz del cuento. Puede mostrar elementos decorativos como estrellas, corazones, o un paisaje sereno que invite a la reflexión.`}
+
+Instrucciones críticas:
+- Composición atractiva para página final de libro infantil
+- Escena brillante y bien iluminada
+- Atmósfera de cierre y satisfacción
+- Imágenes apropiadas para niños 5-10 años
+- SIN TEXTO NI PALABRAS en la imagen
+- Puede ser abstracta o con elementos del cuento`;
+  }, [story, editingEndPrompt]);
 
   // Generar imagen final
-  const handleGenerateEnd = useCallback(async () => {
+  const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
     if (!story) return;
 
     setGeneratingEnd(true);
     setError(null);
 
     try {
+      const requestBody = {
+        type: 'end',
+        styleId: story.illustrationStyle,
+        // Imagen de referencia manual (si existe)
+        referenceImage: endReferenceImage || undefined,
+        // Prompt personalizado
+        customPrompt: customPrompt || editingEndPrompt || undefined,
+        count: 4,
+      };
+
+      console.log('[CuentacuentoEditor] End image generation request:', {
+        ...requestBody,
+        referenceImage: requestBody.referenceImage ? `${requestBody.referenceImage.slice(0, 50)}...` : undefined,
+      });
+
       const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-        body: {
-          type: 'end',
-          styleId: story.illustrationStyle,
-          count: 4,
-        },
+        body: requestBody,
       });
 
       if (fnError) throw fnError;
@@ -1104,7 +1521,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingEnd(false);
     }
-  }, [story]);
+  }, [story, endReferenceImage, editingEndPrompt]);
 
   // Subir imagen de personaje manualmente
   const handleUploadCharacterImage = useCallback((characterId: string, base64: string) => {
@@ -1204,16 +1621,16 @@ Instrucciones críticas:
 
       if (uploadError) throw uploadError;
 
-      // Obtener URL firmada y actualizar el estado
-      const { data: urlData } = await supabase.storage
+      // Obtener URL pública (el bucket es público, no expira)
+      const { data: urlData } = supabase.storage
         .from('cuentacuentos-drafts')
-        .createSignedUrl(path, 86400);
+        .getPublicUrl(path);
 
-      if (urlData?.signedUrl) {
+      if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
         setCharacterSheetOptions(prev => ({
           ...prev,
-          [characterId]: [urlData.signedUrl]
+          [characterId]: [urlData.publicUrl]
         }));
         // Actualizar el índice de selección a 0 ya que ahora solo hay una imagen
         setSelectedCharacterSheets(prev => ({
@@ -1280,15 +1697,16 @@ Instrucciones críticas:
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = await supabase.storage
+      // Obtener URL pública (el bucket es público, no expira)
+      const { data: urlData } = supabase.storage
         .from('cuentacuentos-drafts')
-        .createSignedUrl(path, 86400);
+        .getPublicUrl(path);
 
-      if (urlData?.signedUrl) {
+      if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
         setSceneImageOptions(prev => ({
           ...prev,
-          [sceneNumber]: [urlData.signedUrl]
+          [sceneNumber]: [urlData.publicUrl]
         }));
         // Actualizar el índice de selección a 0 ya que ahora solo hay una imagen
         setSelectedSceneImages(prev => ({
@@ -1347,13 +1765,14 @@ Instrucciones críticas:
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = await supabase.storage
+      // Obtener URL pública (el bucket es público, no expira)
+      const { data: urlData } = supabase.storage
         .from('cuentacuentos-drafts')
-        .createSignedUrl(path, 86400);
+        .getPublicUrl(path);
 
-      if (urlData?.signedUrl) {
+      if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
-        setCoverOptions([urlData.signedUrl]);
+        setCoverOptions([urlData.publicUrl]);
         setSelectedCover(0);
       }
 
@@ -1407,13 +1826,14 @@ Instrucciones críticas:
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = await supabase.storage
+      // Obtener URL pública (el bucket es público, no expira)
+      const { data: urlData } = supabase.storage
         .from('cuentacuentos-drafts')
-        .createSignedUrl(path, 86400);
+        .getPublicUrl(path);
 
-      if (urlData?.signedUrl) {
+      if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
-        setEndOptions([urlData.signedUrl]);
+        setEndOptions([urlData.publicUrl]);
         setSelectedEnd(0);
       }
 
@@ -1497,15 +1917,110 @@ Instrucciones críticas:
   }, [story, sceneImageOptions, selectedSceneImages]);
 
   // Finalizar cuento
-  const handleFinalize = useCallback(() => {
+  const handleFinalize = useCallback(async () => {
     if (!story) return;
+
+    // CRITICAL FIX: Ensure all images are URLs before finalizing
+    // Upload any remaining base64 images to storage
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError('No autenticado');
+      return;
+    }
+
+    // Helper function to ensure an image is a URL
+    const ensureImageUrl = async (image: string | undefined, category: string, key: string): Promise<string | undefined> => {
+      if (!image) return undefined;
+
+      // If already a URL, return as-is
+      if (image.startsWith('http://') || image.startsWith('https://')) {
+        return image;
+      }
+
+      // If it's base64, upload to storage
+      try {
+        let base64Data = image;
+        if (base64Data.startsWith('data:')) {
+          const parts = base64Data.split(',');
+          if (parts.length > 1) {
+            base64Data = parts[1];
+          }
+        }
+
+        const mimeType = base64Data.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+        const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+
+        const path = `${user.id}/${context.id}/${category}/${key}.${extension}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('cuentacuentos-drafts')
+          .upload(path, blob, { contentType: mimeType, upsert: true });
+
+        if (uploadError) {
+          console.error(`[CuentacuentoEditor] Error uploading ${category}/${key}:`, uploadError);
+          return undefined;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('cuentacuentos-drafts')
+          .getPublicUrl(path);
+
+        console.log(`[CuentacuentoEditor] Uploaded ${category}/${key} to storage: ${urlData.publicUrl.slice(0, 60)}...`);
+        return urlData.publicUrl;
+      } catch (err) {
+        console.error(`[CuentacuentoEditor] Error in ensureImageUrl:`, err);
+        return undefined;
+      }
+    };
+
+    // Ensure all scene images are URLs
+    const uploadedSceneUrls: Record<number, string | undefined> = {};
+    for (const scene of story.scenes) {
+      const options = sceneImageOptions[scene.number];
+      const selectedIdx = selectedSceneImages[scene.number];
+      const selectedImage = options && selectedIdx !== undefined ? options[selectedIdx] : scene.selectedImageUrl;
+
+      const url = await ensureImageUrl(selectedImage, 'scenes', `scene${scene.number}_final`);
+      uploadedSceneUrls[scene.number] = url;
+      console.log(`[CuentacuentoEditor] Scene ${scene.number} final URL: ${url ? url.slice(0, 60) : 'NONE'}...`);
+    }
+
+    // Ensure cover image is URL
+    const coverImage = selectedCover !== null ? coverOptions[selectedCover] : undefined;
+    const finalCoverUrl = await ensureImageUrl(coverImage, 'cover', 'cover_final');
+
+    // Ensure end image is URL
+    const endImage = selectedEnd !== null ? endOptions[selectedEnd] : undefined;
+    const finalEndUrl = await ensureImageUrl(endImage, 'end', 'end_final');
+
+    // Build final scenes with guaranteed URLs
+    const finalScenes = story.scenes.map(scene => ({
+      ...scene,
+      imageOptions: sceneImageOptions[scene.number],
+      selectedImageUrl: uploadedSceneUrls[scene.number],
+    }));
+
+    // Debug log scene images
+    console.log('[CuentacuentoEditor] Finalizing story with scenes:', finalScenes.map(s => ({
+      number: s.number,
+      hasImage: !!s.selectedImageUrl,
+      imageUrl: s.selectedImageUrl?.slice(0, 50),
+    })));
 
     const finalStory: Story = {
       ...story,
+      scenes: finalScenes,
       coverImageOptions: coverOptions,
-      coverImageUrl: selectedCover !== null ? coverOptions[selectedCover] : undefined,
+      coverImageUrl: finalCoverUrl,
       endImageOptions: endOptions,
-      endImageUrl: selectedEnd !== null ? endOptions[selectedEnd] : undefined,
+      endImageUrl: finalEndUrl,
       metadata: {
         ...story.metadata,
         status: 'ready',
@@ -1526,7 +2041,7 @@ Instrucciones críticas:
     // Eliminar el borrador ya que se finalizó exitosamente
     deleteDraft();
     console.log('[CuentacuentoEditor] Story finalized, draft deleted');
-  }, [story, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft]);
+  }, [story, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft, context.id]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
@@ -1969,6 +2484,94 @@ Instrucciones críticas:
           </div>
         )}
 
+        {/* Panel de Feedback para Refinar */}
+        <div className="mt-6 border rounded-lg p-4" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, backgroundColor: CASA_BRAND.colors.secondary.grayLightest }}>
+          <button
+            type="button"
+            onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+            className="flex items-center gap-2 text-sm font-medium"
+            style={{ color: CASA_BRAND.colors.primary.amber }}
+          >
+            <MessageSquare size={16} />
+            {showFeedbackPanel ? 'Ocultar panel de feedback' : '¿Quieres mejorar algo del cuento?'}
+          </button>
+
+          {showFeedbackPanel && (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: CASA_BRAND.colors.primary.black }}>
+                  Tipo de mejora
+                </label>
+                <select
+                  value={refinementType}
+                  onChange={(e) => setRefinementType(e.target.value as typeof refinementType)}
+                  className="w-full p-2 border rounded-lg text-sm"
+                  style={{ borderColor: CASA_BRAND.colors.secondary.grayMedium }}
+                >
+                  <option value="general">General - Mejoras libres</option>
+                  <option value="characters">Personajes - Mejorar descripciones y profundidad</option>
+                  <option value="plot">Trama - Fortalecer conflicto y resolución</option>
+                  <option value="scenes">Escenas - Mejorar descripciones visuales</option>
+                  <option value="spiritual">Espiritual - Mejorar conexión con el Evangelio</option>
+                  <option value="length">Duración - Ajustar largo del cuento</option>
+                  <option value="tone">Tono - Cambiar el estilo emocional</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: CASA_BRAND.colors.primary.black }}>
+                  Tu feedback
+                </label>
+                <textarea
+                  value={storyFeedback}
+                  onChange={(e) => setStoryFeedback(e.target.value)}
+                  placeholder="Describe qué te gustaría mejorar. Por ejemplo: 'Hazlo más divertido', 'El personaje principal necesita más personalidad', 'La moraleja es muy obvia', etc."
+                  className="w-full p-3 border rounded-lg text-sm min-h-[100px]"
+                  style={{ borderColor: CASA_BRAND.colors.secondary.grayMedium }}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFeedbackPanel(false);
+                    setStoryFeedback('');
+                  }}
+                  className="px-4 py-2 text-sm rounded-lg"
+                  style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRefineStory}
+                  disabled={isRefining || !storyFeedback.trim()}
+                  className="px-4 py-2 text-sm rounded-lg flex items-center gap-2"
+                  style={{
+                    backgroundColor: isRefining || !storyFeedback.trim()
+                      ? CASA_BRAND.colors.secondary.grayMedium
+                      : CASA_BRAND.colors.primary.amber,
+                    color: CASA_BRAND.colors.primary.white,
+                  }}
+                >
+                  {isRefining ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      Refinando...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      Refinar Cuento
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Botones */}
         <div className="flex gap-2">
           <button
@@ -2243,12 +2846,141 @@ Instrucciones críticas:
                 {/* Panel expandible: Prompt e imágenes de referencia */}
                 {isExpanded && (
                   <div className="border-t" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, backgroundColor: CASA_BRAND.colors.secondary.grayLight + '20' }}>
-                    {/* Imágenes de referencia */}
+                    {/* Imagen de referencia manual para la escena */}
                     <div className="p-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
                       <div className="flex items-center justify-between mb-3">
                         <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
                           <ImageIcon size={12} />
-                          Imágenes de referencia ({charactersWithRefs.filter(c => c.hasReference).length} activas)
+                          Imagen de referencia para estilo
+                        </h6>
+                        <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                          Opcional - guía el estilo visual
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-4">
+                        {/* Preview de imagen de referencia */}
+                        {sceneReferenceImages[scene.number] ? (
+                          <div className="relative">
+                            <img
+                              src={sceneReferenceImages[scene.number].startsWith('http')
+                                ? sceneReferenceImages[scene.number]
+                                : `data:image/png;base64,${sceneReferenceImages[scene.number]}`}
+                              alt="Referencia de escena"
+                              className="w-24 h-24 object-cover rounded-lg border"
+                              style={{ borderColor: CASA_BRAND.colors.primary.amber }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSceneReferenceImages(prev => {
+                                const updated = { ...prev };
+                                delete updated[scene.number];
+                                return updated;
+                              })}
+                              className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
+                            >
+                              <X size={12} color="white" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            className="w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                            onClick={() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = 'image/*';
+                              input.onchange = (e) => {
+                                const file = (e.target as HTMLInputElement).files?.[0];
+                                if (!file) return;
+                                if (file.size > 5 * 1024 * 1024) {
+                                  alert('La imagen es muy grande. Máximo 5MB');
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  const result = reader.result as string;
+                                  const base64 = result.split(',')[1];
+                                  setSceneReferenceImages(prev => ({ ...prev, [scene.number]: base64 }));
+                                };
+                                reader.readAsDataURL(file);
+                              };
+                              input.click();
+                            }}
+                          >
+                            <Upload size={20} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                            <span className="text-xs mt-1" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Subir</span>
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                            Sube una imagen o usa una escena ya generada para mantener consistencia visual.
+                          </p>
+
+                          {/* Escenas ya generadas como referencia */}
+                          {(() => {
+                            // Obtener escenas con imagen ya seleccionada (excluyendo la actual)
+                            const scenesWithImages = story?.scenes?.filter(s => {
+                              if (s.number === scene.number) return false;
+                              const opts = sceneImageOptions[s.number];
+                              const selectedIdx = selectedSceneImages[s.number];
+                              return (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                            }) || [];
+
+                            if (scenesWithImages.length === 0) return null;
+
+                            return (
+                              <div className="mt-3">
+                                <p className="text-xs mb-2" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                                  O usar escena existente:
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {scenesWithImages.map(s => {
+                                    const opts = sceneImageOptions[s.number];
+                                    const selectedIdx = selectedSceneImages[s.number];
+                                    const imgSrc = (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                                    if (!imgSrc) return null;
+
+                                    return (
+                                      <button
+                                        key={s.number}
+                                        type="button"
+                                        onClick={() => {
+                                          // Usar la imagen de esta escena como referencia
+                                          setSceneReferenceImages(prev => ({ ...prev, [scene.number]: imgSrc }));
+                                        }}
+                                        className="relative group"
+                                        title={`Usar escena ${s.number} como referencia`}
+                                      >
+                                        <img
+                                          src={imgSrc.startsWith('http') ? imgSrc : `data:image/png;base64,${imgSrc}`}
+                                          alt={`Escena ${s.number}`}
+                                          className="w-12 h-12 object-cover rounded border hover:ring-2 transition-all"
+                                          style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, ringColor: CASA_BRAND.colors.primary.amber }}
+                                        />
+                                        <span
+                                          className="absolute bottom-0 left-0 right-0 text-center text-xs py-0.5"
+                                          style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white' }}
+                                        >
+                                          {s.number}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Imágenes de referencia de personajes */}
+                    <div className="p-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                          <Users size={12} />
+                          Personajes en la escena ({charactersWithRefs.filter(c => c.hasReference).length} con referencia)
                         </h6>
                         {!hasAnyReference && (
                           <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>
@@ -2540,105 +3272,562 @@ Instrucciones críticas:
         </div>
 
         {/* Portada */}
-        <div className="p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
-          <div className="flex items-center justify-between mb-3">
-            <h5 className="font-medium flex items-center gap-2" style={{ color: CASA_BRAND.colors.primary.black }}>
-              <BookOpen size={18} />
-              Portada
-              {selectedCover !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
-            </h5>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleGenerateCover}
-                disabled={generatingCover}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-                style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-              >
-                {generatingCover ? (
-                  <><Loader2 size={14} className="animate-spin" /> Generando...</>
-                ) : coverOptions.length > 0 ? (
-                  <><RefreshCw size={14} /> Regenerar</>
-                ) : (
-                  <><Camera size={14} /> Generar portada</>
-                )}
-              </button>
-              <ImageUploadButton
-                onUpload={handleUploadCover}
-                label="portada"
-                disabled={generatingCover}
-              />
+        <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="font-medium flex items-center gap-2" style={{ color: CASA_BRAND.colors.primary.black }}>
+                <BookOpen size={18} />
+                Portada
+                {selectedCover !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
+              </h5>
+              <div className="flex items-center gap-2">
+                {/* Botón para editar prompt/referencias */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newState = !showCoverPromptEditor;
+                    setShowCoverPromptEditor(newState);
+                    // Si se está abriendo y el prompt está vacío, inicializar con el default
+                    if (newState && !editingCoverPrompt && story) {
+                      const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
+                      setEditingCoverPrompt(`Escena de portada que capture la esencia del cuento, mostrando al protagonista ${protagonist?.name || 'principal'} en un momento característico de la historia.`);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors border"
+                  style={{
+                    borderColor: showCoverPromptEditor ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+                    color: showCoverPromptEditor ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayDark,
+                    backgroundColor: showCoverPromptEditor ? `${CASA_BRAND.colors.amber.light}20` : 'transparent',
+                  }}
+                >
+                  <Edit3 size={12} />
+                  {showCoverPromptEditor ? 'Ocultar opciones' : 'Editar prompt'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateCover()}
+                  disabled={generatingCover}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                >
+                  {generatingCover ? (
+                    <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : coverOptions.length > 0 ? (
+                    <><RefreshCw size={14} /> Regenerar</>
+                  ) : (
+                    <><Camera size={14} /> Generar portada</>
+                  )}
+                </button>
+                <ImageUploadButton
+                  onUpload={handleUploadCover}
+                  label="portada"
+                  disabled={generatingCover}
+                />
+              </div>
             </div>
-          </div>
 
-          {coverOptions.length > 0 ? (
-            <ImageSelector
-              options={coverOptions}
-              selectedIndex={selectedCover}
-              onSelect={setSelectedCover}
-              onSave={handleSaveCover}
-              onRegenerate={handleGenerateCover}
-              isGenerating={generatingCover}
-              isSaving={savingCover}
-              savedMessage={savedCoverMessage}
-              label="portada"
-            />
-          ) : (
-            <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
-              Genera o sube opciones de portada para seleccionar
-            </div>
-          )}
+            {/* Panel expandible: Prompt y referencias para portada */}
+            {showCoverPromptEditor && (
+              <div className="mb-4 p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight + '20', borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                {/* Imagen de referencia para la portada */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <ImageIcon size={12} />
+                      Imagen de referencia para estilo
+                    </h6>
+                    <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Opcional - guía el estilo visual
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-4">
+                    {/* Preview de imagen de referencia */}
+                    {coverReferenceImage ? (
+                      <div className="relative">
+                        <img
+                          src={coverReferenceImage.startsWith('http') ? coverReferenceImage : `data:image/png;base64,${coverReferenceImage}`}
+                          alt="Referencia de portada"
+                          className="w-24 h-24 object-cover rounded-lg border"
+                          style={{ borderColor: CASA_BRAND.colors.primary.amber }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCoverReferenceImage(null)}
+                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
+                        >
+                          <X size={12} color="white" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors"
+                        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) {
+                              alert('La imagen es muy grande. Máximo 5MB');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              const result = reader.result as string;
+                              const base64 = result.split(',')[1];
+                              setCoverReferenceImage(base64);
+                            };
+                            reader.readAsDataURL(file);
+                          };
+                          input.click();
+                        }}
+                      >
+                        <Upload size={20} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                        <span className="text-xs mt-1" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Subir</span>
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-xs mb-2" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                        Sube una imagen o usa una escena ya generada como referencia visual.
+                      </p>
+                      {/* Escenas ya generadas como referencia */}
+                      {(() => {
+                        const scenesWithImages = story?.scenes?.filter(s => {
+                          const opts = sceneImageOptions[s.number];
+                          const selectedIdx = selectedSceneImages[s.number];
+                          return (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                        }) || [];
+
+                        if (scenesWithImages.length === 0) return null;
+
+                        return (
+                          <div>
+                            <p className="text-xs mb-2" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                              O usar escena existente:
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {scenesWithImages.map(s => {
+                                const opts = sceneImageOptions[s.number];
+                                const selectedIdx = selectedSceneImages[s.number];
+                                const imgSrc = (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                                if (!imgSrc) return null;
+
+                                return (
+                                  <button
+                                    key={s.number}
+                                    type="button"
+                                    onClick={() => setCoverReferenceImage(imgSrc)}
+                                    className="relative group"
+                                    title={`Usar escena ${s.number} como referencia`}
+                                  >
+                                    <img
+                                      src={imgSrc.startsWith('http') ? imgSrc : `data:image/png;base64,${imgSrc}`}
+                                      alt={`Escena ${s.number}`}
+                                      className="w-12 h-12 object-cover rounded border hover:ring-2 transition-all"
+                                      style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, ringColor: CASA_BRAND.colors.primary.amber }}
+                                    />
+                                    <span
+                                      className="absolute bottom-0 left-0 right-0 text-center text-xs py-0.5"
+                                      style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white' }}
+                                    >
+                                      {s.number}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Referencias de personajes para portada */}
+                <div className="mb-4 pb-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <Users size={12} />
+                      Personajes en la portada
+                    </h6>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {story.characters.map(char => {
+                      const options = characterSheetOptions[char.id];
+                      const selectedIdx = selectedCharacterSheets[char.id];
+                      const refImage = options && selectedIdx !== undefined ? options[selectedIdx] : char.characterSheetUrl;
+                      const isExcluded = coverExcludedCharacters.includes(char.id);
+
+                      return (
+                        <div
+                          key={char.id}
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${isExcluded ? 'opacity-50' : ''}`}
+                          style={{
+                            borderColor: isExcluded ? CASA_BRAND.colors.secondary.grayLight : refImage ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+                          }}
+                        >
+                          {refImage && !isExcluded ? (
+                            <img
+                              src={refImage.startsWith('http') ? refImage : `data:image/png;base64,${refImage}`}
+                              alt={char.name}
+                              className="w-full aspect-square object-cover"
+                            />
+                          ) : (
+                            <div
+                              className="w-full aspect-square flex items-center justify-center"
+                              style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight }}
+                            >
+                              <User size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                            </div>
+                          )}
+                          <div
+                            className="absolute bottom-0 left-0 right-0 px-2 py-1 text-xs truncate"
+                            style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white' }}
+                          >
+                            {char.name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isExcluded) {
+                                setCoverExcludedCharacters(prev => prev.filter(id => id !== char.id));
+                              } else {
+                                setCoverExcludedCharacters(prev => [...prev, char.id]);
+                              }
+                            }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                            style={{ backgroundColor: isExcluded ? '#EF4444' : CASA_BRAND.colors.primary.amber }}
+                            title={isExcluded ? 'Incluir en referencias' : 'Excluir de referencias'}
+                          >
+                            {isExcluded ? <Plus size={14} color="white" /> : <X size={14} color="white" />}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Prompt editable para portada */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <Edit3 size={12} />
+                      Prompt de generación
+                    </h6>
+                    <button
+                      type="button"
+                      onClick={() => setEditingCoverPrompt('')}
+                      className="text-xs hover:underline"
+                      style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                    >
+                      Restaurar original
+                    </button>
+                  </div>
+                  <textarea
+                    value={editingCoverPrompt}
+                    onChange={(e) => setEditingCoverPrompt(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2"
+                    style={{
+                      borderColor: CASA_BRAND.colors.secondary.grayLight,
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      lineHeight: 1.5,
+                    }}
+                    placeholder="Descripción personalizada para la portada... (deja vacío para usar el prompt por defecto)"
+                  />
+
+                  {/* Preview del prompt completo */}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs flex items-center gap-1" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      <Eye size={12} />
+                      Ver prompt completo que se enviará
+                    </summary>
+                    <pre
+                      className="mt-2 p-3 rounded text-xs overflow-auto max-h-48"
+                      style={{
+                        backgroundColor: CASA_BRAND.colors.primary.black,
+                        color: CASA_BRAND.colors.secondary.grayLight,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '11px',
+                      }}
+                    >
+                      {buildCoverPromptPreview()}
+                    </pre>
+                  </details>
+                </div>
+              </div>
+            )}
+
+            {coverOptions.length > 0 ? (
+              <ImageSelector
+                options={coverOptions}
+                selectedIndex={selectedCover}
+                onSelect={setSelectedCover}
+                onSave={handleSaveCover}
+                onRegenerate={() => handleGenerateCover()}
+                isGenerating={generatingCover}
+                isSaving={savingCover}
+                savedMessage={savedCoverMessage}
+                label="portada"
+              />
+            ) : (
+              <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                Genera o sube opciones de portada para seleccionar
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Fin */}
-        <div className="p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
-          <div className="flex items-center justify-between mb-3">
-            <h5 className="font-medium flex items-center gap-2" style={{ color: CASA_BRAND.colors.primary.black }}>
-              <FileText size={18} />
-              Imagen final "Fin"
-              {selectedEnd !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
-            </h5>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleGenerateEnd}
-                disabled={generatingEnd}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-                style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-              >
-                {generatingEnd ? (
-                  <><Loader2 size={14} className="animate-spin" /> Generando...</>
-                ) : endOptions.length > 0 ? (
-                  <><RefreshCw size={14} /> Regenerar</>
-                ) : (
-                  <><Camera size={14} /> Generar "Fin"</>
-                )}
-              </button>
-              <ImageUploadButton
-                onUpload={handleUploadEnd}
-                label="imagen"
-                disabled={generatingEnd}
-              />
+        <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="font-medium flex items-center gap-2" style={{ color: CASA_BRAND.colors.primary.black }}>
+                <FileText size={18} />
+                Imagen final "Fin"
+                {selectedEnd !== null && <CheckCircle size={16} style={{ color: '#10B981' }} />}
+              </h5>
+              <div className="flex items-center gap-2">
+                {/* Botón para editar prompt/referencias */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newState = !showEndPromptEditor;
+                    setShowEndPromptEditor(newState);
+                    // Si se está abriendo y el prompt está vacío, inicializar con el default
+                    if (newState && !editingEndPrompt) {
+                      setEditingEndPrompt(`Una imagen acogedora y conclusiva que transmita el final feliz del cuento. Puede mostrar elementos decorativos como estrellas, corazones, o un paisaje sereno que invite a la reflexión.`);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors border"
+                  style={{
+                    borderColor: showEndPromptEditor ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+                    color: showEndPromptEditor ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayDark,
+                    backgroundColor: showEndPromptEditor ? `${CASA_BRAND.colors.amber.light}20` : 'transparent',
+                  }}
+                >
+                  <Edit3 size={12} />
+                  {showEndPromptEditor ? 'Ocultar opciones' : 'Editar prompt'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateEnd()}
+                  disabled={generatingEnd}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                >
+                  {generatingEnd ? (
+                    <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : endOptions.length > 0 ? (
+                    <><RefreshCw size={14} /> Regenerar</>
+                  ) : (
+                    <><Camera size={14} /> Generar "Fin"</>
+                  )}
+                </button>
+                <ImageUploadButton
+                  onUpload={handleUploadEnd}
+                  label="imagen"
+                  disabled={generatingEnd}
+                />
+              </div>
             </div>
-          </div>
 
-          {endOptions.length > 0 ? (
-            <ImageSelector
-              options={endOptions}
-              selectedIndex={selectedEnd}
-              onSelect={setSelectedEnd}
-              onSave={handleSaveEnd}
-              onRegenerate={handleGenerateEnd}
-              isGenerating={generatingEnd}
-              isSaving={savingEnd}
-              savedMessage={savedEndMessage}
-              label="imagen final"
-            />
-          ) : (
-            <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
-              Genera o sube opciones de imagen final para seleccionar
-            </div>
-          )}
+            {/* Panel expandible: Prompt y referencias para fin */}
+            {showEndPromptEditor && (
+              <div className="mb-4 p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight + '20', borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                {/* Imagen de referencia para el fin */}
+                <div className="mb-4 pb-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <ImageIcon size={12} />
+                      Imagen de referencia para estilo
+                    </h6>
+                    <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Opcional - guía el estilo visual
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-4">
+                    {/* Preview de imagen de referencia */}
+                    {endReferenceImage ? (
+                      <div className="relative">
+                        <img
+                          src={endReferenceImage.startsWith('http') ? endReferenceImage : `data:image/png;base64,${endReferenceImage}`}
+                          alt="Referencia de fin"
+                          className="w-24 h-24 object-cover rounded-lg border"
+                          style={{ borderColor: CASA_BRAND.colors.primary.amber }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEndReferenceImage(null)}
+                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
+                        >
+                          <X size={12} color="white" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="w-24 h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors"
+                        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) {
+                              alert('La imagen es muy grande. Máximo 5MB');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              const result = reader.result as string;
+                              const base64 = result.split(',')[1];
+                              setEndReferenceImage(base64);
+                            };
+                            reader.readAsDataURL(file);
+                          };
+                          input.click();
+                        }}
+                      >
+                        <Upload size={20} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                        <span className="text-xs mt-1" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Subir</span>
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-xs mb-2" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                        Sube una imagen o usa una escena ya generada como referencia visual para mantener el estilo.
+                      </p>
+                      {/* Escenas ya generadas como referencia */}
+                      {(() => {
+                        const scenesWithImages = story?.scenes?.filter(s => {
+                          const opts = sceneImageOptions[s.number];
+                          const selectedIdx = selectedSceneImages[s.number];
+                          return (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                        }) || [];
+
+                        if (scenesWithImages.length === 0) return null;
+
+                        return (
+                          <div>
+                            <p className="text-xs mb-2" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                              O usar escena existente:
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {scenesWithImages.map(s => {
+                                const opts = sceneImageOptions[s.number];
+                                const selectedIdx = selectedSceneImages[s.number];
+                                const imgSrc = (opts && selectedIdx !== undefined && opts[selectedIdx]) || s.selectedImageUrl;
+                                if (!imgSrc) return null;
+
+                                return (
+                                  <button
+                                    key={s.number}
+                                    type="button"
+                                    onClick={() => setEndReferenceImage(imgSrc)}
+                                    className="relative group"
+                                    title={`Usar escena ${s.number} como referencia`}
+                                  >
+                                    <img
+                                      src={imgSrc.startsWith('http') ? imgSrc : `data:image/png;base64,${imgSrc}`}
+                                      alt={`Escena ${s.number}`}
+                                      className="w-12 h-12 object-cover rounded border hover:ring-2 transition-all"
+                                      style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, ringColor: CASA_BRAND.colors.primary.amber }}
+                                    />
+                                    <span
+                                      className="absolute bottom-0 left-0 right-0 text-center text-xs py-0.5"
+                                      style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white' }}
+                                    >
+                                      {s.number}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Prompt editable para fin */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <Edit3 size={12} />
+                      Prompt de generación
+                    </h6>
+                    <button
+                      type="button"
+                      onClick={() => setEditingEndPrompt('')}
+                      className="text-xs hover:underline"
+                      style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                    >
+                      Restaurar original
+                    </button>
+                  </div>
+                  <textarea
+                    value={editingEndPrompt}
+                    onChange={(e) => setEditingEndPrompt(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2"
+                    style={{
+                      borderColor: CASA_BRAND.colors.secondary.grayLight,
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      lineHeight: 1.5,
+                    }}
+                    placeholder="Descripción personalizada para la imagen final... (deja vacío para usar el prompt por defecto)"
+                  />
+
+                  {/* Preview del prompt completo */}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs flex items-center gap-1" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      <Eye size={12} />
+                      Ver prompt completo que se enviará
+                    </summary>
+                    <pre
+                      className="mt-2 p-3 rounded text-xs overflow-auto max-h-48"
+                      style={{
+                        backgroundColor: CASA_BRAND.colors.primary.black,
+                        color: CASA_BRAND.colors.secondary.grayLight,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '11px',
+                      }}
+                    >
+                      {buildEndPromptPreview()}
+                    </pre>
+                  </details>
+                </div>
+              </div>
+            )}
+
+            {endOptions.length > 0 ? (
+              <ImageSelector
+                options={endOptions}
+                selectedIndex={selectedEnd}
+                onSelect={setSelectedEnd}
+                onSave={handleSaveEnd}
+                onRegenerate={() => handleGenerateEnd()}
+                isGenerating={generatingEnd}
+                isSaving={savingEnd}
+                savedMessage={savedEndMessage}
+                label="imagen final"
+              />
+            ) : (
+              <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                Genera o sube opciones de imagen final para seleccionar
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Error */}
@@ -2900,17 +4089,105 @@ Instrucciones críticas:
           </p>
         </div>
 
-        {onNavigateToFullEditor && (
-          <button
-            type="button"
-            onClick={onNavigateToFullEditor}
-            className="flex items-center gap-1 text-sm transition-colors hover:underline"
-            style={{ color: CASA_BRAND.colors.primary.amber }}
-          >
-            Editor completo
-            <ExternalLink size={14} />
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Botón eliminar cuento - solo visible si hay una historia */}
+          {(story || initialStory) && (
+            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors hover:bg-red-50"
+                  style={{
+                    color: '#DC2626',
+                    fontFamily: CASA_BRAND.fonts.body,
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Eliminar
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  borderRadius: '16px',
+                }}
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle
+                    className="flex items-center gap-2"
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.heading,
+                      color: CASA_BRAND.colors.primary.black,
+                    }}
+                  >
+                    <Trash2 size={20} style={{ color: '#DC2626' }} />
+                    ¿Eliminar este cuentacuento?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.body,
+                      color: CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    Esta acción eliminará permanentemente:
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>La historia "{story?.title || initialStory?.title || 'Sin título'}"</li>
+                      <li>Todas las imágenes generadas (personajes, escenas, portada)</li>
+                      <li>El borrador guardado en Supabase</li>
+                    </ul>
+                    <p className="mt-3 font-medium" style={{ color: '#DC2626' }}>
+                      Esta acción no se puede deshacer.
+                    </p>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    disabled={isDeleting}
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.body,
+                    }}
+                  >
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteStory}
+                    disabled={isDeleting}
+                    className="flex items-center gap-2"
+                    style={{
+                      backgroundColor: '#DC2626',
+                      color: 'white',
+                      fontFamily: CASA_BRAND.fonts.body,
+                    }}
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Eliminando...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={14} />
+                        Sí, eliminar
+                      </>
+                    )}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
+          {onNavigateToFullEditor && (
+            <button
+              type="button"
+              onClick={onNavigateToFullEditor}
+              className="flex items-center gap-1 text-sm transition-colors hover:underline"
+              style={{ color: CASA_BRAND.colors.primary.amber }}
+            >
+              Editor completo
+              <ExternalLink size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Indicador de pasos (solo si ya hay un cuento) */}

@@ -50,6 +50,9 @@ export async function exportStoryToPDF(
     const progress = Math.round((currentStep / totalSteps) * 100);
     onProgress?.(progress, `Escena ${i + 1} de ${story.scenes.length}...`);
 
+    // Log scene image status for debugging
+    console.log(`[storyPdfExporter] Scene ${scene.number}: selectedImageUrl=${scene.selectedImageUrl ? 'present (' + scene.selectedImageUrl.slice(0, 50) + '...)' : 'MISSING'}`);
+
     pdf.addPage();
     await renderSceneSpread(pdf, scene, i + 1, story.scenes.length);
 

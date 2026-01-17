@@ -6,50 +6,14 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { LiturgyElement, LiturgyElementType } from '@/types/shared/liturgy';
 import type { PresentationData, FlattenedElement } from './types';
-
-const CUENTACUENTOS_BUCKET = 'cuentacuentos-drafts';
-
-/**
- * Convierte una signed URL expirada a una URL pública
- * El bucket ahora es público, así que las URLs no necesitan token
- */
-function convertToPublicUrl(imageUrl: string): string {
-  if (!imageUrl) return imageUrl;
-
-  // Si es una URL de Supabase Storage con token, convertir a URL pública
-  if (imageUrl.includes('/storage/v1/') && imageUrl.includes('token=')) {
-    // Extraer el path del storage de la URL
-    const match = imageUrl.match(/cuentacuentos-drafts\/([^?]+)/);
-    if (match) {
-      const path = match[1];
-      const { data } = supabase.storage
-        .from(CUENTACUENTOS_BUCKET)
-        .getPublicUrl(path);
-      return data.publicUrl;
-    }
-  }
-
-  return imageUrl;
-}
+import { migrateAllSlideImageUrls } from '@/lib/cuentacuentos/imageUtils';
 
 /**
- * Procesa los slides de cuentacuentos para convertir signed URLs a públicas
+ * Procesa los slides de cuentacuentos para migrar signed URLs a públicas
+ * El bucket es público, por lo que las URLs públicas nunca expiran
  */
-function convertCuentacuentosSlides(slides: Slide[]): Slide[] {
-  return slides.map(slide => {
-    if (slide.type === 'story-cover' || slide.type === 'story-scene' || slide.type === 'story-end') {
-      if (slide.content.imageUrl) {
-        return {
-          ...slide,
-          content: {
-            ...slide.content,
-            imageUrl: convertToPublicUrl(slide.content.imageUrl),
-          },
-        };
-      }
-    }
-    return slide;
-  });
+function migrateCuentacuentosSlides(slides: Slide[]): Slide[] {
+  return migrateAllSlideImageUrls(slides);
 }
 
 /**
@@ -179,10 +143,10 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       });
 
       if (slideArray.length > 0) {
-        // Para cuentacuentos, convertir signed URLs expiradas a URLs públicas
+        // Para cuentacuentos, migrar signed URLs a públicas (el bucket es público)
         if (elemento.tipo === 'cuentacuentos') {
-          slideArray = convertCuentacuentosSlides(slideArray);
-          console.log('[presentationService] Converted cuentacuentos to public URLs');
+          slideArray = migrateCuentacuentosSlides(slideArray);
+          console.log('[presentationService] Migrated cuentacuentos to public URLs');
         }
 
         // Agregar slides al array aplanado

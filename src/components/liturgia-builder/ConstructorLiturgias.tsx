@@ -568,6 +568,17 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     setIsDirty(true);
   }, [elements]);
 
+  // Clear/delete an element completely (used when user deletes a story)
+  const handleClearElement = useCallback((elementType: LiturgyElementType) => {
+    setElements((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(elementType);
+      return newMap;
+    });
+    setIsDirty(true);
+    console.log(`[ConstructorLiturgias] Cleared element: ${elementType}`);
+  }, []);
+
   // Confirmar elemento fijo automáticamente (sin abrir editor)
   const handleConfirmFixedElement = useCallback(async (elementType: LiturgyElementType) => {
     const elementDef = LITURGY_ELEMENTS.find((e) => e.type === elementType);
@@ -784,6 +795,9 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           initialSlides={existingElement?.slides}
           onStoryCreated={(story: Story, slides: SlideGroup) => {
             handleElementSlides('cuentacuentos', slides, { sourceId: story.id, storyData: story });
+          }}
+          onStoryDeleted={() => {
+            handleClearElement('cuentacuentos');
           }}
         />
       );

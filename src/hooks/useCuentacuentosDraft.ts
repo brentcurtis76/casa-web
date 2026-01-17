@@ -39,6 +39,25 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
 const BUCKET_NAME = 'cuentacuentos-drafts';
 
 /**
+ * Verifica si un archivo existe en Storage
+ */
+async function checkFileExists(path: string): Promise<boolean> {
+  try {
+    // Intentar obtener metadata del archivo
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .download(path);
+
+    if (error || !data) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Sube una imagen base64 a Supabase Storage
  */
 async function uploadImage(
@@ -50,19 +69,46 @@ async function uploadImage(
   base64Data: string
 ): Promise<string | null> {
   try {
-    // Si ya es una URL, no necesita subirse - extraer el path si es de nuestro bucket
+    console.log(`[useCuentacuentosDraft] uploadImage called: ${category}/${key}_${index}, data length: ${base64Data?.length || 0}, isURL: ${base64Data?.startsWith('http')}`);
+
+    // Si ya es una URL, verificar si el archivo REALMENTE existe en Storage
     if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
       // Es una URL - verificar si es de nuestro bucket de Supabase
-      const bucketUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object`;
-      if (base64Data.includes(bucketUrl) || base64Data.includes('/storage/v1/')) {
+      if (base64Data.includes('cuentacuentos-drafts')) {
         // Extraer el path del storage de la URL
         const match = base64Data.match(/cuentacuentos-drafts\/([^?]+)/);
         if (match) {
-          return match[1]; // Retornar solo el path relativo
+          const extractedPath = match[1];
+          // CRITICAL FIX: Verificar que el archivo REALMENTE existe
+          const exists = await checkFileExists(extractedPath);
+          if (exists) {
+            console.log(`[useCuentacuentosDraft] File EXISTS at path: ${extractedPath}`);
+            return extractedPath;
+          } else {
+            console.warn(`[useCuentacuentosDraft] File NOT FOUND at path: ${extractedPath}, cannot recover`);
+            // El archivo no existe - retornar null porque no podemos recrearlo desde una URL
+            return null;
+          }
         }
       }
-      // Es una URL externa - no podemos procesarla, retornar null
-      console.log('[useCuentacuentosDraft] Skipping external URL:', base64Data.slice(0, 50));
+      // CRITICAL FIX: For any storage URL, try harder to extract path
+      // Try different URL formats
+      const altMatch = base64Data.match(/\/storage\/v1\/object\/public\/cuentacuentos-drafts\/([^?]+)/);
+      if (altMatch) {
+        const extractedPath = altMatch[1];
+        // Verificar que el archivo existe
+        const exists = await checkFileExists(extractedPath);
+        if (exists) {
+          console.log(`[useCuentacuentosDraft] File EXISTS at extracted path: ${extractedPath}`);
+          return extractedPath;
+        } else {
+          console.warn(`[useCuentacuentosDraft] File NOT FOUND at extracted path: ${extractedPath}`);
+          return null;
+        }
+      }
+
+      // External URL - cannot process, return null
+      console.warn('[useCuentacuentosDraft] External URL cannot be processed:', base64Data.slice(0, 100));
       return null;
     }
 
@@ -90,7 +136,9 @@ async function uploadImage(
     // Path: userId/liturgyId/category/key_index.png
     const path = `${userId}/${liturgyId}/${category}/${key}_${index}.${extension}`;
 
-    const { error } = await supabase.storage
+    console.log(`[useCuentacuentosDraft] Uploading to path: ${path}, blob size: ${blob.size}, mimeType: ${mimeType}`);
+
+    const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .upload(path, blob, {
         contentType: mimeType,
@@ -99,9 +147,11 @@ async function uploadImage(
 
     if (error) {
       console.error('[useCuentacuentosDraft] Error uploading image:', error);
+      console.error('[useCuentacuentosDraft] Error details:', JSON.stringify(error));
       return null;
     }
 
+    console.log(`[useCuentacuentosDraft] Upload SUCCESS: ${path}, response:`, data);
     return path;
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error uploading image:', err);
@@ -114,10 +164,17 @@ async function uploadImage(
  * El bucket es público, así que las URLs no expiran
  */
 function getPublicUrl(path: string): string {
+  // Si el path ya es una URL completa, retornarla tal cual
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    console.log(`[useCuentacuentosDraft] getPublicUrl: path is already URL: ${path.slice(0, 80)}`);
+    return path;
+  }
+
   const { data } = supabase.storage
     .from(BUCKET_NAME)
     .getPublicUrl(path);
 
+  console.log(`[useCuentacuentosDraft] getPublicUrl: path=${path} -> url=${data.publicUrl.slice(0, 100)}`);
   return data.publicUrl;
 }
 
@@ -184,8 +241,13 @@ async function saveImagesToStorage(
     sceneImagePaths[num] = [];
     for (let i = 0; i < options.length; i++) {
       const path = await uploadImage(userId, liturgyId, 'scenes', `scene${sceneNum}`, i, options[i]);
-      if (path) sceneImagePaths[num].push(path);
+      if (path) {
+        sceneImagePaths[num].push(path);
+      } else {
+        console.log(`[useCuentacuentosDraft] Could not process scene ${sceneNum} image ${i}, URL: ${options[i]?.slice(0, 80)}...`);
+      }
     }
+    console.log(`[useCuentacuentosDraft] Scene ${sceneNum}: ${sceneImagePaths[num].length} paths saved`);
   }
 
   // Subir cover options
@@ -226,25 +288,44 @@ async function loadImagesFromStorage(
   const coverOptions: string[] = [];
   const endOptions: string[] = [];
 
+  // Helper function to handle __FULLURL__ marker
+  const pathToUrl = (path: string): string => {
+    if (path.startsWith('__FULLURL__')) {
+      // It's already a full URL, return without the marker
+      const url = path.replace('__FULLURL__', '');
+      console.log(`[useCuentacuentosDraft] Restored full URL from marker: ${url.slice(0, 80)}`);
+      return url;
+    }
+    return getPublicUrl(path);
+  };
+
   // Generar URLs públicas para character sheets
   for (const [charId, pathList] of Object.entries(paths.characterSheetPaths || {})) {
-    const urls = pathList.map(path => getPublicUrl(path));
+    const urls = pathList.map(path => pathToUrl(path));
     characterSheetOptions[charId] = urls;
   }
 
   // Generar URLs públicas para scene images
+  // IMPORTANTE: Las keys en JSON siempre son strings, pero el código las accede como números
+  // Guardamos tanto la key numérica como string para asegurar compatibilidad
   for (const [sceneNum, pathList] of Object.entries(paths.sceneImagePaths || {})) {
     const num = Number(sceneNum);
-    const urls = pathList.map(path => getPublicUrl(path));
-    sceneImageOptions[num] = urls;
+    if (pathList && pathList.length > 0) {
+      const urls = pathList.map(path => pathToUrl(path));
+      // Guardar con ambas keys para asegurar que funcione sin importar cómo se acceda
+      sceneImageOptions[num] = urls;
+      // También como string por si el acceso es con string
+      (sceneImageOptions as Record<string | number, string[]>)[sceneNum] = urls;
+      console.log(`[useCuentacuentosDraft] Scene ${num}: loaded ${urls.length} URLs, first: ${urls[0]?.slice(0, 80)}`);
+    }
   }
 
   // Generar URLs públicas para cover options
-  const coverUrls = (paths.coverPaths || []).map(path => getPublicUrl(path));
+  const coverUrls = (paths.coverPaths || []).map(path => pathToUrl(path));
   coverOptions.push(...coverUrls);
 
   // Generar URLs públicas para end options
-  const endUrls = (paths.endPaths || []).map(path => getPublicUrl(path));
+  const endUrls = (paths.endPaths || []).map(path => pathToUrl(path));
   endOptions.push(...endUrls);
 
   console.log(`[useCuentacuentosDraft] Generated public URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
@@ -262,6 +343,8 @@ async function saveDraftToSupabase(
 ): Promise<boolean> {
   try {
     console.log(`[useCuentacuentosDraft] Saving draft to Supabase, step: ${draft.currentStep}`);
+    console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.sceneImageOptions || {}).length} scene image sets`);
+    console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.characterSheetOptions || {}).length} character sheet sets`);
 
     // Primero obtener los paths existentes para no sobrescribirlos
     const { data: existingDraft } = await supabase
@@ -286,40 +369,49 @@ async function saveDraftToSupabase(
     // Subir SOLO las imágenes nuevas (las que están en memoria)
     const newImagePaths = await saveImagesToStorage(userId, liturgyId, draft);
 
-    // Merge: mantener paths existentes y agregar SOLO nuevos que tengan contenido
-    // Filtrar newImagePaths para excluir arrays vacíos que sobrescribirían los existentes
-    const filteredNewScenePaths: Record<string, string[]> = {};
-    for (const [key, paths] of Object.entries(newImagePaths.sceneImagePaths)) {
-      if (paths && paths.length > 0) {
-        filteredNewScenePaths[key] = paths;
-      }
-    }
-
-    const filteredNewCharacterPaths: Record<string, string[]> = {};
-    for (const [key, paths] of Object.entries(newImagePaths.characterSheetPaths)) {
-      if (paths && paths.length > 0) {
-        filteredNewCharacterPaths[key] = paths;
-      }
-    }
-
+    // CRITICAL FIX: Safer merge logic that NEVER loses existing valid paths
+    // Only overwrite if we have valid new paths (non-null, non-empty strings)
     const mergedPaths = {
-      characterSheetPaths: {
-        ...existingPaths.characterSheetPaths,
-        ...filteredNewCharacterPaths,
-      },
-      sceneImagePaths: {
-        ...existingPaths.sceneImagePaths,
-        ...filteredNewScenePaths,
-      },
-      coverPaths: newImagePaths.coverPaths.length > 0
-        ? newImagePaths.coverPaths
-        : existingPaths.coverPaths || [],
-      endPaths: newImagePaths.endPaths.length > 0
-        ? newImagePaths.endPaths
-        : existingPaths.endPaths || [],
+      characterSheetPaths: { ...existingPaths.characterSheetPaths },
+      sceneImagePaths: { ...existingPaths.sceneImagePaths },
+      coverPaths: existingPaths.coverPaths || [],
+      endPaths: existingPaths.endPaths || [],
     };
 
-    console.log(`[useCuentacuentosDraft] Merged paths - existing scenes: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, new scenes: ${Object.keys(newImagePaths.sceneImagePaths).length}, total: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
+    // Merge character paths - only overwrite if we have valid new paths
+    for (const [key, paths] of Object.entries(newImagePaths.characterSheetPaths)) {
+      const validPaths = (paths || []).filter(p => p != null && p !== '');
+      if (validPaths.length > 0) {
+        mergedPaths.characterSheetPaths[key] = validPaths;
+        console.log(`[useCuentacuentosDraft] Updating character ${key} with ${validPaths.length} valid paths`);
+      }
+      // If no valid paths, KEEP existing (don't overwrite with empty)
+    }
+
+    // Merge scene paths - only overwrite if we have valid new paths
+    for (const [key, paths] of Object.entries(newImagePaths.sceneImagePaths)) {
+      const validPaths = (paths || []).filter(p => p != null && p !== '');
+      if (validPaths.length > 0) {
+        (mergedPaths.sceneImagePaths as Record<string, string[]>)[key] = validPaths;
+        console.log(`[useCuentacuentosDraft] Updating scene ${key} with ${validPaths.length} valid paths`);
+      }
+      // If no valid paths, KEEP existing (don't overwrite with empty)
+    }
+
+    // Cover and end paths - only replace if we have valid new ones
+    const validCoverPaths = (newImagePaths.coverPaths || []).filter(p => p != null && p !== '');
+    if (validCoverPaths.length > 0) {
+      mergedPaths.coverPaths = validCoverPaths;
+      console.log(`[useCuentacuentosDraft] Updating cover with ${validCoverPaths.length} valid paths`);
+    }
+
+    const validEndPaths = (newImagePaths.endPaths || []).filter(p => p != null && p !== '');
+    if (validEndPaths.length > 0) {
+      mergedPaths.endPaths = validEndPaths;
+      console.log(`[useCuentacuentosDraft] Updating end with ${validEndPaths.length} valid paths`);
+    }
+
+    console.log(`[useCuentacuentosDraft] MERGE RESULT - scenes before: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, after: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
 
     // Preparar story sin imágenes base64 (limpiar characterSheetUrl y selectedImageUrl)
     const cleanStory = draft.story ? {
@@ -410,9 +502,13 @@ async function loadDraftFromSupabase(
     };
 
     if (imagePaths) {
-      console.log('[useCuentacuentosDraft] Loading images from storage as signed URLs...');
+      console.log('[useCuentacuentosDraft] Loading images from storage...');
+      console.log('[useCuentacuentosDraft] Raw imagePaths from DB:', JSON.stringify(imagePaths, null, 2));
       imageOptions = await loadImagesFromStorage(imagePaths);
-      console.log(`[useCuentacuentosDraft] Loaded ${Object.keys(imageOptions.sceneImageOptions).length} scene image sets as URLs`);
+      console.log(`[useCuentacuentosDraft] Loaded ${Object.keys(imageOptions.sceneImageOptions).length} scene image sets`);
+      console.log('[useCuentacuentosDraft] Scene image options:', Object.entries(imageOptions.sceneImageOptions).map(([k, v]) => `${k}: ${v.length} images`));
+    } else {
+      console.log('[useCuentacuentosDraft] No imagePaths found in DB record');
     }
 
     const draft: CuentacuentosDraftFull = {
@@ -500,8 +596,10 @@ export interface UseCuentacuentosDraftReturn {
   isLoading: boolean;
   isSaving: boolean;
   saveDraft: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => void;
+  saveDraftNow: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => Promise<boolean>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
+  deleteStoryImages: () => Promise<boolean>;
   showRecoveryPrompt: boolean;
   acceptRecovery: () => CuentacuentosDraftFull | null;
   declineRecovery: () => void;
@@ -545,7 +643,10 @@ export function useCuentacuentosDraft({
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      console.log(`[useCuentacuentosDraft] Got user: ${user?.id}`);
       setUserId(user?.id || null);
+      // Actualizar ref inmediatamente también
+      userIdRef.current = user?.id || null;
     };
     getUser();
   }, []);
@@ -586,7 +687,12 @@ export function useCuentacuentosDraft({
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
-    if (!currentUserId) return;
+    console.log(`[useCuentacuentosDraft] saveDraft called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}, step: ${data.currentStep}`);
+
+    if (!currentUserId) {
+      console.warn('[useCuentacuentosDraft] saveDraft: No userId available, skipping save');
+      return;
+    }
 
     // Acumular datos pendientes
     pendingDataRef.current = { ...pendingDataRef.current, ...data };
@@ -632,7 +738,9 @@ export function useCuentacuentosDraft({
         };
 
         try {
+          console.log(`[useCuentacuentosDraft] Starting saveDraftToSupabase...`);
           const success = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
+          console.log(`[useCuentacuentosDraft] saveDraftToSupabase returned: ${success}`);
           if (success) {
             setDraft(fullDraft);
             setLastSavedAt(fullDraft.savedAt);
@@ -647,6 +755,80 @@ export function useCuentacuentosDraft({
       }
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
   }, []); // Sin dependencias - usa refs para valores actuales
+
+  // Guardar borrador INMEDIATAMENTE sin debounce - usar cuando sea crítico guardar (ej: después de generar imágenes)
+  const saveDraftNow = useCallback(async (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>): Promise<boolean> => {
+    const currentUserId = userIdRef.current;
+    const currentLiturgyId = liturgyIdRef.current;
+    const currentDraft = draftRef.current;
+
+    console.log(`[useCuentacuentosDraft] saveDraftNow called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}`);
+
+    if (!currentUserId) {
+      console.warn('[useCuentacuentosDraft] saveDraftNow: No userId available, skipping save');
+      return false;
+    }
+
+    // Cancelar cualquier debounce pendiente
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+    }
+
+    if (isSavingRef.current) {
+      console.log('[useCuentacuentosDraft] saveDraftNow: Already saving, waiting...');
+      // Esperar a que termine el guardado actual
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    isSavingRef.current = true;
+    setIsSaving(true);
+
+    const fullDraft: CuentacuentosDraftFull = {
+      liturgyId: currentLiturgyId,
+      currentStep: 'config',
+      config: {
+        location: '',
+        customLocation: '',
+        characters: '',
+        style: 'reflexivo',
+        illustrationStyle: 'ghibli',
+        additionalNotes: '',
+      },
+      story: null,
+      characterSheetOptions: {},
+      selectedCharacterSheets: {},
+      sceneImageOptions: {},
+      selectedSceneImages: {},
+      coverOptions: [],
+      selectedCover: null,
+      endOptions: [],
+      selectedEnd: null,
+      ...currentDraft,
+      ...data,
+      savedAt: new Date().toISOString(),
+      version: 1,
+    };
+
+    try {
+      console.log(`[useCuentacuentosDraft] saveDraftNow: Starting immediate save...`);
+      const success = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
+      console.log(`[useCuentacuentosDraft] saveDraftNow: Save completed, success: ${success}`);
+
+      if (success) {
+        setDraft(fullDraft);
+        setLastSavedAt(fullDraft.savedAt);
+      }
+      return success;
+    } catch (err) {
+      console.error('[useCuentacuentosDraft] saveDraftNow: Failed to save draft:', err);
+      return false;
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
+      pendingDataRef.current = null;
+    }
+  }, []);
 
   // Cargar borrador manualmente
   const loadDraftAsync = useCallback(async () => {
@@ -664,6 +846,77 @@ export function useCuentacuentosDraft({
     setLastSavedAt(null);
     setShowRecoveryPrompt(false);
   }, [liturgyId, userId]);
+
+  // Eliminar todas las imágenes del cuento (Storage + DB draft)
+  // Esto se usa cuando el usuario quiere eliminar completamente una historia
+  const deleteStoryImages = useCallback(async (): Promise<boolean> => {
+    const currentUserId = userIdRef.current;
+    const currentLiturgyId = liturgyIdRef.current;
+
+    if (!currentUserId) {
+      console.warn('[useCuentacuentosDraft] deleteStoryImages: No userId available');
+      return false;
+    }
+
+    try {
+      console.log(`[useCuentacuentosDraft] Deleting all story images for liturgy: ${currentLiturgyId}`);
+
+      // 1. Eliminar todas las imágenes del Storage
+      const { data: folders } = await supabase.storage
+        .from(BUCKET_NAME)
+        .list(`${currentUserId}/${currentLiturgyId}`);
+
+      if (folders && folders.length > 0) {
+        const allPaths: string[] = [];
+
+        for (const folder of folders) {
+          const { data: files } = await supabase.storage
+            .from(BUCKET_NAME)
+            .list(`${currentUserId}/${currentLiturgyId}/${folder.name}`);
+
+          if (files) {
+            for (const file of files) {
+              allPaths.push(`${currentUserId}/${currentLiturgyId}/${folder.name}/${file.name}`);
+            }
+          }
+        }
+
+        if (allPaths.length > 0) {
+          console.log(`[useCuentacuentosDraft] Deleting ${allPaths.length} files from Storage`);
+          const { error: deleteError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .remove(allPaths);
+
+          if (deleteError) {
+            console.error('[useCuentacuentosDraft] Error deleting files:', deleteError);
+          }
+        }
+      }
+
+      // 2. Eliminar el registro del draft de la base de datos
+      const { error: dbError } = await supabase
+        .from('cuentacuentos_drafts')
+        .delete()
+        .eq('liturgia_id', currentLiturgyId)
+        .eq('user_id', currentUserId);
+
+      if (dbError) {
+        console.error('[useCuentacuentosDraft] Error deleting draft record:', dbError);
+        return false;
+      }
+
+      // 3. Limpiar estado local
+      setDraft(null);
+      setLastSavedAt(null);
+      setShowRecoveryPrompt(false);
+
+      console.log(`[useCuentacuentosDraft] Successfully deleted all story images for liturgy: ${currentLiturgyId}`);
+      return true;
+    } catch (err) {
+      console.error('[useCuentacuentosDraft] Error deleting story images:', err);
+      return false;
+    }
+  }, []);
 
   // Aceptar recuperación
   const acceptRecovery = useCallback(() => {
@@ -687,8 +940,10 @@ export function useCuentacuentosDraft({
     isLoading,
     isSaving,
     saveDraft,
+    saveDraftNow,
     loadDraft: loadDraftAsync,
     deleteDraft,
+    deleteStoryImages,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,

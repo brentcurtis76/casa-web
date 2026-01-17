@@ -208,7 +208,7 @@ const Portadas: React.FC<PortadasProps> = ({
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
         secondaryColor: CASA_BRAND.colors.primary.amber,
-        backgroundColor: CASA_BRAND.colors.primary.white,
+        backgroundColor: '#FFFFFF',
         primaryFont: CASA_BRAND.fonts.heading,
         secondaryFont: CASA_BRAND.fonts.body,
       },
@@ -233,7 +233,7 @@ const Portadas: React.FC<PortadasProps> = ({
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
         secondaryColor: CASA_BRAND.colors.primary.amber,
-        backgroundColor: CASA_BRAND.colors.primary.white,
+        backgroundColor: '#FFFFFF',
         primaryFont: CASA_BRAND.fonts.heading,
         secondaryFont: CASA_BRAND.fonts.body,
       },
@@ -313,7 +313,7 @@ const Portadas: React.FC<PortadasProps> = ({
         className="relative w-full rounded-lg overflow-hidden shadow-lg"
         style={{
           aspectRatio: '4/3',
-          backgroundColor: CASA_BRAND.colors.primary.white,
+          backgroundColor: '#FFFFFF',
         }}
       >
         {/* Background Illustration - same for both covers */}

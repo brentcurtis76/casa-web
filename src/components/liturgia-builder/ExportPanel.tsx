@@ -46,6 +46,18 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const storyData = useMemo(() => {
     const cuentacuentosElement = elements.get('cuentacuentos');
     const story = cuentacuentosElement?.config?.storyData as Story | undefined;
+
+    // Debug logging
+    if (story) {
+      console.log('[ExportPanel] Story found:', {
+        title: story.title,
+        coverImageUrl: story.coverImageUrl ? 'present' : 'MISSING',
+        scenesCount: story.scenes?.length || 0,
+        scenesWithImages: story.scenes?.filter((s) => s.selectedImageUrl).length || 0,
+        sceneImages: story.scenes?.map((s, i) => `Scene ${i + 1}: ${s.selectedImageUrl ? 'present' : 'MISSING'}`),
+      });
+    }
+
     // Story is valid if it has cover image and at least one scene with image
     const isValid = !!(
       story?.coverImageUrl &&
