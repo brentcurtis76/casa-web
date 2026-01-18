@@ -3,7 +3,7 @@
  * Go Live, Black, Open Output, navegacion
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import {
@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ImagePlus,
 } from 'lucide-react';
 
 interface PresenterControlsProps {
@@ -29,6 +30,7 @@ interface PresenterControlsProps {
   onPrev: () => void;
   onFirst: () => void;
   onLast: () => void;
+  onImportImages?: (files: FileList) => void;
 }
 
 export const PresenterControls: React.FC<PresenterControlsProps> = ({
@@ -44,7 +46,18 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
   onPrev,
   onFirst,
   onLast,
+  onImportImages,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && onImportImages) {
+      onImportImages(e.target.files);
+      // Reset input so same files can be selected again
+      e.target.value = '';
+    }
+  };
+
   return (
     <div
       className="flex items-center justify-between px-6 py-4"
@@ -90,6 +103,31 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
           <Monitor size={16} />
           Abrir Proyector
         </Button>
+
+        {onImportImages && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="outline"
+              className="gap-2"
+              style={{
+                borderColor: CASA_BRAND.colors.primary.amber,
+                color: CASA_BRAND.colors.primary.amber,
+              }}
+            >
+              <ImagePlus size={16} />
+              Importar Imágenes
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Center: Navigation */}

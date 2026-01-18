@@ -70,6 +70,7 @@ export const PresenterView: React.FC = () => {
     clearSlideEdit,
     duplicateSlide,
     deleteSlide,
+    addImageSlides,
     // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,
@@ -392,6 +393,34 @@ export const PresenterView: React.FC = () => {
     }, 50);
   }, [deleteSlide, state.data, state.tempEdits, state.currentSlideIndex, send]);
 
+  // ============ IMAGE IMPORT HANDLER ============
+
+  const handleImportImages = useCallback((files: FileList) => {
+    // Convert files to data URLs
+    const fileArray = Array.from(files);
+    const imagePromises = fileArray.map((file) => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(imagePromises).then((imageUrls) => {
+      // Insert after current slide
+      addImageSlides(imageUrls, state.currentSlideIndex);
+
+      // Sync to output after state update
+      setTimeout(() => {
+        if (state.data) {
+          send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
+        }
+      }, 100);
+    });
+  }, [addImageSlides, state.currentSlideIndex, state.data, state.tempEdits, send]);
+
   // ============ TEXT OVERLAY HANDLERS (SIMPLIFICADO) ============
 
   // Agregar nuevo text overlay (con scope incluido)
@@ -481,6 +510,7 @@ export const PresenterView: React.FC = () => {
         onPrev={handlePrev}
         onFirst={handleFirst}
         onLast={handleLast}
+        onImportImages={handleImportImages}
       />
 
       {/* Main content */}

@@ -61,6 +61,7 @@ interface UsePresentationStateReturn {
   deleteSlide: (index: number) => void;
   setTempEdits: (tempEdits: Record<string, TempSlideEdit>) => void;
   updateSlides: (slides: Slide[]) => void;
+  addImageSlides: (imageUrls: string[], insertAfterIndex?: number) => void;
 
   // Text overlays (SIMPLIFICADO)
   addTextOverlay: (overlay: TextOverlay) => void;
@@ -553,6 +554,49 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
+  // Agregar slides de imagen (para importar imágenes al vuelo)
+  const addImageSlides = useCallback((imageUrls: string[], insertAfterIndex?: number) => {
+    setState((prev) => {
+      if (!prev.data) return prev;
+
+      const newSlides: Slide[] = imageUrls.map((url, i) => ({
+        id: `imported-${Date.now()}-${i}`,
+        type: 'announcement-image' as const,
+        content: {
+          primary: '',
+          imageUrl: url,
+        },
+        style: {
+          backgroundColor: '#000000',
+        },
+        metadata: {
+          sourceComponent: 'imported-image',
+          sourceId: `import-${Date.now()}`,
+          order: i,
+          groupTotal: imageUrls.length,
+        },
+      }));
+
+      const insertIdx = insertAfterIndex !== undefined
+        ? insertAfterIndex + 1
+        : prev.data.slides.length;
+
+      const updatedSlides = [
+        ...prev.data.slides.slice(0, insertIdx),
+        ...newSlides,
+        ...prev.data.slides.slice(insertIdx),
+      ];
+
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          slides: updatedSlides,
+        },
+      };
+    });
+  }, []);
+
   // ============ TEXT OVERLAY ACTIONS (SIMPLIFICADO) ============
 
   // Agregar nuevo text overlay (con scope incluido)
@@ -672,6 +716,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     deleteSlide,
     setTempEdits,
     updateSlides,
+    addImageSlides,
     // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,
