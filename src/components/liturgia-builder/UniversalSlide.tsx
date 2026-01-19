@@ -60,33 +60,48 @@ const getImageSrc = (url: string): string => {
 const renderPortadaMain = (slide: Slide, scale: number) => {
   const hasIllustration = slide.content.imageUrl;
 
+  // Get saved config from metadata, with defaults
+  const config = slide.metadata?.illustrationConfig as {
+    opacity?: number;
+    scale?: number;
+    positionX?: number;
+    positionY?: number;
+  } | undefined;
+  const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
+
+  const opacity = (config?.opacity ?? 15) / 100;
+  const imgScale = config?.scale ?? 100;
+  const posX = config?.positionX ?? 0;
+  const posY = config?.positionY ?? 0;
+
   return (
     <div className="relative w-full h-full">
       {/* Background Illustration */}
       {hasIllustration && (
         <div
           className="absolute inset-0 flex items-center justify-center overflow-hidden"
-          style={{ opacity: 0.9 }}
+          style={{ opacity }}
         >
           <img
             src={getImageSrc(slide.content.imageUrl!)}
             alt="Ilustración"
             style={{
-              width: '100%',
-              height: '100%',
+              width: `${imgScale}%`,
+              height: `${imgScale}%`,
               objectFit: 'cover',
+              transform: `translate(${posX}%, ${posY}%)`,
             }}
           />
         </div>
       )}
 
-      {/* Content - bottom right */}
+      {/* Content - position based on textAlignment */}
       <div
         className="absolute"
         style={{
           bottom: `${32 * scale}px`,
-          right: `${32 * scale}px`,
-          textAlign: 'right',
+          ...(textAlign === 'right' ? { right: `${32 * scale}px` } : { left: `${32 * scale}px` }),
+          textAlign: textAlign,
           maxWidth: '70%',
         }}
       >
@@ -105,7 +120,7 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
         </h1>
 
         {/* Decorative line */}
-        <div className="flex justify-end" style={{ marginBottom: `${12 * scale}px` }}>
+        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: `${12 * scale}px` }}>
           <div
             style={{
               width: `${48 * scale}px`,
@@ -152,33 +167,48 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
 const renderPortadaReflexion = (slide: Slide, scale: number) => {
   const hasIllustration = slide.content.imageUrl;
 
+  // Get saved config from metadata, with defaults
+  const config = slide.metadata?.illustrationConfig as {
+    opacity?: number;
+    scale?: number;
+    positionX?: number;
+    positionY?: number;
+  } | undefined;
+  const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
+
+  const opacity = (config?.opacity ?? 15) / 100;
+  const imgScale = config?.scale ?? 100;
+  const posX = config?.positionX ?? 0;
+  const posY = config?.positionY ?? 0;
+
   return (
     <div className="relative w-full h-full">
       {/* Background Illustration */}
       {hasIllustration && (
         <div
           className="absolute inset-0 flex items-center justify-center overflow-hidden"
-          style={{ opacity: 0.9 }}
+          style={{ opacity }}
         >
           <img
             src={getImageSrc(slide.content.imageUrl!)}
             alt="Ilustración"
             style={{
-              width: '100%',
-              height: '100%',
+              width: `${imgScale}%`,
+              height: `${imgScale}%`,
               objectFit: 'cover',
+              transform: `translate(${posX}%, ${posY}%)`,
             }}
           />
         </div>
       )}
 
-      {/* Content - bottom right */}
+      {/* Content - position based on textAlignment */}
       <div
         className="absolute"
         style={{
           bottom: `${32 * scale}px`,
-          right: `${32 * scale}px`,
-          textAlign: 'right',
+          ...(textAlign === 'right' ? { right: `${32 * scale}px` } : { left: `${32 * scale}px` }),
+          textAlign: textAlign,
           maxWidth: '70%',
         }}
       >
@@ -197,7 +227,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
         </p>
 
         {/* Decorative line */}
-        <div className="flex justify-end" style={{ marginBottom: `${24 * scale}px` }}>
+        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: `${24 * scale}px` }}>
           <div
             style={{
               width: `${48 * scale}px`,

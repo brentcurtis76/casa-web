@@ -217,6 +217,15 @@ const Portadas: React.FC<PortadasProps> = ({
         sourceId: mainGroupId,
         order: 1,
         groupTotal: 1,
+        // Save illustration config for presenter rendering
+        illustrationConfig: {
+          opacity: illustrationConfig.opacity,
+          scale: illustrationConfig.scale,
+          positionX: illustrationConfig.positionX,
+          positionY: illustrationConfig.positionY,
+        },
+        textAlignment,
+        logoAlignment,
       },
     };
 
@@ -242,6 +251,15 @@ const Portadas: React.FC<PortadasProps> = ({
         sourceId: reflectionGroupId,
         order: 1,
         groupTotal: 1,
+        // Save illustration config for presenter rendering
+        illustrationConfig: {
+          opacity: illustrationConfig.opacity,
+          scale: illustrationConfig.scale,
+          positionX: illustrationConfig.positionX,
+          positionY: illustrationConfig.positionY,
+        },
+        textAlignment,
+        logoAlignment,
       },
     };
 
@@ -267,7 +285,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
       },
     };
-  }, [context, selectedIllustration]);
+  }, [context, selectedIllustration, illustrationConfig, textAlignment, logoAlignment]);
 
   // Export both slides
   const exportSlides = () => {
