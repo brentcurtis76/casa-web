@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Guardado Liturgia</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+    .test { padding: 16px; margin: 16px 0; border-radius: 8px; }
+    .pending { background: #fef3c7; border: 1px solid #f59e0b; }
+    .success { background: #d1fae5; border: 1px solid #10b981; }
+    .error { background: #fee2e2; border: 1px solid #ef4444; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #f59e0b; color: white; border: none; border-radius: 6px; }
+    button:hover { background: #d97706; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    pre { background: #1f2937; color: #f3f4f6; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+    h1 { color: #1f2937; }
+    .step { margin: 8px 0; }
+    .step.done::before { content: "✅ "; }
+    .step.fail::before { content: "❌ "; }
+    .step.wait::before { content: "⏳ "; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Test de Guardado de Liturgia</h1>
+
+  <p>Este test verificará que el sistema puede guardar y cargar liturgias correctamente.</p>
+
+  <div id="auth-status" class="test pending">
+    <strong>Estado de autenticación:</strong> Verificando...
+  </div>
+
+  <button id="run-test" disabled>Ejecutar Test Completo</button>
+
+  <div id="results"></div>
+
+  <h2>Logs</h2>
+  <pre id="logs"></pre>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const SUPABASE_URL = "https://mulsqxfhxxdsadxsljss.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11bHNxeGZoeHhkc2FkeHNsanNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM0NzE2ODAsImV4cCI6MjA1OTA0NzY4MH0.K4KKonF8Sd_PbFZtunMTuAAf2rFCGjvuecW3Hn46Cb8";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const logsEl = document.getElementById('logs');
+    const resultsEl = document.getElementById('results');
+    const authStatusEl = document.getElementById('auth-status');
+    const runTestBtn = document.getElementById('run-test');
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logsEl.textContent += `[${time}] ${msg}\n`;
+      logsEl.scrollTop = logsEl.scrollHeight;
+      console.log(msg);
+    }
+
+    function addResult(title, success, details) {
+      const div = document.createElement('div');
+      div.className = `test ${success ? 'success' : 'error'}`;
+      div.innerHTML = `<strong>${success ? '✅' : '❌'} ${title}</strong><br><small>${details}</small>`;
+      resultsEl.appendChild(div);
+    }
+
+    // Check auth on load
+    async function checkAuth() {
+      log('Verificando autenticación...');
+      const { data: { user }, error } = await supabase.auth.getUser();
+
+      if (error) {
+        authStatusEl.className = 'test error';
+        authStatusEl.innerHTML = `<strong>❌ Error de autenticación:</strong> ${error.message}<br><br>
+          <em>Debes estar logueado en la aplicación principal (localhost:8080) primero.</em>`;
+        log('Error: ' + error.message);
+        return null;
+      }
+
+      if (!user) {
+        authStatusEl.className = 'test error';
+        authStatusEl.innerHTML = `<strong>❌ No autenticado</strong><br><br>
+          <em>Debes estar logueado en la aplicación principal (localhost:8080) primero.</em>`;
+        log('No hay usuario autenticado');
+        return null;
+      }
+
+      authStatusEl.className = 'test success';
+      authStatusEl.innerHTML = `<strong>✅ Autenticado como:</strong> ${user.email} (${user.id})`;
+      runTestBtn.disabled = false;
+      log('Usuario autenticado: ' + user.email);
+      return user;
+    }
+
+    async function runTest() {
+      runTestBtn.disabled = true;
+      resultsEl.innerHTML = '';
+
+      const testId = crypto.randomUUID();
+      log(`\n=== INICIANDO TEST (ID: ${testId}) ===\n`);
+
+      // Get user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        addResult('Autenticación', false, 'No hay usuario autenticado');
+        return;
+      }
+
+      // TEST 1: Crear liturgia
+      log('TEST 1: Creando liturgia de prueba...');
+      const liturgiaData = {
+        id: testId,
+        fecha: new Date().toISOString().split('T')[0],
+        titulo: `TEST - Liturgia de Prueba ${new Date().toLocaleTimeString()}`,
+        resumen: 'Esta es una liturgia de prueba para verificar el guardado',
+        estado: 'en-progreso',
+        porcentaje_completado: 50,
+        created_by: user.id
+      };
+
+      const { data: liturgia, error: liturgiaError } = await supabase
+        .from('liturgias')
+        .insert(liturgiaData)
+        .select()
+        .single();
+
+      if (liturgiaError) {
+        addResult('Crear Liturgia', false, `Error: ${liturgiaError.message} (Code: ${liturgiaError.code})`);
+        log('ERROR creando liturgia: ' + JSON.stringify(liturgiaError));
+        runTestBtn.disabled = false;
+        return;
+      }
+
+      addResult('Crear Liturgia', true, `ID: ${liturgia.id}`);
+      log('Liturgia creada: ' + liturgia.id);
+
+      // TEST 2: Crear elementos
+      log('TEST 2: Creando elementos de prueba...');
+      const elementosData = [
+        {
+          liturgia_id: testId,
+          tipo: 'portada-principal',
+          orden: 0,
+          titulo: 'Portada Principal',
+          slides: { title: 'Test Slides', slides: [{ id: '1', content: 'test' }] },
+          source_id: 'test-source-123',
+          status: 'completed',
+          config: { testKey: 'testValue' }
+        },
+        {
+          liturgia_id: testId,
+          tipo: 'cancion-invocacion',
+          orden: 1,
+          titulo: 'Canción de Prueba',
+          slides: { title: 'Song', slides: [] },
+          source_id: 'song-456',
+          status: 'completed',
+          config: null
+        }
+      ];
+
+      const { error: elementosError } = await supabase
+        .from('liturgia_elementos')
+        .insert(elementosData);
+
+      if (elementosError) {
+        addResult('Crear Elementos', false, `Error: ${elementosError.message} (Code: ${elementosError.code})`);
+        log('ERROR creando elementos: ' + JSON.stringify(elementosError));
+      } else {
+        addResult('Crear Elementos', true, `${elementosData.length} elementos creados`);
+        log('Elementos creados correctamente');
+      }
+
+      // TEST 3: Leer liturgia
+      log('TEST 3: Leyendo liturgia...');
+      const { data: readLiturgia, error: readError } = await supabase
+        .from('liturgias')
+        .select('*')
+        .eq('id', testId)
+        .single();
+
+      if (readError) {
+        addResult('Leer Liturgia', false, `Error: ${readError.message}`);
+        log('ERROR leyendo liturgia: ' + JSON.stringify(readError));
+      } else {
+        addResult('Leer Liturgia', true, `Título: ${readLiturgia.titulo}`);
+        log('Liturgia leída: ' + readLiturgia.titulo);
+      }
+
+      // TEST 4: Leer elementos
+      log('TEST 4: Leyendo elementos...');
+      const { data: readElementos, error: readElemError } = await supabase
+        .from('liturgia_elementos')
+        .select('*')
+        .eq('liturgia_id', testId);
+
+      if (readElemError) {
+        addResult('Leer Elementos', false, `Error: ${readElemError.message}`);
+        log('ERROR leyendo elementos: ' + JSON.stringify(readElemError));
+      } else {
+        const hasSourceId = readElementos.some(e => e.source_id);
+        const hasConfig = readElementos.some(e => e.config);
+        addResult('Leer Elementos', true,
+          `${readElementos.length} elementos, source_id: ${hasSourceId ? '✅' : '❌'}, config: ${hasConfig ? '✅' : '❌'}`);
+        log('Elementos leídos: ' + readElementos.length);
+        log('Datos de elementos: ' + JSON.stringify(readElementos, null, 2));
+      }
+
+      // TEST 5: Limpiar (eliminar test data)
+      log('TEST 5: Limpiando datos de prueba...');
+      const { error: deleteError } = await supabase
+        .from('liturgias')
+        .delete()
+        .eq('id', testId);
+
+      if (deleteError) {
+        addResult('Limpiar Test', false, `Error: ${deleteError.message}`);
+        log('ERROR eliminando: ' + JSON.stringify(deleteError));
+      } else {
+        addResult('Limpiar Test', true, 'Datos de prueba eliminados');
+        log('Datos de prueba eliminados');
+      }
+
+      log('\n=== TEST COMPLETADO ===\n');
+      runTestBtn.disabled = false;
+    }
+
+    // Initialize
+    checkAuth();
+    runTestBtn.addEventListener('click', runTest);
+  </script>
+</body>
+</html>

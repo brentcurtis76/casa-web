@@ -187,9 +187,11 @@ function tiemposToPreviewSlides(tiempos: Tiempo[], elementType: PrayerType): Any
 
 /**
  * Parsea el texto de la oración antifonal en slides (para guardar)
+ * Crea slides con líder y congregación JUNTOS (prayer-full)
  */
 function parseAntiphonalPrayer(text: string, elementType: PrayerType): Slide[] {
-  const lines = text.split('\n').filter(line => line.trim());
+  // Primero parseamos a tiempos (pares líder/congregación)
+  const tiempos = parseTextToTiempos(text);
   const slides: Slide[] = [];
 
   // Agregar slide de título
@@ -209,55 +211,33 @@ function parseAntiphonalPrayer(text: string, elementType: PrayerType): Slide[] {
       sourceComponent: 'oracion-editor',
       sourceId: elementType,
       order: 0,
-      groupTotal: lines.length + 1,
+      groupTotal: tiempos.length + 1,
     },
   });
 
-  let slideIndex = 1;
-  for (const line of lines) {
-    const leaderMatch = line.match(/^(?:LÍDER|LIDER|L):\s*(.+)/i);
-    const congregationMatch = line.match(/^(?:CONGREGACIÓN|CONGREGACION|C):\s*(.+)/i);
-
-    if (leaderMatch) {
-      slides.push({
-        id: generateId(),
-        type: 'prayer-leader',
-        content: {
-          primary: leaderMatch[1].trim(),
-        },
-        style: {
-          primaryColor: CASA_BRAND.colors.primary.black,
-          backgroundColor: CASA_BRAND.colors.primary.white,
-          primaryFont: CASA_BRAND.fonts.body,
-        },
-        metadata: {
-          sourceComponent: 'oracion-editor',
-          sourceId: elementType,
-          order: slideIndex++,
-          groupTotal: lines.length + 1,
-        },
-      });
-    } else if (congregationMatch) {
-      slides.push({
-        id: generateId(),
-        type: 'prayer-response',
-        content: {
-          primary: congregationMatch[1].trim(),
-        },
-        style: {
-          primaryColor: CASA_BRAND.colors.primary.amber,
-          backgroundColor: CASA_BRAND.colors.primary.white,
-          primaryFont: CASA_BRAND.fonts.body,
-        },
-        metadata: {
-          sourceComponent: 'oracion-editor',
-          sourceId: elementType,
-          order: slideIndex++,
-          groupTotal: lines.length + 1,
-        },
-      });
-    }
-  }
+  // Crear un slide por cada tiempo (líder + congregación juntos)
+  tiempos.forEach((tiempo, index) => {
+    slides.push({
+      id: generateId(),
+      type: 'prayer-full',
+      content: {
+        primary: tiempo.lider,      // Texto del líder (negro)
+        secondary: tiempo.congregacion,  // Respuesta congregación (ámbar)
+      },
+      style: {
+        primaryColor: CASA_BRAND.colors.primary.black,
+        secondaryColor: CASA_BRAND.colors.primary.amber,
+        backgroundColor: CASA_BRAND.colors.primary.white,
+        primaryFont: CASA_BRAND.fonts.body,
+      },
+      metadata: {
+        sourceComponent: 'oracion-editor',
+        sourceId: elementType,
+        order: index + 1,
+        groupTotal: tiempos.length + 1,
+      },
+    });
+  });
 
   return slides;
 }
