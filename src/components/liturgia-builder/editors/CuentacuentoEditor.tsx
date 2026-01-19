@@ -59,6 +59,7 @@ interface CuentacuentoEditorProps {
   initialStory?: Story;
   initialSlides?: SlideGroup;
   onStoryCreated: (story: Story, slides: SlideGroup) => void;
+  onStoryProgress?: (story: Story, slides: SlideGroup | null) => void;
   onStoryDeleted?: () => void;
   onNavigateToFullEditor?: () => void;
 }
@@ -417,6 +418,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   initialStory,
   initialSlides,
   onStoryCreated,
+  onStoryProgress,
   onStoryDeleted,
   onNavigateToFullEditor,
 }) => {
@@ -599,9 +601,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Solo al montar - initialStory es estable
 
-  // Efecto para guardar automáticamente cuando cambia el estado
-  // NOTA: saveDraft tiene identidad estable (usa refs internamente) por lo que
-  // NO debe incluirse en las dependencias para evitar ciclos infinitos
+  // AUTO-SAVE DISABLED: Following Portadas pattern, we no longer auto-save.
+  // Images stay in memory (as base64) until user clicks "Guardar Liturgia",
+  // at which point saveLiturgy uploads them to storage.
+  // This prevents race conditions between auto-save and manual save.
+  //
+  // The draft recovery system is still available for initial recovery,
+  // but we don't continuously update the draft during editing.
+  //
+  // If you need to re-enable auto-save in the future, uncomment the code below.
+  /*
   useEffect(() => {
     // Solo guardar si hay progreso real (no en config inicial ni complete)
     if (currentStep === 'config' || currentStep === 'complete') return;
@@ -626,7 +635,6 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       endOptions,
       selectedEnd,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentStep,
     story,
@@ -638,13 +646,72 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     selectedCover,
     endOptions,
     selectedEnd,
-    // saveDraft se omite intencionalmente - tiene identidad estable via refs
     location,
     customLocation,
     characters,
     style,
     illustrationStyle,
     additionalNotes,
+  ]);
+  */
+
+  // STATE PERSISTENCE: Notify parent of story progress to survive tab navigation
+  // This effect calls onStoryProgress whenever the story state changes,
+  // allowing the parent (ConstructorLiturgias) to persist the in-progress story.
+  // When the user switches tabs and comes back, the story will be passed via initialStory.
+  useEffect(() => {
+    if (!story || !onStoryProgress) return;
+
+    // Build current story state with all selected images
+    const currentStory: Story = {
+      ...story,
+      characters: story.characters.map(char => {
+        const charOptions = characterSheetOptions[char.id];
+        const selectedIdx = selectedCharacterSheets[char.id];
+        const selectedSheet = charOptions && selectedIdx !== undefined ? charOptions[selectedIdx] : char.characterSheetUrl;
+        return {
+          ...char,
+          characterSheetOptions: charOptions,
+          characterSheetUrl: selectedSheet,
+        };
+      }),
+      scenes: story.scenes.map(scene => {
+        const options = sceneImageOptions[scene.number];
+        const selectedIdx = selectedSceneImages[scene.number];
+        const selectedImage = options && selectedIdx !== undefined ? options[selectedIdx] : scene.selectedImageUrl;
+        return {
+          ...scene,
+          imageOptions: options,
+          selectedImageUrl: selectedImage,
+        };
+      }),
+      coverImageOptions: coverOptions,
+      coverImageUrl: selectedCover !== null ? coverOptions[selectedCover] : story.coverImageUrl,
+      endImageOptions: endOptions,
+      endImageUrl: selectedEnd !== null ? endOptions[selectedEnd] : story.endImageUrl,
+    };
+
+    // Generate preview slides for current state
+    const slides = createPreviewSlideGroup(currentStory);
+
+    console.log('[CuentacuentoEditor] Notifying parent of story progress:', {
+      status: currentStory.metadata.status,
+      hasCharacterImages: currentStory.characters.some(c => c.characterSheetUrl),
+      hasSceneImages: currentStory.scenes.some(s => s.selectedImageUrl),
+    });
+
+    onStoryProgress(currentStory, slides as unknown as SlideGroup);
+  }, [
+    story,
+    characterSheetOptions,
+    selectedCharacterSheets,
+    sceneImageOptions,
+    selectedSceneImages,
+    coverOptions,
+    selectedCover,
+    endOptions,
+    selectedEnd,
+    onStoryProgress,
   ]);
 
   // Función para restaurar desde un draft
@@ -1364,10 +1431,10 @@ ${editingCoverPrompt || `Escena de portada que capture la esencia del cuento, mo
 
 Instrucciones críticas:
 - Composición atractiva para portada de libro infantil
-- El título "${story.title}" NO debe aparecer en la imagen
+- **INCLUIR EL TÍTULO "${story.title}" en la parte superior de la imagen** en una fuente amigable y legible para niños
+- El título debe verse como una portada real de libro infantil
 - Escena brillante y bien iluminada
 - Imágenes apropiadas para niños 5-10 años
-- SIN TEXTO NI PALABRAS en la imagen
 - Atmósfera cálida y acogedora`;
   }, [story, coverExcludedCharacters, editingCoverPrompt]);
 
@@ -1917,110 +1984,54 @@ Instrucciones críticas:
   }, [story, sceneImageOptions, selectedSceneImages]);
 
   // Finalizar cuento
-  const handleFinalize = useCallback(async () => {
+  // NOTE: Images are kept as base64 here. Upload to storage happens in saveLiturgy
+  // when the user clicks "Guardar Liturgia". This follows the Portadas pattern.
+  const handleFinalize = useCallback(() => {
     if (!story) return;
 
-    // CRITICAL FIX: Ensure all images are URLs before finalizing
-    // Upload any remaining base64 images to storage
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setError('No autenticado');
-      return;
-    }
-
-    // Helper function to ensure an image is a URL
-    const ensureImageUrl = async (image: string | undefined, category: string, key: string): Promise<string | undefined> => {
-      if (!image) return undefined;
-
-      // If already a URL, return as-is
-      if (image.startsWith('http://') || image.startsWith('https://')) {
-        return image;
-      }
-
-      // If it's base64, upload to storage
-      try {
-        let base64Data = image;
-        if (base64Data.startsWith('data:')) {
-          const parts = base64Data.split(',');
-          if (parts.length > 1) {
-            base64Data = parts[1];
-          }
-        }
-
-        const mimeType = base64Data.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-        const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: mimeType });
-
-        const path = `${user.id}/${context.id}/${category}/${key}.${extension}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('cuentacuentos-drafts')
-          .upload(path, blob, { contentType: mimeType, upsert: true });
-
-        if (uploadError) {
-          console.error(`[CuentacuentoEditor] Error uploading ${category}/${key}:`, uploadError);
-          return undefined;
-        }
-
-        const { data: urlData } = supabase.storage
-          .from('cuentacuentos-drafts')
-          .getPublicUrl(path);
-
-        console.log(`[CuentacuentoEditor] Uploaded ${category}/${key} to storage: ${urlData.publicUrl.slice(0, 60)}...`);
-        return urlData.publicUrl;
-      } catch (err) {
-        console.error(`[CuentacuentoEditor] Error in ensureImageUrl:`, err);
-        return undefined;
-      }
-    };
-
-    // Ensure all scene images are URLs
-    const uploadedSceneUrls: Record<number, string | undefined> = {};
-    for (const scene of story.scenes) {
+    // Build final scenes with selected images (may be base64 or URL)
+    const finalScenes = story.scenes.map(scene => {
       const options = sceneImageOptions[scene.number];
       const selectedIdx = selectedSceneImages[scene.number];
       const selectedImage = options && selectedIdx !== undefined ? options[selectedIdx] : scene.selectedImageUrl;
+      return {
+        ...scene,
+        imageOptions: options,
+        selectedImageUrl: selectedImage,
+      };
+    });
 
-      const url = await ensureImageUrl(selectedImage, 'scenes', `scene${scene.number}_final`);
-      uploadedSceneUrls[scene.number] = url;
-      console.log(`[CuentacuentoEditor] Scene ${scene.number} final URL: ${url ? url.slice(0, 60) : 'NONE'}...`);
-    }
-
-    // Ensure cover image is URL
-    const coverImage = selectedCover !== null ? coverOptions[selectedCover] : undefined;
-    const finalCoverUrl = await ensureImageUrl(coverImage, 'cover', 'cover_final');
-
-    // Ensure end image is URL
-    const endImage = selectedEnd !== null ? endOptions[selectedEnd] : undefined;
-    const finalEndUrl = await ensureImageUrl(endImage, 'end', 'end_final');
-
-    // Build final scenes with guaranteed URLs
-    const finalScenes = story.scenes.map(scene => ({
-      ...scene,
-      imageOptions: sceneImageOptions[scene.number],
-      selectedImageUrl: uploadedSceneUrls[scene.number],
-    }));
+    // Get selected cover and end images (may be base64 or URL)
+    const finalCoverImage = selectedCover !== null ? coverOptions[selectedCover] : undefined;
+    const finalEndImage = selectedEnd !== null ? endOptions[selectedEnd] : undefined;
 
     // Debug log scene images
     console.log('[CuentacuentoEditor] Finalizing story with scenes:', finalScenes.map(s => ({
       number: s.number,
       hasImage: !!s.selectedImageUrl,
-      imageUrl: s.selectedImageUrl?.slice(0, 50),
+      isBase64: s.selectedImageUrl && !s.selectedImageUrl.startsWith('http'),
     })));
+
+    // Build final story with character sheets included
+    const finalCharacters = story.characters.map(char => {
+      const charOptions = characterSheetOptions[char.id];
+      const selectedIdx = selectedCharacterSheets[char.id];
+      const selectedSheet = charOptions && selectedIdx !== undefined ? charOptions[selectedIdx] : char.characterSheetUrl;
+      return {
+        ...char,
+        characterSheetOptions: charOptions,
+        characterSheetUrl: selectedSheet,
+      };
+    });
 
     const finalStory: Story = {
       ...story,
+      characters: finalCharacters,
       scenes: finalScenes,
       coverImageOptions: coverOptions,
-      coverImageUrl: finalCoverUrl,
+      coverImageUrl: finalCoverImage,
       endImageOptions: endOptions,
-      endImageUrl: finalEndUrl,
+      endImageUrl: finalEndImage,
       metadata: {
         ...story.metadata,
         status: 'ready',
@@ -2030,18 +2041,19 @@ Instrucciones críticas:
 
     setStory(finalStory);
 
-    // Generar slides finales
+    // Generate final slides
     const slides = createPreviewSlideGroup(finalStory);
     setPreviewSlides(slides as unknown as SlideGroup);
 
+    // Pass story to parent - images will be uploaded when user clicks "Guardar Liturgia"
     onStoryCreated(finalStory, slides as unknown as SlideGroup);
     setConfirmed(true);
     setCurrentStep('complete');
 
-    // Eliminar el borrador ya que se finalizó exitosamente
+    // Delete the draft since story is finalized
     deleteDraft();
-    console.log('[CuentacuentoEditor] Story finalized, draft deleted');
-  }, [story, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft, context.id]);
+    console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {

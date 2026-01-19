@@ -76,6 +76,167 @@ export async function downloadPortadaImage(imageUrl: string): Promise<string | n
   }
 }
 
+/**
+ * Interface for Cuentacuentos images to be uploaded
+ */
+export interface CuentacuentosImages {
+  characterSheets: Record<string, string>;  // characterId -> base64 or URL
+  sceneImages: Record<number, string>;       // sceneNumber -> base64 or URL
+  coverImage?: string;
+  endImage?: string;
+}
+
+/**
+ * Interface for uploaded Cuentacuentos image URLs
+ */
+export interface CuentacuentosImageUrls {
+  characterSheets: Record<string, string>;  // characterId -> URL
+  sceneImages: Record<number, string>;       // sceneNumber -> URL
+  coverImage?: string;
+  endImage?: string;
+}
+
+/**
+ * Helper to convert base64 to blob
+ */
+function base64ToBlob(base64Data: string): Blob {
+  // Remove data URL prefix if present
+  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+  const binaryData = atob(cleanBase64);
+  const bytes = new Uint8Array(binaryData.length);
+  for (let i = 0; i < binaryData.length; i++) {
+    bytes[i] = binaryData.charCodeAt(i);
+  }
+  // Detect if JPEG or PNG from magic bytes
+  const isJpeg = cleanBase64.startsWith('/9j/');
+  return new Blob([bytes], { type: isJpeg ? 'image/jpeg' : 'image/png' });
+}
+
+/**
+ * Upload a single image and return its public URL
+ */
+async function uploadSingleImage(
+  liturgyId: string,
+  category: string,
+  filename: string,
+  base64Data: string
+): Promise<string | null> {
+  try {
+    // If it's already a URL, return it as-is
+    if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
+      console.log(`[uploadSingleImage] Image is already URL: ${base64Data.slice(0, 80)}`);
+      return base64Data;
+    }
+
+    const blob = base64ToBlob(base64Data);
+    const extension = blob.type === 'image/jpeg' ? 'jpg' : 'png';
+    const filePath = `liturgias/${liturgyId}/cuentacuentos/${category}/${filename}.${extension}`;
+
+    console.log(`[uploadSingleImage] Uploading to ${filePath}, size: ${blob.size}`);
+
+    const { error: uploadError } = await supabase.storage
+      .from('liturgia-images')
+      .upload(filePath, blob, {
+        upsert: true,
+        contentType: blob.type,
+      });
+
+    if (uploadError) {
+      console.error(`[uploadSingleImage] Error uploading ${filePath}:`, uploadError);
+      return null;
+    }
+
+    const { data } = supabase.storage
+      .from('liturgia-images')
+      .getPublicUrl(filePath);
+
+    console.log(`[uploadSingleImage] Uploaded successfully: ${data.publicUrl.slice(0, 80)}`);
+    return data.publicUrl;
+  } catch (err) {
+    console.error(`[uploadSingleImage] Error:`, err);
+    return null;
+  }
+}
+
+/**
+ * Upload all Cuentacuentos images to Supabase Storage
+ * Returns the same structure but with storage URLs instead of base64
+ */
+export async function uploadCuentacuentosImages(
+  liturgyId: string,
+  images: CuentacuentosImages
+): Promise<CuentacuentosImageUrls> {
+  console.log('[uploadCuentacuentosImages] Starting upload for liturgy:', liturgyId);
+
+  const result: CuentacuentosImageUrls = {
+    characterSheets: {},
+    sceneImages: {},
+  };
+
+  // Upload character sheets
+  for (const [charId, imageData] of Object.entries(images.characterSheets)) {
+    if (imageData) {
+      const url = await uploadSingleImage(liturgyId, 'characters', charId, imageData);
+      if (url) {
+        result.characterSheets[charId] = url;
+      }
+    }
+  }
+  console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.characterSheets).length} character sheets`);
+
+  // Upload scene images
+  for (const [sceneNum, imageData] of Object.entries(images.sceneImages)) {
+    if (imageData) {
+      const url = await uploadSingleImage(liturgyId, 'scenes', `scene_${sceneNum}`, imageData);
+      if (url) {
+        result.sceneImages[Number(sceneNum)] = url;
+      }
+    }
+  }
+  console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.sceneImages).length} scene images`);
+
+  // Upload cover image
+  if (images.coverImage) {
+    const url = await uploadSingleImage(liturgyId, 'cover', 'cover', images.coverImage);
+    if (url) {
+      result.coverImage = url;
+    }
+  }
+
+  // Upload end image
+  if (images.endImage) {
+    const url = await uploadSingleImage(liturgyId, 'end', 'end', images.endImage);
+    if (url) {
+      result.endImage = url;
+    }
+  }
+
+  console.log('[uploadCuentacuentosImages] Upload complete');
+  return result;
+}
+
+/**
+ * Update a Story object with uploaded image URLs
+ */
+export function updateStoryWithImageUrls(
+  story: import('@/types/shared/story').Story,
+  urls: CuentacuentosImageUrls
+): import('@/types/shared/story').Story {
+  return {
+    ...story,
+    characters: story.characters.map(char => ({
+      ...char,
+      characterSheetUrl: urls.characterSheets[char.id] || char.characterSheetUrl,
+    })),
+    scenes: story.scenes.map(scene => ({
+      ...scene,
+      selectedImageUrl: urls.sceneImages[scene.number] || scene.selectedImageUrl,
+    })),
+    coverImageUrl: urls.coverImage || story.coverImageUrl,
+    endImageUrl: urls.endImage || story.endImageUrl,
+  };
+}
+
 // Tipos para la base de datos
 interface DBLiturgia {
   id: string;
@@ -266,8 +427,68 @@ export async function saveLiturgy(
       }
     }
 
+    // Upload cuentacuentos images if present
+    // This converts base64 images to storage URLs before saving
+    const processedElements = await Promise.all(liturgy.elements.map(async (element) => {
+      if (element.type === 'cuentacuentos' && element.config?.storyData) {
+        const story = element.config.storyData as import('@/types/shared/story').Story;
+
+        // Check if story has any base64 images that need uploading
+        const hasBase64Images =
+          story.characters?.some(c => c.characterSheetUrl && !c.characterSheetUrl.startsWith('http')) ||
+          story.scenes?.some(s => s.selectedImageUrl && !s.selectedImageUrl.startsWith('http')) ||
+          (story.coverImageUrl && !story.coverImageUrl.startsWith('http')) ||
+          (story.endImageUrl && !story.endImageUrl.startsWith('http'));
+
+        if (hasBase64Images) {
+          console.log('[saveLiturgy] Found cuentacuentos with base64 images, uploading...');
+
+          // Collect all images to upload
+          const imagesToUpload: CuentacuentosImages = {
+            characterSheets: {},
+            sceneImages: {},
+          };
+
+          // Collect character sheet images
+          story.characters?.forEach(char => {
+            if (char.characterSheetUrl && !char.characterSheetUrl.startsWith('http')) {
+              imagesToUpload.characterSheets[char.id] = char.characterSheetUrl;
+            }
+          });
+
+          // Collect scene images
+          story.scenes?.forEach(scene => {
+            if (scene.selectedImageUrl && !scene.selectedImageUrl.startsWith('http')) {
+              imagesToUpload.sceneImages[scene.number] = scene.selectedImageUrl;
+            }
+          });
+
+          // Cover and end images
+          if (story.coverImageUrl && !story.coverImageUrl.startsWith('http')) {
+            imagesToUpload.coverImage = story.coverImageUrl;
+          }
+          if (story.endImageUrl && !story.endImageUrl.startsWith('http')) {
+            imagesToUpload.endImage = story.endImageUrl;
+          }
+
+          // Upload images
+          const uploadedUrls = await uploadCuentacuentosImages(liturgiaId, imagesToUpload);
+
+          // Update story with uploaded URLs
+          const updatedStory = updateStoryWithImageUrls(story, uploadedUrls);
+
+          console.log('[saveLiturgy] Cuentacuentos images uploaded, updating element config');
+          return {
+            ...element,
+            config: { ...element.config, storyData: updatedStory },
+          };
+        }
+      }
+      return element;
+    }));
+
     // Guardar elementos
-    if (liturgy.elements && liturgy.elements.length > 0) {
+    if (processedElements.length > 0) {
       // Eliminar elementos existentes
       await supabase
         .from('liturgia_elementos')
@@ -275,7 +496,7 @@ export async function saveLiturgy(
         .eq('liturgia_id', liturgiaId);
 
       // Insertar nuevos elementos con todos los campos necesarios
-      const elementos = liturgy.elements.map((e) => ({
+      const elementos = processedElements.map((e) => ({
         liturgia_id: liturgiaId,
         tipo: e.type,
         orden: e.order,

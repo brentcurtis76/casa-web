@@ -580,10 +580,10 @@ ${customPrompt}
 
 Instrucciones críticas:
 - Composición atractiva para portada de libro infantil
-- El título "${title}" NO debe aparecer en la imagen
+- **INCLUIR EL TÍTULO "${title}" en la parte superior de la imagen** en una fuente amigable y legible para niños
+- El título debe verse como una portada real de libro infantil
 - Escena brillante y bien iluminada
 - Imágenes apropiadas para niños 5-10 años
-- **ABSOLUTAMENTE SIN TEXTO, SIN PALABRAS, SIN LETRAS EN LA IMAGEN**
 - Atmósfera cálida y acogedora`;
           console.log(`[generate-scene-images] Cover using custom prompt`);
         } else {
