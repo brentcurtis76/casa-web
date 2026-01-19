@@ -395,7 +395,9 @@ ${prompt}`;
         }],
         generationConfig: {
           responseModalities: ['TEXT', 'IMAGE'],
-          aspectRatio: '4:3',
+          imageConfig: {
+            aspectRatio: '4:3',
+          },
         },
       }),
     });
