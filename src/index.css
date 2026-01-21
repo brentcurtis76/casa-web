@@ -297,3 +297,39 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(0,0,0,0.2), transparent);
 }
+
+/* ============================================
+   PRESENTER VIEW MICRO-INTERACTIONS (PROMPT_018)
+   ============================================ */
+
+/* Publish button glow animation */
+@keyframes publishGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(212, 168, 83, 0.4); }
+  50% { box-shadow: 0 0 16px rgba(212, 168, 83, 0.8); }
+}
+
+.animate-publish-glow {
+  animation: publishGlow 2s ease-in-out infinite;
+}
+
+/* Terminate button pulse animation */
+@keyframes terminatePulse {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.5); }
+  50% { border-color: rgba(239, 68, 68, 1); }
+}
+
+.animate-terminate-pulse {
+  animation: terminatePulse 1.5s ease-in-out infinite;
+}
+
+/* Go Live button hover glow */
+.go-live-hover:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 20px rgba(212, 168, 83, 0.6);
+}
+
+/* Live mode header gradient */
+.live-mode-header {
+  background: linear-gradient(90deg, #333333 0%, rgba(239, 68, 68, 0.08) 100%);
+  border-left: 4px solid #ef4444;
+}

@@ -20,6 +20,7 @@ import {
   Check,
   Download,
   Eye,
+  EyeOff,
   Edit3,
   RotateCcw,
   SlidersHorizontal,
@@ -32,6 +33,7 @@ import { Slider } from '@/components/ui/slider';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { LiturgyContext, IllustrationConfig, LayoutAlignment, PortadasConfig } from '@/types/shared/liturgy';
 import { v4 as uuidv4 } from 'uuid';
+import { UniversalSlide } from './UniversalSlide';
 
 const DEFAULT_ILLUSTRATION_CONFIG: IllustrationConfig = {
   opacity: 15,
@@ -39,6 +41,88 @@ const DEFAULT_ILLUSTRATION_CONFIG: IllustrationConfig = {
   positionX: 0,
   positionY: 0,
 };
+
+/**
+ * Post-process an illustration to ensure background matches CASA_BRAND.colors.primary.white
+ * Replaces white, near-white, light gray, and checkered pattern pixels with exact target color
+ */
+async function processIllustrationBackground(base64: string, targetColor: string = CASA_BRAND.colors.primary.white): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        resolve(base64);
+        return;
+      }
+
+      // Draw the original image first
+      ctx.drawImage(img, 0, 0);
+
+      // Get image data to process pixels
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Parse target color to RGB
+      const targetR = parseInt(targetColor.slice(1, 3), 16);
+      const targetG = parseInt(targetColor.slice(3, 5), 16);
+      const targetB = parseInt(targetColor.slice(5, 7), 16);
+
+      // Replace background pixels with target color
+      // This handles: pure white, near-white, cream, light gray, and checkered patterns
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        // Replace transparent pixels
+        if (a < 250) {
+          data[i] = targetR;
+          data[i + 1] = targetG;
+          data[i + 2] = targetB;
+          data[i + 3] = 255;
+          continue;
+        }
+
+        // Replace pure white and near-white (> 240)
+        if (r > 240 && g > 240 && b > 240) {
+          data[i] = targetR;
+          data[i + 1] = targetG;
+          data[i + 2] = targetB;
+          continue;
+        }
+
+        // Replace light grays (checkered pattern uses ~204 gray and white)
+        // Checkered patterns typically alternate between white (255) and light gray (~204 or ~192)
+        if (r > 190 && g > 190 && b > 190) {
+          const maxDiff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+          // If it's a neutral gray (R≈G≈B), replace it
+          if (maxDiff < 10) {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+          }
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      const result = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+      resolve(result);
+    };
+
+    img.onerror = () => {
+      resolve(base64);
+    };
+
+    img.src = `data:image/png;base64,${base64}`;
+  });
+}
 
 export const DEFAULT_PORTADAS_CONFIG: PortadasConfig = {
   illustrationConfig: DEFAULT_ILLUSTRATION_CONFIG,
@@ -78,6 +162,7 @@ const Portadas: React.FC<PortadasProps> = ({
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [showImageControls, setShowImageControls] = useState(false);
+  const [illustrationTheme, setIllustrationTheme] = useState<string>('');
   const [illustrationConfig, setIllustrationConfig] = useState<IllustrationConfig>(
     portadasConfig?.illustrationConfig || DEFAULT_ILLUSTRATION_CONFIG
   );
@@ -87,6 +172,7 @@ const Portadas: React.FC<PortadasProps> = ({
   const [textAlignment, setTextAlignment] = useState<LayoutAlignment>(
     portadasConfig?.textAlignment || 'right'
   );
+  const [showLogoPreview, setShowLogoPreview] = useState(true);
 
   // Notify parent when config changes
   useEffect(() => {
@@ -98,14 +184,18 @@ const Portadas: React.FC<PortadasProps> = ({
     onConfigChange?.(newConfig);
   }, [illustrationConfig, logoAlignment, textAlignment, onConfigChange]);
 
-  // Generate default prompt based on context
+  // Generate default prompt based on context - requests PURE WHITE background
+  // Post-processing will replace white pixels with CASA_BRAND.colors.primary.white
   const defaultPrompt = useMemo(() => {
-    const themeKeywords = context.summary
-      ? context.summary.split(' ').slice(0, 10).join(' ')
-      : context.title;
+    // Use user's custom theme if provided, otherwise extract from context
+    const themeDescription = illustrationTheme.trim()
+      ? illustrationTheme.trim()
+      : (context.summary
+          ? context.summary.split(' ').slice(0, 10).join(' ')
+          : context.title);
 
-    return `Minimalist line art illustration on pure white background. Single continuous gray line drawing in the style of Henri Matisse or Pablo Picasso one-line art. Theme: ${themeKeywords}. Abstract and contemplative, suggestive of spiritual reflection. No text, no labels, no words. Elegant flowing lines with occasional amber/gold accent.`;
-  }, [context.summary, context.title]);
+    return `Minimalist line art illustration with PURE WHITE (#FFFFFF) solid flat background, no texture, no pattern, no gradients. Single continuous gray (#666666) line drawing in the style of Henri Matisse or Pablo Picasso one-line art. Subject: ${themeDescription}. Abstract and contemplative, suggestive of spiritual reflection. No text, no labels, no words. Elegant flowing lines with amber/gold (#D4A853) accent on 20-30% of the illustration.`;
+  }, [context.summary, context.title, illustrationTheme]);
 
   // Initialize custom prompt when context changes
   useEffect(() => {
@@ -161,7 +251,12 @@ const Portadas: React.FC<PortadasProps> = ({
         throw new Error('No se pudieron generar ilustraciones');
       }
 
-      setIllustrations(validIllustrations);
+      // Post-process each illustration to ensure background matches slide color
+      const processedIllustrations = await Promise.all(
+        validIllustrations.map((base64: string) => processIllustrationBackground(base64))
+      );
+
+      setIllustrations(processedIllustrations);
 
       toast({
         title: 'Ilustraciones generadas',
@@ -208,7 +303,7 @@ const Portadas: React.FC<PortadasProps> = ({
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
         secondaryColor: CASA_BRAND.colors.primary.amber,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: CASA_BRAND.colors.primary.white,
         primaryFont: CASA_BRAND.fonts.heading,
         secondaryFont: CASA_BRAND.fonts.body,
       },
@@ -242,7 +337,7 @@ const Portadas: React.FC<PortadasProps> = ({
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
         secondaryColor: CASA_BRAND.colors.primary.amber,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: CASA_BRAND.colors.primary.white,
         primaryFont: CASA_BRAND.fonts.heading,
         secondaryFont: CASA_BRAND.fonts.body,
       },
@@ -318,153 +413,84 @@ const Portadas: React.FC<PortadasProps> = ({
   // Get illustration URL
   const getIllustrationUrl = (base64: string) => `data:image/png;base64,${base64}`;
 
-  // Render cover preview (shared layout, text right-aligned bottom)
-  const renderCoverPreview = (type: 'main' | 'reflection') => {
-    // Fix timezone issue: parse date string properly to avoid off-by-one day error
+  // Build the slide object that will be used for BOTH preview and saving
+  // This ensures Constructor and Presenter show the exact same thing
+  const buildSlideForPreview = useCallback((type: 'main' | 'reflection'): Slide => {
     const dateValue = typeof context.date === 'string'
       ? parseISO(context.date)
       : context.date;
     const formattedDate = format(dateValue, "EEEE d 'de' MMMM", { locale: es });
 
+    if (type === 'main') {
+      return {
+        id: 'preview-main',
+        type: 'portada-main',
+        content: {
+          primary: context.title,
+          secondary: formattedDate,
+          subtitle: currentSeason.name,
+          imageUrl: selectedIllustration ? getIllustrationUrl(selectedIllustration) : undefined,
+        },
+        style: {
+          backgroundColor: CASA_BRAND.colors.primary.white,
+          primaryColor: CASA_BRAND.colors.primary.black,
+        },
+        metadata: {
+          sourceComponent: 'portadas-main',
+          textAlignment: textAlignment,
+          logoAlignment: logoAlignment,
+          illustrationConfig: illustrationConfig,
+        },
+      };
+    } else {
+      return {
+        id: 'preview-reflection',
+        type: 'portada-reflection',
+        content: {
+          primary: context.title,
+          subtitle: currentSeason.name,
+          imageUrl: selectedIllustration ? getIllustrationUrl(selectedIllustration) : undefined,
+        },
+        style: {
+          backgroundColor: CASA_BRAND.colors.primary.white,
+          primaryColor: CASA_BRAND.colors.primary.black,
+        },
+        metadata: {
+          sourceComponent: 'portadas-reflection',
+          textAlignment: textAlignment,
+          logoAlignment: logoAlignment,
+          illustrationConfig: illustrationConfig,
+        },
+      };
+    }
+  }, [context.date, context.title, selectedIllustration, textAlignment, logoAlignment, illustrationConfig]);
+
+  // Render cover preview using UniversalSlide - SAME component as Presenter
+  // This guarantees what you see in Constructor = what you see in Presenter
+  const renderCoverPreview = (type: 'main' | 'reflection') => {
+    const previewSlide = buildSlideForPreview(type);
+
+    // Container dimensions for the preview
+    const containerWidth = 500;
+    const containerHeight = containerWidth * 0.75; // 4:3 aspect ratio
+
+    // Scale to fit container (base slide is 1024x768)
+    const scaleRatio = containerWidth / CASA_BRAND.slide.width;
+
     return (
       <div
-        className="relative w-full rounded-lg overflow-hidden shadow-lg"
+        className="relative rounded-lg overflow-hidden shadow-lg"
         style={{
-          aspectRatio: '4/3',
-          backgroundColor: '#FFFFFF',
+          width: `${containerWidth}px`,
+          height: `${containerHeight}px`,
         }}
       >
-        {/* Background Illustration - same for both covers */}
-        {selectedIllustration && (
-          <div
-            className="absolute inset-0 flex items-center justify-center overflow-hidden"
-            style={{ opacity: illustrationConfig.opacity / 100 }}
-          >
-            <img
-              src={getIllustrationUrl(selectedIllustration)}
-              alt="Ilustración de fondo"
-              style={{
-                width: `${illustrationConfig.scale}%`,
-                height: `${illustrationConfig.scale}%`,
-                objectFit: 'cover',
-                transform: `translate(${illustrationConfig.positionX}%, ${illustrationConfig.positionY}%)`,
-              }}
-            />
-          </div>
-        )}
-
-        {/* Logo - positioned based on logoAlignment */}
-        <div
-          className="absolute top-6"
-          style={{ [logoAlignment === 'right' ? 'right' : 'left']: '24px' }}
-        >
-          <img
-            src={CASA_LOGO_PATH}
-            alt="CASA Logo"
-            className="w-12 h-12 opacity-80"
-          />
-        </div>
-
-        {/* Content - positioned based on textAlignment */}
-        <div
-          className="absolute bottom-0 p-8 max-w-[70%]"
-          style={{
-            [textAlignment === 'right' ? 'right' : 'left']: 0,
-            textAlign: textAlignment,
-          }}
-        >
-          {type === 'main' ? (
-            <>
-              {/* Main Cover - Solo título y fecha */}
-              <h1
-                style={{
-                  fontFamily: CASA_BRAND.fonts.heading,
-                  fontSize: '28px',
-                  fontWeight: 300,
-                  color: CASA_BRAND.colors.primary.black,
-                  marginBottom: '12px',
-                  lineHeight: 1.3,
-                }}
-              >
-                {context.title}
-              </h1>
-              {/* Decorative line */}
-              <div className={`flex ${textAlignment === 'right' ? 'justify-end' : 'justify-start'} mb-3`}>
-                <div
-                  className="w-12 h-0.5"
-                  style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
-                />
-              </div>
-              <p
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '14px',
-                  color: CASA_BRAND.colors.primary.amber,
-                }}
-              >
-                {formattedDate}
-              </p>
-              <p
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '11px',
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                  marginTop: '4px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                }}
-              >
-                {currentSeason.name}
-              </p>
-            </>
-          ) : (
-            <>
-              {/* Reflection Cover - Solo título */}
-              <p
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '11px',
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.2em',
-                  marginBottom: '16px',
-                }}
-              >
-                Reflexion
-              </p>
-              {/* Decorative line */}
-              <div className={`flex ${textAlignment === 'right' ? 'justify-end' : 'justify-start'} mb-6`}>
-                <div
-                  className="w-12 h-0.5"
-                  style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
-                />
-              </div>
-              <h1
-                style={{
-                  fontFamily: CASA_BRAND.fonts.heading,
-                  fontSize: '28px',
-                  fontWeight: 300,
-                  color: CASA_BRAND.colors.primary.black,
-                  lineHeight: 1.3,
-                }}
-              >
-                {context.title}
-              </h1>
-              <p
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '11px',
-                  color: CASA_BRAND.colors.secondary.grayMedium,
-                  marginTop: '8px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                }}
-              >
-                {currentSeason.name}
-              </p>
-            </>
-          )}
-        </div>
+        <UniversalSlide
+          slide={previewSlide}
+          scale={scaleRatio}
+          showIndicator={false}
+          showLogo={showLogoPreview}
+        />
       </div>
     );
   };
@@ -531,7 +557,7 @@ const Portadas: React.FC<PortadasProps> = ({
         {/* Divider */}
         <div className="w-px h-8 bg-gray-200" />
 
-        {/* Logo alignment toggle */}
+        {/* Logo visibility and alignment */}
         <div className="flex items-center gap-2">
           <span
             className="text-xs"
@@ -542,14 +568,27 @@ const Portadas: React.FC<PortadasProps> = ({
           >
             Logo
           </span>
+          <button
+            type="button"
+            onClick={() => setShowLogoPreview(!showLogoPreview)}
+            className={`p-2 rounded transition-colors ${
+              showLogoPreview
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+            title={showLogoPreview ? 'Ocultar logo' : 'Mostrar logo'}
+          >
+            {showLogoPreview ? <Eye size={16} /> : <EyeOff size={16} />}
+          </button>
           <div className="flex gap-1">
             <button
               type="button"
               onClick={() => setLogoAlignment('left')}
+              disabled={!showLogoPreview}
               className={`p-2 rounded transition-colors ${
-                logoAlignment === 'left'
+                logoAlignment === 'left' && showLogoPreview
                   ? 'bg-amber-100 text-amber-700'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed'
               }`}
               title="Logo a la izquierda"
             >
@@ -558,10 +597,11 @@ const Portadas: React.FC<PortadasProps> = ({
             <button
               type="button"
               onClick={() => setLogoAlignment('right')}
+              disabled={!showLogoPreview}
               className={`p-2 rounded transition-colors ${
-                logoAlignment === 'right'
+                logoAlignment === 'right' && showLogoPreview
                   ? 'bg-amber-100 text-amber-700'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed'
               }`}
               title="Logo a la derecha"
             >
@@ -840,7 +880,47 @@ const Portadas: React.FC<PortadasProps> = ({
         </div>
       )}
 
-      {/* Prompt Editor Section */}
+      {/* Illustration Theme Input - Simple field for non-tech users */}
+      <div
+        className="rounded-lg border p-4"
+        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+      >
+        <label
+          className="block mb-2"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '14px',
+            fontWeight: 500,
+            color: CASA_BRAND.colors.primary.black,
+          }}
+        >
+          ¿Qué ilustración quieres?
+        </label>
+        <input
+          type="text"
+          value={illustrationTheme}
+          onChange={(e) => setIllustrationTheme(e.target.value)}
+          placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
+          className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '14px',
+            borderColor: CASA_BRAND.colors.secondary.grayLight,
+            color: CASA_BRAND.colors.primary.black,
+          }}
+        />
+        <p
+          className="mt-2 text-xs"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.secondary.grayMedium,
+          }}
+        >
+          Describe en español lo que quieres ver. Deja vacío para usar el tema de la liturgia.
+        </p>
+      </div>
+
+      {/* Prompt Editor Section - Advanced, for tech users */}
       <div
         className="rounded-lg border p-4"
         style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
@@ -856,7 +936,7 @@ const Portadas: React.FC<PortadasProps> = ({
                 color: CASA_BRAND.colors.primary.black,
               }}
             >
-              Prompt para la ilustración
+              Prompt avanzado
             </span>
           </div>
           <div className="flex items-center gap-2">

@@ -22,6 +22,7 @@ import {
   Layers,
   Presentation,
   ExternalLink,
+  Mic2,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -112,6 +113,15 @@ const AdminDashboard: React.FC = () => {
       description: 'Crea gráficos para redes sociales con las plantillas de CASA.',
       icon: <Image className="h-8 w-8" />,
       route: '/admin/graphics',
+      category: 'general',
+      status: 'available',
+    },
+    {
+      id: 'sermon-editor',
+      title: 'Editor de Reflexiones',
+      description: 'Editar y publicar grabaciones de reflexiones para Spotify.',
+      icon: <Mic2 className="h-8 w-8" />,
+      route: '/admin/sermon-editor',
       category: 'general',
       status: 'available',
     },

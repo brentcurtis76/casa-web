@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import type { PresentationState, LogoState, TextOverlayState } from '@/lib/presentation/types';
+import type { PresentationState, LogoState, TextOverlayState, TempSlideEdit } from '@/lib/presentation/types';
 
 export const PRESENTATION_STATE_KEY = 'casa-presentation-state';
 const SAVE_DEBOUNCE_MS = 2000;
@@ -13,12 +13,23 @@ const MAX_STATE_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
 export interface SavedPresentationState {
   liturgyId: string;
   liturgyTitle: string;
-  currentSlideIndex: number;
+  // Preview state
+  previewSlideIndex: number;
+  // Live state
+  liveSlideIndex: number;
   isLive: boolean;
   isBlack: boolean;
   logoState: LogoState;
   textOverlayState: TextOverlayState;
+  // Live copies
+  liveLogoState: LogoState;
+  liveTextOverlayState: TextOverlayState;
+  // Temp edits (slide content modifications)
+  tempEdits: Record<string, TempSlideEdit>;
+  liveTempEdits: Record<string, TempSlideEdit>;
   savedAt: number;
+  // Legacy field for backwards compatibility
+  currentSlideIndex?: number;
 }
 
 /**
@@ -43,11 +54,16 @@ export function useAutoSave(state: PresentationState): void {
       const saveData: SavedPresentationState = {
         liturgyId: state.data!.liturgyId,
         liturgyTitle: state.data!.liturgyTitle,
-        currentSlideIndex: state.currentSlideIndex,
+        previewSlideIndex: state.previewSlideIndex,
+        liveSlideIndex: state.liveSlideIndex,
         isLive: state.isLive,
         isBlack: state.isBlack,
         logoState: state.logoState,
         textOverlayState: state.textOverlayState,
+        liveLogoState: state.liveLogoState,
+        liveTextOverlayState: state.liveTextOverlayState,
+        tempEdits: state.tempEdits,
+        liveTempEdits: state.liveTempEdits,
         savedAt: Date.now(),
       };
 
@@ -65,11 +81,16 @@ export function useAutoSave(state: PresentationState): void {
     };
   }, [
     state.data,
-    state.currentSlideIndex,
+    state.previewSlideIndex,
+    state.liveSlideIndex,
     state.isLive,
     state.isBlack,
     state.logoState,
     state.textOverlayState,
+    state.liveLogoState,
+    state.liveTextOverlayState,
+    state.tempEdits,
+    state.liveTempEdits,
   ]);
 }
 
@@ -105,6 +126,28 @@ export function getSavedPresentationState(): SavedPresentationState | null {
       parsed.textOverlayState = {
         overlays: parsed.textOverlayState.global ? [] : (parsed.textOverlayState.overlays || []),
       };
+    }
+
+    // Migrate old currentSlideIndex to new preview/live format
+    if (typeof parsed.currentSlideIndex === 'number' && parsed.previewSlideIndex === undefined) {
+      parsed.previewSlideIndex = parsed.currentSlideIndex;
+      parsed.liveSlideIndex = parsed.currentSlideIndex;
+    }
+
+    // Ensure live states exist (default to preview states for migration)
+    if (!parsed.liveLogoState && parsed.logoState) {
+      parsed.liveLogoState = parsed.logoState;
+    }
+    if (!parsed.liveTextOverlayState && parsed.textOverlayState) {
+      parsed.liveTextOverlayState = parsed.textOverlayState;
+    }
+
+    // Ensure tempEdits exist (default to empty objects)
+    if (!parsed.tempEdits) {
+      parsed.tempEdits = {};
+    }
+    if (!parsed.liveTempEdits) {
+      parsed.liveTempEdits = parsed.tempEdits || {};
     }
 
     // Validate required fields exist

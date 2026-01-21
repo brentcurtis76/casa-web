@@ -4,6 +4,7 @@
  */
 
 import type { SlideGroup } from './slide';
+import type { PresentationTheme } from '@/lib/presentation/themes';
 
 /**
  * Contexto Transversal - Información compartida por todos los componentes de la liturgia
@@ -16,6 +17,7 @@ export interface LiturgyContext {
   summary: string;                  // Resumen/enfoque temático
   celebrant?: string;               // Nombre del celebrante (opcional)
   preacher?: string;                // Nombre del predicador (opcional)
+  reflexionText?: string;           // Texto completo extraído del PDF de reflexión
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +79,8 @@ export interface Liturgy {
   context: LiturgyContext;
   elements: LiturgyElement[];
   status: LiturgyStatus;
+  templateId?: string;                // Which template was used (defaults to 'domingo')
+  theme?: PresentationTheme;          // Theme for this liturgy (defaults to 'light')
   metadata: {
     createdAt: string;
     updatedAt: string;
@@ -153,6 +157,9 @@ export interface LiturgyContextInput {
   }>;
   celebrant?: string;
   preacher?: string;
+  reflexionText?: string;           // Texto completo extraído del PDF de reflexión
+  originalPdfFile?: File;           // Archivo PDF original para publicación
+  publishReflexion?: boolean;       // Si se debe publicar la reflexión en home
 }
 
 /**
@@ -236,3 +243,111 @@ export const LITURGY_ORDER: LiturgyOrderElement[] = [
   // 18. Bendición Final (fijo, editable por liturgia)
   { type: 'bendicion', label: 'Bendición Final', required: true, category: 'fijo', fixedElementFile: 'bendicion-final.json' },
 ];
+
+// ============================================
+// LITURGY TEMPLATES
+// ============================================
+
+/**
+ * Song tempo type for consistency
+ */
+export type SongTempo = 'lenta' | 'intermedia' | 'rápida';
+
+/**
+ * Template element definition - defines structure for different service types
+ */
+export interface LiturgyTemplateElement {
+  type: LiturgyElementType;
+  label: string;
+  required: boolean;
+  category: LiturgyElementCategory;
+  defaultTempo?: SongTempo;
+  fixedElementFile?: string;
+  order: number;
+}
+
+/**
+ * Liturgy Template - defines structure for different service types
+ */
+export interface LiturgyTemplate {
+  id: string;
+  name: string;
+  description: string;
+  defaultTheme: PresentationTheme;
+  elements: LiturgyTemplateElement[];
+  createdAt?: string;
+  isSystem?: boolean;  // System templates can't be deleted
+}
+
+/**
+ * System templates for different service types
+ */
+export const SYSTEM_TEMPLATES: LiturgyTemplate[] = [
+  {
+    id: 'domingo',
+    name: 'Domingo (Servicio Completo)',
+    description: 'Liturgia completa para el culto dominical con 18 elementos',
+    defaultTheme: 'light',
+    isSystem: true,
+    elements: LITURGY_ORDER.map((el, i) => ({ ...el, order: i })),
+  },
+  {
+    id: 'adoracion',
+    name: 'Servicio de Adoración',
+    description: 'Enfocado en canciones y lecturas bíblicas',
+    defaultTheme: 'dark',
+    isSystem: true,
+    elements: [
+      { type: 'portada-principal', label: 'Portada', required: true, category: 'portada', order: 0 },
+      { type: 'cancion-invocacion', label: 'Canción 1', required: true, category: 'cancion', defaultTempo: 'rápida', order: 1 },
+      { type: 'cancion-arrepentimiento', label: 'Canción 2', required: true, category: 'cancion', defaultTempo: 'intermedia', order: 2 },
+      { type: 'lectura-biblica', label: 'Lectura Bíblica', required: true, category: 'lectura', order: 3 },
+      { type: 'cancion-gratitud', label: 'Canción 3', required: true, category: 'cancion', defaultTempo: 'lenta', order: 4 },
+      { type: 'cancion-santa-cena', label: 'Canción 4', required: false, category: 'cancion', defaultTempo: 'lenta', order: 5 },
+      { type: 'bendicion', label: 'Bendición', required: true, category: 'fijo', fixedElementFile: 'bendicion-final.json', order: 6 },
+    ],
+  },
+  {
+    id: 'bautismo',
+    name: 'Bautismo',
+    description: 'Ceremonia de bautismo',
+    defaultTheme: 'light',
+    isSystem: true,
+    elements: [
+      { type: 'portada-principal', label: 'Portada', required: true, category: 'portada', order: 0 },
+      { type: 'lectura-biblica', label: 'Lectura Bíblica', required: true, category: 'lectura', order: 1 },
+      { type: 'oracion-invocacion', label: 'Oración', required: true, category: 'oracion', order: 2 },
+      { type: 'cancion-gratitud', label: 'Canción', required: false, category: 'cancion', defaultTempo: 'lenta', order: 3 },
+      { type: 'bendicion', label: 'Bendición', required: true, category: 'fijo', fixedElementFile: 'bendicion-final.json', order: 4 },
+    ],
+  },
+  {
+    id: 'ceniza',
+    name: 'Miércoles de Ceniza',
+    description: 'Liturgia para Miércoles de Ceniza',
+    defaultTheme: 'dark',
+    isSystem: true,
+    elements: [
+      { type: 'portada-principal', label: 'Portada', required: true, category: 'portada', order: 0 },
+      { type: 'lectura-biblica', label: 'Lectura Bíblica', required: true, category: 'lectura', order: 1 },
+      { type: 'oracion-arrepentimiento', label: 'Oración de Arrepentimiento', required: true, category: 'oracion', order: 2 },
+      { type: 'cancion-arrepentimiento', label: 'Canción', required: true, category: 'cancion', defaultTempo: 'lenta', order: 3 },
+      { type: 'santa-cena', label: 'Santa Cena', required: false, category: 'fijo', fixedElementFile: 'santa-cena.json', order: 4 },
+      { type: 'bendicion', label: 'Bendición', required: true, category: 'fijo', fixedElementFile: 'bendicion-final.json', order: 5 },
+    ],
+  },
+];
+
+/**
+ * Get a template by ID
+ */
+export function getTemplate(templateId: string): LiturgyTemplate | undefined {
+  return SYSTEM_TEMPLATES.find((t) => t.id === templateId);
+}
+
+/**
+ * Get the default template (Domingo)
+ */
+export function getDefaultTemplate(): LiturgyTemplate {
+  return SYSTEM_TEMPLATES[0];
+}

@@ -11,15 +11,17 @@ interface UseKeyboardShortcutsOptions {
   onFirst: () => void;
   onLast: () => void;
   onBlack: () => void;
+  onPublish?: () => void;
   onFullscreen?: () => void;
 }
 
 /**
  * Hook que maneja atajos de teclado para la presentacion
- * - Right Arrow / Space / PageDown = Next slide
- * - Left Arrow / PageUp = Previous slide
- * - Home = First slide
- * - End = Last slide
+ * - Right Arrow / Space / PageDown = Next slide (preview only)
+ * - Left Arrow / PageUp = Previous slide (preview only)
+ * - Home = First slide (preview only)
+ * - End = Last slide (preview only)
+ * - Enter / P = Publish changes to output
  * - B = Toggle black
  * - F = Toggle fullscreen (output)
  */
@@ -31,6 +33,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions): void
     onFirst,
     onLast,
     onBlack,
+    onPublish,
     onFullscreen,
   } = options;
 
@@ -76,6 +79,15 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions): void
           onBlack();
           break;
 
+        case 'Enter':
+        case 'p':
+        case 'P':
+          if (onPublish) {
+            event.preventDefault();
+            onPublish();
+          }
+          break;
+
         case 'f':
         case 'F':
           if (onFullscreen) {
@@ -85,7 +97,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions): void
           break;
       }
     },
-    [onNext, onPrev, onFirst, onLast, onBlack, onFullscreen]
+    [onNext, onPrev, onFirst, onLast, onBlack, onPublish, onFullscreen]
   );
 
   useEffect(() => {

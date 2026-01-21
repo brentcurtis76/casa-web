@@ -84,50 +84,55 @@ const SEPARATOR_CONFIG = {
 };
 
 /**
- * Obtiene el estilo de color según el tipo de slide
- * Diseño consistente con Brand Kit CASA: fondo blanco, texto negro/ámbar
+ * Obtiene el estilo de color según el slide
+ * Usa los colores guardados en slide.style, con fallbacks por tipo
+ * Esto asegura consistencia entre Constructor preview y Presenter
  */
-function getSlideStyle(type: Slide['type']) {
+function getSlideStyle(slide: Slide) {
+  const type = slide.type;
+  const savedPrimaryColor = slide.style?.primaryColor;
+  const savedBgColor = slide.style?.backgroundColor;
+
   switch (type) {
     case 'prayer-leader':
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.black,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.black,
         label: 'Líder',
         labelColor: CASA_BRAND.colors.secondary.grayMedium,
       };
     case 'prayer-response':
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.amber,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.amber,
         label: 'Congregación',
-        labelColor: CASA_BRAND.colors.primary.amber,
+        labelColor: savedPrimaryColor || CASA_BRAND.colors.primary.amber,
       };
     case 'prayer-full':
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.black,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.black,
         label: 'Antifonal',
         labelColor: CASA_BRAND.colors.secondary.grayMedium,
       };
     case 'title':
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.black,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.black,
         label: 'Título',
         labelColor: CASA_BRAND.colors.secondary.grayMedium,
       };
     case 'blessing':
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.amber,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.amber,
         label: 'Bendición',
-        labelColor: CASA_BRAND.colors.primary.amber,
+        labelColor: savedPrimaryColor || CASA_BRAND.colors.primary.amber,
       };
     default:
       return {
-        bg: CASA_BRAND.colors.primary.white,
-        text: CASA_BRAND.colors.primary.black,
+        bg: savedBgColor || CASA_BRAND.colors.primary.white,
+        text: savedPrimaryColor || CASA_BRAND.colors.primary.black,
         label: 'Slide',
         labelColor: CASA_BRAND.colors.secondary.grayMedium,
       };
@@ -160,7 +165,7 @@ const EditableSlide: React.FC<{
 }) => {
   const [editContent, setEditContent] = useState(slide.content.primary);
   const [editSecondary, setEditSecondary] = useState(slide.content.secondary || '');
-  const style = getSlideStyle(slide.type);
+  const style = getSlideStyle(slide);
   const hasSecondary = slide.type === 'prayer-full';
 
   useEffect(() => {

@@ -88,10 +88,21 @@ function buildUserPrompt(liturgia: {
   titulo: string;
   resumen: string;
   lecturas: Array<{ cita: string; texto: string }>;
+  reflexionText?: string;
 }): string {
   const lecturasText = liturgia.lecturas
     .map((l, i) => `### Lectura ${i + 1}: ${l.cita}\n${l.texto}`)
     .join('\n\n');
+
+  // Incluir texto de reflexión si está disponible
+  const reflexionSection = liturgia.reflexionText ? `
+
+### Texto de la Reflexión del Predicador
+${liturgia.reflexionText}
+
+NOTA IMPORTANTE: Usa este texto de reflexión como fuente principal de inspiración temática.
+Las oraciones deben preparar el corazón de la congregación para recibir este mensaje.
+` : '';
 
   return `## Información de la Liturgia
 
@@ -102,11 +113,11 @@ ${liturgia.titulo}
 ${liturgia.resumen}
 
 ${lecturasText}
-
+${reflexionSection}
 ---
 
 Por favor, genera las tres oraciones antifonales (Invocación, Arrepentimiento, Gratitud) basándote en esta información. Recuerda:
-- Incorporar imágenes y metáforas de las lecturas
+- Incorporar imágenes y metáforas de las lecturas${liturgia.reflexionText ? ' y del texto de reflexión' : ''}
 - Mantener un tono cálido e inclusivo
 - Las respuestas de la congregación deben ser cortas y fáciles de decir al unísono`;
 }

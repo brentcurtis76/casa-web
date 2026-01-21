@@ -14,11 +14,14 @@ import {
   Monitor,
   Heart,
   ExternalLink,
+  Globe,
 } from 'lucide-react';
 import type { LiturgyElement, LiturgyElementType, LiturgyContext } from '@/types/shared/liturgy';
 import type { Story } from '@/types/shared/story';
 import { exportLiturgy } from '@/lib/liturgia/exportService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
+import { publishCuentacuento } from '@/lib/publishedResourcesService';
+import { useToast } from '@/hooks/use-toast';
 
 interface ExportPanelProps {
   elements: Map<LiturgyElementType, LiturgyElement>;
@@ -33,6 +36,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   liturgyContext,
   onExportComplete,
 }) => {
+  const { toast } = useToast();
   const [exportingCelebrant, setExportingCelebrant] = useState(false);
   const [celebrantCompleted, setCelebrantCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +45,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const [exportingStoryPDF, setExportingStoryPDF] = useState(false);
   const [storyPDFCompleted, setStoryPDFCompleted] = useState(false);
   const [storyPDFProgress, setStoryPDFProgress] = useState({ value: 0, message: '' });
+
+  // Story publish state
+  const [publishingStory, setPublishingStory] = useState(false);
+  const [storyPublished, setStoryPublished] = useState(false);
 
   // Detect if there's a story in the elements
   const storyData = useMemo(() => {
@@ -127,6 +135,50 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       setError(err instanceof Error ? err.message : 'Error al exportar el cuento');
     } finally {
       setExportingStoryPDF(false);
+    }
+  };
+
+  // Handle story publish to home page
+  const handlePublishCuentacuento = async () => {
+    if (!storyData || !liturgyContext?.id) {
+      setError('No se puede publicar sin datos del cuento o contexto de liturgia');
+      return;
+    }
+
+    setPublishingStory(true);
+    setError(null);
+    setStoryPDFProgress({ value: 0, message: 'Generando PDF...' });
+
+    try {
+      // Generate the PDF blob
+      const pdfBlob = await exportStoryToPDF(storyData, (value, message) => {
+        setStoryPDFProgress({ value: Math.min(value, 80), message });
+      });
+
+      setStoryPDFProgress({ value: 90, message: 'Publicando en Home...' });
+
+      // Publish to home page
+      await publishCuentacuento({
+        liturgyId: liturgyContext.id,
+        liturgyDate: new Date(liturgyContext.date),
+        title: storyData.title,
+        pdfBlob,
+      });
+
+      setStoryPDFProgress({ value: 100, message: 'Publicado!' });
+      setStoryPublished(true);
+
+      toast({
+        title: 'Publicado en Home',
+        description: `"${storyData.title}" ya esta disponible en la pagina principal`,
+      });
+
+      onExportComplete?.('story-published');
+    } catch (err) {
+      console.error('Publish error:', err);
+      setError(err instanceof Error ? err.message : 'Error al publicar el cuento');
+    } finally {
+      setPublishingStory(false);
     }
   };
 
@@ -276,8 +328,8 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
                   PDF ilustrado de "{storyData.title}" para leer en casa
                 </p>
 
-                {/* Progress bar when exporting */}
-                {exportingStoryPDF && (
+                {/* Progress bar when exporting or publishing */}
+                {(exportingStoryPDF || publishingStory) && (
                   <div className="mt-3">
                     <div
                       className="h-2 rounded-full overflow-hidden"
@@ -300,35 +352,70 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
                   </div>
                 )}
 
-                {/* Download button */}
-                <button
-                  onClick={handleExportStoryPDF}
-                  disabled={exportingStoryPDF}
-                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  style={{
-                    backgroundColor: CASA_BRAND.colors.primary.amber,
-                    color: CASA_BRAND.colors.primary.white,
-                    fontFamily: CASA_BRAND.fonts.body,
-                    fontSize: '13px',
-                  }}
-                >
-                  {exportingStoryPDF ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Generando...
-                    </>
-                  ) : storyPDFCompleted ? (
-                    <>
-                      <Check size={16} />
-                      Descargado
-                    </>
-                  ) : (
-                    <>
-                      <Download size={16} />
-                      Descargar PDF
-                    </>
-                  )}
-                </button>
+                {/* Action buttons */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {/* Download button */}
+                  <button
+                    onClick={handleExportStoryPDF}
+                    disabled={exportingStoryPDF || publishingStory}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.primary.amber,
+                      color: CASA_BRAND.colors.primary.white,
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '13px',
+                    }}
+                  >
+                    {exportingStoryPDF ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Generando...
+                      </>
+                    ) : storyPDFCompleted ? (
+                      <>
+                        <Check size={16} />
+                        Descargado
+                      </>
+                    ) : (
+                      <>
+                        <Download size={16} />
+                        Descargar PDF
+                      </>
+                    )}
+                  </button>
+
+                  {/* Publish to Home button */}
+                  <button
+                    onClick={handlePublishCuentacuento}
+                    disabled={publishingStory || exportingStoryPDF || !liturgyContext?.id}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    style={{
+                      backgroundColor: storyPublished
+                        ? '#16a34a'
+                        : CASA_BRAND.colors.primary.black,
+                      color: CASA_BRAND.colors.primary.white,
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '13px',
+                    }}
+                  >
+                    {publishingStory ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Publicando...
+                      </>
+                    ) : storyPublished ? (
+                      <>
+                        <Check size={16} />
+                        Publicado
+                      </>
+                    ) : (
+                      <>
+                        <Globe size={16} />
+                        Publicar en Home
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

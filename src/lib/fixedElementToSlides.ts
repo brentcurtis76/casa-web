@@ -5,7 +5,7 @@
 
 import { Slide, SlideGroup, SlideType } from '@/types/shared/slide';
 import { FixedElement, FixedSlide, FixedSlideType } from '@/types/shared/fixed-elements';
-import { CASA_BRAND, SLIDE_STYLES } from '@/lib/brand-kit';
+import { getThemedSlideStyles, PresentationTheme, DEFAULT_THEME } from '@/lib/presentation/themes';
 
 /**
  * Genera un ID único para slides
@@ -39,8 +39,11 @@ function fixedSlideToSlide(
   fixedSlide: FixedSlide,
   elementId: string,
   order: number,
-  total: number
+  total: number,
+  theme: PresentationTheme = DEFAULT_THEME
 ): Slide {
+  const themedStyles = getThemedSlideStyles(theme);
+
   const baseSlide: Slide = {
     id: generateId(),
     type: mapFixedTypeToSlideType(fixedSlide.type),
@@ -48,9 +51,9 @@ function fixedSlideToSlide(
       primary: '',
     },
     style: {
-      primaryColor: CASA_BRAND.colors.primary.black,
-      backgroundColor: CASA_BRAND.colors.primary.white,
-      primaryFont: CASA_BRAND.fonts.body,
+      primaryColor: themedStyles.prayerLeader.primaryColor,
+      backgroundColor: themedStyles.prayerLeader.backgroundColor,
+      primaryFont: themedStyles.prayerLeader.primaryFont,
     },
     metadata: {
       sourceComponent: 'elementos-fijos',
@@ -67,8 +70,9 @@ function fixedSlideToSlide(
         type: 'title',
         content: { primary: fixedSlide.content || '' },
         style: {
-          ...baseSlide.style,
-          primaryFont: CASA_BRAND.fonts.heading,
+          primaryColor: themedStyles.title.primaryColor,
+          backgroundColor: themedStyles.title.backgroundColor,
+          primaryFont: themedStyles.title.primaryFont,
         },
       };
 
@@ -77,6 +81,11 @@ function fixedSlideToSlide(
         ...baseSlide,
         type: 'prayer-leader',
         content: { primary: fixedSlide.content || '' },
+        style: {
+          primaryColor: themedStyles.prayerLeader.primaryColor,
+          backgroundColor: themedStyles.prayerLeader.backgroundColor,
+          primaryFont: themedStyles.prayerLeader.primaryFont,
+        },
       };
 
     case 'liturgy-response':
@@ -85,8 +94,9 @@ function fixedSlideToSlide(
         type: 'prayer-response',
         content: { primary: fixedSlide.content || '' },
         style: {
-          ...baseSlide.style,
-          primaryColor: CASA_BRAND.colors.primary.amber,
+          primaryColor: themedStyles.prayerResponse.primaryColor,
+          backgroundColor: themedStyles.prayerResponse.backgroundColor,
+          primaryFont: themedStyles.prayerResponse.primaryFont,
         },
       };
 
@@ -99,9 +109,11 @@ function fixedSlideToSlide(
           secondary: fixedSlide.response || '',
         },
         style: {
-          ...baseSlide.style,
-          secondaryColor: CASA_BRAND.colors.primary.amber,
-          secondaryFont: CASA_BRAND.fonts.body,
+          primaryColor: themedStyles.prayerFull.primaryColor,
+          secondaryColor: themedStyles.prayerFull.secondaryColor,
+          backgroundColor: themedStyles.prayerFull.backgroundColor,
+          primaryFont: themedStyles.prayerFull.primaryFont,
+          secondaryFont: themedStyles.prayerFull.secondaryFont,
         },
       };
 
@@ -111,8 +123,9 @@ function fixedSlideToSlide(
         type: 'prayer-response',
         content: { primary: fixedSlide.content || '' },
         style: {
-          ...baseSlide.style,
-          primaryColor: CASA_BRAND.colors.secondary.carbon,
+          primaryColor: themedStyles.prayerResponse.primaryColor,
+          backgroundColor: themedStyles.prayerResponse.backgroundColor,
+          primaryFont: themedStyles.prayerResponse.primaryFont,
         },
       };
 
@@ -124,6 +137,11 @@ function fixedSlideToSlide(
           primary: fixedSlide.content || '',
           subtitle: fixedSlide.reference,
         },
+        style: {
+          primaryColor: themedStyles.reading.primaryColor,
+          backgroundColor: themedStyles.reading.backgroundColor,
+          primaryFont: themedStyles.reading.primaryFont,
+        },
       };
 
     case 'info':
@@ -132,8 +150,9 @@ function fixedSlideToSlide(
         type: 'announcement',
         content: { primary: fixedSlide.content || '' },
         style: {
-          ...baseSlide.style,
-          primaryColor: CASA_BRAND.colors.secondary.grayDark,
+          primaryColor: themedStyles.announcement.primaryColor,
+          backgroundColor: themedStyles.announcement.backgroundColor,
+          primaryFont: themedStyles.announcement.primaryFont,
         },
       };
 
@@ -146,9 +165,9 @@ function fixedSlideToSlide(
           subtitle: fixedSlide.note,
         },
         style: {
-          ...baseSlide.style,
-          primaryFont: CASA_BRAND.fonts.heading,
-          primaryColor: CASA_BRAND.colors.secondary.grayMedium,
+          primaryColor: themedStyles.instruction.primaryColor,
+          backgroundColor: themedStyles.instruction.backgroundColor,
+          primaryFont: themedStyles.instruction.primaryFont,
         },
       };
 
@@ -158,9 +177,9 @@ function fixedSlideToSlide(
         type: 'blessing',
         content: { primary: fixedSlide.content || '' },
         style: {
-          ...baseSlide.style,
-          primaryColor: CASA_BRAND.colors.primary.amber,
-          primaryFont: CASA_BRAND.fonts.heading,
+          primaryColor: themedStyles.blessing.primaryColor,
+          backgroundColor: themedStyles.blessing.backgroundColor,
+          primaryFont: themedStyles.blessing.primaryFont,
         },
       };
 
@@ -173,11 +192,23 @@ function fixedSlideToSlide(
 }
 
 /**
+ * Options for fixed element slide generation
+ */
+export interface FixedElementToSlidesOptions {
+  theme?: PresentationTheme;
+}
+
+/**
  * Convierte un FixedElement completo a SlideGroup
  */
-export function fixedElementToSlides(element: FixedElement): SlideGroup {
+export function fixedElementToSlides(
+  element: FixedElement,
+  options?: FixedElementToSlidesOptions
+): SlideGroup {
+  const theme = options?.theme || DEFAULT_THEME;
+
   const slides = element.slides.map((slide, index) =>
-    fixedSlideToSlide(slide, element.id, index + 1, element.slides.length)
+    fixedSlideToSlide(slide, element.id, index + 1, element.slides.length, theme)
   );
 
   return {
@@ -195,8 +226,11 @@ export function fixedElementToSlides(element: FixedElement): SlideGroup {
 /**
  * Convierte múltiples elementos fijos a SlideGroups
  */
-export function fixedElementsToSlideGroups(elements: FixedElement[]): SlideGroup[] {
-  return elements.map(fixedElementToSlides);
+export function fixedElementsToSlideGroups(
+  elements: FixedElement[],
+  options?: FixedElementToSlidesOptions
+): SlideGroup[] {
+  return elements.map((element) => fixedElementToSlides(element, options));
 }
 
 /**

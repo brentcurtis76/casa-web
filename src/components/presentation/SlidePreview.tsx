@@ -7,9 +7,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 import { LogoOverlay } from './LogoOverlay';
 import { TextOverlayDisplay } from './TextOverlayDisplay';
+import { VideoBackgroundLayer } from './VideoBackgroundLayer';
+import { SlideStyleWrapper } from './SlideStyleWrapper';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { Slide } from '@/types/shared/slide';
-import type { LogoSettings, TextOverlay } from '@/lib/presentation/types';
+import type { LogoSettings, TextOverlay, ImageOverlay, VideoBackground, SlideStyles } from '@/lib/presentation/types';
 
 interface SlidePreviewProps {
   slide: Slide | null;
@@ -20,12 +22,20 @@ interface SlidePreviewProps {
   logoSettings?: LogoSettings;
   /** Text overlays to display */
   textOverlays?: TextOverlay[];
+  /** Image overlays to display */
+  imageOverlays?: ImageOverlay[];
+  /** Active video background for this slide */
+  videoBackground?: VideoBackground | null;
   /** Callback when a text overlay position changes */
   onTextOverlayPositionChange?: (id: string, position: { x: number; y: number }) => void;
+  /** Callback when an image overlay position changes */
+  onImageOverlayPositionChange?: (id: string, position: { x: number; y: number }) => void;
   /** Escala máxima permitida (por defecto 0.8 para dejar espacio) */
   maxScale?: number;
   /** Escala mínima permitida (por defecto 0.3 para que sea legible) */
   minScale?: number;
+  /** Style overrides to apply to the slide */
+  styles?: SlideStyles | null;
 }
 
 // Escala por defecto cuando no hay contenedor para medir
@@ -41,14 +51,43 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
   isBlack,
   logoSettings,
   textOverlays,
+  imageOverlays,
+  videoBackground,
   onTextOverlayPositionChange,
+  onImageOverlayPositionChange,
   maxScale = 0.8,
   minScale = 0.3,
+  styles,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const slideRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(DEFAULT_SCALE);
   const [draggingOverlayId, setDraggingOverlayId] = useState<string | null>(null);
+
+  // Track mounted state to prevent state updates after unmount
+  const isMountedRef = useRef(true);
+
+  // Track drag listeners for cleanup on unmount
+  const dragListenersRef = useRef<{
+    move: ((e: MouseEvent) => void) | null;
+    up: (() => void) | null;
+  }>({ move: null, up: null });
+
+  // Cleanup drag listeners on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      // Clean up any active drag listeners on unmount
+      if (dragListenersRef.current.move) {
+        window.removeEventListener('mousemove', dragListenersRef.current.move);
+      }
+      if (dragListenersRef.current.up) {
+        window.removeEventListener('mouseup', dragListenersRef.current.up);
+      }
+    };
+  }, []);
 
   // Calcula la escala óptima basada en el espacio disponible
   const calculateScale = useCallback(() => {
@@ -79,7 +118,10 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
 
     // Usar ResizeObserver para detectar cambios en el contenedor
     const resizeObserver = new ResizeObserver(() => {
-      calculateScale();
+      // Only update if still mounted
+      if (isMountedRef.current) {
+        calculateScale();
+      }
     });
 
     if (containerRef.current) {
@@ -87,11 +129,16 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
     }
 
     // También escuchar cambios de ventana (por si conectan/desconectan monitor)
-    window.addEventListener('resize', calculateScale);
+    const handleResize = () => {
+      if (isMountedRef.current) {
+        calculateScale();
+      }
+    };
+    window.addEventListener('resize', handleResize);
 
     return () => {
       resizeObserver.disconnect();
-      window.removeEventListener('resize', calculateScale);
+      window.removeEventListener('resize', handleResize);
     };
   }, [calculateScale]);
 
@@ -104,7 +151,7 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
     setDraggingOverlayId(overlayId);
 
     const updatePosition = (clientX: number, clientY: number) => {
-      if (!slideRef.current) return;
+      if (!slideRef.current || !isMountedRef.current) return;
       const rect = slideRef.current.getBoundingClientRect();
 
       // Calculate position as percentage
@@ -122,14 +169,68 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
     };
 
     const handleMouseUp = () => {
-      setDraggingOverlayId(null);
+      if (isMountedRef.current) {
+        setDraggingOverlayId(null);
+      }
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      // Clear refs
+      dragListenersRef.current.move = null;
+      dragListenersRef.current.up = null;
     };
+
+    // Store in ref for cleanup on unmount
+    dragListenersRef.current.move = handleMouseMove;
+    dragListenersRef.current.up = handleMouseUp;
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, [onTextOverlayPositionChange]);
+
+  // Handle image overlay drag
+  const handleImageOverlayMouseDown = useCallback((overlayId: string, e: React.MouseEvent) => {
+    if (!slideRef.current || !onImageOverlayPositionChange) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    setDraggingOverlayId(overlayId);
+
+    const updatePosition = (clientX: number, clientY: number) => {
+      if (!slideRef.current || !isMountedRef.current) return;
+      const rect = slideRef.current.getBoundingClientRect();
+
+      // Calculate position as percentage
+      const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+      const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+
+      onImageOverlayPositionChange(overlayId, {
+        x: Math.round(x),
+        y: Math.round(y),
+      });
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      updatePosition(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleMouseUp = () => {
+      if (isMountedRef.current) {
+        setDraggingOverlayId(null);
+      }
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      // Clear refs
+      dragListenersRef.current.move = null;
+      dragListenersRef.current.up = null;
+    };
+
+    // Store in ref for cleanup on unmount
+    dragListenersRef.current.move = handleMouseMove;
+    dragListenersRef.current.up = handleMouseUp;
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [onImageOverlayPositionChange]);
 
   return (
     <div ref={containerRef} className="flex flex-col items-center gap-3 w-full h-full">
@@ -188,11 +289,21 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
       >
         {slide ? (
           <>
-            <UniversalSlide
-              slide={slide}
-              scale={scale}
-              showIndicator={true}
-            />
+            {/* Video background layer - behind everything */}
+            {videoBackground && videoBackground.visible && (
+              <VideoBackgroundLayer
+                settings={videoBackground.settings}
+                playing={!isBlack}
+              />
+            )}
+
+            <SlideStyleWrapper styles={styles ?? null} scale={scale}>
+              <UniversalSlide
+                slide={slide}
+                scale={scale}
+                showIndicator={true}
+              />
+            </SlideStyleWrapper>
 
             {/* Logo overlay */}
             {logoSettings && (
@@ -219,6 +330,44 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
                   isDragging={draggingOverlayId === overlay.id}
                   showHidden={true}
                 />
+              </div>
+            ))}
+
+            {/* Image overlays */}
+            {imageOverlays && imageOverlays.map((overlay) => (
+              <div
+                key={overlay.id}
+                onMouseDown={onImageOverlayPositionChange ? (e) => handleImageOverlayMouseDown(overlay.id, e) : undefined}
+                className="absolute"
+                style={{
+                  left: `${overlay.position.x}%`,
+                  top: `${overlay.position.y}%`,
+                  transform: `translate(-50%, -50%) rotate(${overlay.style.rotation || 0}deg)`,
+                  width: `${overlay.style.size}%`,
+                  opacity: overlay.visible ? overlay.style.opacity : 0.3,
+                  cursor: onImageOverlayPositionChange ? 'move' : 'default',
+                  pointerEvents: onImageOverlayPositionChange ? 'auto' : 'none',
+                  outline: draggingOverlayId === overlay.id ? '2px dashed rgba(212, 168, 83, 0.8)' : 'none',
+                  transition: draggingOverlayId === overlay.id ? 'none' : 'opacity 0.2s',
+                }}
+              >
+                <img
+                  src={overlay.imageUrl}
+                  alt=""
+                  className="w-full h-auto"
+                  style={{
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                  }}
+                  draggable={false}
+                />
+                {!overlay.visible && (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 rounded"
+                  >
+                    <span className="text-xs text-gray-400">Oculto</span>
+                  </div>
+                )}
               </div>
             ))}
 

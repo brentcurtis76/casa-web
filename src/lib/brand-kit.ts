@@ -123,3 +123,6 @@ export const SLIDE_STYLES = {
 
 export type CasaBrand = typeof CASA_BRAND;
 export type SlideStyles = typeof SLIDE_STYLES;
+
+// Note: Theme-aware styling is now in @/lib/presentation/themes
+// Import getThemedSlideStyles and PresentationTheme directly from there

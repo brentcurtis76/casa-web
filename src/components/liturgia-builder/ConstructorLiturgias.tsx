@@ -66,6 +66,8 @@ import { fixedElementToSlides } from '@/lib/fixedElementToSlides';
 import type { FixedElement } from '@/types/shared/fixed-elements';
 import VistaPrevia from './VistaPrevia';
 import ExportPanel from './ExportPanel';
+import { publishReflexion as publishReflexionService } from '@/lib/publishedResourcesService';
+import { useToast } from '@/hooks/use-toast';
 
 /**
  * Definición del orden de la liturgia CASA (18 elementos)
@@ -312,6 +314,8 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   initialPortadaImage,
   initialPortadasConfig,
 }) => {
+  const { toast } = useToast();
+
   // Workflow state
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('contexto');
   const [liturgyContext, setLiturgyContext] = useState<LiturgyContext | null>(
@@ -441,15 +445,17 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   }, []);
 
   // Handle context save
-  const handleContextSave = (input: LiturgyContextInput) => {
+  const handleContextSave = async (input: LiturgyContextInput) => {
     console.log('[handleContextSave] Input received:', {
       date: input.date,
       dateType: typeof input.date,
       dateISO: input.date instanceof Date ? input.date.toISOString() : input.date
     });
 
+    const contextId = liturgyContext?.id || uuidv4();
+
     const context: LiturgyContext = {
-      id: liturgyContext?.id || uuidv4(),
+      id: contextId,
       date: input.date,
       title: input.title,
       summary: input.summary,
@@ -461,6 +467,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       })),
       celebrant: input.celebrant,
       preacher: input.preacher,
+      reflexionText: input.reflexionText,
       createdAt: liturgyContext?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -474,6 +481,30 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     setPendingContextChanges(null); // Limpiar cambios pendientes ya que se han aplicado
     setIsDirty(true);
     setCurrentStep('elementos');
+
+    // Handle reflexion publishing if requested
+    if (input.publishReflexion && input.originalPdfFile) {
+      try {
+        await publishReflexionService({
+          liturgyId: contextId,
+          liturgyDate: input.date,
+          title: input.title,
+          pdfFile: input.originalPdfFile,
+        });
+
+        toast({
+          title: 'Reflexion publicada',
+          description: `"${input.title}" ya esta disponible en la pagina principal`,
+        });
+      } catch (err) {
+        console.error('[handleContextSave] Error publishing reflexion:', err);
+        toast({
+          title: 'Error al publicar reflexion',
+          description: err instanceof Error ? err.message : 'Error desconocido',
+          variant: 'destructive',
+        });
+      }
+    }
   };
 
   // Handle element slides generated
@@ -713,6 +744,21 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     const sortedElements = Array.from(elements.values())
       .filter((e) => e.status !== 'skipped')
       .sort((a, b) => a.order - b.order);
+
+    // DEBUG: Log cuentacuentos element being built
+    const cuentacuentosEl = sortedElements.find(e => e.type === 'cuentacuentos');
+    if (cuentacuentosEl) {
+      const storyData = cuentacuentosEl.config?.storyData as { scenes?: Array<{ number: number; selectedImageUrl?: string }> } | undefined;
+      console.log('[buildLiturgy] CUENTACUENTOS IN ELEMENTS MAP:', {
+        hasConfig: !!cuentacuentosEl.config,
+        hasStoryData: !!storyData,
+        scenes: storyData?.scenes?.map((s: { number: number; selectedImageUrl?: string }) => ({
+          number: s.number,
+          hasImageUrl: !!s.selectedImageUrl,
+          imageUrlPrefix: s.selectedImageUrl?.slice(0, 60),
+        })),
+      });
+    }
 
     return {
       id: initialLiturgy?.id || uuidv4(),
@@ -1148,17 +1194,24 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
                 color: CASA_BRAND.colors.primary.black,
               }}
             >
-              Constructor de Liturgias
+              {liturgyContext?.title || 'Nueva Liturgia'}
             </h1>
-            <p
-              style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '14px',
-                color: CASA_BRAND.colors.secondary.grayMedium,
-              }}
-            >
-              {liturgyContext?.title || 'Nueva liturgia'}
-            </p>
+            {liturgyContext?.date && (
+              <p
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '14px',
+                  color: CASA_BRAND.colors.secondary.grayMedium,
+                }}
+              >
+                {new Date(liturgyContext.date).toLocaleDateString('es-CL', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </p>
+            )}
           </div>
         </div>
 

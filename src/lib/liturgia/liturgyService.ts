@@ -5,6 +5,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Liturgy, LiturgyElement, PortadasConfig } from '@/types/shared/liturgy';
 import { format } from 'date-fns';
+import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 
 /**
  * Sube una imagen base64 a Supabase Storage y retorna la URL pública
@@ -245,6 +246,7 @@ interface DBLiturgia {
   resumen: string | null;
   celebrante: string | null;
   predicador: string | null;
+  reflexion_texto: string | null;
   estado: 'borrador' | 'en-progreso' | 'listo' | 'archivado';
   porcentaje_completado: number;
   portada_imagen_url: string | null;
@@ -366,6 +368,7 @@ export async function saveLiturgy(
       resumen: liturgy.context.summary || null,
       celebrante: liturgy.context.celebrant || null,
       predicador: liturgy.context.preacher || null,
+      reflexion_texto: liturgy.context.reflexionText || null,
       estado: liturgy.status === 'ready' ? 'listo' : 'en-progreso',
       porcentaje_completado: porcentaje,
       created_by: user.id,
@@ -477,13 +480,38 @@ export async function saveLiturgy(
           // Update story with uploaded URLs
           const updatedStory = updateStoryWithImageUrls(story, uploadedUrls);
 
-          console.log('[saveLiturgy] Cuentacuentos images uploaded, updating element config');
+          // CRITICAL: Regenerate slides from updated story with URLs
+          // Without this, element.slides would still have base64 data instead of URLs
+          const updatedSlides = createPreviewSlideGroup(updatedStory);
+
+          console.log('[saveLiturgy] Cuentacuentos images uploaded, regenerating slides with URLs:', {
+            sceneUrls: updatedStory.scenes.map(s => s.selectedImageUrl?.slice(0, 50)),
+            slideCount: updatedSlides.slides.length,
+          });
+
           return {
             ...element,
+            slides: updatedSlides,
             config: { ...element.config, storyData: updatedStory },
           };
         }
       }
+
+      // For cuentacuentos with existing URLs (resave), ensure slides are in sync with storyData
+      if (element.type === 'cuentacuentos' && element.config?.storyData) {
+        const story = element.config.storyData as import('@/types/shared/story').Story;
+        // Regenerate slides to ensure they have the correct URLs from storyData
+        const regeneratedSlides = createPreviewSlideGroup(story);
+        console.log('[saveLiturgy] Cuentacuentos resave, regenerating slides to sync with storyData:', {
+          hasSceneUrls: story.scenes.some(s => s.selectedImageUrl?.startsWith('http')),
+          slideCount: regeneratedSlides.slides.length,
+        });
+        return {
+          ...element,
+          slides: regeneratedSlides,
+        };
+      }
+
       return element;
     }));
 
@@ -508,6 +536,21 @@ export async function saveLiturgy(
         custom_content: e.customContent || null,
         edited_slides: e.editedSlides || null,
       }));
+
+      // DEBUG: Log cuentacuentos element being saved
+      const cuentacuentosToSave = elementos.find(e => e.tipo === 'cuentacuentos');
+      if (cuentacuentosToSave) {
+        const storyData = (cuentacuentosToSave.config as { storyData?: unknown } | null)?.storyData as { scenes?: Array<{ number: number; selectedImageUrl?: string }> } | undefined;
+        console.log('[saveLiturgy] CUENTACUENTOS BEING SAVED:', {
+          hasConfig: !!cuentacuentosToSave.config,
+          hasStoryData: !!storyData,
+          scenes: storyData?.scenes?.map((s: { number: number; selectedImageUrl?: string }) => ({
+            number: s.number,
+            hasImageUrl: !!s.selectedImageUrl,
+            imageUrlPrefix: s.selectedImageUrl?.slice(0, 60),
+          })),
+        });
+      }
 
       console.log('[saveLiturgy] Inserting', elementos.length, 'elementos');
       const { error: elementosError } = await supabase
@@ -569,6 +612,19 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
       .eq('liturgia_id', id)
       .order('orden');
 
+    // DEBUG: Log cuentacuentos element from database
+    const cuentacuentosElement = elementosData?.find((e: DBLiturgiaElemento) => e.tipo === 'cuentacuentos');
+    if (cuentacuentosElement) {
+      const storyData = (cuentacuentosElement.config as { storyData?: unknown })?.storyData as { scenes?: Array<{ number: number; selectedImageUrl?: string; imageOptions?: string[] }> } | undefined;
+      console.log('[loadLiturgy] CUENTACUENTOS FROM DB - hasConfig:', !!cuentacuentosElement.config, 'hasStoryData:', !!storyData);
+      console.log('[loadLiturgy] SCENE DATA FROM DB:');
+      storyData?.scenes?.forEach((s: { number: number; selectedImageUrl?: string; imageOptions?: string[] }) => {
+        const urlType = s.selectedImageUrl?.startsWith('http') ? 'URL' : (s.selectedImageUrl ? 'BASE64' : 'NONE');
+        const optionsInfo = s.imageOptions ? `${s.imageOptions.length} options, first is ${s.imageOptions[0]?.startsWith('http') ? 'URL' : 'BASE64'}` : 'NO OPTIONS';
+        console.log(`   Scene ${s.number}: selectedImageUrl=${urlType}, imageOptions=${optionsInfo}`);
+      });
+    }
+
     // Convertir a tipo Liturgy
     // IMPORTANTE: Agregar T12:00:00 para evitar problemas de timezone
     // Sin esto, "2026-01-11" se interpreta como UTC medianoche, que en Chile
@@ -588,6 +644,7 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
         })),
         celebrant: liturgiaData.celebrante || undefined,
         preacher: liturgiaData.predicador || undefined,
+        reflexionText: liturgiaData.reflexion_texto || undefined,
         createdAt: liturgiaData.created_at,
         updatedAt: liturgiaData.updated_at,
       },

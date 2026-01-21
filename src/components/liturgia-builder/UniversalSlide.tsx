@@ -4,14 +4,112 @@
  * Detecta el sourceComponent para usar el renderizado correcto
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { Slide } from '@/types/shared/slide';
+
+/**
+ * Post-process an illustration to ensure background matches CASA_BRAND.colors.primary.white
+ * This is applied at display time to catch images that weren't processed during generation
+ */
+async function processIllustrationBackground(imageUrl: string, targetColor: string = CASA_BRAND.colors.primary.white): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+
+    // Only set crossOrigin for HTTP/HTTPS URLs, not for data URLs
+    if (imageUrl.startsWith('http')) {
+      img.crossOrigin = 'anonymous';
+    }
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          resolve(imageUrl);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0);
+
+        // Try to get image data - this can fail with SecurityError if canvas is tainted
+        let imageData: ImageData;
+        try {
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } catch {
+          resolve(imageUrl);
+          return;
+        }
+
+        const data = imageData.data;
+
+        // Parse target color to RGB
+        const targetR = parseInt(targetColor.slice(1, 3), 16);
+        const targetG = parseInt(targetColor.slice(3, 5), 16);
+        const targetB = parseInt(targetColor.slice(5, 7), 16);
+
+        // Replace background pixels with target color
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const a = data[i + 3];
+
+          // Replace transparent pixels
+          if (a < 250) {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+            data[i + 3] = 255;
+            continue;
+          }
+
+          // Replace pure white and near-white (> 240)
+          if (r > 240 && g > 240 && b > 240) {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+            continue;
+          }
+
+          // Replace light grays (checkered pattern)
+          if (r > 190 && g > 190 && b > 190) {
+            const maxDiff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+            if (maxDiff < 10) {
+              data[i] = targetR;
+              data[i + 1] = targetG;
+              data[i + 2] = targetB;
+            }
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(imageUrl);
+      }
+    };
+
+    img.onerror = () => {
+      resolve(imageUrl);
+    };
+
+    img.src = imageUrl;
+  });
+}
+
+// Path to CASA logo in public folder
+const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
 interface UniversalSlideProps {
   slide: Slide;
   scale?: number;
   showIndicator?: boolean;
+  /** Show logo on portadas - only for Constructor preview, not Presenter */
+  showLogo?: boolean;
 }
 
 /**
@@ -57,7 +155,7 @@ const getImageSrc = (url: string): string => {
   return `data:image/png;base64,${url}`;
 };
 
-const renderPortadaMain = (slide: Slide, scale: number) => {
+const renderPortadaMain = (slide: Slide, scale: number, showLogo: boolean, processedImageUrl: string | null) => {
   const hasIllustration = slide.content.imageUrl;
 
   // Get saved config from metadata, with defaults
@@ -68,14 +166,39 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
     positionY?: number;
   } | undefined;
   const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
+  const logoAlign = (slide.metadata?.logoAlignment as 'left' | 'right') || 'right';
 
   const opacity = (config?.opacity ?? 15) / 100;
   const imgScale = config?.scale ?? 100;
   const posX = config?.positionX ?? 0;
   const posY = config?.positionY ?? 0;
 
+  // Use processed image if available, otherwise fall back to original
+  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl!);
+
   return (
     <div className="relative w-full h-full">
+      {/* Logo - only shown in Constructor preview, not Presenter */}
+      {showLogo && (
+        <div
+          className="absolute"
+          style={{
+            top: '4%',
+            zIndex: 10,
+            ...(logoAlign === 'right' ? { right: '4%' } : { left: '4%' }),
+          }}
+        >
+          <img
+            src={CASA_LOGO_PATH}
+            alt="CASA Logo"
+            style={{
+              height: `${60 * scale}px`,
+              width: 'auto',
+            }}
+          />
+        </div>
+      )}
+
       {/* Background Illustration */}
       {hasIllustration && (
         <div
@@ -83,7 +206,7 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
           style={{ opacity }}
         >
           <img
-            src={getImageSrc(slide.content.imageUrl!)}
+            src={imageSource}
             alt="Ilustración"
             style={{
               width: `${imgScale}%`,
@@ -95,12 +218,12 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
         </div>
       )}
 
-      {/* Content - position based on textAlignment */}
+      {/* Content - percentage-based to match Constructor preview */}
       <div
         className="absolute"
         style={{
-          bottom: `${32 * scale}px`,
-          ...(textAlign === 'right' ? { right: `${32 * scale}px` } : { left: `${32 * scale}px` }),
+          bottom: '8%',
+          ...(textAlign === 'right' ? { right: '8%' } : { left: '8%' }),
           textAlign: textAlign,
           maxWidth: '70%',
         }}
@@ -109,10 +232,10 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
         <h1
           style={{
             fontFamily: CASA_BRAND.fonts.heading,
-            fontSize: `${28 * scale}px`,
+            fontSize: `${56 * scale}px`,
             fontWeight: 300,
             color: CASA_BRAND.colors.primary.black,
-            marginBottom: `${12 * scale}px`,
+            marginBottom: '3%',
             lineHeight: 1.3,
           }}
         >
@@ -120,11 +243,12 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
         </h1>
 
         {/* Decorative line */}
-        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: `${12 * scale}px` }}>
+        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: '3%' }}>
           <div
             style={{
-              width: `${48 * scale}px`,
-              height: `${2 * scale}px`,
+              width: '10%',
+              minWidth: `${40 * scale}px`,
+              height: `${4 * scale}px`,
               backgroundColor: CASA_BRAND.colors.primary.amber,
             }}
           />
@@ -134,7 +258,7 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
         <p
           style={{
             fontFamily: CASA_BRAND.fonts.body,
-            fontSize: `${14 * scale}px`,
+            fontSize: `${28 * scale}px`,
             color: CASA_BRAND.colors.primary.amber,
           }}
         >
@@ -146,9 +270,9 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
           <p
             style={{
               fontFamily: CASA_BRAND.fonts.body,
-              fontSize: `${11 * scale}px`,
+              fontSize: `${22 * scale}px`,
               color: CASA_BRAND.colors.secondary.grayMedium,
-              marginTop: `${4 * scale}px`,
+              marginTop: '1%',
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}
@@ -164,7 +288,7 @@ const renderPortadaMain = (slide: Slide, scale: number) => {
 /**
  * Renderiza una portada de reflexión
  */
-const renderPortadaReflexion = (slide: Slide, scale: number) => {
+const renderPortadaReflexion = (slide: Slide, scale: number, showLogo: boolean, processedImageUrl: string | null) => {
   const hasIllustration = slide.content.imageUrl;
 
   // Get saved config from metadata, with defaults
@@ -175,14 +299,39 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
     positionY?: number;
   } | undefined;
   const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
+  const logoAlign = (slide.metadata?.logoAlignment as 'left' | 'right') || 'right';
 
   const opacity = (config?.opacity ?? 15) / 100;
   const imgScale = config?.scale ?? 100;
   const posX = config?.positionX ?? 0;
   const posY = config?.positionY ?? 0;
 
+  // Use processed image if available, otherwise fall back to original
+  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl!);
+
   return (
     <div className="relative w-full h-full">
+      {/* Logo - only shown in Constructor preview, not Presenter */}
+      {showLogo && (
+        <div
+          className="absolute"
+          style={{
+            top: '4%',
+            zIndex: 10,
+            ...(logoAlign === 'right' ? { right: '4%' } : { left: '4%' }),
+          }}
+        >
+          <img
+            src={CASA_LOGO_PATH}
+            alt="CASA Logo"
+            style={{
+              height: `${60 * scale}px`,
+              width: 'auto',
+            }}
+          />
+        </div>
+      )}
+
       {/* Background Illustration */}
       {hasIllustration && (
         <div
@@ -190,7 +339,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
           style={{ opacity }}
         >
           <img
-            src={getImageSrc(slide.content.imageUrl!)}
+            src={imageSource}
             alt="Ilustración"
             style={{
               width: `${imgScale}%`,
@@ -202,12 +351,12 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
         </div>
       )}
 
-      {/* Content - position based on textAlignment */}
+      {/* Content - percentage-based to match Constructor preview */}
       <div
         className="absolute"
         style={{
-          bottom: `${32 * scale}px`,
-          ...(textAlign === 'right' ? { right: `${32 * scale}px` } : { left: `${32 * scale}px` }),
+          bottom: '8%',
+          ...(textAlign === 'right' ? { right: '8%' } : { left: '8%' }),
           textAlign: textAlign,
           maxWidth: '70%',
         }}
@@ -216,22 +365,23 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
         <p
           style={{
             fontFamily: CASA_BRAND.fonts.body,
-            fontSize: `${11 * scale}px`,
+            fontSize: `${22 * scale}px`,
             color: CASA_BRAND.colors.secondary.grayMedium,
             textTransform: 'uppercase',
             letterSpacing: '0.2em',
-            marginBottom: `${16 * scale}px`,
+            marginBottom: '4%',
           }}
         >
           Reflexión
         </p>
 
         {/* Decorative line */}
-        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: `${24 * scale}px` }}>
+        <div className={`flex ${textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ marginBottom: '6%' }}>
           <div
             style={{
-              width: `${48 * scale}px`,
-              height: `${2 * scale}px`,
+              width: '10%',
+              minWidth: `${40 * scale}px`,
+              height: `${4 * scale}px`,
               backgroundColor: CASA_BRAND.colors.primary.amber,
             }}
           />
@@ -241,7 +391,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
         <h1
           style={{
             fontFamily: CASA_BRAND.fonts.heading,
-            fontSize: `${28 * scale}px`,
+            fontSize: `${56 * scale}px`,
             fontWeight: 300,
             color: CASA_BRAND.colors.primary.black,
             lineHeight: 1.3,
@@ -255,9 +405,9 @@ const renderPortadaReflexion = (slide: Slide, scale: number) => {
           <p
             style={{
               fontFamily: CASA_BRAND.fonts.body,
-              fontSize: `${11 * scale}px`,
+              fontSize: `${22 * scale}px`,
               color: CASA_BRAND.colors.secondary.grayMedium,
-              marginTop: `${8 * scale}px`,
+              marginTop: '2%',
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}
@@ -277,6 +427,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
   slide,
   scale = 1,
   showIndicator = true,
+  showLogo = false,
 }) => {
   const baseWidth = CASA_BRAND.slide.width;
   const baseHeight = CASA_BRAND.slide.height;
@@ -284,17 +435,40 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
   // Detectar tipo de portada por sourceComponent
   const isPortadaMain = slide.metadata?.sourceComponent === 'portadas-main';
   const isPortadaReflexion = slide.metadata?.sourceComponent === 'portadas-reflection';
+  const isPortada = isPortadaMain || isPortadaReflexion;
+
+  // State for processed image URL (for portadas only)
+  const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
+
+  // Process portada images to ensure background color matches slide background
+  useEffect(() => {
+    if (!isPortada || !slide.content.imageUrl) {
+      setProcessedImageUrl(null);
+      return;
+    }
+
+    const imageUrl = getImageSrc(slide.content.imageUrl);
+
+    // Process the image to ensure background matches
+    processIllustrationBackground(imageUrl)
+      .then((processed) => {
+        setProcessedImageUrl(processed);
+      })
+      .catch(() => {
+        setProcessedImageUrl(null);
+      });
+  }, [isPortada, slide.content.imageUrl]);
 
   // Renderizar contenido según el tipo de slide
   const renderContent = () => {
     // Portada Principal
     if (isPortadaMain) {
-      return renderPortadaMain(slide, scale);
+      return renderPortadaMain(slide, scale, showLogo, processedImageUrl);
     }
 
     // Portada de Reflexión
     if (isPortadaReflexion) {
-      return renderPortadaReflexion(slide, scale);
+      return renderPortadaReflexion(slide, scale, showLogo, processedImageUrl);
     }
 
     const type = slide.type;
@@ -307,7 +481,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <h1
             className="uppercase tracking-wider whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.heading,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
               fontWeight: 300,
               fontSize: `${56 * scale}px`,
               color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
@@ -320,10 +494,10 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           {slide.content.subtitle && (
             <p
               style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                fontWeight: 400,
-                fontSize: `${24 * scale}px`,
-                color: CASA_BRAND.colors.secondary.grayMedium,
+                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
+                fontWeight: 500,
+                fontSize: `${36 * scale}px`,
+                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
                 marginTop: `${16 * scale}px`,
               }}
             >
@@ -342,7 +516,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
               fontSize: `${36 * scale}px`,
               lineHeight: 1.7,
@@ -362,7 +536,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
               fontSize: `${36 * scale}px`,
               lineHeight: 1.7,
@@ -382,7 +556,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 600,
               fontSize: `${36 * scale}px`,
               lineHeight: 1.7,
@@ -402,11 +576,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
               fontSize: `${32 * scale}px`,
               lineHeight: 1.6,
-              color: CASA_BRAND.colors.primary.black,
+              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
               marginBottom: `${16 * scale}px`,
             }}
           >
@@ -417,11 +591,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             <p
               className="whitespace-pre-line"
               style={{
-                fontFamily: CASA_BRAND.fonts.body,
+                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
                 fontWeight: 600,
                 fontSize: `${36 * scale}px`,
                 lineHeight: 1.6,
-                color: CASA_BRAND.colors.primary.amber,
+                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
                 marginTop: `${16 * scale}px`,
               }}
             >
@@ -439,7 +613,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line italic"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
               fontSize: `${34 * scale}px`,
               lineHeight: 1.7,
@@ -451,10 +625,10 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           {slide.content.subtitle && (
             <p
               style={{
-                fontFamily: CASA_BRAND.fonts.body,
+                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
                 fontWeight: 500,
                 fontSize: `${24 * scale}px`,
-                color: CASA_BRAND.colors.primary.amber,
+                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
                 marginTop: `${24 * scale}px`,
               }}
             >
@@ -473,11 +647,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.heading,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
               fontWeight: 300,
               fontSize: `${48 * scale}px`,
               letterSpacing: '0.05em',
-              color: CASA_BRAND.colors.primary.amber,
+              color: slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
               lineHeight: 1.3,
             }}
           >
@@ -495,11 +669,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: CASA_BRAND.fonts.body,
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
               fontSize: `${28 * scale}px`,
               lineHeight: 1.7,
-              color: CASA_BRAND.colors.secondary.grayDark,
+              color: slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
             }}
           >
             {slide.content.primary}
@@ -530,6 +704,115 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     // Slides en blanco / transición
     if (type === 'blank') {
       return <div className="h-full" />;
+    }
+
+    // Slides de video
+    if (type === 'video') {
+      const videoUrl = slide.content.videoUrl;
+      const settings = slide.content.videoSettings;
+
+      if (!videoUrl) {
+        return (
+          <div
+            className="flex flex-col items-center justify-center h-full"
+            style={{
+              backgroundColor: '#000000',
+            }}
+          >
+            <div
+              style={{
+                width: `${64 * scale}px`,
+                height: `${64 * scale}px`,
+                borderRadius: '50%',
+                backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: `${16 * scale}px`,
+              }}
+            >
+              <svg
+                width={32 * scale}
+                height={32 * scale}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={CASA_BRAND.colors.secondary.grayMedium}
+                strokeWidth={2}
+              >
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            </div>
+            <p
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: `${14 * scale}px`,
+                color: CASA_BRAND.colors.secondary.grayMedium,
+              }}
+            >
+              Video no disponible
+            </p>
+          </div>
+        );
+      }
+
+      // For UniversalSlide preview, show a static thumbnail/placeholder
+      // Actual video playback is handled by VideoSlideRenderer in Presenter/Output
+      return (
+        <div
+          className="relative flex items-center justify-center h-full"
+          style={{
+            backgroundColor: '#000000',
+          }}
+        >
+          {/* Video preview icon */}
+          <div
+            className="flex flex-col items-center gap-3"
+          >
+            <div
+              style={{
+                width: `${80 * scale}px`,
+                height: `${80 * scale}px`,
+                borderRadius: '50%',
+                backgroundColor: CASA_BRAND.colors.primary.amber + '30',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <svg
+                width={40 * scale}
+                height={40 * scale}
+                viewBox="0 0 24 24"
+                fill={CASA_BRAND.colors.primary.amber}
+              >
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            </div>
+            <p
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: `${16 * scale}px`,
+                color: CASA_BRAND.colors.primary.white,
+              }}
+            >
+              Video
+            </p>
+            {/* Settings indicators */}
+            <div
+              className="flex items-center gap-2"
+              style={{
+                fontSize: `${11 * scale}px`,
+                color: CASA_BRAND.colors.secondary.grayMedium,
+                fontFamily: CASA_BRAND.fonts.body,
+              }}
+            >
+              {settings?.autoPlay && <span>Auto</span>}
+              {settings?.loop && <span>Repetir</span>}
+              {settings?.muted && <span>Mudo</span>}
+            </div>
+          </div>
+        </div>
+      );
     }
 
     // Slides de cuentacuentos - SOLO IMAGEN, sin texto
@@ -604,7 +887,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
         <p
           className="whitespace-pre-line"
           style={{
-            fontFamily: CASA_BRAND.fonts.body,
+            fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
             fontWeight: 400,
             fontSize: `${32 * scale}px`,
             lineHeight: 1.7,
@@ -619,11 +902,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             <p
               className="whitespace-pre-line"
               style={{
-                fontFamily: CASA_BRAND.fonts.body,
+                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
                 fontWeight: 600,
                 fontSize: `${32 * scale}px`,
                 lineHeight: 1.7,
-                color: CASA_BRAND.colors.primary.amber,
+                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
               }}
             >
               {slide.content.secondary}
@@ -634,7 +917,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     );
   };
 
-  const isPortada = isPortadaMain || isPortadaReflexion;
+  // For portadas, always use brand background color to ensure image background matches
+  // This handles both new slides and legacy slides saved with wrong color
+  const slideBackgroundColor = isPortada
+    ? CASA_BRAND.colors.primary.white
+    : (slide.style.backgroundColor || CASA_BRAND.colors.primary.white);
 
   return (
     <div
@@ -642,7 +929,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
       style={{
         width: baseWidth * scale,
         height: baseHeight * scale,
-        backgroundColor: slide.style.backgroundColor || CASA_BRAND.colors.primary.white,
+        backgroundColor: slideBackgroundColor,
         borderRadius: `${CASA_BRAND.ui.borderRadius.md}px`,
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
       }}

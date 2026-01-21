@@ -35,54 +35,61 @@ function generateId(): string {
 
 /**
  * Máximo de caracteres por slide para lectura legible
+ * ~45 chars per line x 8 lines = ~360 chars
  */
-const MAX_CHARS_PER_SLIDE = 300;
+const MAX_CHARS_PER_SLIDE = 360;
+const MAX_LINES_PER_SLIDE = 8;
+const AVG_CHARS_PER_LINE = 45;
 
 /**
- * Divide el texto de la lectura en slides
+ * Elimina los números de versículos del texto bíblico
+ * Los versículos típicamente son números de 1-3 dígitos seguidos de espacio
  */
-function splitReadingIntoSlides(
-  reading: LiturgyReading,
-  maxChars: number = MAX_CHARS_PER_SLIDE
-): string[] {
-  const text = reading.text.trim();
+function removeVerseNumbers(text: string): string {
+  // Estrategia: eliminar cualquier número de 1-3 dígitos que esté solo
+  // (no parte de una palabra) seguido de espacio
+  return text
+    // Números al inicio del texto (1-176 para cubrir Salmo 119)
+    .replace(/^\s*\d{1,3}\s+/g, '')
+    // Números después de puntuación o espacio, seguidos de espacio
+    // Patrón: espacio + número + espacio -> solo espacio
+    .replace(/\s+\d{1,3}\s+/g, ' ')
+    // Números después de puntuación directamente
+    .replace(/([.!?,;:'"])\s*\d{1,3}\s+/g, '$1 ')
+    // Limpiar múltiples espacios
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Divide el texto de la lectura en slides de forma equitativa
+ * Simple: divide el texto en chunks iguales respetando palabras
+ */
+function splitReadingIntoSlides(reading: LiturgyReading): string[] {
+  const cleanText = removeVerseNumbers(reading.text);
+  const maxChars = MAX_LINES_PER_SLIDE * AVG_CHARS_PER_LINE; // 8 * 45 = 360
 
   // Si el texto es corto, un solo slide
-  if (text.length <= maxChars) {
-    return [text];
+  if (cleanText.length <= maxChars) {
+    return [cleanText];
   }
 
+  // Calcular cuántos slides necesitamos
+  const numSlides = Math.ceil(cleanText.length / maxChars);
+  const targetChars = Math.ceil(cleanText.length / numSlides);
+
+  const words = cleanText.split(/\s+/);
   const slides: string[] = [];
-
-  // Intentar dividir por versículos (números seguidos de punto o dos puntos)
-  const versePattern = /(\d+[.:]\s*)/g;
-  const verses = text.split(versePattern).filter(s => s.trim());
-
   let currentSlide = '';
 
-  for (let i = 0; i < verses.length; i++) {
-    const part = verses[i];
+  for (const word of words) {
+    const potential = currentSlide + (currentSlide ? ' ' : '') + word;
 
-    // Si es un número de versículo, agrégalo al siguiente texto
-    if (/^\d+[.:]\s*$/.test(part)) {
-      if (i + 1 < verses.length) {
-        const combined = part + verses[i + 1];
-        if ((currentSlide + combined).length > maxChars && currentSlide) {
-          slides.push(currentSlide.trim());
-          currentSlide = combined;
-        } else {
-          currentSlide += combined;
-        }
-        i++; // Saltar el siguiente porque ya lo procesamos
-      }
+    if (potential.length > targetChars && currentSlide) {
+      slides.push(currentSlide.trim());
+      currentSlide = word;
     } else {
-      // Es texto normal
-      if ((currentSlide + part).length > maxChars && currentSlide) {
-        slides.push(currentSlide.trim());
-        currentSlide = part;
-      } else {
-        currentSlide += part;
-      }
+      currentSlide = potential;
     }
   }
 
@@ -90,23 +97,18 @@ function splitReadingIntoSlides(
     slides.push(currentSlide.trim());
   }
 
-  // Si no se dividió bien, dividir por oraciones
-  if (slides.length === 1 && text.length > maxChars) {
-    const sentences = text.split(/([.!?]+\s+)/);
-    slides.length = 0;
-    currentSlide = '';
+  // Post-proceso: si el último slide es muy corto (< 30% del objetivo),
+  // fusionarlo con el anterior
+  while (slides.length > 1) {
+    const lastSlide = slides[slides.length - 1];
+    const minLength = targetChars * 0.4; // 40% del objetivo
 
-    for (const sentence of sentences) {
-      if ((currentSlide + sentence).length > maxChars && currentSlide) {
-        slides.push(currentSlide.trim());
-        currentSlide = sentence;
-      } else {
-        currentSlide += sentence;
-      }
-    }
-
-    if (currentSlide.trim()) {
-      slides.push(currentSlide.trim());
+    if (lastSlide.length < minLength) {
+      // Fusionar con el slide anterior
+      slides.pop();
+      slides[slides.length - 1] = slides[slides.length - 1] + ' ' + lastSlide;
+    } else {
+      break;
     }
   }
 
@@ -188,7 +190,7 @@ const SLIDE_CONFIG = {
   width: 1024,
   height: 768,
   padding: { horizontal: 64, vertical: 48 },
-  fontSize: { title: 72, content: 28, reference: 20 },
+  fontSize: { title: 72, content: 28, reference: 32, subtitle: 36 },
   separator: {
     lineWidth: 80,
     lineHeight: 1,
@@ -274,8 +276,8 @@ const ReadingSlidePreview: React.FC<{
                 <p
                   style={{
                     fontFamily: 'Montserrat, Arial, sans-serif',
-                    fontWeight: 400,
-                    fontSize: `${fontSize.reference}px`,
+                    fontWeight: 500,
+                    fontSize: `${fontSize.subtitle}px`,
                     color: CASA_BRAND.colors.primary.amber,
                     textAlign: 'center',
                   }}
@@ -420,29 +422,40 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
   const [showPreview, setShowPreview] = useState(true);
   const [editingSlideIndex, setEditingSlideIndex] = useState<number | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [regenerateKey, setRegenerateKey] = useState(0); // Clave para forzar regeneración
+  const [isRegenerating, setIsRegenerating] = useState(false); // Visual feedback
 
   const readings = context.readings || [];
   const hasReadings = readings.length > 0;
   const selectedReading = hasReadings ? readings[selectedReadingIndex] : null;
 
   // Generar división automática de slides
+  // regenerateKey fuerza recálculo cuando el usuario hace clic en "Regenerar"
   const autoSlideTexts = useMemo(() => {
     if (!selectedReading?.text) return [];
+    console.log('[LecturaBiblicaEditor] Regenerando slides...', { regenerateKey });
     return splitReadingIntoSlides(selectedReading);
-  }, [selectedReading]);
+  }, [selectedReading, regenerateKey]);
 
   // Usar división personalizada o automática
   const slideTexts = customSlideTexts || autoSlideTexts;
 
+  console.log('[LecturaBiblicaEditor] slideTexts:', slideTexts.length, 'slides');
+  console.log('[LecturaBiblicaEditor] Slide 1 (first 50):', slideTexts[0]?.substring(0, 50));
+
   // Generar SlideGroup para preview
   const previewSlideGroup = useMemo(() => {
     if (!selectedReading) return null;
+    console.log('[LecturaBiblicaEditor] Generando previewSlideGroup con', slideTexts.length, 'slides');
     return readingToSlideGroup(selectedReading, slideTexts);
   }, [selectedReading, slideTexts]);
 
-  // Regenerar división
+  // Regenerar división - fuerza recálculo
   const handleRegenerate = useCallback(() => {
+    setIsRegenerating(true);
     setCustomSlideTexts(null);
+    setRegenerateKey(k => k + 1);
+    setTimeout(() => setIsRegenerating(false), 300);
   }, []);
 
   // Editar un slide específico
@@ -628,14 +641,15 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
             <button
               type="button"
               onClick={handleRegenerate}
-              className="flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors hover:bg-white/50"
+              disabled={isRegenerating}
+              className="flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors hover:bg-white/50 disabled:opacity-50"
               style={{
                 color: CASA_BRAND.colors.primary.amber,
                 fontFamily: CASA_BRAND.fonts.body,
               }}
             >
-              <RefreshCw size={14} />
-              Regenerar
+              <RefreshCw size={14} className={isRegenerating ? 'animate-spin' : ''} />
+              {isRegenerating ? 'Regenerando...' : 'Regenerar'}
             </button>
           </div>
         </div>
@@ -661,17 +675,20 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
           </button>
 
           {showPreview && previewSlideGroup && (
-            <div className="space-y-4">
+            <div className="space-y-4" key={`preview-${regenerateKey}`}>
               {/* Grid de slides */}
               <div className="grid grid-cols-4 gap-3">
-                {previewSlideGroup.slides.map((slide, index) => (
-                  <ReadingSlidePreview
-                    key={slide.id}
-                    slide={slide}
-                    index={index}
-                    onEdit={index > 0 ? handleEditSlide : undefined}
-                  />
-                ))}
+                {previewSlideGroup.slides.map((slide, index) => {
+                  console.log(`[Render] Slide ${index} content:`, slide.content.primary?.substring(0, 30));
+                  return (
+                    <ReadingSlidePreview
+                      key={`${slide.id}-${regenerateKey}`}
+                      slide={slide}
+                      index={index}
+                      onEdit={index > 0 ? handleEditSlide : undefined}
+                    />
+                  );
+                })}
               </div>
 
               {/* Herramientas de edición */}

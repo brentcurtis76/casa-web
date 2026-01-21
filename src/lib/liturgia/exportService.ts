@@ -269,6 +269,36 @@ async function exportToCelebrantPDF(
   pdf.addPage();
   currentY = margin;
 
+  // CONTEXTO DE LA REFLEXIÓN (Resumen/Enfoque Temático)
+  if (liturgyContext?.summary) {
+    // Título de la sección
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.setTextColor(CASA_BRAND.colors.primary.amber);
+    pdf.text('CONTEXTO DE LA REFLEXIÓN', margin, currentY);
+    currentY += 8;
+
+    // Línea decorativa
+    pdf.setDrawColor(CASA_BRAND.colors.primary.amber);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, currentY, margin + 60, currentY);
+    currentY += 8;
+
+    // Contenido del resumen
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(11);
+    pdf.setTextColor(CASA_BRAND.colors.primary.black);
+    const summaryLines = pdf.splitTextToSize(liturgyContext.summary, contentWidth);
+    pdf.text(summaryLines, margin, currentY);
+    currentY += summaryLines.length * 5 + 6;
+
+    // Separador antes del contenido de la liturgia
+    pdf.setDrawColor(CASA_BRAND.colors.secondary.grayLight);
+    pdf.setLineWidth(0.3);
+    pdf.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 12;
+  }
+
   // CONTENIDO
   let elementNumber = 1;
 

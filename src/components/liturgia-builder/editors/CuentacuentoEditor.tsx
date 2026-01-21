@@ -173,12 +173,23 @@ const ImageSelector: React.FC<{
     return `data:image/png;base64,${value}`;
   };
 
+  // Log what we're rendering to debug image source issues
+  console.log(`[ImageSelector] Rendering ${label}:`, {
+    optionsCount: options.length,
+    selectedIndex,
+    optionTypes: options.map((opt, i) => ({
+      index: i,
+      type: opt?.startsWith('http') ? 'URL' : (opt?.startsWith('data:') ? 'DATA_URL' : 'BASE64'),
+      preview: opt?.slice(0, 80),
+    })),
+  });
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         {options.map((imageValue, index) => (
           <button
-            key={index}
+            key={`${index}-${imageValue?.slice(-20) || 'empty'}`}
             type="button"
             onClick={() => onSelect(index)}
             className={`relative rounded-lg overflow-hidden transition-all ${
@@ -192,6 +203,24 @@ const ImageSelector: React.FC<{
               src={getImageSrc(imageValue)}
               alt={`Opción ${index + 1}`}
               className="w-full aspect-[4/3] object-cover"
+              onError={(e) => {
+                const imgType = imageValue?.startsWith('http') ? 'URL' : 'BASE64';
+                console.error(`[ImageSelector] ❌ FAILED to load ${imgType} image:`, {
+                  label,
+                  index,
+                  src: (e.target as HTMLImageElement).src?.slice(0, 150),
+                  originalValue: imageValue?.slice(0, 80),
+                  isUrl: imageValue?.startsWith('http'),
+                });
+                // If URL failed, maybe image doesn't exist in storage
+                if (imageValue?.startsWith('http')) {
+                  console.error('[ImageSelector] 🚨 Image URL returned 404 or failed! The image may not exist in storage.');
+                }
+              }}
+              onLoad={() => {
+                const imgType = imageValue?.startsWith('http') ? 'URL' : 'BASE64';
+                console.log(`[ImageSelector] ✅ Loaded ${imgType} image for ${label} index ${index}`);
+              }}
             />
             {selectedIndex === index && (
               <div
@@ -538,6 +567,34 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Diagnóstico del bucket de storage al montar
+  useEffect(() => {
+    const checkStorageBucket = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          console.warn('[CuentacuentoEditor] 🔐 Not authenticated - cannot check storage');
+          return;
+        }
+
+        // Intentar listar el bucket para verificar acceso
+        const { data, error } = await supabase.storage
+          .from('cuentacuentos-drafts')
+          .list(`${user.id}`, { limit: 1 });
+
+        if (error) {
+          console.error('[CuentacuentoEditor] ❌ STORAGE BUCKET ERROR:', error);
+          console.error('[CuentacuentoEditor] This may indicate bucket does not exist or RLS is blocking access');
+        } else {
+          console.log('[CuentacuentoEditor] ✅ Storage bucket accessible, found items:', data?.length || 0);
+        }
+      } catch (err) {
+        console.error('[CuentacuentoEditor] ❌ Failed to check storage bucket:', err);
+      }
+    };
+    checkStorageBucket();
+  }, []);
+
   // Efecto para inicializar estados de imágenes cuando hay un initialStory
   // IMPORTANTE: Solo inicializar si NO hay un draft con imágenes que recuperar
   useEffect(() => {
@@ -569,10 +626,14 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     const sceneSelected: Record<number, number> = {};
     initialStory.scenes?.forEach(scene => {
       if (scene.selectedImageUrl) {
+        const imgType = scene.selectedImageUrl.startsWith('http') ? 'URL' : 'BASE64';
+        console.log(`[CuentacuentoEditor] Scene ${scene.number} from DB: ${imgType}`,
+          scene.selectedImageUrl.slice(0, 100));
         sceneOpts[scene.number] = [scene.selectedImageUrl];
         sceneSelected[scene.number] = 0;
       }
     });
+    console.log(`[CuentacuentoEditor] Initializing ${Object.keys(sceneOpts).length} scene images from initialStory`);
     if (Object.keys(sceneOpts).length > 0) {
       setSceneImageOptions(sceneOpts);
       setSelectedSceneImages(sceneSelected);
@@ -983,6 +1044,7 @@ Instrucciones críticas:
             text: r?.text || '',
           }))
         : [],
+      reflexionText: context?.reflexionText || undefined,
     },
     location: selectedLocation || '',
     characters: (characters || '').split(',').map(c => c.trim()).filter(Boolean),
@@ -1592,51 +1654,60 @@ Instrucciones críticas:
 
   // Subir imagen de personaje manualmente
   const handleUploadCharacterImage = useCallback((characterId: string, base64: string) => {
+    // Calculate new index BEFORE updating state (current length = new index after adding)
+    const newIndex = characterSheetOptions[characterId]?.length || 0;
+    // Update both states - React batches these together
     setCharacterSheetOptions(prev => {
       const existing = prev[characterId] || [];
-      const newOptions = [...existing, base64];
-      // Auto-seleccionar la imagen subida (última en el array)
-      setSelectedCharacterSheets(prevSelected => ({
-        ...prevSelected,
-        [characterId]: newOptions.length - 1
-      }));
-      return { ...prev, [characterId]: newOptions };
+      return { ...prev, [characterId]: [...existing, base64] };
     });
-  }, []);
+    setSelectedCharacterSheets(prev => ({ ...prev, [characterId]: newIndex }));
+  }, [characterSheetOptions]);
 
   // Subir imagen de escena manualmente
   const handleUploadSceneImage = useCallback((sceneNumber: number, base64: string) => {
+    // Calculate new index BEFORE updating state
+    const currentOptions = sceneImageOptions[sceneNumber] || [];
+    const newIndex = currentOptions.length;
+    console.log('[handleUploadSceneImage] Uploading scene', sceneNumber, {
+      currentOptionsLength: currentOptions.length,
+      newIndex,
+      base64Length: base64?.length,
+    });
     setSceneImageOptions(prev => {
       const existing = prev[sceneNumber] || [];
-      const newOptions = [...existing, base64];
-      // Auto-seleccionar la imagen subida
-      setSelectedSceneImages(prevSelected => ({
-        ...prevSelected,
-        [sceneNumber]: newOptions.length - 1
-      }));
-      return { ...prev, [sceneNumber]: newOptions };
+      const updated = { ...prev, [sceneNumber]: [...existing, base64] };
+      console.log('[handleUploadSceneImage] Updated options:', {
+        sceneNumber,
+        newLength: updated[sceneNumber].length,
+      });
+      return updated;
     });
-  }, []);
+    setSelectedSceneImages(prev => {
+      const updated = { ...prev, [sceneNumber]: newIndex };
+      console.log('[handleUploadSceneImage] Updated selection:', {
+        sceneNumber,
+        selectedIndex: newIndex,
+      });
+      return updated;
+    });
+  }, [sceneImageOptions]);
 
   // Subir portada manualmente
   const handleUploadCover = useCallback((base64: string) => {
-    setCoverOptions(prev => {
-      const newOptions = [...prev, base64];
-      // Auto-seleccionar la imagen subida
-      setSelectedCover(newOptions.length - 1);
-      return newOptions;
-    });
-  }, []);
+    // Calculate new index BEFORE updating state
+    const newIndex = coverOptions.length;
+    setCoverOptions(prev => [...prev, base64]);
+    setSelectedCover(newIndex);
+  }, [coverOptions.length]);
 
   // Subir imagen final manualmente
   const handleUploadEnd = useCallback((base64: string) => {
-    setEndOptions(prev => {
-      const newOptions = [...prev, base64];
-      // Auto-seleccionar la imagen subida
-      setSelectedEnd(newOptions.length - 1);
-      return newOptions;
-    });
-  }, []);
+    // Calculate new index BEFORE updating state
+    const newIndex = endOptions.length;
+    setEndOptions(prev => [...prev, base64]);
+    setSelectedEnd(newIndex);
+  }, [endOptions.length]);
 
   // Guardar imagen de personaje seleccionada a Supabase
   const handleSaveCharacterImage = useCallback(async (characterId: string) => {
@@ -1720,7 +1791,16 @@ Instrucciones críticas:
   const handleSaveSceneImage = useCallback(async (sceneNumber: number) => {
     const selectedIdx = selectedSceneImages[sceneNumber];
     const options = sceneImageOptions[sceneNumber];
-    if (selectedIdx === undefined || !options || !options[selectedIdx]) return;
+    console.log('[handleSaveSceneImage] Called for scene', sceneNumber, {
+      selectedIdx,
+      optionsLength: options?.length,
+      hasSelectedOption: options && selectedIdx !== undefined ? !!options[selectedIdx] : false,
+      selectedOptionLength: options && selectedIdx !== undefined ? options[selectedIdx]?.length : 'N/A',
+    });
+    if (selectedIdx === undefined || !options || !options[selectedIdx]) {
+      console.log('[handleSaveSceneImage] Early return - missing data');
+      return;
+    }
 
     setSavingScene(sceneNumber);
     setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: null }));
@@ -1758,31 +1838,80 @@ Instrucciones críticas:
 
       const path = `${user.id}/${context.id}/scenes/scene${sceneNumber}_selected.${extension}`;
 
-      const { error: uploadError } = await supabase.storage
+      console.log('[handleSaveSceneImage] UPLOAD DETAILS:', {
+        bucket: 'cuentacuentos-drafts',
+        path,
+        userId: user.id,
+        contextId: context.id,
+        sceneNumber,
+        blobSize: blob.size,
+        mimeType,
+      });
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('cuentacuentos-drafts')
         .upload(path, blob, { contentType: mimeType, upsert: true });
 
+      console.log('[handleSaveSceneImage] UPLOAD RESULT:', {
+        success: !uploadError,
+        uploadData,
+        uploadError,
+      });
+
       if (uploadError) throw uploadError;
+
+      // VERIFICATION: Check if file actually exists in storage after upload
+      console.log('[handleSaveSceneImage] VERIFYING file exists in storage...');
+      const { data: verifyData, error: verifyError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .list(path.split('/').slice(0, -1).join('/'), {
+          search: path.split('/').pop(),
+        });
+
+      console.log('[handleSaveSceneImage] VERIFICATION RESULT:', {
+        path,
+        searchDir: path.split('/').slice(0, -1).join('/'),
+        searchFile: path.split('/').pop(),
+        filesFound: verifyData?.map(f => f.name),
+        verifyError,
+        fileExists: verifyData?.some(f => f.name === path.split('/').pop()),
+      });
+
+      if (!verifyData?.some(f => f.name === path.split('/').pop())) {
+        console.error('[handleSaveSceneImage] CRITICAL: File NOT FOUND in storage after upload!');
+        throw new Error('El archivo no se guardó correctamente en el storage');
+      }
 
       // Obtener URL pública (el bucket es público, no expira)
       const { data: urlData } = supabase.storage
         .from('cuentacuentos-drafts')
         .getPublicUrl(path);
 
+      console.log('[handleSaveSceneImage] PUBLIC URL RESULT:', {
+        urlData,
+        publicUrl: urlData?.publicUrl?.slice(0, 100),
+      });
+
       if (urlData?.publicUrl) {
+        // Add cache-busting timestamp to force browser to reload the image
+        // This is needed because we use upsert and the URL path stays the same
+        const urlWithCacheBust = `${urlData.publicUrl}?t=${Date.now()}`;
+        console.log('[handleSaveSceneImage] SUCCESS - updating state with URL:', urlWithCacheBust.slice(0, 100));
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
         setSceneImageOptions(prev => ({
           ...prev,
-          [sceneNumber]: [urlData.publicUrl]
+          [sceneNumber]: [urlWithCacheBust]
         }));
         // Actualizar el índice de selección a 0 ya que ahora solo hay una imagen
         setSelectedSceneImages(prev => ({
           ...prev,
           [sceneNumber]: 0
         }));
+        setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Imagen guardada exitosamente' }));
+      } else {
+        console.error('[handleSaveSceneImage] FAILED - No publicUrl returned!');
+        setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Error: No se obtuvo URL' }));
       }
-
-      setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: 'Imagen guardada exitosamente' }));
       setTimeout(() => setSavedSceneMessage(prev => ({ ...prev, [sceneNumber]: null })), 3000);
     } catch (err) {
       console.error('Error saving scene image:', err);
@@ -1838,8 +1967,10 @@ Instrucciones críticas:
         .getPublicUrl(path);
 
       if (urlData?.publicUrl) {
+        // Add cache-busting timestamp to force browser to reload the image
+        const urlWithCacheBust = `${urlData.publicUrl}?t=${Date.now()}`;
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
-        setCoverOptions([urlData.publicUrl]);
+        setCoverOptions([urlWithCacheBust]);
         setSelectedCover(0);
       }
 
@@ -1899,8 +2030,10 @@ Instrucciones críticas:
         .getPublicUrl(path);
 
       if (urlData?.publicUrl) {
+        // Add cache-busting timestamp to force browser to reload the image
+        const urlWithCacheBust = `${urlData.publicUrl}?t=${Date.now()}`;
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
-        setEndOptions([urlData.publicUrl]);
+        setEndOptions([urlWithCacheBust]);
         setSelectedEnd(0);
       }
 

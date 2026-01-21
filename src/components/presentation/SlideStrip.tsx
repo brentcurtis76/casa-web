@@ -8,13 +8,15 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { Image as ImageIcon, Pencil, Copy, Trash2, Type } from 'lucide-react';
+import { Image as ImageIcon, Pencil, Copy, Trash2, Type, Clock } from 'lucide-react';
 import type { Slide } from '@/types/shared/slide';
 import type { LogoSettings, TempSlideEdit, TextOverlay } from '@/lib/presentation/types';
 
 interface SlideStripProps {
   slides: Slide[];
   currentIndex: number;
+  liveIndex?: number;
+  isLive?: boolean;
   onSlideClick: (index: number) => void;
   logoOverrides?: Record<number, Partial<LogoSettings>>;
   textOverlayOverrides?: Record<number, Partial<TextOverlay>[]>;
@@ -29,6 +31,8 @@ const THUMBNAIL_SCALE = 0.12;
 export const SlideStrip: React.FC<SlideStripProps> = ({
   slides,
   currentIndex,
+  liveIndex,
+  isLive = false,
   onSlideClick,
   logoOverrides = {},
   textOverlayOverrides = {},
@@ -77,25 +81,38 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
       <ScrollArea className="w-full h-full" ref={scrollRef}>
         <div className="flex items-center gap-2 p-2">
           {slides.map((slide, index) => {
-            const isActive = index === currentIndex;
+            const isPreview = index === currentIndex;
+            const isLiveSlide = liveIndex !== undefined && index === liveIndex;
             const hasLogoOverride = index in logoOverrides;
             const hasTextOverlayOverride = index in textOverlayOverrides && textOverlayOverrides[index].length > 0;
             const hasEdit = slide.id in tempEdits;
+            const isTempSlide = slide.id.startsWith('temp-');
+
+            // Determine outline style based on preview/live status
+            let outlineStyle = '2px solid transparent';
+            if (isPreview && isLiveSlide) {
+              // Both preview and live on same slide
+              outlineStyle = `3px solid ${CASA_BRAND.colors.primary.amber}`;
+            } else if (isPreview) {
+              // Preview only (amber)
+              outlineStyle = `3px solid ${CASA_BRAND.colors.primary.amber}`;
+            } else if (isLiveSlide && isLive) {
+              // Live only (red)
+              outlineStyle = `3px solid #ef4444`;
+            }
 
             return (
               <button
                 key={slide.id}
-                ref={isActive ? activeRef : null}
+                ref={isPreview ? activeRef : null}
                 onClick={() => onSlideClick(index)}
                 onDoubleClick={() => onEdit?.(index)}
                 onContextMenu={(e) => handleContextMenu(e, index)}
                 className="flex-shrink-0 relative rounded overflow-hidden transition-all"
                 style={{
-                  outline: isActive
-                    ? `3px solid ${CASA_BRAND.colors.primary.amber}`
-                    : '2px solid transparent',
+                  outline: outlineStyle,
                   outlineOffset: '2px',
-                  opacity: isActive ? 1 : 0.7,
+                  opacity: isPreview || isLiveSlide ? 1 : 0.7,
                 }}
               >
                 <UniversalSlide
@@ -141,6 +158,35 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
                     title="Texto override activo"
                   >
                     <Type size={8} color={CASA_BRAND.colors.primary.white} />
+                  </div>
+                )}
+
+                {/* Live indicator */}
+                {isLiveSlide && isLive && (
+                  <div
+                    className="absolute top-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-xs"
+                    style={{
+                      backgroundColor: '#ef4444',
+                      color: CASA_BRAND.colors.primary.white,
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '8px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    LIVE
+                  </div>
+                )}
+
+                {/* Temp slide indicator */}
+                {isTempSlide && (
+                  <div
+                    className="absolute bottom-1 left-1 p-0.5 rounded flex items-center gap-0.5"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.primary.amber + 'CC',
+                    }}
+                    title="Diapositiva temporal (solo esta sesión)"
+                  >
+                    <Clock size={8} color={CASA_BRAND.colors.primary.black} />
                   </div>
                 )}
 

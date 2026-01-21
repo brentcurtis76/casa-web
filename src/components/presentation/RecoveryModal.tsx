@@ -131,7 +131,7 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
                     fontWeight: 600,
                   }}
                 >
-                  #{savedState.currentSlideIndex + 1}
+                  #{(savedState.previewSlideIndex ?? savedState.currentSlideIndex ?? 0) + 1}
                 </p>
               </div>
 

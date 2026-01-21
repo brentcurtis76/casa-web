@@ -12,6 +12,7 @@ import { Proposito } from '@/components/sections/Proposito';
 import { Sermones } from '@/components/sections/Sermones';
 import { Hero } from '@/components/ui/hero-with-group-of-images-text-and-two-buttons';
 import { MesaAbiertaSection } from '@/components/mesa-abierta/MesaAbiertaSection';
+import { RecursosParaFamilias } from '@/components/sections/RecursosParaFamilias';
 
 const Index = () => {
   return (
@@ -24,6 +25,7 @@ const Index = () => {
           <Proposito />
           <Equipo />
           <MesaAbiertaSection />
+          <RecursosParaFamilias />
           <Sermones />
           <Participar />
           <Eventos />

@@ -627,6 +627,92 @@ export type Database = {
           }
         ]
       }
+      // Published liturgy resources (Cuentacuento & Reflexion PDFs for home page)
+      published_resources: {
+        Row: {
+          id: string
+          resource_type: 'cuentacuento' | 'reflexion'
+          liturgy_id: string | null
+          liturgy_date: string
+          title: string
+          description: string | null
+          pdf_url: string
+          pdf_filename: string | null
+          file_size_bytes: number | null
+          published_at: string
+          published_by: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          resource_type: 'cuentacuento' | 'reflexion'
+          liturgy_id?: string | null
+          liturgy_date: string
+          title: string
+          description?: string | null
+          pdf_url: string
+          pdf_filename?: string | null
+          file_size_bytes?: number | null
+          published_at?: string
+          published_by?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          resource_type?: 'cuentacuento' | 'reflexion'
+          liturgy_id?: string | null
+          liturgy_date?: string
+          title?: string
+          description?: string | null
+          pdf_url?: string
+          pdf_filename?: string | null
+          file_size_bytes?: number | null
+          published_at?: string
+          published_by?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      // PROMPT_004: Sermon music tracks table
+      sermon_music_tracks: {
+        Row: {
+          id: string
+          name: string
+          type: 'intro' | 'outro'
+          audio_url: string
+          duration_seconds: number | null
+          is_default: boolean
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          type: 'intro' | 'outro'
+          audio_url: string
+          duration_seconds?: number | null
+          is_default?: boolean
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          type?: 'intro' | 'outro'
+          audio_url?: string
+          duration_seconds?: number | null
+          is_default?: boolean
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -637,6 +723,13 @@ export type Database = {
           user_uuid: string
         }
         Returns: boolean
+      }
+      // PROMPT_004: Set music track as default
+      set_music_track_as_default: {
+        Args: {
+          track_id: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

@@ -329,6 +329,7 @@ const OracionEditor: React.FC<OracionEditorProps> = ({
             titulo: context.title,
             resumen: context.summary || '',
             lecturas: lecturasData,
+            reflexionText: context.reflexionText || undefined,
           },
         },
       });
@@ -407,7 +408,6 @@ const OracionEditor: React.FC<OracionEditorProps> = ({
       },
     };
 
-    console.log('OracionEditor handleSave:', { slideGroup, tiempos });
     onSlidesGenerated(slideGroup);
 
     // Limpiar error si había y mostrar feedback de guardado

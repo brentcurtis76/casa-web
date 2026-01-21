@@ -39,20 +39,28 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
 const BUCKET_NAME = 'cuentacuentos-drafts';
 
 /**
- * Verifica si un archivo existe en Storage
+ * Verifica si un archivo existe en Storage usando HEAD request a la URL pública
+ * Nota: download() no funciona bien con buckets públicos, así que usamos fetch HEAD
  */
 async function checkFileExists(path: string): Promise<boolean> {
   try {
-    // Intentar obtener metadata del archivo
-    const { data, error } = await supabase.storage
+    // Construir la URL pública
+    const { data } = supabase.storage
       .from(BUCKET_NAME)
-      .download(path);
+      .getPublicUrl(path);
 
-    if (error || !data) {
+    if (!data?.publicUrl) {
+      console.log(`[checkFileExists] No public URL for path: ${path}`);
       return false;
     }
-    return true;
-  } catch {
+
+    // Usar HEAD request para verificar si el archivo existe sin descargarlo
+    const response = await fetch(data.publicUrl, { method: 'HEAD' });
+    const exists = response.ok;
+    console.log(`[checkFileExists] Path: ${path}, URL: ${data.publicUrl.slice(0, 80)}..., exists: ${exists}, status: ${response.status}`);
+    return exists;
+  } catch (err) {
+    console.error(`[checkFileExists] Error checking path ${path}:`, err);
     return false;
   }
 }
@@ -352,7 +360,7 @@ async function saveDraftToSupabase(
       .select('image_paths')
       .eq('liturgia_id', liturgyId)
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     const existingPaths = (existingDraft?.image_paths as {
       characterSheetPaths?: Record<string, string[]>;
@@ -477,12 +485,15 @@ async function loadDraftFromSupabase(
       .select('*')
       .eq('liturgia_id', liturgyId)
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      if (error?.code !== 'PGRST116') { // No rows found
-        console.error('[useCuentacuentosDraft] Error loading draft:', error);
-      }
+    if (error) {
+      console.error('[useCuentacuentosDraft] Error loading draft:', error);
+      return null;
+    }
+
+    if (!data) {
+      // No draft found - this is normal for new liturgies
       return null;
     }
 
@@ -534,38 +545,17 @@ async function loadDraftFromSupabase(
 
 /**
  * Elimina un borrador de Supabase
+ * IMPORTANTE: NO elimina las imágenes del storage porque pueden estar siendo
+ * referenciadas por la liturgia guardada. Solo elimina el registro del draft.
+ * Para eliminar las imágenes, usar deleteStoryImages() explícitamente.
  */
 async function deleteDraftFromSupabase(
   userId: string,
   liturgyId: string
 ): Promise<boolean> {
   try {
-    // Eliminar imágenes del storage
-    const { data: files } = await supabase.storage
-      .from(BUCKET_NAME)
-      .list(`${userId}/${liturgyId}`);
-
-    if (files && files.length > 0) {
-      // Listar todos los archivos recursivamente
-      const allPaths: string[] = [];
-      for (const folder of files) {
-        const { data: subFiles } = await supabase.storage
-          .from(BUCKET_NAME)
-          .list(`${userId}/${liturgyId}/${folder.name}`);
-
-        if (subFiles) {
-          for (const file of subFiles) {
-            allPaths.push(`${userId}/${liturgyId}/${folder.name}/${file.name}`);
-          }
-        }
-      }
-
-      if (allPaths.length > 0) {
-        await supabase.storage.from(BUCKET_NAME).remove(allPaths);
-      }
-    }
-
-    // Eliminar registro de la tabla
+    // Solo eliminar registro de la tabla - NO eliminar imágenes del storage
+    // Las imágenes se mantienen porque la liturgia guardada las referencia
     const { error } = await supabase
       .from('cuentacuentos_drafts')
       .delete()
@@ -577,7 +567,7 @@ async function deleteDraftFromSupabase(
       return false;
     }
 
-    console.log(`[useCuentacuentosDraft] Draft deleted for liturgy ${liturgyId}`);
+    console.log(`[useCuentacuentosDraft] Draft record deleted for liturgy ${liturgyId} (images preserved)`);
     return true;
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error deleting draft:', err);

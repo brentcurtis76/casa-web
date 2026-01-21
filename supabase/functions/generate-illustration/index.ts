@@ -12,14 +12,15 @@ const GEMINI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
 // Modelo: Nano Banana Pro para generación de imágenes
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';
 
-// Estilo base para todas las ilustraciones - optimizado para Nano Banana Pro
-// Incluye acento ámbar/dorado para consistencia con Brand Kit CASA
-const BASE_STYLE_PROMPT = `Create a minimalist artistic illustration with these exact requirements:
+// Build style prompt requesting pure white background
+// The frontend will replace white pixels with the exact brand color
+function buildStylePrompt(): string {
+  return `Create a minimalist artistic illustration with these exact requirements:
 
 COLORS (MANDATORY):
 - Main lines: Medium gray (#666666)
 - Accent color: Warm amber/gold (#D4A853) - USE THIS COLOR for highlights, key elements, or artistic accents
-- Background: Warm cream (#F9F7F5) - NOT white, use this exact warm cream tone
+- Background: PURE WHITE (#FFFFFF) - solid flat white background, no texture, no pattern, no gradients
 
 STYLE:
 - Single continuous flowing line art in the style of Henri Matisse or Pablo Picasso
@@ -27,7 +28,8 @@ STYLE:
 - Elegant, minimalist, with negative space
 - The amber/gold accent should appear in at least 20-30% of the illustration
 
-CRITICAL: No text, no labels, no words, no letters in the image. Only the artistic illustration.`;
+CRITICAL: No text, no labels, no words, no letters in the image. Pure white background only.`;
+}
 
 // Prompts específicos por tipo de evento
 const EVENT_PROMPTS: Record<string, string> = {
@@ -47,7 +49,7 @@ const EVENT_PROMPTS: Record<string, string> = {
 
 function buildPrompt(eventType: string): string {
   const eventPrompt = EVENT_PROMPTS[eventType] || EVENT_PROMPTS.generic;
-  return `${BASE_STYLE_PROMPT}\n\nSubject: ${eventPrompt}`;
+  return `${buildStylePrompt()}\n\nSubject: ${eventPrompt}`;
 }
 
 /**
@@ -81,7 +83,7 @@ serve(async (req) => {
 
     console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType}`);
 
-    // Usar prompt personalizado si se proporciona, sino usar el default
+    // Usar prompt personalizado si se proporciona, sino usar el default (requesting transparent background)
     const prompt = customPrompt || buildPrompt(eventType);
     console.log(`[generate-illustration] Prompt: ${prompt.slice(0, 100)}...`);
 

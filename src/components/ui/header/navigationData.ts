@@ -39,7 +39,7 @@ export const navigationItems = [
       {
         title: "Reflexiones",
         link: "/#sermones",
-        description: "Accede a nuestras reflexiones y sermones semanales.",
+        description: "Accede a nuestras reflexiones semanales.",
         icon: BookOpen
       },
       {

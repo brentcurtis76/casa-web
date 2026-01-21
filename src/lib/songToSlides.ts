@@ -5,7 +5,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Song } from '@/types/shared/song';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
-import { CASA_BRAND, SLIDE_STYLES } from './brand-kit';
+import { getThemedSlideStyles, PresentationTheme, DEFAULT_THEME } from '@/lib/presentation/themes';
 
 /**
  * Genera un ID único
@@ -15,11 +15,22 @@ function generateId(): string {
 }
 
 /**
+ * Options for song slide generation
+ */
+export interface SongToSlidesOptions {
+  theme?: PresentationTheme;
+}
+
+/**
  * Convierte una canción completa a un SlideGroup
  * @param song - La canción a convertir
+ * @param options - Opciones de generación (incluye tema)
  * @returns SlideGroup con todos los slides de la canción
  */
-export function songToSlides(song: Song): SlideGroup {
+export function songToSlides(song: Song, options?: SongToSlidesOptions): SlideGroup {
+  const theme = options?.theme || DEFAULT_THEME;
+  const themedStyles = getThemedSlideStyles(theme);
+
   const slides: Slide[] = [];
   const totalSlides = song.verses.length + 1; // +1 por el título
 
@@ -32,9 +43,9 @@ export function songToSlides(song: Song): SlideGroup {
       subtitle: song.artist
     },
     style: {
-      primaryColor: SLIDE_STYLES.songTitle.primaryColor,
-      backgroundColor: SLIDE_STYLES.songTitle.backgroundColor,
-      primaryFont: SLIDE_STYLES.songTitle.primaryFont
+      primaryColor: themedStyles.songTitle.primaryColor,
+      backgroundColor: themedStyles.songTitle.backgroundColor,
+      primaryFont: themedStyles.songTitle.primaryFont
     },
     metadata: {
       sourceComponent: 'canciones',
@@ -53,9 +64,9 @@ export function songToSlides(song: Song): SlideGroup {
         primary: verse.content
       },
       style: {
-        primaryColor: SLIDE_STYLES.songLyrics.primaryColor,
-        backgroundColor: SLIDE_STYLES.songLyrics.backgroundColor,
-        primaryFont: SLIDE_STYLES.songLyrics.primaryFont
+        primaryColor: themedStyles.songLyrics.primaryColor,
+        backgroundColor: themedStyles.songLyrics.backgroundColor,
+        primaryFont: themedStyles.songLyrics.primaryFont
       },
       metadata: {
         sourceComponent: 'canciones',
@@ -112,19 +123,31 @@ export function splitLyricsIntoSlides(
 }
 
 /**
+ * Options for creating slides from lyrics
+ */
+export interface CreateSlidesFromLyricsOptions {
+  linesPerSlide?: number;
+  artist?: string;
+  theme?: PresentationTheme;
+}
+
+/**
  * Crea slides a partir de letra ingresada manualmente
  * @param title - Título de la canción
  * @param lyrics - Letra completa
- * @param linesPerSlide - Líneas por slide
- * @param artist - Artista (opcional)
+ * @param options - Opciones de generación (líneas por slide, artista, tema)
  * @returns SlideGroup con todos los slides
  */
 export function createSlidesFromLyrics(
   title: string,
   lyrics: string,
-  linesPerSlide: number = 4,
-  artist?: string
+  options?: CreateSlidesFromLyricsOptions
 ): SlideGroup {
+  const linesPerSlide = options?.linesPerSlide ?? 4;
+  const artist = options?.artist;
+  const theme = options?.theme || DEFAULT_THEME;
+  const themedStyles = getThemedSlideStyles(theme);
+
   const lyricSlides = splitLyricsIntoSlides(lyrics, linesPerSlide);
   const totalSlides = lyricSlides.length + 1;
   const songId = `custom-${Date.now()}`;
@@ -140,9 +163,9 @@ export function createSlidesFromLyrics(
       subtitle: artist
     },
     style: {
-      primaryColor: SLIDE_STYLES.songTitle.primaryColor,
-      backgroundColor: SLIDE_STYLES.songTitle.backgroundColor,
-      primaryFont: SLIDE_STYLES.songTitle.primaryFont
+      primaryColor: themedStyles.songTitle.primaryColor,
+      backgroundColor: themedStyles.songTitle.backgroundColor,
+      primaryFont: themedStyles.songTitle.primaryFont
     },
     metadata: {
       sourceComponent: 'canciones',
@@ -161,9 +184,9 @@ export function createSlidesFromLyrics(
         primary: content
       },
       style: {
-        primaryColor: SLIDE_STYLES.songLyrics.primaryColor,
-        backgroundColor: SLIDE_STYLES.songLyrics.backgroundColor,
-        primaryFont: SLIDE_STYLES.songLyrics.primaryFont
+        primaryColor: themedStyles.songLyrics.primaryColor,
+        backgroundColor: themedStyles.songLyrics.backgroundColor,
+        primaryFont: themedStyles.songLyrics.primaryFont
       },
       metadata: {
         sourceComponent: 'canciones',

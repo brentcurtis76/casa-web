@@ -157,6 +157,7 @@ function buildUserPrompt(data: {
     title: string;
     summary: string;
     readings: Array<{ reference: string; text: string }>;
+    reflexionText?: string;
   };
   location: string;
   locationResearch: string;
@@ -182,6 +183,17 @@ function buildUserPrompt(data: {
   // Safely handle characters array
   const safeCharacters = Array.isArray(characters) ? characters : [];
 
+  // Incluir texto de reflexión si está disponible
+  const reflexionSection = context?.reflexionText ? `
+
+### Texto de la Reflexión del Predicador
+${context.reflexionText}
+
+NOTA IMPORTANTE: Este es el texto completo de la reflexión que el predicador dará después del cuento.
+El cuento debe preparar a los niños para recibir este mensaje, usando metáforas y situaciones que
+conecten con los temas de la reflexión de manera natural y apropiada para su edad.
+` : '';
+
   return `## Información de la Liturgia
 
 ### Título/Tema
@@ -191,7 +203,7 @@ ${context?.title || 'Sin título'}
 ${context?.summary || 'No disponible'}
 
 ${readingsText}
-
+${reflexionSection}
 ---
 
 ## Parámetros del Cuento
@@ -218,7 +230,7 @@ Por favor, crea un cuento original basándote en esta información. El cuento de
 - Durar 3-5 minutos al ser leído en voz alta (aproximadamente 400-600 palabras)
 - Estar dividido en párrafos cortos para facilitar la lectura
 - Transmitir el mensaje espiritual de forma implícita, no explícita
-- Ser apropiado para niños de 5-10 años`;
+- Ser apropiado para niños de 5-10 años${context?.reflexionText ? '\n- Conectar con los temas de la reflexión del predicador de manera sutil' : ''}`;
 }
 
 /**
@@ -276,6 +288,7 @@ serve(async (req) => {
 
     console.log(`[generate-story] Generando cuento para: "${context.title}"`);
     console.log(`[generate-story] Ubicación: ${location}, Estilo: ${style}`);
+    console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
     // Investigar la ubicación real usando Gemini
     console.log(`[generate-story] Investigando ubicación: ${location}...`);

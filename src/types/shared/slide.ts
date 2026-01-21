@@ -18,7 +18,19 @@ export type SlideType =
   | 'announcement-image'   // Anuncio (imagen del generador de gráficos)
   | 'blessing'             // Bendición
   | 'title'                // Título de sección
-  | 'blank';               // Slide en blanco / transición
+  | 'blank'                // Slide en blanco / transición
+  | 'video';               // Video slide
+
+/**
+ * Configuración de reproducción de video
+ */
+export interface VideoSettings {
+  autoPlay: boolean;      // Iniciar reproducción automáticamente al mostrar slide
+  loop: boolean;          // Repetir cuando termina
+  muted: boolean;         // Silenciar audio
+  startTime?: number;     // Comenzar desde tiempo específico (segundos)
+  endTime?: number;       // Terminar en tiempo específico (segundos)
+}
 
 /**
  * Slide individual - INTERFAZ COMÚN PARA TODOS LOS COMPONENTES
@@ -31,6 +43,8 @@ export interface Slide {
     secondary?: string;          // Texto secundario (ej: respuesta congregación)
     subtitle?: string;           // Subtítulo opcional
     imageUrl?: string;           // URL de imagen (para slides de tipo imagen)
+    videoUrl?: string;           // URL de video (para slides de tipo video)
+    videoSettings?: VideoSettings; // Configuración de reproducción de video
   };
   style: {
     primaryColor?: string;       // Color del texto principal

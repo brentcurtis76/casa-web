@@ -12,18 +12,22 @@ import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 import { LowerThirdDisplay } from './LowerThirdDisplay';
 import { LogoOverlay } from './LogoOverlay';
 import { TextOverlayDisplay } from './TextOverlayDisplay';
+import { VideoBackgroundLayer } from './VideoBackgroundLayer';
+import { SlideStyleWrapper } from './SlideStyleWrapper';
+import { VideoSlideRenderer, VideoSlideRendererRef } from './VideoSlideRenderer';
 import { usePresentationSync } from '@/hooks/presentation/usePresentationSync';
 import { useKeyboardShortcuts } from '@/hooks/presentation/useKeyboardShortcuts';
 import { useFullscreen } from '@/hooks/presentation/useFullscreen';
 import { useOutputNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { PresentationState, SyncMessage } from '@/lib/presentation/types';
-import { INITIAL_PRESENTATION_STATE, shouldShowLogo, applyTempEdits, getVisibleTextOverlays, DEFAULT_LOGO_STATE } from '@/lib/presentation/types';
+import { INITIAL_PRESENTATION_STATE, shouldShowLogo, applyTempEdits, getVisibleTextOverlays, getVisibleImageOverlays, getActiveVideoBackground, DEFAULT_LOGO_STATE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, getResolvedStyles, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
 import type { Slide } from '@/types/shared/slide';
 
 export const OutputView: React.FC = () => {
   const [state, setState] = useState<PresentationState>(INITIAL_PRESENTATION_STATE);
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<VideoSlideRendererRef>(null);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   // Warn before leaving when output is live and connected
@@ -50,13 +54,51 @@ export const OutputView: React.FC = () => {
   }, []);
 
   // Handle incoming sync messages
+  // SISTEMA PREVIEW/PUBLISH:
+  // - SLIDE_CHANGE is now preview-only, ignored by output
+  // - PUBLISH is the primary method to update output
   const handleMessage = useCallback((message: SyncMessage) => {
     switch (message.type) {
       case 'SLIDE_CHANGE':
-        setState((prev) => ({
-          ...prev,
-          currentSlideIndex: message.slideIndex,
-        }));
+        // IGNORED - SLIDE_CHANGE is now preview-only
+        // Output only responds to PUBLISH messages
+        break;
+
+      case 'PUBLISH':
+        // PRIMARY UPDATE METHOD - staged publish from presenter
+        setState((prev) => {
+          // Find element index, with fallback for -1 (not found)
+          const elementIndex = prev.data?.elements
+            ? prev.data.elements.findIndex(el =>
+                message.payload.slideIndex >= el.startSlideIndex &&
+                message.payload.slideIndex <= el.endSlideIndex
+              )
+            : 0;
+
+          return {
+            ...prev,
+            // Update live state from publish payload
+            liveSlideIndex: message.payload.slideIndex,
+            liveElementIndex: Math.max(0, elementIndex), // Ensure non-negative
+            // Also update preview to match (for backwards compatibility)
+            previewSlideIndex: message.payload.slideIndex,
+            // Update live overlay states
+            liveLogoState: message.payload.logoState,
+            liveTextOverlayState: { overlays: message.payload.overlays },
+            liveImageOverlayState: { overlays: message.payload.imageOverlays || [] },
+            liveTempEdits: message.payload.tempEdits,
+            liveStyleState: message.payload.styleState || prev.liveStyleState,
+            // Also update current states (for rendering)
+            logoState: message.payload.logoState,
+            textOverlayState: { overlays: message.payload.overlays },
+            imageOverlayState: { overlays: message.payload.imageOverlays || [] },
+            videoBackgroundState: message.payload.videoBackgroundState || prev.videoBackgroundState,
+            liveVideoBackgroundState: message.payload.videoBackgroundState || prev.liveVideoBackgroundState,
+            tempEdits: message.payload.tempEdits,
+            styleState: message.payload.styleState || prev.styleState,
+            hasUnpublishedChanges: false,
+          };
+        });
         break;
 
       case 'GO_LIVE':
@@ -107,8 +149,10 @@ export const OutputView: React.FC = () => {
         setState((prev) => ({
           ...prev,
           data: message.data,
-          currentSlideIndex: 0,
-          currentElementIndex: 0,
+          previewSlideIndex: 0,
+          previewElementIndex: 0,
+          liveSlideIndex: 0,
+          liveElementIndex: 0,
         }));
         break;
 
@@ -121,9 +165,11 @@ export const OutputView: React.FC = () => {
         break;
 
       case 'LOGO_UPDATE':
+        // Direct logo updates (for backwards compatibility)
         setState((prev) => ({
           ...prev,
           logoState: message.logoState,
+          liveLogoState: message.logoState,
         }));
         break;
 
@@ -132,13 +178,43 @@ export const OutputView: React.FC = () => {
           ...prev,
           data: prev.data ? { ...prev.data, slides: message.slides } : null,
           tempEdits: message.tempEdits,
+          liveTempEdits: message.tempEdits,
         }));
         break;
 
       case 'TEXT_OVERLAYS_UPDATE':
+        // Direct overlay updates (for backwards compatibility)
         setState((prev) => ({
           ...prev,
           textOverlayState: message.textOverlayState,
+          liveTextOverlayState: message.textOverlayState,
+        }));
+        break;
+
+      case 'IMAGE_OVERLAYS_UPDATE':
+        // Direct image overlay updates
+        setState((prev) => ({
+          ...prev,
+          imageOverlayState: message.imageOverlayState,
+          liveImageOverlayState: message.imageOverlayState,
+        }));
+        break;
+
+      case 'VIDEO_BACKGROUND_UPDATE':
+        // Direct video background updates
+        setState((prev) => ({
+          ...prev,
+          videoBackgroundState: message.videoBackgroundState,
+          liveVideoBackgroundState: message.videoBackgroundState,
+        }));
+        break;
+
+      case 'STYLES_UPDATE':
+        // Direct style updates
+        setState((prev) => ({
+          ...prev,
+          styleState: message.styleState,
+          liveStyleState: message.styleState,
         }));
         break;
 
@@ -147,6 +223,47 @@ export const OutputView: React.FC = () => {
           ...prev,
           previewOverlays: message.enabled,
         }));
+        break;
+
+      // Video control messages - validate slideId matches current slide
+      case 'VIDEO_PLAY':
+        setState((prev) => {
+          const currentSlideId = prev.data?.slides[prev.liveSlideIndex]?.id;
+          if (videoRef.current && message.slideId === currentSlideId) {
+            videoRef.current.play();
+          }
+          return prev;
+        });
+        break;
+
+      case 'VIDEO_PAUSE':
+        setState((prev) => {
+          const currentSlideId = prev.data?.slides[prev.liveSlideIndex]?.id;
+          if (videoRef.current && message.slideId === currentSlideId) {
+            videoRef.current.pause();
+          }
+          return prev;
+        });
+        break;
+
+      case 'VIDEO_SEEK':
+        setState((prev) => {
+          const currentSlideId = prev.data?.slides[prev.liveSlideIndex]?.id;
+          if (videoRef.current && message.slideId === currentSlideId) {
+            videoRef.current.seek(message.time);
+          }
+          return prev;
+        });
+        break;
+
+      case 'VIDEO_MUTE':
+        setState((prev) => {
+          const currentSlideId = prev.data?.slides[prev.liveSlideIndex]?.id;
+          if (videoRef.current && message.slideId === currentSlideId) {
+            videoRef.current.setMuted(message.muted);
+          }
+          return prev;
+        });
         break;
     }
   }, [toggleFullscreen]);
@@ -180,20 +297,41 @@ export const OutputView: React.FC = () => {
     onFullscreen: toggleFullscreen,
   });
 
-  // Get current slide with temp edits applied
-  const rawSlide: Slide | null = state.data?.slides[state.currentSlideIndex] || null;
-  const currentSlide: Slide | null = rawSlide ? applyTempEdits(rawSlide, state.tempEdits) : null;
+  // Get LIVE slide (what's published to output) with temp edits applied
+  const rawSlide: Slide | null = state.data?.slides[state.liveSlideIndex] || null;
+  const currentSlide: Slide | null = rawSlide ? applyTempEdits(rawSlide, state.liveTempEdits ?? state.tempEdits) : null;
 
   // Get elements for scope resolution
   const elements = state.data?.elements || [];
 
-  // Determine if logo should show on current slide (with fallback for stale/missing state)
-  const logoState = state.logoState ?? DEFAULT_LOGO_STATE;
-  const showLogo = shouldShowLogo(logoState, state.currentSlideIndex, elements);
+  // Determine if logo should show on LIVE slide (with fallback for stale/missing state)
+  const logoState = state.liveLogoState ?? state.logoState ?? DEFAULT_LOGO_STATE;
+  const showLogo = shouldShowLogo(logoState, state.liveSlideIndex, elements);
 
-  // Get visible text overlays for current slide (with fallback for stale/missing state)
-  const textOverlayState = state.textOverlayState ?? { overlays: [] };
-  const textOverlays = getVisibleTextOverlays(textOverlayState, state.currentSlideIndex, elements);
+  // Get visible text overlays for LIVE slide (with fallback for stale/missing state)
+  const textOverlayState = state.liveTextOverlayState ?? state.textOverlayState ?? { overlays: [] };
+  const textOverlays = getVisibleTextOverlays(textOverlayState, state.liveSlideIndex, elements);
+
+  // Get visible image overlays for LIVE slide (with fallback for stale/missing state)
+  const imageOverlayState = state.liveImageOverlayState ?? state.imageOverlayState ?? DEFAULT_IMAGE_OVERLAY_STATE;
+  const imageOverlays = getVisibleImageOverlays(imageOverlayState, state.liveSlideIndex, elements);
+
+  // Get active video background for LIVE slide (with fallback for stale/missing state)
+  const videoBackgroundState = state.liveVideoBackgroundState ?? state.videoBackgroundState ?? DEFAULT_VIDEO_BACKGROUND_STATE;
+  const videoBackground = getActiveVideoBackground(videoBackgroundState, state.liveSlideIndex, elements);
+
+  // Calculate current element ID for style resolution
+  const currentElement = elements.find(el =>
+    state.liveSlideIndex >= el.startSlideIndex &&
+    state.liveSlideIndex <= el.endSlideIndex
+  );
+  const currentElementId = currentElement?.id || null;
+
+  // Get resolved styles for LIVE slide (with fallback for stale/missing state)
+  const liveStyleState = state.liveStyleState ?? state.styleState ?? DEFAULT_STYLE_STATE;
+  const resolvedStyles = currentSlide
+    ? getResolvedStyles(liveStyleState, currentSlide.id, currentElementId)
+    : null;
 
   // Check if we should show content (live OR preview mode with data)
   const isPreviewMode = state.previewOverlays === true;
@@ -282,12 +420,32 @@ export const OutputView: React.FC = () => {
 
       {/* Slide container */}
       <div className="relative">
-        {currentSlide && (
-          <UniversalSlide
+        {/* Video background layer - behind everything */}
+        {videoBackground && videoBackground.visible && (
+          <VideoBackgroundLayer
+            settings={videoBackground.settings}
+            playing={!state.isBlack}
+          />
+        )}
+
+        {currentSlide && currentSlide.type === 'video' ? (
+          /* Video slides use VideoSlideRenderer for full playback */
+          <VideoSlideRenderer
+            ref={videoRef}
             slide={currentSlide}
             scale={scale}
-            showIndicator={false}
+            isLive={state.isLive}
+            isPreview={isPreviewMode}
+            showControls={false}
           />
+        ) : currentSlide && (
+          <SlideStyleWrapper styles={resolvedStyles} scale={scale}>
+            <UniversalSlide
+              slide={currentSlide}
+              scale={scale}
+              showIndicator={false}
+            />
+          </SlideStyleWrapper>
         )}
 
         {/* Logo overlay - only show if shouldShowLogo returns true */}
@@ -307,6 +465,33 @@ export const OutputView: React.FC = () => {
             slideWidth={CASA_BRAND.slide.width * scale}
             slideHeight={CASA_BRAND.slide.height * scale}
           />
+        ))}
+
+        {/* Image overlays */}
+        {imageOverlays.map((overlay) => (
+          <div
+            key={overlay.id}
+            className="absolute"
+            style={{
+              left: `${overlay.position.x}%`,
+              top: `${overlay.position.y}%`,
+              transform: `translate(-50%, -50%) rotate(${overlay.style.rotation || 0}deg)`,
+              width: `${overlay.style.size}%`,
+              opacity: overlay.style.opacity,
+              pointerEvents: 'none',
+            }}
+          >
+            <img
+              src={overlay.imageUrl}
+              alt=""
+              className="w-full h-auto"
+              style={{
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+              draggable={false}
+            />
+          </div>
         ))}
 
         {/* Lower-third overlay */}

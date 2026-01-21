@@ -4,9 +4,10 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
-import type { LiturgyElement, LiturgyElementType } from '@/types/shared/liturgy';
+import type { LiturgyElement, LiturgyElementType, PortadasConfig, IllustrationConfig } from '@/types/shared/liturgy';
 import type { PresentationData, FlattenedElement } from './types';
 import { migrateAllSlideImageUrls } from '@/lib/cuentacuentos/imageUtils';
+import { CASA_BRAND } from '@/lib/brand-kit';
 
 /**
  * Procesa los slides de cuentacuentos para migrar signed URLs a públicas
@@ -14,6 +15,120 @@ import { migrateAllSlideImageUrls } from '@/lib/cuentacuentos/imageUtils';
  */
 function migrateCuentacuentosSlides(slides: Slide[]): Slide[] {
   return migrateAllSlideImageUrls(slides);
+}
+
+/**
+ * Migra slides de portadas para aplicar la configuración guardada a nivel de liturgia.
+ * Si el slide no tiene illustrationConfig en metadata, aplica el config del liturgy.
+ *
+ * @param slides - Array de slides a migrar
+ * @param portadasConfig - Configuración de portadas a nivel de liturgia
+ */
+function migratePortadasSlides(slides: Slide[], portadasConfig: PortadasConfig | null): Slide[] {
+  if (!portadasConfig) return slides;
+
+  return slides.map(slide => {
+    // Only migrate portada slides (check by sourceComponent)
+    const isPortada = slide.metadata?.sourceComponent === 'portadas-main' ||
+                      slide.metadata?.sourceComponent === 'portadas-reflection';
+
+    if (!isPortada) return slide;
+
+    // Check if slide already has config in metadata
+    const hasConfig = slide.metadata?.illustrationConfig != null;
+
+    if (hasConfig) {
+      // Slide already has config, keep it as-is
+      return slide;
+    }
+
+    // Apply liturgy-level config to slide metadata
+    return {
+      ...slide,
+      metadata: {
+        ...slide.metadata,
+        illustrationConfig: portadasConfig.illustrationConfig,
+        textAlignment: portadasConfig.textAlignment,
+        logoAlignment: portadasConfig.logoAlignment,
+      },
+    };
+  });
+}
+
+/**
+ * Migra slides de elementos fijos para corregir colores de versiones antiguas.
+ * Problema: prayer-congregational slides se guardaban con color 'carbon' (#333333)
+ * pero el Constructor preview mostraba amber. Esto causa discrepancia Constructor/Presenter.
+ *
+ * Fix: prayer-response slides de elementos-fijos con color carbon → amber
+ */
+function migrateFixedElementSlideColors(slides: Slide[]): Slide[] {
+  const CARBON_COLOR = '#333333';
+
+  return slides.map(slide => {
+    // Only fix slides from fixed elements
+    if (slide.metadata?.sourceComponent !== 'elementos-fijos') {
+      return slide;
+    }
+
+    // Fix prayer-response slides with old carbon color
+    if (slide.type === 'prayer-response' && slide.style?.primaryColor === CARBON_COLOR) {
+      return {
+        ...slide,
+        style: {
+          ...slide.style,
+          primaryColor: CASA_BRAND.colors.primary.amber,
+        },
+      };
+    }
+
+    return slide;
+  });
+}
+
+/**
+ * Migra slides de oraciones antifonales del formato antiguo al nuevo.
+ * Formato antiguo: Slides separados de tipo 'prayer-leader' y 'prayer-response'
+ * Formato nuevo: Un solo slide de tipo 'prayer-full' con primary (líder) y secondary (congregación)
+ *
+ * Esta función combina pares de prayer-leader + prayer-response en prayer-full slides.
+ */
+function migrateAntiphonalPrayerSlides(slides: Slide[]): Slide[] {
+  const result: Slide[] = [];
+  let i = 0;
+
+  while (i < slides.length) {
+    const current = slides[i];
+
+    // Check if this is a prayer-leader followed by prayer-response
+    if (current.type === 'prayer-leader' && i + 1 < slides.length) {
+      const next = slides[i + 1];
+      if (next.type === 'prayer-response') {
+        // Combine into a prayer-full slide
+        result.push({
+          id: current.id,
+          type: 'prayer-full',
+          content: {
+            primary: current.content.primary,    // Leader text
+            secondary: next.content.primary,      // Congregation response
+          },
+          style: {
+            ...current.style,
+            secondaryColor: next.style.primaryColor || '#D4A537', // Amber for congregation
+          },
+          metadata: current.metadata,
+        });
+        i += 2; // Skip both slides
+        continue;
+      }
+    }
+
+    // Keep the slide as-is (including prayer-full, titles, and other types)
+    result.push(current);
+    i++;
+  }
+
+  return result;
 }
 
 /**
@@ -33,28 +148,12 @@ export interface LiturgySummary {
  */
 export async function listLiturgiesForPresentation(): Promise<LiturgySummary[]> {
   try {
-    // Check auth state
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log('[presentationService] Auth state:', {
-      hasSession: !!session,
-      userId: session?.user?.id,
-      email: session?.user?.email,
-    });
-
-    console.log('[presentationService] Fetching liturgias...');
     const { data, error } = await supabase
       .from('liturgias')
       .select('id, fecha, titulo, estado, porcentaje_completado')
       .order('fecha', { ascending: false });
 
-    console.log('[presentationService] Liturgias result:', {
-      count: data?.length || 0,
-      data,
-      error
-    });
-
     if (error) {
-      console.error('Error listing liturgias:', error);
       return [];
     }
 
@@ -65,8 +164,7 @@ export async function listLiturgiesForPresentation(): Promise<LiturgySummary[]> 
       estado: l.estado,
       porcentaje: l.porcentaje_completado,
     }));
-  } catch (err) {
-    console.error('Error in listLiturgiesForPresentation:', err);
+  } catch {
     return [];
   }
 }
@@ -85,9 +183,11 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       .single();
 
     if (liturgiaError || !liturgiaData) {
-      console.error('Error loading liturgia:', liturgiaError);
       return null;
     }
+
+    // Extract portadas config from liturgy (used to migrate old portada slides)
+    const portadasConfig: PortadasConfig | null = liturgiaData.portadas_config as PortadasConfig | null;
 
     // Cargar elementos
     const { data: elementosData, error: elementosError } = await supabase
@@ -97,7 +197,6 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       .order('orden');
 
     if (elementosError) {
-      console.error('Error loading elementos:', elementosError);
       return null;
     }
 
@@ -105,19 +204,8 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
     const slides: Slide[] = [];
     const elements: FlattenedElement[] = [];
 
-    console.log('[presentationService] Processing', elementosData?.length || 0, 'elementos');
-
     for (const elemento of elementosData || []) {
       const startIndex = slides.length;
-
-      // Debug: ver estructura exacta de los datos
-      console.log('[presentationService] Raw element data:', elemento.tipo, {
-        slidesRaw: elemento.slides,
-        editedSlidesRaw: elemento.edited_slides,
-        slidesType: typeof elemento.slides,
-        slidesIsArray: Array.isArray(elemento.slides),
-        hasNestedSlides: elemento.slides && typeof elemento.slides === 'object' && 'slides' in (elemento.slides as object),
-      });
 
       // Obtener slides del elemento (pueden estar en slides o editedSlides)
       // El formato puede ser SlideGroup { slides: Slide[] } o directamente Slide[]
@@ -134,19 +222,28 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
         }
       }
 
-      console.log('[presentationService] Element:', elemento.tipo, {
-        hasSlides: !!elemento.slides,
-        hasEditedSlides: !!elemento.edited_slides,
-        slideCount: slideArray.length,
-        firstSlideType: slideArray[0]?.type,
-        firstSlideHasImage: !!slideArray[0]?.content?.imageUrl,
-      });
-
       if (slideArray.length > 0) {
         // Para cuentacuentos, migrar signed URLs a públicas (el bucket es público)
         if (elemento.tipo === 'cuentacuentos') {
           slideArray = migrateCuentacuentosSlides(slideArray);
-          console.log('[presentationService] Migrated cuentacuentos to public URLs');
+        }
+
+        // Para oraciones antifonales, migrar del formato antiguo (prayer-leader/prayer-response)
+        // al formato nuevo (prayer-full)
+        if (elemento.tipo?.startsWith('oracion-')) {
+          slideArray = migrateAntiphonalPrayerSlides(slideArray);
+        }
+
+        // Para portadas, migrar config del nivel de liturgia a metadata de slides
+        if (elemento.tipo === 'portada-principal' || elemento.tipo === 'portada-reflexion') {
+          slideArray = migratePortadasSlides(slideArray, portadasConfig);
+        }
+
+        // Para elementos fijos, migrar colores de versiones antiguas
+        // (prayer-congregational se guardaba con carbon en vez de amber)
+        const fixedElementTypes = ['padre-nuestro', 'paz', 'santa-cena', 'accion-gracias', 'ofrenda', 'bendicion'];
+        if (fixedElementTypes.includes(elemento.tipo)) {
+          slideArray = migrateFixedElementSlideColors(slideArray);
         }
 
         // Agregar slides al array aplanado
@@ -181,13 +278,6 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       });
     }
 
-    console.log('[presentationService] Final result:', {
-      liturgyId: liturgiaData.id,
-      totalSlides: slides.length,
-      totalElements: elements.length,
-      elementSummary: elements.map(e => `${e.type}: ${e.slideCount} slides`),
-    });
-
     return {
       liturgyId: liturgiaData.id,
       liturgyTitle: liturgiaData.titulo,
@@ -195,8 +285,7 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
       slides,
       elements,
     };
-  } catch (err) {
-    console.error('Error in loadLiturgyForPresentation:', err);
+  } catch {
     return null;
   }
 }

@@ -11,6 +11,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { CASA_BRAND } from '@/lib/brand-kit';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -93,21 +94,91 @@ const FORMAT_LABELS: Record<FormatType, string> = {
 
 type Phase = 'form' | 'prompt' | 'selecting' | 'adjusting' | 'generating' | 'done';
 
-// Base prompt para ilustraciones (sincronizado con Edge Function generate-illustration)
-const BASE_STYLE_PROMPT = `Create a minimalist artistic illustration with these exact requirements:
+// Base prompt para ilustraciones - requests PURE WHITE background
+// Post-processing will replace white pixels with CASA_BRAND.colors.primary.white
+// This prompt matches the Portadas element for consistent image quality
+const BASE_STYLE_PROMPT = `Minimalist line art illustration with PURE WHITE (#FFFFFF) solid flat background, no texture, no pattern, no gradients. Single continuous gray (#666666) line drawing in the style of Henri Matisse or Pablo Picasso one-line art. Abstract and contemplative, suggestive of spiritual reflection. No text, no labels, no words. Elegant flowing lines with amber/gold (#D4A853) accent on 20-30% of the illustration.`;
 
-COLORS (MANDATORY):
-- Main lines: Medium gray (#666666)
-- Accent color: Warm amber/gold (#D4A853) - USE THIS COLOR for highlights, key elements, or artistic accents
-- Background: Warm cream (#F9F7F5) - NOT white, use this exact warm cream tone
+/**
+ * Post-process an illustration to ensure background matches CASA_BRAND.colors.primary.white
+ * Replaces white, near-white, light gray, and checkered pattern pixels with exact target color
+ */
+async function processIllustrationBackground(base64: string, targetColor: string = CASA_BRAND.colors.primary.white): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
 
-STYLE:
-- Single continuous flowing line art in the style of Henri Matisse or Pablo Picasso
-- Abstract and contemplative, suggestive of spiritual reflection
-- Elegant, minimalist, with negative space
-- The amber/gold accent should appear in at least 20-30% of the illustration
+      if (!ctx) {
+        resolve(base64);
+        return;
+      }
 
-CRITICAL: No text, no labels, no words, no letters in the image. Only the artistic illustration.`;
+      // Draw the original image first
+      ctx.drawImage(img, 0, 0);
+
+      // Get image data to process pixels
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Parse target color to RGB
+      const targetR = parseInt(targetColor.slice(1, 3), 16);
+      const targetG = parseInt(targetColor.slice(3, 5), 16);
+      const targetB = parseInt(targetColor.slice(5, 7), 16);
+
+      // Replace background pixels with target color
+      // This handles: pure white, near-white, cream, light gray, and checkered patterns
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        // Replace transparent pixels
+        if (a < 250) {
+          data[i] = targetR;
+          data[i + 1] = targetG;
+          data[i + 2] = targetB;
+          data[i + 3] = 255;
+          continue;
+        }
+
+        // Replace pure white and near-white (> 240)
+        if (r > 240 && g > 240 && b > 240) {
+          data[i] = targetR;
+          data[i + 1] = targetG;
+          data[i + 2] = targetB;
+          continue;
+        }
+
+        // Replace light grays (checkered pattern uses ~204 gray and white)
+        if (r > 190 && g > 190 && b > 190) {
+          const maxDiff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+          // If it's a neutral gray (R≈G≈B), replace it
+          if (maxDiff < 10) {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+          }
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      const result = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+      resolve(result);
+    };
+
+    img.onerror = () => {
+      resolve(base64);
+    };
+
+    img.src = `data:image/png;base64,${base64}`;
+  });
+}
 
 // Prompts por tipo de evento
 const EVENT_PROMPTS: Record<string, string> = {
@@ -173,6 +244,8 @@ export const GraphicsGeneratorV2 = () => {
 
   // Prompt state (editable)
   const [customPrompt, setCustomPrompt] = useState('');
+  // User's illustration theme description (in Spanish)
+  const [illustrationTheme, setIllustrationTheme] = useState('');
 
   // Illustrations state
   const [illustrations, setIllustrations] = useState<string[]>([]);
@@ -329,10 +402,13 @@ export const GraphicsGeneratorV2 = () => {
     return () => clearTimeout(timeoutId);
   }, [titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, fontsLoaded, logoBase64, phase]);
 
-  // Build default prompt based on event type
-  const buildDefaultPrompt = (type: string): string => {
-    const eventPrompt = EVENT_PROMPTS[type] || EVENT_PROMPTS.generic;
-    return `${BASE_STYLE_PROMPT} Subject: ${eventPrompt}`;
+  // Build default prompt based on event type or user's custom theme
+  const buildDefaultPrompt = (type: string, userTheme?: string): string => {
+    // If user provided a theme description, use it instead of the event type default
+    const subjectPrompt = userTheme?.trim()
+      ? userTheme.trim()
+      : (EVENT_PROMPTS[type] || EVENT_PROMPTS.generic);
+    return `${BASE_STYLE_PROMPT} Subject: ${subjectPrompt}`;
   };
 
   // Show prompt editor before generating
@@ -348,8 +424,8 @@ export const GraphicsGeneratorV2 = () => {
       return;
     }
 
-    // Set default prompt based on event type
-    setCustomPrompt(buildDefaultPrompt(eventType));
+    // Set default prompt based on event type and user's theme
+    setCustomPrompt(buildDefaultPrompt(eventType, illustrationTheme));
     setPhase('prompt');
   };
 
@@ -372,8 +448,14 @@ export const GraphicsGeneratorV2 = () => {
       if (error) throw error;
 
       if (data?.illustrations && data.illustrations.length > 0) {
-        setIllustrations(data.illustrations);
-        const validCount = data.validCount || data.illustrations.filter((i: string) => i).length;
+        // Post-process each illustration to ensure background matches slide color
+        const validIllustrations = data.illustrations.filter((i: string) => i && i.length > 0);
+        const processedIllustrations = await Promise.all(
+          validIllustrations.map((base64: string) => processIllustrationBackground(base64))
+        );
+        setIllustrations(processedIllustrations);
+
+        const validCount = processedIllustrations.length;
         if (validCount < 4) {
           toast({
             title: `${validCount} ilustraciones generadas`,
@@ -928,10 +1010,31 @@ export const GraphicsGeneratorV2 = () => {
           <CardHeader>
             <CardTitle>Prompt para Ilustración</CardTitle>
             <CardDescription>
-              Revisa y edita el prompt que se enviará a la IA para generar las ilustraciones
+              Describe qué ilustración quieres o edita el prompt directamente
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* User-friendly theme input in Spanish */}
+            <div className="space-y-2">
+              <Label htmlFor="illustration-theme">¿Qué ilustración quieres?</Label>
+              <Input
+                id="illustration-theme"
+                value={illustrationTheme}
+                onChange={(e) => {
+                  setIllustrationTheme(e.target.value);
+                  // Auto-update prompt when theme changes
+                  if (e.target.value.trim()) {
+                    setCustomPrompt(buildDefaultPrompt(eventType, e.target.value));
+                  }
+                }}
+                placeholder="Ej: Una familia reunida alrededor de una mesa compartiendo pan"
+                className="text-base"
+              />
+              <p className="text-xs text-muted-foreground">
+                Describe en español lo que quieres ver. El sistema traducirá y optimizará el prompt automáticamente.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="prompt">Prompt (editable)</Label>
               <textarea
@@ -953,7 +1056,7 @@ export const GraphicsGeneratorV2 = () => {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setCustomPrompt(buildDefaultPrompt(eventType))}
+                onClick={() => setCustomPrompt(buildDefaultPrompt(eventType, illustrationTheme))}
               >
                 Restaurar Default
               </Button>

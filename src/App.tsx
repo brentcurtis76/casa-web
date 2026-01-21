@@ -25,6 +25,8 @@ import ElementosFijosPage from "./pages/ElementosFijosPage";
 import ConstructorLiturgiasPage from "./pages/ConstructorLiturgiasPage";
 import PresenterPage from "./pages/PresenterPage";
 import OutputPage from "./pages/OutputPage";
+import SermonEditorPage from "./pages/SermonEditorPage";
+import SermonEditorTestPage from "./pages/SermonEditorTestPage";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +51,8 @@ const router = createBrowserRouter([
   { path: "/admin/liturgia/constructor", element: <ConstructorLiturgiasPage /> },
   { path: "/presenter", element: <PresenterPage /> },
   { path: "/output", element: <OutputPage /> },
+  { path: "/admin/sermon-editor", element: <SermonEditorPage /> },
+  { path: "/test/sermon-editor", element: <SermonEditorTestPage /> },
   // Catch-all route for 404
   { path: "*", element: <NotFound /> },
 ]);

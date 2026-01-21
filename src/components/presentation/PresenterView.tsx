@@ -2,27 +2,37 @@
  * PresenterView - Vista principal del presentador
  * Controla la presentacion y sincroniza con la vista de salida
  *
- * SISTEMA SIMPLIFICADO (v2):
- * - Logo: updateLogo(), setLogoScope()
- * - TextOverlay: addTextOverlay(), updateTextOverlay(), removeTextOverlay()
+ * UI/UX REDESIGN (PROMPT_018):
+ * - Unified header with 4 zones (File, Context, Timer, Controls)
+ * - Separate NavigationStrip above slide preview
+ * - FAB repositioned to bottom-right corner
  */
 
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { ServiceNavigator } from './ServiceNavigator';
 import { SlideStrip } from './SlideStrip';
 import { SlidePreview } from './SlidePreview';
 import { PresenterControls } from './PresenterControls';
+import { NavigationStrip } from './NavigationStrip';
 import { LiturgySelectorModal } from './LiturgySelectorModal';
 import { LowerThirdManager } from './LowerThirdManager';
 import { LogoControls } from './LogoControls';
 import { TextOverlayControls } from './TextOverlayControls';
+import { ImageOverlayControls } from './ImageOverlayControls';
+import { VideoBackgroundControls } from './VideoBackgroundControls';
 import { SlideEditor } from './SlideEditor';
-import { TimerClock } from './TimerClock';
 import { PresenterNotes } from './PresenterNotes';
 import { CollapsiblePanel } from './CollapsiblePanel';
 import { RecoveryModal } from './RecoveryModal';
 import { ExitWarningModal } from './ExitWarningModal';
+import { QuickAddButton } from './QuickAddButton';
+import { SlideCreatorModal } from './SlideCreatorModal';
+import { StyleControls } from './StyleControls';
+import { ExportDialog } from './ExportDialog';
+import { ImportDialog } from './ImportDialog';
+import { SaveSessionDialog } from './SaveSessionDialog';
+import { LoadSessionDialog } from './LoadSessionDialog';
+import { SaveToLiturgyDialog } from './SaveToLiturgyDialog';
 import { usePresentationSync } from '@/hooks/presentation/usePresentationSync';
 import { usePresentationState } from '@/hooks/presentation/usePresentationState';
 import { useKeyboardShortcuts } from '@/hooks/presentation/useKeyboardShortcuts';
@@ -30,9 +40,34 @@ import { useAutoSave, getSavedPresentationState, clearSavedPresentationState, ty
 import { useNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { loadLiturgyForPresentation } from '@/lib/presentation/presentationService';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, OverlayScope, LogoState } from '@/lib/presentation/types';
-import { shouldShowLogo, getVisibleTextOverlays, getAllOverlaysForSlide, DEFAULT_TEXT_OVERLAY_STYLE, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE } from '@/lib/presentation/types';
-import { FolderOpen, Loader2, FileText, MessageSquare, Image as ImageIcon, Type } from 'lucide-react';
+import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, ImageOverlay, ImageOverlayState, VideoBackground, VideoBackgroundState, OverlayScope, LogoState, PublishPayload, SlideStyles, StyleScope, StyleState } from '@/lib/presentation/types';
+import { shouldShowLogo, getAllOverlaysForSlide, getAllImageOverlaysForSlide, getActiveVideoBackground, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, getResolvedStyles, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
+import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video } from 'lucide-react';
+import type { ImportValidationResult } from '@/lib/presentation/types';
+import { applyImport } from '@/lib/presentation/exportImport';
+import { loadSession, updateSession, createSessionState, mergeTempSlides } from '@/lib/presentation/sessionService';
+import { toast } from 'sonner';
+
+/**
+ * Helper to check if there are any active style overrides
+ */
+function hasActiveStyles(styleState: StyleState | undefined): boolean {
+  if (!styleState) return false;
+
+  if (styleState.globalStyles && Object.keys(styleState.globalStyles).length > 0) {
+    return true;
+  }
+
+  if (Object.keys(styleState.elementStyles || {}).length > 0) {
+    return true;
+  }
+
+  if (Object.keys(styleState.slideStyles || {}).length > 0) {
+    return true;
+  }
+
+  return false;
+}
 
 export const PresenterView: React.FC = () => {
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -42,11 +77,21 @@ export const PresenterView: React.FC = () => {
   const [editingSlideIndex, setEditingSlideIndex] = useState<number | null>(null);
   const [recoveryState, setRecoveryState] = useState<SavedPresentationState | null>(null);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [slideCreatorOpen, setSlideCreatorOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [saveSessionDialogOpen, setSaveSessionDialogOpen] = useState(false);
+  const [loadSessionDialogOpen, setLoadSessionDialogOpen] = useState(false);
+  const [saveToLiturgyDialogOpen, setSaveToLiturgyDialogOpen] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isUpdatingSession, setIsUpdatingSession] = useState(false);
   const outputWindowRef = useRef<Window | null>(null);
   const syncStateRef = useRef<((state: import('@/lib/presentation/types').PresentationState) => void) | null>(null);
   const recoveryCheckedRef = useRef(false);
+  const stateRef = useRef<import('@/lib/presentation/types').PresentationState | null>(null);
+  const createSlideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Presentation state (SIMPLIFICADO)
+  // Presentation state (SISTEMA PREVIEW/PUBLISH)
   const {
     state,
     loadLiturgy,
@@ -56,27 +101,37 @@ export const PresenterView: React.FC = () => {
     firstSlide,
     lastSlide,
     goToElement,
+    publish,
     goLive,
-    toggleBlack,
     setBlack,
     showLowerThird,
     hideLowerThird,
-    // Logo (simplificado)
     updateLogo,
     setLogoScope,
     setLogoState,
-    // Slide editing
     editSlideContent,
     clearSlideEdit,
     duplicateSlide,
     deleteSlide,
     addImageSlides,
-    // Text overlays (simplificado)
+    insertSlide,
+    insertSlides,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
     setTextOverlayState,
-    // Utilities
+    addImageOverlay,
+    updateImageOverlay,
+    removeImageOverlay,
+    setImageOverlayState,
+    addVideoBackground,
+    updateVideoBackground,
+    removeVideoBackground,
+    setVideoBackgroundState,
+    applyStyles,
+    resetStyles,
+    setStyleState,
+    toggleFollowMode,
     currentSlide,
     currentElement,
     totalSlides,
@@ -85,7 +140,21 @@ export const PresenterView: React.FC = () => {
   // Auto-save presentation state to localStorage
   useAutoSave(state);
 
-  // Warn before leaving when liturgy is loaded (handles both browser close AND back button)
+  // Keep stateRef updated for async operations
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (createSlideTimeoutRef.current) {
+        clearTimeout(createSlideTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Warn before leaving when liturgy is loaded
   const navigationWarning = useNavigationWarning({
     enabled: !!state.data,
     message: '¿Salir de la presentación? Tu progreso se guardará automáticamente.',
@@ -107,7 +176,6 @@ export const PresenterView: React.FC = () => {
   const handleMessage = useCallback((message: SyncMessage) => {
     switch (message.type) {
       case 'REQUEST_STATE':
-        // Output is requesting current state
         syncStateRef.current?.(state);
         break;
     }
@@ -124,6 +192,15 @@ export const PresenterView: React.FC = () => {
     syncStateRef.current = syncState;
   }, [syncState]);
 
+  // Auto-publish when Follow Mode is ON and we're live
+  // This makes navigation automatically sync to output
+  useEffect(() => {
+    if (state.followMode && state.isLive && state.previewSlideIndex !== state.liveSlideIndex) {
+      const payload = publish();
+      send({ type: 'PUBLISH', payload });
+    }
+  }, [state.followMode, state.isLive, state.previewSlideIndex, state.liveSlideIndex, publish, send]);
+
   // Load a liturgy
   const handleSelectLiturgy = async (liturgyId: string) => {
     setLoading(true);
@@ -132,9 +209,10 @@ export const PresenterView: React.FC = () => {
       if (data) {
         loadLiturgy(data);
         send({ type: 'LITURGY_LOADED', data });
+        setCurrentSessionId(null);
       }
-    } catch (err) {
-      console.error('Error loading liturgy:', err);
+    } catch {
+      // Error already thrown from loadLiturgyForPresentation
     } finally {
       setLoading(false);
     }
@@ -148,23 +226,15 @@ export const PresenterView: React.FC = () => {
     setShowRecoveryModal(false);
 
     try {
-      // Load the liturgy by ID
       const data = await loadLiturgyForPresentation(recoveryState.liturgyId);
       if (data) {
         loadLiturgy(data);
 
-        // Restore saved state after a short delay to let liturgy load
         setTimeout(() => {
-          // Jump to saved slide
-          goToSlide(recoveryState.currentSlideIndex);
-
-          // Restore logo state
+          goToSlide(recoveryState.previewSlideIndex ?? recoveryState.currentSlideIndex ?? 0);
           setLogoState(recoveryState.logoState);
-
-          // Restore text overlay state
           setTextOverlayState(recoveryState.textOverlayState);
 
-          // Restore live/black states
           if (recoveryState.isLive) {
             goLive();
             setLiveStartTime(new Date());
@@ -175,15 +245,18 @@ export const PresenterView: React.FC = () => {
             send({ type: 'GO_BLACK', black: true });
           }
 
-          // Sync full state to output
           send({ type: 'LITURGY_LOADED', data });
-          send({ type: 'SLIDE_CHANGE', slideIndex: recoveryState.currentSlideIndex });
-          send({ type: 'LOGO_UPDATE', logoState: recoveryState.logoState });
-          send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: recoveryState.textOverlayState });
+          const payload: PublishPayload = {
+            slideIndex: recoveryState.liveSlideIndex ?? recoveryState.previewSlideIndex ?? 0,
+            overlays: recoveryState.liveTextOverlayState?.overlays ?? recoveryState.textOverlayState?.overlays ?? [],
+            logoState: recoveryState.liveLogoState ?? recoveryState.logoState,
+            tempEdits: {},
+          };
+          send({ type: 'PUBLISH', payload });
         }, 100);
       }
-    } catch (err) {
-      console.error('Error recovering session:', err);
+    } catch {
+      // Error already thrown
     } finally {
       setLoading(false);
       setRecoveryState(null);
@@ -197,48 +270,44 @@ export const PresenterView: React.FC = () => {
     setRecoveryState(null);
   }, []);
 
-  // Navigation with sync
+  // Navigation (PREVIEW ONLY - does NOT sync to output)
   const handleGoToSlide = useCallback((index: number) => {
     goToSlide(index);
-    send({ type: 'SLIDE_CHANGE', slideIndex: index });
-  }, [goToSlide, send]);
+  }, [goToSlide]);
 
   const handleNext = useCallback(() => {
-    if (state.data && state.currentSlideIndex < state.data.slides.length - 1) {
-      const newIndex = state.currentSlideIndex + 1;
-      goToSlide(newIndex);
-      send({ type: 'SLIDE_CHANGE', slideIndex: newIndex });
+    if (state.data && state.previewSlideIndex < state.data.slides.length - 1) {
+      nextSlide();
     }
-  }, [state.data, state.currentSlideIndex, goToSlide, send]);
+  }, [state.data, state.previewSlideIndex, nextSlide]);
 
   const handlePrev = useCallback(() => {
-    if (state.currentSlideIndex > 0) {
-      const newIndex = state.currentSlideIndex - 1;
-      goToSlide(newIndex);
-      send({ type: 'SLIDE_CHANGE', slideIndex: newIndex });
+    if (state.previewSlideIndex > 0) {
+      prevSlide();
     }
-  }, [state.currentSlideIndex, goToSlide, send]);
+  }, [state.previewSlideIndex, prevSlide]);
 
   const handleFirst = useCallback(() => {
-    goToSlide(0);
-    send({ type: 'SLIDE_CHANGE', slideIndex: 0 });
-  }, [goToSlide, send]);
+    firstSlide();
+  }, [firstSlide]);
 
   const handleLast = useCallback(() => {
     if (state.data) {
-      const lastIndex = state.data.slides.length - 1;
-      goToSlide(lastIndex);
-      send({ type: 'SLIDE_CHANGE', slideIndex: lastIndex });
+      lastSlide();
     }
-  }, [state.data, goToSlide, send]);
+  }, [state.data, lastSlide]);
 
   const handleGoToElement = useCallback((elementIndex: number) => {
     if (state.data?.elements[elementIndex]) {
-      const startIndex = state.data.elements[elementIndex].startSlideIndex;
       goToElement(elementIndex);
-      send({ type: 'SLIDE_CHANGE', slideIndex: startIndex });
     }
-  }, [state.data, goToElement, send]);
+  }, [state.data, goToElement]);
+
+  // PUBLISH - Sync preview state to output
+  const handlePublish = useCallback(() => {
+    const payload = publish();
+    send({ type: 'PUBLISH', payload });
+  }, [publish, send]);
 
   // Go Live with sync (toggle)
   const handleGoLive = useCallback(() => {
@@ -247,12 +316,13 @@ export const PresenterView: React.FC = () => {
     if (newLiveState) {
       setLiveStartTime(new Date());
       send({ type: 'GO_LIVE' });
+      const payload = publish();
+      send({ type: 'PUBLISH', payload });
     } else {
       setLiveStartTime(null);
       send({ type: 'GO_OFFLINE' });
     }
-    syncState({ ...state, isLive: newLiveState, isBlack: newLiveState ? false : state.isBlack });
-  }, [goLive, send, syncState, state]);
+  }, [goLive, send, publish, state.isLive]);
 
   // Toggle Black with sync
   const handleToggleBlack = useCallback(() => {
@@ -263,13 +333,11 @@ export const PresenterView: React.FC = () => {
 
   // Open output window
   const handleOpenOutput = useCallback(() => {
-    // Close existing window if open
     if (outputWindowRef.current && !outputWindowRef.current.closed) {
       outputWindowRef.current.focus();
       return;
     }
 
-    // Open new window
     const outputUrl = `${window.location.origin}/output`;
     outputWindowRef.current = window.open(
       outputUrl,
@@ -277,13 +345,16 @@ export const PresenterView: React.FC = () => {
       'width=1024,height=768'
     );
 
-    // Send current state after a delay to let the window load
     setTimeout(() => {
       if (state.data) {
         send({ type: 'LITURGY_LOADED', data: state.data });
-        send({ type: 'SLIDE_CHANGE', slideIndex: state.currentSlideIndex });
-        send({ type: 'LOGO_UPDATE', logoState: state.logoState ?? DEFAULT_LOGO_STATE });
-        send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: state.textOverlayState ?? { overlays: [] } });
+        const payload: PublishPayload = {
+          slideIndex: state.liveSlideIndex,
+          overlays: state.liveTextOverlayState?.overlays ?? [],
+          logoState: state.liveLogoState ?? DEFAULT_LOGO_STATE,
+          tempEdits: state.liveTempEdits ?? {},
+        };
+        send({ type: 'PUBLISH', payload });
         if (state.isLive) {
           send({ type: 'GO_LIVE' });
         }
@@ -309,12 +380,10 @@ export const PresenterView: React.FC = () => {
     send({ type: 'HIDE_LOWER_THIRD' });
   }, [hideLowerThird, send]);
 
-  // ============ LOGO HANDLERS (SIMPLIFICADO) ============
+  // ============ LOGO HANDLERS ============
 
-  // Actualizar settings del logo
   const handleUpdateLogo = useCallback((settings: Partial<LogoSettings>) => {
     updateLogo(settings);
-    // Sync después del update
     const currentSettings = state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings;
     const newLogoState: LogoState = {
       settings: { ...currentSettings, ...settings },
@@ -323,7 +392,6 @@ export const PresenterView: React.FC = () => {
     send({ type: 'LOGO_UPDATE', logoState: newLogoState });
   }, [updateLogo, send, state.logoState]);
 
-  // Cambiar el scope del logo
   const handleSetLogoScope = useCallback((scope: OverlayScope) => {
     setLogoScope(scope);
     const newLogoState: LogoState = {
@@ -347,13 +415,13 @@ export const PresenterView: React.FC = () => {
 
     editSlideContent(slide.id, content);
 
-    // Sync to output
     setTimeout(() => {
-      if (state.data) {
-        send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
       }
     }, 0);
-  }, [editingSlideIndex, state.data, state.tempEdits, editSlideContent, send]);
+  }, [editingSlideIndex, state.data, editSlideContent, send]);
 
   const handleClearSlideEdit = useCallback(() => {
     if (editingSlideIndex === null || !state.data) return;
@@ -362,41 +430,39 @@ export const PresenterView: React.FC = () => {
 
     clearSlideEdit(slide.id);
 
-    // Sync to output
     setTimeout(() => {
-      if (state.data) {
-        send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
       }
     }, 0);
-  }, [editingSlideIndex, state.data, state.tempEdits, clearSlideEdit, send]);
+  }, [editingSlideIndex, state.data, clearSlideEdit, send]);
 
   const handleDuplicateSlide = useCallback((index: number) => {
     duplicateSlide(index);
 
-    // Sync to output after state update
     setTimeout(() => {
-      if (state.data) {
-        send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
       }
     }, 50);
-  }, [duplicateSlide, state.data, state.tempEdits, send]);
+  }, [duplicateSlide, send]);
 
   const handleDeleteSlide = useCallback((index: number) => {
     deleteSlide(index);
 
-    // Sync to output after state update
     setTimeout(() => {
-      if (state.data) {
-        send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
-        send({ type: 'SLIDE_CHANGE', slideIndex: state.currentSlideIndex });
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
       }
     }, 50);
-  }, [deleteSlide, state.data, state.tempEdits, state.currentSlideIndex, send]);
+  }, [deleteSlide, send]);
 
   // ============ IMAGE IMPORT HANDLER ============
 
   const handleImportImages = useCallback((files: FileList) => {
-    // Convert files to data URLs
     const fileArray = Array.from(files);
     const imagePromises = fileArray.map((file) => {
       return new Promise<string>((resolve) => {
@@ -408,25 +474,204 @@ export const PresenterView: React.FC = () => {
       });
     });
 
-    Promise.all(imagePromises).then((imageUrls) => {
-      // Insert after current slide
-      addImageSlides(imageUrls, state.currentSlideIndex);
+    const insertAfterIndex = stateRef.current?.previewSlideIndex ?? 0;
 
-      // Sync to output after state update
+    Promise.all(imagePromises).then((imageUrls) => {
+      addImageSlides(imageUrls, insertAfterIndex);
+
       setTimeout(() => {
-        if (state.data) {
-          send({ type: 'SLIDES_UPDATE', slides: state.data.slides, tempEdits: state.tempEdits });
+        const currentState = stateRef.current;
+        if (currentState?.data) {
+          send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
         }
       }, 100);
     });
-  }, [addImageSlides, state.currentSlideIndex, state.data, state.tempEdits, send]);
+  }, [addImageSlides, send]);
 
-  // ============ TEXT OVERLAY HANDLERS (SIMPLIFICADO) ============
+  // ============ QUICK ADD SLIDE HANDLER ============
 
-  // Agregar nuevo text overlay (con scope incluido)
+  const handleCreateSlide = useCallback((slide: import('@/types/shared/slide').Slide, insertPosition: 'after' | 'end') => {
+    const insertAfterIndex = insertPosition === 'after'
+      ? (stateRef.current?.previewSlideIndex ?? 0)
+      : ((stateRef.current?.data?.slides.length ?? 1) - 1);
+
+    insertSlide(slide, insertAfterIndex);
+
+    if (createSlideTimeoutRef.current) {
+      clearTimeout(createSlideTimeoutRef.current);
+    }
+
+    createSlideTimeoutRef.current = setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+      }
+    }, 100);
+  }, [insertSlide, send]);
+
+  // Handler for creating multiple slides at once (scenes)
+  const handleCreateSlides = useCallback((
+    slides: import('@/types/shared/slide').Slide[],
+    insertPosition: 'after' | 'end',
+    elementInfo?: { type: string; title: string }
+  ) => {
+    const insertAfterIndex = insertPosition === 'after'
+      ? (stateRef.current?.previewSlideIndex ?? 0)
+      : ((stateRef.current?.data?.slides.length ?? 1) - 1);
+
+    insertSlides(slides, insertAfterIndex, elementInfo);
+
+    if (createSlideTimeoutRef.current) {
+      clearTimeout(createSlideTimeoutRef.current);
+    }
+
+    createSlideTimeoutRef.current = setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+      }
+    }, 100);
+  }, [insertSlides, send]);
+
+  // ============ EXPORT/IMPORT HANDLERS ============
+
+  const handleImportPresentation = useCallback((validationResult: ImportValidationResult) => {
+    if (!state.data) return;
+
+    const result = applyImport(
+      validationResult.importData,
+      state.data.slides,
+      state.tempEdits
+    );
+
+    const updatedData = {
+      ...state.data,
+      slides: result.slides,
+    };
+
+    loadLiturgy(updatedData);
+
+    setTimeout(() => {
+      setLogoState(result.logoState);
+      setTextOverlayState(result.textOverlayState);
+      setImageOverlayState(result.imageOverlayState);
+      setStyleState(result.styleState);
+
+      setTimeout(() => {
+        const currentState = stateRef.current;
+        if (currentState?.data) {
+          send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+          send({ type: 'LOGO_UPDATE', logoState: result.logoState });
+          send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: result.textOverlayState });
+          send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: result.imageOverlayState });
+          send({ type: 'STYLES_UPDATE', styleState: result.styleState });
+        }
+      }, 100);
+    }, 100);
+  }, [state.data, state.tempEdits, loadLiturgy, setLogoState, setTextOverlayState, setImageOverlayState, setStyleState, send]);
+
+  // ============ SESSION HANDLERS ============
+
+  const handleSessionSaved = useCallback((sessionId: string) => {
+    setCurrentSessionId(sessionId);
+    toast.success('Sesión guardada correctamente');
+  }, []);
+
+  const handleLoadSession = useCallback(async (sessionId: string) => {
+    setLoading(true);
+    try {
+      const session = await loadSession(sessionId);
+      if (!session) {
+        toast.error('No se encontró la sesión');
+        return;
+      }
+
+      if (!state.data || state.data.liturgyId !== session.liturgyId) {
+        const liturgyData = await loadLiturgyForPresentation(session.liturgyId);
+        if (!liturgyData) {
+          toast.error('No se pudo cargar la liturgia');
+          return;
+        }
+        loadLiturgy(liturgyData);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      const sessionState = session.state;
+
+      setTimeout(() => {
+        const currentState = stateRef.current;
+        if (currentState?.data) {
+          const mergedSlides = mergeTempSlides(currentState.data.slides, sessionState.tempSlides);
+          const updatedData = {
+            ...currentState.data,
+            slides: mergedSlides,
+          };
+          loadLiturgy(updatedData);
+
+          setTimeout(() => {
+            setLogoState(sessionState.logoState);
+            setTextOverlayState(sessionState.textOverlayState);
+            if (sessionState.imageOverlayState) {
+              setImageOverlayState(sessionState.imageOverlayState);
+            }
+            setStyleState(sessionState.styleState);
+            goToSlide(sessionState.previewSlideIndex);
+
+            const latestState = stateRef.current;
+            if (latestState?.data) {
+              send({ type: 'LITURGY_LOADED', data: latestState.data });
+              send({ type: 'LOGO_UPDATE', logoState: sessionState.logoState });
+              send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: sessionState.textOverlayState });
+              if (sessionState.imageOverlayState) {
+                send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: sessionState.imageOverlayState });
+              }
+              send({ type: 'STYLES_UPDATE', styleState: sessionState.styleState });
+            }
+          }, 100);
+        }
+      }, 100);
+
+      setCurrentSessionId(sessionId);
+      toast.success(`Sesión "${session.name}" cargada`);
+    } catch {
+      toast.error('Error al cargar la sesión');
+    } finally {
+      setLoading(false);
+    }
+  }, [state.data, loadLiturgy, setLogoState, setTextOverlayState, setStyleState, goToSlide, send]);
+
+  const handleUpdateCurrentSession = useCallback(async () => {
+    if (!currentSessionId || !state.data) {
+      toast.error('No hay sesión activa para actualizar');
+      return;
+    }
+
+    setIsUpdatingSession(true);
+    try {
+      const sessionState = createSessionState(
+        state.data.slides,
+        state.styleState,
+        state.logoState,
+        state.textOverlayState,
+        state.imageOverlayState,
+        state.tempEdits,
+        state.previewSlideIndex,
+        state.liveSlideIndex
+      );
+
+      await updateSession(currentSessionId, sessionState);
+      toast.success('Sesión actualizada');
+    } catch {
+      toast.error('Error al actualizar la sesión');
+    } finally {
+      setIsUpdatingSession(false);
+    }
+  }, [currentSessionId, state]);
+
+  // ============ TEXT OVERLAY HANDLERS ============
+
   const handleAddTextOverlay = useCallback((overlay: TextOverlay) => {
     addTextOverlay(overlay);
-    // Calcular nuevo estado para sync (state.textOverlayState es el valor anterior)
     const currentOverlays = state.textOverlayState?.overlays ?? [];
     const newState: TextOverlayState = {
       overlays: [...currentOverlays, overlay],
@@ -434,10 +679,8 @@ export const PresenterView: React.FC = () => {
     send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [addTextOverlay, state.textOverlayState, send]);
 
-  // Actualizar text overlay
   const handleUpdateTextOverlay = useCallback((id: string, updates: Partial<TextOverlay>) => {
     updateTextOverlay(id, updates);
-    // Calcular nuevo estado para sync
     const currentOverlays = state.textOverlayState?.overlays ?? [];
     const newState: TextOverlayState = {
       overlays: currentOverlays.map((o) =>
@@ -447,16 +690,82 @@ export const PresenterView: React.FC = () => {
     send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [updateTextOverlay, state.textOverlayState, send]);
 
-  // Eliminar text overlay
   const handleRemoveTextOverlay = useCallback((id: string) => {
     removeTextOverlay(id);
-    // Calcular nuevo estado para sync
     const currentOverlays = state.textOverlayState?.overlays ?? [];
     const newState: TextOverlayState = {
       overlays: currentOverlays.filter((o) => o.id !== id),
     };
     send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: newState });
   }, [removeTextOverlay, state.textOverlayState, send]);
+
+  // ============ IMAGE OVERLAY HANDLERS ============
+
+  const handleAddImageOverlay = useCallback((overlay: ImageOverlay) => {
+    addImageOverlay(overlay);
+    const currentOverlays = state.imageOverlayState?.overlays ?? [];
+    const newState: ImageOverlayState = {
+      overlays: [...currentOverlays, overlay],
+    };
+    send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: newState });
+  }, [addImageOverlay, state.imageOverlayState, send]);
+
+  const handleUpdateImageOverlay = useCallback((id: string, updates: Partial<ImageOverlay>) => {
+    updateImageOverlay(id, updates);
+    const currentOverlays = state.imageOverlayState?.overlays ?? [];
+    const newState: ImageOverlayState = {
+      overlays: currentOverlays.map((o) =>
+        o.id === id ? { ...o, ...updates } : o
+      ),
+    };
+    send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: newState });
+  }, [updateImageOverlay, state.imageOverlayState, send]);
+
+  const handleRemoveImageOverlay = useCallback((id: string) => {
+    removeImageOverlay(id);
+    const currentOverlays = state.imageOverlayState?.overlays ?? [];
+    const newState: ImageOverlayState = {
+      overlays: currentOverlays.filter((o) => o.id !== id),
+    };
+    send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: newState });
+  }, [removeImageOverlay, state.imageOverlayState, send]);
+
+  // ============ VIDEO BACKGROUND HANDLERS ============
+
+  const handleAddVideoBackground = useCallback((background: VideoBackground) => {
+    addVideoBackground(background);
+    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
+    const newState: VideoBackgroundState = {
+      backgrounds: [background], // Only one at a time
+    };
+    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
+  }, [addVideoBackground, state.videoBackgroundState, send]);
+
+  const handleUpdateVideoBackground = useCallback((id: string, updates: Partial<VideoBackground>) => {
+    updateVideoBackground(id, updates);
+    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
+    const newState: VideoBackgroundState = {
+      backgrounds: currentBackgrounds.map((bg) =>
+        bg.id === id
+          ? {
+              ...bg,
+              ...updates,
+              settings: updates.settings ? { ...bg.settings, ...updates.settings } : bg.settings,
+            }
+          : bg
+      ),
+    };
+    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
+  }, [updateVideoBackground, state.videoBackgroundState, send]);
+
+  const handleRemoveVideoBackground = useCallback((id: string) => {
+    removeVideoBackground(id);
+    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
+    const newState: VideoBackgroundState = {
+      backgrounds: currentBackgrounds.filter((bg) => bg.id !== id),
+    };
+    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
+  }, [removeVideoBackground, state.videoBackgroundState, send]);
 
   // Get the slide being edited
   const editingSlide = editingSlideIndex !== null && state.data
@@ -471,23 +780,46 @@ export const PresenterView: React.FC = () => {
     onFirst: handleFirst,
     onLast: handleLast,
     onBlack: handleToggleBlack,
+    onPublish: handlePublish,
     onFullscreen: () => send({ type: 'FULLSCREEN_TOGGLE' }),
   });
 
-  // Determinar si mostrar logo en el slide actual
+  // Logo visibility for current slide
   const showLogoOnCurrentSlide = shouldShowLogo(
     state.logoState ?? DEFAULT_LOGO_STATE,
-    state.currentSlideIndex,
+    state.previewSlideIndex,
     state.data?.elements || []
   );
 
-  // Obtener TODOS los text overlays para el slide actual (para preview en presenter)
-  // Incluye overlays con visible: false para que el usuario pueda posicionarlos
+  // Text overlays for current slide
   const allOverlaysForSlide = getAllOverlaysForSlide(
     state.textOverlayState ?? DEFAULT_TEXT_OVERLAY_STATE,
-    state.currentSlideIndex,
+    state.previewSlideIndex,
     state.data?.elements || []
   );
+
+  // Image overlays for current slide
+  const allImageOverlaysForSlide = getAllImageOverlaysForSlide(
+    state.imageOverlayState ?? DEFAULT_IMAGE_OVERLAY_STATE,
+    state.previewSlideIndex,
+    state.data?.elements || []
+  );
+
+  // Active video background for current slide
+  const activeVideoBackground = getActiveVideoBackground(
+    state.videoBackgroundState ?? DEFAULT_VIDEO_BACKGROUND_STATE,
+    state.previewSlideIndex,
+    state.data?.elements || []
+  );
+
+  // Resolved styles for preview slide
+  const previewResolvedStyles = currentSlide
+    ? getResolvedStyles(
+        state.styleState ?? DEFAULT_STYLE_STATE,
+        currentSlide.id,
+        currentElement?.id ?? null
+      )
+    : null;
 
   return (
     <div
@@ -496,21 +828,28 @@ export const PresenterView: React.FC = () => {
         backgroundColor: CASA_BRAND.colors.primary.black,
       }}
     >
-      {/* Top bar with controls */}
+      {/* Unified Header with 4 zones */}
       <PresenterControls
         isLive={state.isLive}
         isBlack={state.isBlack}
         hasData={!!state.data}
-        currentIndex={state.currentSlideIndex}
-        totalSlides={totalSlides}
+        liveStartTime={liveStartTime}
+        liturgyTitle={state.data?.liturgyTitle}
+        liturgyDate={state.data?.liturgyDate}
+        currentSessionId={currentSessionId}
+        isUpdatingSession={isUpdatingSession}
+        loading={loading}
         onGoLive={handleGoLive}
         onToggleBlack={handleToggleBlack}
         onOpenOutput={handleOpenOutput}
-        onNext={handleNext}
-        onPrev={handlePrev}
-        onFirst={handleFirst}
-        onLast={handleLast}
+        onSelectLiturgy={() => setSelectorOpen(true)}
+        onExport={() => setExportDialogOpen(true)}
+        onImport={() => setImportDialogOpen(true)}
         onImportImages={handleImportImages}
+        onSaveSession={() => setSaveSessionDialogOpen(true)}
+        onLoadSession={() => setLoadSessionDialogOpen(true)}
+        onUpdateSession={handleUpdateCurrentSession}
+        onSaveToLiturgy={() => setSaveToLiturgyDialogOpen(true)}
       />
 
       {/* Main content */}
@@ -519,74 +858,35 @@ export const PresenterView: React.FC = () => {
         <div className="w-64 flex-shrink-0">
           <ServiceNavigator
             elements={state.data?.elements || []}
-            currentElementIndex={state.currentElementIndex}
+            currentElementIndex={state.previewElementIndex}
             onElementClick={handleGoToElement}
           />
         </div>
 
         {/* Center - Main preview area */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Header with liturgy info and timer */}
-          <div
-            className="flex items-center justify-between px-6 py-3 flex-shrink-0"
-            style={{
-              backgroundColor: CASA_BRAND.colors.secondary.carbon,
-              borderBottom: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
-            }}
-          >
-            <div className="flex items-center gap-4">
-              <Button
-                onClick={() => setSelectorOpen(true)}
-                variant="outline"
-                className="gap-2"
-                disabled={loading}
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin" size={16} />
-                ) : (
-                  <FolderOpen size={16} />
-                )}
-                {state.data ? 'Cambiar Liturgia' : 'Seleccionar Liturgia'}
-              </Button>
-
-              {state.data && (
-                <div>
-                  <h1
-                    style={{
-                      fontFamily: CASA_BRAND.fonts.heading,
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      color: CASA_BRAND.colors.primary.white,
-                    }}
-                  >
-                    {state.data.liturgyTitle}
-                  </h1>
-                  <p
-                    style={{
-                      fontFamily: CASA_BRAND.fonts.body,
-                      fontSize: '12px',
-                      color: CASA_BRAND.colors.secondary.grayMedium,
-                    }}
-                  >
-                    {state.data.liturgyDate.toLocaleDateString('es-CL', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <TimerClock isLive={state.isLive} liveStartTime={liveStartTime} />
-          </div>
+          {/* Navigation Strip - above slide preview */}
+          <NavigationStrip
+            hasData={!!state.data}
+            currentIndex={state.previewSlideIndex}
+            liveIndex={state.liveSlideIndex}
+            totalSlides={totalSlides}
+            isLive={state.isLive}
+            hasUnpublishedChanges={state.hasUnpublishedChanges}
+            followMode={state.followMode}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            onFirst={handleFirst}
+            onLast={handleLast}
+            onPublish={handlePublish}
+            onToggleFollowMode={toggleFollowMode}
+          />
 
           {/* Slide preview - constrained and centered */}
           <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
             <SlidePreview
               slide={currentSlide}
-              currentIndex={state.currentSlideIndex}
+              currentIndex={state.previewSlideIndex}
               totalSlides={totalSlides}
               isLive={state.isLive}
               isBlack={state.isBlack}
@@ -594,7 +894,11 @@ export const PresenterView: React.FC = () => {
                 ? (state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings)
                 : { ...(state.logoState?.settings ?? DEFAULT_LOGO_STATE.settings), visible: false }}
               textOverlays={allOverlaysForSlide}
+              imageOverlays={allImageOverlaysForSlide}
+              videoBackground={activeVideoBackground}
               onTextOverlayPositionChange={(id, position) => updateTextOverlay(id, { position })}
+              onImageOverlayPositionChange={(id, position) => handleUpdateImageOverlay(id, { position })}
+              styles={previewResolvedStyles}
             />
           </div>
 
@@ -602,7 +906,9 @@ export const PresenterView: React.FC = () => {
           <div className="h-32 flex-shrink-0">
             <SlideStrip
               slides={state.data?.slides || []}
-              currentIndex={state.currentSlideIndex}
+              currentIndex={state.previewSlideIndex}
+              liveIndex={state.liveSlideIndex}
+              isLive={state.isLive}
               onSlideClick={handleGoToSlide}
               tempEdits={state.tempEdits}
               onEdit={handleEditSlide}
@@ -678,7 +984,7 @@ export const PresenterView: React.FC = () => {
             >
               <LogoControls
                 logoState={state.logoState ?? DEFAULT_LOGO_STATE}
-                currentSlideIndex={state.currentSlideIndex}
+                currentSlideIndex={state.previewSlideIndex}
                 currentSlide={currentSlide}
                 currentElement={currentElement}
                 elements={state.data?.elements || []}
@@ -709,13 +1015,129 @@ export const PresenterView: React.FC = () => {
             >
               <TextOverlayControls
                 textOverlayState={state.textOverlayState ?? { overlays: [] }}
-                currentSlideIndex={state.currentSlideIndex}
+                currentSlideIndex={state.previewSlideIndex}
                 currentElement={currentElement}
                 elements={state.data?.elements || []}
                 onAdd={handleAddTextOverlay}
                 onUpdate={handleUpdateTextOverlay}
                 onRemove={handleRemoveTextOverlay}
                 compact
+              />
+            </CollapsiblePanel>
+
+            {/* Image Overlay Controls - collapsed by default */}
+            <CollapsiblePanel
+              title="Imágenes"
+              icon={<ImageIcon size={16} />}
+              defaultOpen={false}
+              badge={
+                (state.imageOverlayState?.overlays?.length ?? 0) > 0 ? (
+                  <span
+                    className="px-2 py-0.5 rounded text-xs"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                      color: CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    {state.imageOverlayState?.overlays?.length ?? 0}
+                  </span>
+                ) : null
+              }
+            >
+              <ImageOverlayControls
+                imageOverlayState={state.imageOverlayState ?? { overlays: [] }}
+                currentSlideIndex={state.previewSlideIndex}
+                currentElement={currentElement}
+                elements={state.data?.elements || []}
+                onAdd={handleAddImageOverlay}
+                onUpdate={handleUpdateImageOverlay}
+                onRemove={handleRemoveImageOverlay}
+                compact
+              />
+            </CollapsiblePanel>
+
+            {/* Video Background Controls - collapsed by default */}
+            <CollapsiblePanel
+              title="Video de Fondo"
+              icon={<Video size={16} />}
+              defaultOpen={false}
+              badge={
+                (state.videoBackgroundState?.backgrounds?.length ?? 0) > 0 ? (
+                  <span
+                    className="px-2 py-0.5 rounded text-xs"
+                    style={{
+                      backgroundColor: activeVideoBackground
+                        ? CASA_BRAND.colors.primary.amber + '30'
+                        : CASA_BRAND.colors.secondary.grayDark,
+                      color: activeVideoBackground
+                        ? CASA_BRAND.colors.primary.amber
+                        : CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    {activeVideoBackground ? 'activo' : '1'}
+                  </span>
+                ) : null
+              }
+            >
+              <VideoBackgroundControls
+                videoBackgroundState={state.videoBackgroundState ?? { backgrounds: [] }}
+                currentSlideIndex={state.previewSlideIndex}
+                currentElement={currentElement}
+                elements={state.data?.elements || []}
+                onAdd={handleAddVideoBackground}
+                onUpdate={handleUpdateVideoBackground}
+                onRemove={handleRemoveVideoBackground}
+                compact
+              />
+            </CollapsiblePanel>
+
+            {/* Style Controls - collapsed by default */}
+            <CollapsiblePanel
+              title="Estilos"
+              icon={<Palette size={16} />}
+              defaultOpen={false}
+              badge={
+                hasActiveStyles(state.styleState) ? (
+                  <span
+                    className="px-2 py-0.5 rounded text-xs"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.primary.amber + '30',
+                      color: CASA_BRAND.colors.primary.amber,
+                    }}
+                  >
+                    Activo
+                  </span>
+                ) : null
+              }
+            >
+              <StyleControls
+                styleState={state.styleState}
+                currentSlide={currentSlide}
+                currentSlideIndex={state.previewSlideIndex}
+                currentElement={currentElement}
+                onApplyStyles={(styles: SlideStyles, scope: StyleScope) => {
+                  applyStyles(
+                    styles,
+                    scope,
+                    currentSlide?.id,
+                    currentElement?.id
+                  );
+                  setTimeout(() => {
+                    const currentState = stateRef.current;
+                    if (currentState) {
+                      send({ type: 'STYLES_UPDATE', styleState: currentState.styleState });
+                    }
+                  }, 0);
+                }}
+                onResetStyles={(scope: StyleScope) => {
+                  resetStyles(scope, currentSlide?.id, currentElement?.id);
+                  setTimeout(() => {
+                    const currentState = stateRef.current;
+                    if (currentState) {
+                      send({ type: 'STYLES_UPDATE', styleState: currentState.styleState });
+                    }
+                  }, 0);
+                }}
               />
             </CollapsiblePanel>
           </div>
@@ -753,11 +1175,89 @@ export const PresenterView: React.FC = () => {
         />
       )}
 
-      {/* Exit warning modal (shown when user tries to navigate away) */}
+      {/* Exit warning modal */}
       <ExitWarningModal
         open={navigationWarning.isBlocked}
         onConfirm={navigationWarning.proceed}
         onCancel={navigationWarning.cancel}
+      />
+
+      {/* Quick add button - FAB repositioned to bottom-right */}
+      {state.data && (
+        <QuickAddButton
+          onClick={() => setSlideCreatorOpen(true)}
+          disabled={loading}
+        />
+      )}
+
+      {/* Slide creator modal */}
+      <SlideCreatorModal
+        open={slideCreatorOpen}
+        onClose={() => setSlideCreatorOpen(false)}
+        onCreateSlide={handleCreateSlide}
+        onCreateSlides={handleCreateSlides}
+        currentSlideIndex={state.previewSlideIndex}
+        totalSlides={totalSlides}
+        theme={state.data?.theme || 'light'}
+      />
+
+      {/* Export dialog */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        data={state.data}
+        tempEdits={state.tempEdits}
+        styleState={state.styleState}
+        logoState={state.logoState}
+        textOverlayState={state.textOverlayState}
+        imageOverlayState={state.imageOverlayState}
+      />
+
+      {/* Import dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        currentLiturgyId={state.data?.liturgyId}
+        onImport={handleImportPresentation}
+      />
+
+      {/* Save session dialog */}
+      <SaveSessionDialog
+        open={saveSessionDialogOpen}
+        onOpenChange={setSaveSessionDialogOpen}
+        data={state.data}
+        slides={state.data?.slides || []}
+        tempEdits={state.tempEdits}
+        styleState={state.styleState}
+        logoState={state.logoState}
+        textOverlayState={state.textOverlayState}
+        imageOverlayState={state.imageOverlayState}
+        previewSlideIndex={state.previewSlideIndex}
+        liveSlideIndex={state.liveSlideIndex}
+        onSaved={handleSessionSaved}
+      />
+
+      {/* Load session dialog */}
+      <LoadSessionDialog
+        open={loadSessionDialogOpen}
+        onOpenChange={setLoadSessionDialogOpen}
+        currentLiturgyId={state.data?.liturgyId}
+        onLoadSession={handleLoadSession}
+      />
+
+      {/* Save to liturgy dialog */}
+      <SaveToLiturgyDialog
+        open={saveToLiturgyDialogOpen}
+        onOpenChange={setSaveToLiturgyDialogOpen}
+        data={state.data}
+        slides={state.data?.slides || []}
+        tempEdits={state.tempEdits}
+        styleState={state.styleState}
+        logoState={state.logoState}
+        textOverlayState={state.textOverlayState}
+        onSaved={() => {
+          toast.success('Cambios guardados en la liturgia');
+        }}
       />
     </div>
   );

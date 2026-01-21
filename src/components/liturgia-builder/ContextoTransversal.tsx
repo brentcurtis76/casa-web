@@ -3,11 +3,11 @@
  * Paso inicial del Constructor de Liturgias
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { Calendar, BookOpen, User, FileText, Plus, X, Search, Loader2 } from 'lucide-react';
+import { Calendar, BookOpen, User, FileText, Plus, X, Search, Loader2, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { LiturgyContext, LiturgyReading, LiturgyContextInput } from '@/types/shared/liturgy';
@@ -75,6 +75,17 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     })) || [{ reference: '', text: '', version: '', versionCode: 'NVI', isLoading: false, isManual: false }]
   );
 
+  // PDF Reflexion state
+  const [reflexionText, setReflexionText] = useState(initialContext?.reflexionText || '');
+  const [pdfFilename, setPdfFilename] = useState('');
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const [showReflexionPreview, setShowReflexionPreview] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+
+  // Original PDF file for publishing
+  const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
+  const [publishReflexion, setPublishReflexion] = useState(false);
+
   // Sincronizar todos los estados cuando cambie el ID del contexto
   // IMPORTANTE: Solo sincronizar cuando cambie el ID, no cuando cambie el contenido
   // Esto evita sobrescribir los cambios que el usuario ha hecho en el formulario
@@ -101,6 +112,9 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
           isLoading: false,
           isManual: false,
         })));
+      }
+      if (initialContext.reflexionText) {
+        setReflexionText(initialContext.reflexionText);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,10 +144,13 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
         })),
       celebrant: celebrant.trim() || undefined,
       preacher: preacher.trim() || undefined,
+      reflexionText: reflexionText.trim() || undefined,
+      originalPdfFile: originalPdfFile || undefined,
+      publishReflexion: publishReflexion || undefined,
     };
 
     onFormChange(contextInput);
-  }, [date, title, summary, readings, celebrant, preacher, onFormChange]);
+  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, publishReflexion, onFormChange]);
 
   // Get next Sunday date
   function getNextSunday(): string {
@@ -239,6 +256,104 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     setReadings(updated);
   };
 
+  // Handle PDF upload and processing
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('[ContextoTransversal] handlePdfUpload triggered', e.target.files);
+    const file = e.target.files?.[0];
+    if (!file) {
+      console.log('[ContextoTransversal] No file selected');
+      return;
+    }
+    console.log('[ContextoTransversal] File selected:', file.name, file.type, file.size);
+
+    // Validate file type
+    if (file.type !== 'application/pdf') {
+      toast({
+        title: 'Archivo inválido',
+        description: 'Por favor sube un archivo PDF',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate file size (10MB max)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({
+        title: 'Archivo muy grande',
+        description: 'El PDF no puede exceder 10MB',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsProcessingPdf(true);
+    setPdfFilename(file.name);
+
+    // Store original file for potential publishing
+    setOriginalPdfFile(file);
+
+    try {
+      // Convert file to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Call edge function to process PDF
+      const { data, error: fnError } = await supabase.functions.invoke('process-reflexion-pdf', {
+        body: { pdfBase64: base64, filename: file.name },
+      });
+
+      if (fnError) throw fnError;
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Error al procesar el PDF');
+      }
+
+      // Update state with extracted text and auto-generated summary
+      setReflexionText(data.texto);
+      setSummary(data.resumen);
+
+      toast({
+        title: 'PDF procesado',
+        description: 'El texto fue extraído y el resumen generado automáticamente',
+      });
+
+    } catch (err) {
+      console.error('Error processing PDF:', err);
+      toast({
+        title: 'Error al procesar PDF',
+        description: err instanceof Error ? err.message : 'Error desconocido',
+        variant: 'destructive',
+      });
+      setPdfFilename('');
+    } finally {
+      setIsProcessingPdf(false);
+      // Reset input so same file can be uploaded again
+      if (pdfInputRef.current) {
+        pdfInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Clear PDF data
+  const handleClearPdf = () => {
+    setReflexionText('');
+    setPdfFilename('');
+    setSummary('');
+    setShowReflexionPreview(false);
+    setOriginalPdfFile(null);
+    setPublishReflexion(false);
+  };
+
   // Validate form
   const isValid = () => {
     if (!date || !title.trim() || !summary.trim()) return false;
@@ -277,6 +392,9 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
         })),
       celebrant: celebrant.trim() || undefined,
       preacher: preacher.trim() || undefined,
+      reflexionText: reflexionText.trim() || undefined,
+      originalPdfFile: originalPdfFile || undefined,
+      publishReflexion: publishReflexion || undefined,
     };
 
     console.log('[ContextoTransversal] handleSubmit - contextInput.date:', contextInput.date);
@@ -374,6 +492,178 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
         </div>
       </div>
 
+      {/* PDF Reflexion Upload */}
+      <div
+        className="p-4 rounded-lg border"
+        style={{
+          borderColor: CASA_BRAND.colors.secondary.grayLight,
+          backgroundColor: `${CASA_BRAND.colors.amber.light}10`,
+        }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <FileText size={16} style={{ color: CASA_BRAND.colors.primary.amber }} />
+          <label
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '14px',
+              fontWeight: 600,
+              color: CASA_BRAND.colors.primary.black,
+            }}
+          >
+            Reflexión en PDF (opcional)
+          </label>
+        </div>
+
+        {!reflexionText && !isProcessingPdf ? (
+          // Upload using label + hidden input pattern (most reliable)
+          <>
+            <input
+              ref={pdfInputRef}
+              id="pdf-reflexion-input"
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={(e) => {
+                console.log('[ContextoTransversal] Input onChange fired', e.target.files);
+                handlePdfUpload(e);
+              }}
+              className="hidden"
+            />
+            <label
+              htmlFor="pdf-reflexion-input"
+              className="flex flex-col items-center gap-2 px-4 py-4 rounded-lg border-2 border-dashed cursor-pointer transition-colors hover:border-amber-400 hover:bg-amber-50"
+              style={{
+                borderColor: CASA_BRAND.colors.secondary.grayLight,
+                backgroundColor: `${CASA_BRAND.colors.amber.light}20`,
+              }}
+            >
+              <Upload size={24} style={{ color: CASA_BRAND.colors.primary.amber }} />
+              <span
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '14px',
+                  color: CASA_BRAND.colors.secondary.grayMedium,
+                }}
+              >
+                Haz clic para subir PDF de la reflexión
+              </span>
+              <span
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '12px',
+                  color: CASA_BRAND.colors.secondary.grayLight,
+                }}
+              >
+                Máximo 10MB
+              </span>
+            </label>
+          </>
+        ) : isProcessingPdf ? (
+          // Processing state
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50">
+            <Loader2 size={20} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} />
+            <span
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '14px',
+                color: CASA_BRAND.colors.primary.black,
+              }}
+            >
+              Procesando {pdfFilename}...
+            </span>
+          </div>
+        ) : (
+          // PDF processed - show preview
+          <div className="space-y-3">
+            {/* File info */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-green-50 border border-green-200">
+              <div className="flex items-center gap-2">
+                <FileText size={16} style={{ color: '#16a34a' }} />
+                <span
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '14px',
+                    color: '#16a34a',
+                  }}
+                >
+                  {pdfFilename || 'PDF procesado'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearPdf}
+                className="p-1 rounded-full hover:bg-red-100 transition-colors"
+                title="Eliminar PDF"
+              >
+                <X size={16} style={{ color: '#dc2626' }} />
+              </button>
+            </div>
+
+            {/* Collapsible preview */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowReflexionPreview(!showReflexionPreview)}
+                className="flex items-center gap-2 text-sm hover:underline"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.amber,
+                }}
+              >
+                {showReflexionPreview ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                Ver texto extraído ({reflexionText.length.toLocaleString()} caracteres)
+              </button>
+
+              {showReflexionPreview && (
+                <div
+                  className="mt-2 p-3 rounded-lg border bg-white max-h-48 overflow-y-auto"
+                  style={{
+                    borderColor: CASA_BRAND.colors.secondary.grayLight,
+                  }}
+                >
+                  <p
+                    className="text-sm whitespace-pre-wrap"
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.body,
+                      color: CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    {reflexionText}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Publish to Home toggle */}
+            <div
+              className="flex items-center gap-3 mt-3 px-3 py-2.5 rounded-lg"
+              style={{
+                backgroundColor: publishReflexion ? `${CASA_BRAND.colors.primary.amber}15` : `${CASA_BRAND.colors.secondary.grayLight}30`,
+                border: publishReflexion ? `1px solid ${CASA_BRAND.colors.primary.amber}40` : '1px solid transparent',
+              }}
+            >
+              <input
+                type="checkbox"
+                id="publish-reflexion"
+                checked={publishReflexion}
+                onChange={(e) => setPublishReflexion(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+              />
+              <label
+                htmlFor="publish-reflexion"
+                className="flex-1 cursor-pointer"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '13px',
+                  color: publishReflexion ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayDark,
+                }}
+              >
+                Publicar esta reflexion en la pagina principal
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Summary */}
       <div>
         <label
@@ -386,6 +676,17 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
           }}
         >
           Resumen / Enfoque Temático *
+          {reflexionText && (
+            <span
+              className="text-xs font-normal px-2 py-0.5 rounded-full"
+              style={{
+                backgroundColor: CASA_BRAND.colors.amber.light,
+                color: CASA_BRAND.colors.primary.amber,
+              }}
+            >
+              Auto-generado
+            </span>
+          )}
         </label>
         <textarea
           value={summary}
