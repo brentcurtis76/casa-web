@@ -476,7 +476,8 @@ export function usePresentationState(): UsePresentationStateReturn {
     }));
   }, []);
 
-  // Ir a slide especifico - auto-syncs to live when isLive && followMode
+  // Ir a slide especifico - updates preview only
+  // When followMode is ON, PresenterView effect detects the change and sends PUBLISH
   const goToSlide = useCallback((index: number) => {
     setState((prev) => {
       if (!prev.data) return prev;
@@ -484,18 +485,6 @@ export function usePresentationState(): UsePresentationStateReturn {
       const newIndex = Math.max(0, Math.min(index, maxIndex));
       const elementIndex = findElementForSlide(prev.data.elements, newIndex);
 
-      // When live AND followMode, update both preview and live
-      if (prev.isLive && prev.followMode) {
-        return {
-          ...prev,
-          previewSlideIndex: newIndex,
-          previewElementIndex: elementIndex,
-          liveSlideIndex: newIndex,
-          liveElementIndex: elementIndex,
-        };
-      }
-
-      // Otherwise only update preview
       return {
         ...prev,
         previewSlideIndex: newIndex,
@@ -504,7 +493,8 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
-  // Siguiente slide - auto-syncs to live when isLive && followMode
+  // Siguiente slide - updates preview only
+  // When followMode is ON, PresenterView effect detects the change and sends PUBLISH
   const nextSlide = useCallback(() => {
     setState((prev) => {
       if (!prev.data) return prev;
@@ -513,18 +503,6 @@ export function usePresentationState(): UsePresentationStateReturn {
       const newIndex = prev.previewSlideIndex + 1;
       const elementIndex = findElementForSlide(prev.data.elements, newIndex);
 
-      // When live AND followMode, update both preview and live
-      if (prev.isLive && prev.followMode) {
-        return {
-          ...prev,
-          previewSlideIndex: newIndex,
-          previewElementIndex: elementIndex,
-          liveSlideIndex: newIndex,
-          liveElementIndex: elementIndex,
-        };
-      }
-
-      // Otherwise only update preview
       return {
         ...prev,
         previewSlideIndex: newIndex,
@@ -533,7 +511,8 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
-  // Slide anterior - auto-syncs to live when isLive && followMode
+  // Slide anterior - updates preview only
+  // When followMode is ON, PresenterView effect detects the change and sends PUBLISH
   const prevSlide = useCallback(() => {
     setState((prev) => {
       if (!prev.data) return prev;
@@ -541,18 +520,6 @@ export function usePresentationState(): UsePresentationStateReturn {
       const newIndex = prev.previewSlideIndex - 1;
       const elementIndex = findElementForSlide(prev.data.elements, newIndex);
 
-      // When live AND followMode, update both preview and live
-      if (prev.isLive && prev.followMode) {
-        return {
-          ...prev,
-          previewSlideIndex: newIndex,
-          previewElementIndex: elementIndex,
-          liveSlideIndex: newIndex,
-          liveElementIndex: elementIndex,
-        };
-      }
-
-      // Otherwise only update preview
       return {
         ...prev,
         previewSlideIndex: newIndex,
@@ -566,25 +533,14 @@ export function usePresentationState(): UsePresentationStateReturn {
     goToSlide(0);
   }, [goToSlide]);
 
-  // Ultimo slide - auto-syncs to live when isLive && followMode
+  // Ultimo slide - updates preview only
+  // When followMode is ON, PresenterView effect detects the change and sends PUBLISH
   const lastSlide = useCallback(() => {
     setState((prev) => {
       if (!prev.data) return prev;
       const maxIndex = prev.data.slides.length - 1;
       const elementIndex = findElementForSlide(prev.data.elements, maxIndex);
 
-      // When live AND followMode, update both preview and live
-      if (prev.isLive && prev.followMode) {
-        return {
-          ...prev,
-          previewSlideIndex: maxIndex,
-          previewElementIndex: elementIndex,
-          liveSlideIndex: maxIndex,
-          liveElementIndex: elementIndex,
-        };
-      }
-
-      // Otherwise only update preview
       return {
         ...prev,
         previewSlideIndex: maxIndex,
@@ -593,24 +549,13 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
-  // Ir a elemento (primer slide del elemento) - auto-syncs to live when isLive && followMode
+  // Ir a elemento (primer slide del elemento) - updates preview only
+  // When followMode is ON, PresenterView effect detects the change and sends PUBLISH
   const goToElement = useCallback((elementIndex: number) => {
     setState((prev) => {
       if (!prev.data || !prev.data.elements[elementIndex]) return prev;
       const element = prev.data.elements[elementIndex];
 
-      // When live AND followMode, update both preview and live
-      if (prev.isLive && prev.followMode) {
-        return {
-          ...prev,
-          previewSlideIndex: element.startSlideIndex,
-          previewElementIndex: elementIndex,
-          liveSlideIndex: element.startSlideIndex,
-          liveElementIndex: elementIndex,
-        };
-      }
-
-      // Otherwise only update preview
       return {
         ...prev,
         previewSlideIndex: element.startSlideIndex,
@@ -621,13 +566,13 @@ export function usePresentationState(): UsePresentationStateReturn {
 
   // PUBLISH - Copy preview state to live state
   // Uses ref to get current state synchronously, avoiding stale closure issues
+  // Only includes slideIndex in payload when followMode is ON
   const publish = useCallback((): PublishPayload => {
     // Read from ref to get current state reliably
     const currentState = latestStateRef.current;
 
     if (!currentState) {
       return {
-        slideIndex: 0,
         overlays: [],
         imageOverlays: [],
         logoState: DEFAULT_LOGO_STATE,
@@ -638,8 +583,9 @@ export function usePresentationState(): UsePresentationStateReturn {
     }
 
     // Build payload from current state (not closure state)
+    // Only include slideIndex when followMode is ON
     const payload: PublishPayload = {
-      slideIndex: currentState.previewSlideIndex,
+      ...(currentState.followMode ? { slideIndex: currentState.previewSlideIndex } : {}),
       overlays: currentState.textOverlayState?.overlays || [],
       imageOverlays: currentState.imageOverlayState?.overlays || [],
       logoState: currentState.logoState || DEFAULT_LOGO_STATE,
@@ -648,13 +594,21 @@ export function usePresentationState(): UsePresentationStateReturn {
       videoBackgroundState: currentState.videoBackgroundState || DEFAULT_VIDEO_BACKGROUND_STATE,
     };
 
-    // Update live state to match preview
+    // Update live state
+    // Only update slide indices when followMode is ON
     setState((prev) => {
-      const elementIndex = findElementForSlide(prev.data?.elements || [], prev.previewSlideIndex);
+      const shouldSyncSlide = prev.followMode;
+      const elementIndex = shouldSyncSlide
+        ? findElementForSlide(prev.data?.elements || [], prev.previewSlideIndex)
+        : prev.liveElementIndex;
+
       return {
         ...prev,
-        liveSlideIndex: prev.previewSlideIndex,
-        liveElementIndex: elementIndex,
+        // Only sync slide position when followMode is ON
+        ...(shouldSyncSlide ? {
+          liveSlideIndex: prev.previewSlideIndex,
+          liveElementIndex: elementIndex,
+        } : {}),
         liveLogoState: prev.logoState,
         liveTextOverlayState: prev.textOverlayState,
         liveImageOverlayState: prev.imageOverlayState,

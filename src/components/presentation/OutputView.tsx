@@ -7,7 +7,7 @@
  * - Usa getVisibleTextOverlays() para obtener textos visibles
  */
 
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 import { LowerThirdDisplay } from './LowerThirdDisplay';
 import { LogoOverlay } from './LogoOverlay';
@@ -66,23 +66,29 @@ export const OutputView: React.FC = () => {
 
       case 'PUBLISH':
         // PRIMARY UPDATE METHOD - staged publish from presenter
+        // slideIndex is only included when followMode is ON
         setState((prev) => {
-          // Find element index, with fallback for -1 (not found)
-          const elementIndex = prev.data?.elements
+          // Only update slide position if slideIndex is provided (followMode is ON)
+          const hasSlideUpdate = message.payload.slideIndex !== undefined;
+          const newSlideIndex = hasSlideUpdate ? message.payload.slideIndex : prev.liveSlideIndex;
+
+          // Find element index only if we're updating slide position
+          const elementIndex = hasSlideUpdate && prev.data?.elements
             ? prev.data.elements.findIndex(el =>
-                message.payload.slideIndex >= el.startSlideIndex &&
-                message.payload.slideIndex <= el.endSlideIndex
+                newSlideIndex >= el.startSlideIndex &&
+                newSlideIndex <= el.endSlideIndex
               )
-            : 0;
+            : prev.liveElementIndex;
 
           return {
             ...prev,
-            // Update live state from publish payload
-            liveSlideIndex: message.payload.slideIndex,
-            liveElementIndex: Math.max(0, elementIndex), // Ensure non-negative
-            // Also update preview to match (for backwards compatibility)
-            previewSlideIndex: message.payload.slideIndex,
-            // Update live overlay states
+            // Only update slide indices if slideIndex was provided
+            ...(hasSlideUpdate ? {
+              liveSlideIndex: newSlideIndex,
+              liveElementIndex: Math.max(0, elementIndex),
+              previewSlideIndex: newSlideIndex,
+            } : {}),
+            // Always update overlay/style states
             liveLogoState: message.payload.logoState,
             liveTextOverlayState: { overlays: message.payload.overlays },
             liveImageOverlayState: { overlays: message.payload.imageOverlays || [] },
@@ -301,6 +307,24 @@ export const OutputView: React.FC = () => {
   const rawSlide: Slide | null = state.data?.slides[state.liveSlideIndex] || null;
   const currentSlide: Slide | null = rawSlide ? applyTempEdits(rawSlide, state.liveTempEdits ?? state.tempEdits) : null;
 
+  // Send video playback state to presenter periodically
+  useEffect(() => {
+    if (!currentSlide || currentSlide.type !== 'video') return;
+
+    const interval = setInterval(() => {
+      if (videoRef.current) {
+        const playbackState = videoRef.current.getPlaybackState();
+        send({
+          type: 'VIDEO_PLAYBACK_STATE',
+          slideId: currentSlide.id,
+          state: playbackState,
+        });
+      }
+    }, 500); // Update every 500ms
+
+    return () => clearInterval(interval);
+  }, [currentSlide, send]);
+
   // Get elements for scope resolution
   const elements = state.data?.elements || [];
 
@@ -444,6 +468,9 @@ export const OutputView: React.FC = () => {
               slide={currentSlide}
               scale={scale}
               showIndicator={false}
+              transparentBackground={!!videoBackground}
+              textReadability={videoBackground?.visible ? videoBackground.settings.textReadability : undefined}
+              styleOverrides={resolvedStyles}
             />
           </SlideStyleWrapper>
         )}

@@ -73,6 +73,7 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
           className="h-9 w-9"
           title="Primer slide (Home)"
           aria-label="Primer slide (Home)"
+          style={{ color: CASA_BRAND.colors.secondary.grayLight }}
         >
           <ChevronsLeft size={18} />
         </Button>
@@ -85,6 +86,7 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
           className="h-9 w-9"
           title="Diapositiva anterior (←)"
           aria-label="Diapositiva anterior"
+          style={{ color: CASA_BRAND.colors.secondary.grayLight }}
         >
           <ChevronLeft size={18} />
         </Button>
@@ -112,7 +114,7 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
             className="text-xs"
             style={{
               fontFamily: CASA_BRAND.fonts.body,
-              color: '#ef4444',
+              color: CASA_BRAND.colors.primary.amber,
             }}
           >
             EN VIVO: {liveIndex + 1}
@@ -130,6 +132,7 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
           className="h-9 w-9"
           title="Siguiente diapositiva (→)"
           aria-label="Siguiente diapositiva"
+          style={{ color: CASA_BRAND.colors.secondary.grayLight }}
         >
           <ChevronRight size={18} />
         </Button>
@@ -142,6 +145,7 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
           className="h-9 w-9"
           title="Última diapositiva (End)"
           aria-label="Última diapositiva"
+          style={{ color: CASA_BRAND.colors.secondary.grayLight }}
         >
           <ChevronsRight size={18} />
         </Button>
@@ -184,14 +188,19 @@ export const NavigationStrip: React.FC<NavigationStripProps> = ({
               variant="ghost"
               size="sm"
               onClick={onToggleFollowMode}
-              className="h-8 px-2 gap-1.5 transition-colors"
+              className="h-9 px-4 gap-2 transition-all duration-200"
               style={{
-                color: followMode ? '#22c55e' : CASA_BRAND.colors.secondary.grayMedium,
+                backgroundColor: followMode
+                  ? CASA_BRAND.colors.primary.amber
+                  : CASA_BRAND.colors.secondary.grayDark,
+                color: followMode
+                  ? CASA_BRAND.colors.primary.black
+                  : CASA_BRAND.colors.secondary.grayMedium,
               }}
               aria-label={followMode ? 'Desactivar modo seguimiento' : 'Activar modo seguimiento'}
             >
               {followMode ? <Link size={14} /> : <Unlink size={14} />}
-              <span className="text-xs">{followMode ? 'Siguiendo' : 'Manual'}</span>
+              <span className="text-sm">{followMode ? 'Siguiendo' : 'Manual'}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent

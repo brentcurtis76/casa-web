@@ -8,10 +8,11 @@ import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 import { LogoOverlay } from './LogoOverlay';
 import { TextOverlayDisplay } from './TextOverlayDisplay';
 import { VideoBackgroundLayer } from './VideoBackgroundLayer';
+import { VideoSlideRenderer } from './VideoSlideRenderer';
 import { SlideStyleWrapper } from './SlideStyleWrapper';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { Slide } from '@/types/shared/slide';
-import type { LogoSettings, TextOverlay, ImageOverlay, VideoBackground, SlideStyles } from '@/lib/presentation/types';
+import type { LogoSettings, TextOverlay, ImageOverlay, VideoBackground, SlideStyles, VideoPlaybackState, TextReadabilitySettings } from '@/lib/presentation/types';
 
 interface SlidePreviewProps {
   slide: Slide | null;
@@ -36,12 +37,22 @@ interface SlidePreviewProps {
   minScale?: number;
   /** Style overrides to apply to the slide */
   styles?: SlideStyles | null;
+  /** Video playback state from output (for video slides) */
+  videoPlaybackState?: VideoPlaybackState;
 }
 
 // Escala por defecto cuando no hay contenedor para medir
 const DEFAULT_SCALE = 0.65;
 // Margen para el contenedor (status bar + padding)
 const CONTAINER_MARGIN = 80;
+
+// Format seconds to MM:SS
+const formatTime = (seconds: number): string => {
+  if (!seconds || !isFinite(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 export const SlidePreview: React.FC<SlidePreviewProps> = ({
   slide,
@@ -58,6 +69,7 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
   maxScale = 0.8,
   minScale = 0.3,
   styles,
+  videoPlaybackState,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const slideRef = useRef<HTMLDivElement>(null);
@@ -240,9 +252,9 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
           className="px-3 py-1 rounded-full text-sm"
           style={{
             backgroundColor: isLive
-              ? 'rgba(34, 197, 94, 0.2)'
+              ? `${CASA_BRAND.colors.primary.amber}33`
               : 'rgba(107, 114, 128, 0.2)',
-            color: isLive ? '#22c55e' : CASA_BRAND.colors.secondary.grayMedium,
+            color: isLive ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
             fontFamily: CASA_BRAND.fonts.body,
             fontWeight: 600,
           }}
@@ -273,6 +285,34 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
         >
           Slide {currentIndex + 1} de {totalSlides}
         </span>
+
+        {/* Video playback indicator */}
+        {slide?.type === 'video' && videoPlaybackState && (
+          <div className="flex items-center gap-2">
+            <span
+              className="px-2 py-0.5 rounded text-xs"
+              style={{
+                backgroundColor: `${CASA_BRAND.colors.primary.amber}33`,
+                color: CASA_BRAND.colors.primary.amber,
+                fontFamily: CASA_BRAND.fonts.body,
+                fontWeight: 500,
+              }}
+            >
+              {videoPlaybackState.isPlaying ? '▶' : '⏸'}
+            </span>
+            <span
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '14px',
+                color: CASA_BRAND.colors.primary.amber,
+                fontWeight: 500,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {formatTime(videoPlaybackState.currentTime)} / {formatTime(videoPlaybackState.duration)}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Slide preview */}
@@ -280,10 +320,12 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
         ref={slideRef}
         className="relative rounded-lg overflow-hidden shadow-2xl"
         style={{
+          width: CASA_BRAND.slide.width * scale,
+          height: CASA_BRAND.slide.height * scale,
           outline: isBlack
             ? '4px solid rgba(239, 68, 68, 0.5)'
             : isLive
-            ? '4px solid rgba(34, 197, 94, 0.5)'
+            ? `4px solid ${CASA_BRAND.colors.primary.amber}80`
             : '4px solid transparent',
         }}
       >
@@ -297,13 +339,44 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
               />
             )}
 
-            <SlideStyleWrapper styles={styles ?? null} scale={scale}>
-              <UniversalSlide
-                slide={slide}
-                scale={scale}
-                showIndicator={true}
-              />
-            </SlideStyleWrapper>
+            {/* Use VideoSlideRenderer for video slides, UniversalSlide for others */}
+            {slide.type === 'video' ? (
+              <div className="relative w-full h-full">
+                <VideoSlideRenderer
+                  slide={slide}
+                  scale={scale}
+                  isLive={false}
+                  isPreview={true}
+                  showControls={true}
+                />
+                {/* Video progress bar from output */}
+                {videoPlaybackState && videoPlaybackState.duration > 0 && (
+                  <div
+                    className="absolute bottom-0 left-0 right-0 h-1.5"
+                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+                  >
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{
+                        width: `${(videoPlaybackState.currentTime / videoPlaybackState.duration) * 100}%`,
+                        backgroundColor: CASA_BRAND.colors.primary.amber,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <SlideStyleWrapper styles={styles ?? null} scale={scale}>
+                <UniversalSlide
+                  slide={slide}
+                  scale={scale}
+                  showIndicator={true}
+                  transparentBackground={!!(videoBackground && videoBackground.visible)}
+                  textReadability={videoBackground?.visible ? videoBackground.settings.textReadability : undefined}
+                  styleOverrides={styles}
+                />
+              </SlideStyleWrapper>
+            )}
 
             {/* Logo overlay */}
             {logoSettings && (
@@ -349,6 +422,7 @@ export const SlidePreview: React.FC<SlidePreviewProps> = ({
                   pointerEvents: onImageOverlayPositionChange ? 'auto' : 'none',
                   outline: draggingOverlayId === overlay.id ? '2px dashed rgba(212, 168, 83, 0.8)' : 'none',
                   transition: draggingOverlayId === overlay.id ? 'none' : 'opacity 0.2s',
+                  zIndex: 20,
                 }}
               >
                 <img

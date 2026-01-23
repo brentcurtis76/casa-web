@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { Slide } from '@/types/shared/slide';
+import type { TextReadabilitySettings, SlideStyles } from '@/lib/presentation/types';
 
 /**
  * Post-process an illustration to ensure background matches CASA_BRAND.colors.primary.white
@@ -110,7 +111,96 @@ interface UniversalSlideProps {
   showIndicator?: boolean;
   /** Show logo on portadas - only for Constructor preview, not Presenter */
   showLogo?: boolean;
+  /** Make background transparent (for video backgrounds) */
+  transparentBackground?: boolean;
+  /** Text readability settings (for video backgrounds) */
+  textReadability?: TextReadabilitySettings;
+  /** Style overrides from Presenter Estilos panel */
+  styleOverrides?: SlideStyles | null;
 }
+
+/**
+ * Generate CSS styles for text readability based on preset and intensity
+ * Note: Text color is handled separately via textColorOverride in the component
+ */
+function getTextReadabilityStyles(settings: TextReadabilitySettings | undefined, scale: number = 1): React.CSSProperties {
+  if (!settings || settings.preset === 'none') {
+    return {};
+  }
+
+  const intensity = settings.intensity / 100;
+
+  switch (settings.preset) {
+    case 'shadow':
+      return {
+        textShadow: `
+          0 ${2 * scale}px ${4 * scale * intensity}px rgba(0, 0, 0, ${0.8 * intensity}),
+          0 ${4 * scale}px ${8 * scale * intensity}px rgba(0, 0, 0, ${0.6 * intensity}),
+          0 0 ${20 * scale * intensity}px rgba(0, 0, 0, ${0.4 * intensity})
+        `,
+      };
+
+    case 'outline':
+      const outlineWidth = Math.max(1, 2 * scale * intensity);
+      return {
+        textShadow: `
+          -${outlineWidth}px -${outlineWidth}px 0 rgba(0, 0, 0, ${intensity}),
+          ${outlineWidth}px -${outlineWidth}px 0 rgba(0, 0, 0, ${intensity}),
+          -${outlineWidth}px ${outlineWidth}px 0 rgba(0, 0, 0, ${intensity}),
+          ${outlineWidth}px ${outlineWidth}px 0 rgba(0, 0, 0, ${intensity}),
+          0 0 ${10 * scale * intensity}px rgba(0, 0, 0, ${0.5 * intensity})
+        `,
+      };
+
+    case 'box':
+    case 'gradient':
+    case 'frosted':
+      // These are handled at the container level
+      return {};
+
+    default:
+      return {};
+  }
+}
+
+/**
+ * Get wrapper styles for box/gradient/frosted presets
+ */
+function getTextContainerStyles(settings: TextReadabilitySettings | undefined, scale: number = 1): React.CSSProperties {
+  if (!settings) return {};
+
+  const intensity = settings.intensity / 100;
+
+  switch (settings.preset) {
+    case 'box':
+      return {
+        backgroundColor: `rgba(0, 0, 0, ${0.7 * intensity})`,
+        padding: `${16 * scale}px ${24 * scale}px`,
+        borderRadius: `${8 * scale}px`,
+      };
+
+    case 'gradient':
+      return {
+        background: `linear-gradient(to top, rgba(0, 0, 0, ${0.8 * intensity}) 0%, rgba(0, 0, 0, ${0.4 * intensity}) 50%, transparent 100%)`,
+        padding: `${40 * scale}px ${24 * scale}px ${24 * scale}px`,
+        marginBottom: `-${40 * scale}px`,
+      };
+
+    case 'frosted':
+      return {
+        backgroundColor: `rgba(0, 0, 0, ${0.3 * intensity})`,
+        backdropFilter: `blur(${8 * intensity}px)`,
+        WebkitBackdropFilter: `blur(${8 * intensity}px)`,
+        padding: `${16 * scale}px ${24 * scale}px`,
+        borderRadius: `${8 * scale}px`,
+        border: `1px solid rgba(255, 255, 255, ${0.1 * intensity})`,
+      };
+
+    default:
+      return {};
+  }
+}
+
 
 /**
  * Separador decorativo con punto ámbar
@@ -428,9 +518,95 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
   scale = 1,
   showIndicator = true,
   showLogo = false,
+  transparentBackground = false,
+  textReadability,
+  styleOverrides,
 }) => {
   const baseWidth = CASA_BRAND.slide.width;
   const baseHeight = CASA_BRAND.slide.height;
+
+  // Get text readability styles
+  const textReadabilityStyles = getTextReadabilityStyles(textReadability, scale);
+  const containerReadabilityStyles = getTextContainerStyles(textReadability, scale);
+  const needsContainerWrapper = textReadability?.preset === 'box' || textReadability?.preset === 'gradient' || textReadability?.preset === 'frosted';
+
+  // Helper to get font family with style override
+  const getFontFamily = (defaultFont: string) => {
+    return styleOverrides?.font?.family || defaultFont;
+  };
+
+  // Helper to get font size with style override
+  const getFontSize = (defaultSize: number) => {
+    if (styleOverrides?.font?.size) {
+      return `${styleOverrides.font.size * scale}px`;
+    }
+    return `${defaultSize * scale}px`;
+  };
+
+  // Detect if this is a multi-color slide (has both primary and secondary content)
+  const isMultiColorSlide = !!(slide.content?.secondary && slide.content?.primary);
+
+  // Helper to get font color with style override
+  // For multi-color slides, preserve color distinction by only applying override
+  // to non-color style properties (let each text element keep its original color)
+  const getFontColor = (defaultColor: string, preserveForMultiColor: boolean = false) => {
+    // If this is a multi-color slide and we want to preserve the color distinction,
+    // don't apply the color override - use the default color instead
+    if (isMultiColorSlide && preserveForMultiColor && styleOverrides?.font?.color) {
+      return defaultColor;
+    }
+    return styleOverrides?.font?.color || defaultColor;
+  };
+
+  // Helper to get font weight with style override
+  const getFontWeight = (defaultWeight: number | string) => {
+    if (styleOverrides?.font?.bold !== undefined) {
+      return styleOverrides.font.bold ? 700 : 400;
+    }
+    return defaultWeight;
+  };
+
+  // Helper to get font style with style override
+  const getFontStyle = () => styleOverrides?.font?.italic ? 'italic' : 'normal';
+
+  // Helper to get text align with style override
+  const getTextAlign = (defaultAlign: 'left' | 'center' | 'right' = 'center') =>
+    styleOverrides?.font?.align || defaultAlign;
+
+  // Helper to get text background styles
+  const getTextBackgroundStyles = (): React.CSSProperties | null => {
+    if (!styleOverrides?.textBackground || styleOverrides.textBackground.style === 'none') {
+      return null;
+    }
+
+    const bgStyle: React.CSSProperties = {
+      padding: `${(styleOverrides.textBackground.padding || 16) * scale}px`,
+      borderRadius: `${8 * scale}px`,
+      display: 'inline-block',
+    };
+
+    const color = styleOverrides.textBackground.color || '#000000';
+    const opacity = (styleOverrides.textBackground.opacity || 70) / 100;
+
+    switch (styleOverrides.textBackground.style) {
+      case 'solid':
+        bgStyle.backgroundColor = color;
+        break;
+      case 'semi-transparent':
+        bgStyle.backgroundColor = `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+        break;
+      case 'gradient':
+        bgStyle.background = `linear-gradient(180deg, ${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')} 0%, ${color}00 100%)`;
+        break;
+      default:
+        return null;
+    }
+
+    return bgStyle;
+  };
+
+  // Text color override from textReadability settings (used to override inline styles)
+  const textColorOverride = textReadability?.textColor;
 
   // Detectar tipo de portada por sourceComponent
   const isPortadaMain = slide.metadata?.sourceComponent === 'portadas-main';
@@ -484,7 +660,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
               fontWeight: 300,
               fontSize: `${56 * scale}px`,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
+              color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black,
               letterSpacing: '0.05em',
               lineHeight: 1.2,
             }}
@@ -497,7 +673,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
                 fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
                 fontWeight: 500,
                 fontSize: `${36 * scale}px`,
-                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
                 marginTop: `${16 * scale}px`,
               }}
             >
@@ -511,76 +687,93 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
 
     // Slides de letra de canción
     if (type === 'song-lyrics') {
+      const textBgStyles = getTextBackgroundStyles();
+      const content = (
+        <p
+          className="whitespace-pre-line"
+          style={{
+            fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+            fontWeight: getFontWeight(400),
+            fontSize: getFontSize(36),
+            fontStyle: getFontStyle(),
+            lineHeight: 1.7,
+            color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black),
+          }}
+        >
+          {slide.content.primary}
+        </p>
+      );
       return (
-        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
-          <p
-            className="whitespace-pre-line"
-            style={{
-              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-              fontWeight: 400,
-              fontSize: `${36 * scale}px`,
-              lineHeight: 1.7,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
-            }}
-          >
-            {slide.content.primary}
-          </p>
+        <div className="flex flex-col items-center justify-center h-full" style={{ padding: `0 ${48 * scale}px`, textAlign: getTextAlign() }}>
+          {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
         </div>
       );
     }
 
     // Slides de oración - parte del líder
     if (type === 'prayer-leader') {
+      const textBgStyles = getTextBackgroundStyles();
+      const content = (
+        <p
+          className="whitespace-pre-line"
+          style={{
+            fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+            fontWeight: getFontWeight(400),
+            fontSize: getFontSize(36),
+            fontStyle: getFontStyle(),
+            lineHeight: 1.7,
+            color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black),
+          }}
+        >
+          {slide.content.primary}
+        </p>
+      );
       return (
-        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
-          <p
-            className="whitespace-pre-line"
-            style={{
-              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-              fontWeight: 400,
-              fontSize: `${36 * scale}px`,
-              lineHeight: 1.7,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
-            }}
-          >
-            {slide.content.primary}
-          </p>
+        <div className="flex flex-col items-center justify-center h-full" style={{ padding: `0 ${48 * scale}px`, textAlign: getTextAlign() }}>
+          {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
         </div>
       );
     }
 
     // Slides de oración - respuesta de congregación
     if (type === 'prayer-response') {
+      const textBgStyles = getTextBackgroundStyles();
+      const content = (
+        <p
+          className="whitespace-pre-line"
+          style={{
+            fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+            fontWeight: getFontWeight(600),
+            fontSize: getFontSize(36),
+            fontStyle: getFontStyle(),
+            lineHeight: 1.7,
+            color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.amber),
+          }}
+        >
+          {slide.content.primary}
+        </p>
+      );
       return (
-        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
-          <p
-            className="whitespace-pre-line"
-            style={{
-              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-              fontWeight: 600,
-              fontSize: `${36 * scale}px`,
-              lineHeight: 1.7,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
-            }}
-          >
-            {slide.content.primary}
-          </p>
+        <div className="flex flex-col items-center justify-center h-full" style={{ padding: `0 ${48 * scale}px`, textAlign: getTextAlign() }}>
+          {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
         </div>
       );
     }
 
     // Slides de oración completa (líder + respuesta)
     if (type === 'prayer-full') {
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+      const textBgStyles = getTextBackgroundStyles();
+      const content = (
+        <>
           <p
             className="whitespace-pre-line"
             style={{
-              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-              fontWeight: 400,
-              fontSize: `${32 * scale}px`,
+              fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+              fontWeight: getFontWeight(400),
+              fontSize: getFontSize(32),
+              fontStyle: getFontStyle(),
               lineHeight: 1.6,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
+              color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black, true),
               marginBottom: `${16 * scale}px`,
             }}
           >
@@ -591,33 +784,43 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             <p
               className="whitespace-pre-line"
               style={{
-                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
-                fontWeight: 600,
-                fontSize: `${36 * scale}px`,
+                fontFamily: getFontFamily(slide.style.secondaryFont || CASA_BRAND.fonts.body),
+                fontWeight: getFontWeight(600),
+                fontSize: getFontSize(36),
+                fontStyle: getFontStyle(),
                 lineHeight: 1.6,
-                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                color: getFontColor(textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber, true),
                 marginTop: `${16 * scale}px`,
               }}
             >
               {slide.content.secondary}
             </p>
           )}
+        </>
+      );
+      return (
+        <div className="flex flex-col items-center justify-center h-full" style={{ padding: `0 ${48 * scale}px`, textAlign: getTextAlign() }}>
+          {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
         </div>
       );
     }
 
     // Slides de lectura bíblica
     if (type === 'reading') {
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+      // Reading slides have subtitle (verse reference) which uses secondary color
+      const hasMultipleTextElements = !!(slide.content.subtitle);
+      const textBgStyles = getTextBackgroundStyles();
+      const content = (
+        <>
           <p
-            className="whitespace-pre-line italic"
+            className="whitespace-pre-line"
             style={{
-              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-              fontWeight: 400,
-              fontSize: `${34 * scale}px`,
+              fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+              fontWeight: getFontWeight(400),
+              fontSize: getFontSize(34),
+              fontStyle: styleOverrides?.font?.italic !== undefined ? getFontStyle() : 'italic',
               lineHeight: 1.7,
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
+              color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black, hasMultipleTextElements),
             }}
           >
             {slide.content.primary}
@@ -625,16 +828,22 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
           {slide.content.subtitle && (
             <p
               style={{
-                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
-                fontWeight: 500,
-                fontSize: `${24 * scale}px`,
-                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                fontFamily: getFontFamily(slide.style.secondaryFont || CASA_BRAND.fonts.body),
+                fontWeight: getFontWeight(500),
+                fontSize: getFontSize(24),
+                fontStyle: getFontStyle(),
+                color: getFontColor(textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber, hasMultipleTextElements),
                 marginTop: `${24 * scale}px`,
               }}
             >
               — {slide.content.subtitle}
             </p>
           )}
+        </>
+      );
+      return (
+        <div className="flex flex-col items-center justify-center h-full" style={{ padding: `0 ${48 * scale}px`, textAlign: getTextAlign() }}>
+          {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
         </div>
       );
     }
@@ -651,7 +860,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               fontWeight: 300,
               fontSize: `${48 * scale}px`,
               letterSpacing: '0.05em',
-              color: slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
+              color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
               lineHeight: 1.3,
             }}
           >
@@ -666,6 +875,21 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     if (type === 'announcement') {
       return (
         <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+          {/* Title (optional) */}
+          {slide.content.secondary && (
+            <h2
+              style={{
+                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.heading,
+                fontWeight: 500,
+                fontSize: `${40 * scale}px`,
+                color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                marginBottom: `${24 * scale}px`,
+              }}
+            >
+              {slide.content.secondary}
+            </h2>
+          )}
+          {/* Body text */}
           <p
             className="whitespace-pre-line"
             style={{
@@ -673,7 +897,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               fontWeight: 400,
               fontSize: `${28 * scale}px`,
               lineHeight: 1.7,
-              color: slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
+              color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
             }}
           >
             {slide.content.primary}
@@ -882,16 +1106,19 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     }
 
     // Default: mostrar contenido genérico
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+    // This is often used for slides with both primary (e.g., verse text) and secondary (e.g., response) content
+    const textBgStyles = getTextBackgroundStyles();
+    const content = (
+      <>
         <p
           className="whitespace-pre-line"
           style={{
-            fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
-            fontWeight: 400,
-            fontSize: `${32 * scale}px`,
+            fontFamily: getFontFamily(slide.style.primaryFont || CASA_BRAND.fonts.body),
+            fontWeight: getFontWeight(400),
+            fontSize: getFontSize(32),
+            fontStyle: getFontStyle(),
             lineHeight: 1.7,
-            color: slide.style.primaryColor || CASA_BRAND.colors.primary.black,
+            color: getFontColor(textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black, true),
           }}
         >
           {slide.content.primary || '(Sin contenido)'}
@@ -902,26 +1129,83 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             <p
               className="whitespace-pre-line"
               style={{
-                fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
-                fontWeight: 600,
-                fontSize: `${32 * scale}px`,
+                fontFamily: getFontFamily(slide.style.secondaryFont || CASA_BRAND.fonts.body),
+                fontWeight: getFontWeight(600),
+                fontSize: getFontSize(32),
+                fontStyle: getFontStyle(),
                 lineHeight: 1.7,
-                color: slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                color: getFontColor(textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber, true),
               }}
             >
               {slide.content.secondary}
             </p>
           </>
         )}
+      </>
+    );
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+        {textBgStyles ? <div style={textBgStyles}>{content}</div> : content}
       </div>
     );
   };
 
   // For portadas, always use brand background color to ensure image background matches
   // This handles both new slides and legacy slides saved with wrong color
-  const slideBackgroundColor = isPortada
-    ? CASA_BRAND.colors.primary.white
-    : (slide.style.backgroundColor || CASA_BRAND.colors.primary.white);
+  const slideBackgroundColor = transparentBackground
+    ? 'transparent'
+    : isPortada
+      ? CASA_BRAND.colors.primary.white
+      : (slide.style.backgroundColor || CASA_BRAND.colors.primary.white);
+
+  // Wrap content with text readability styles
+  const renderContentWithReadability = () => {
+    const content = renderContent();
+
+    // No text readability settings at all
+    if (!textReadability) {
+      return content;
+    }
+
+    // Apply container-level styles (box, gradient, frosted) first - they need special handling
+    if (textReadability.preset === 'gradient') {
+      // Gradient overlay at the bottom, with text color applied to content
+      return (
+        <div className="absolute inset-0" style={textReadabilityStyles}>
+          {content}
+          <div
+            className="absolute bottom-0 left-0 right-0 pointer-events-none"
+            style={{
+              ...containerReadabilityStyles,
+              height: '60%',
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (textReadability.preset === 'box' || textReadability.preset === 'frosted') {
+      // Box and frosted wrap the entire content area, with text color applied
+      return (
+        <div className="absolute inset-0 flex items-center justify-center" style={textReadabilityStyles}>
+          <div style={containerReadabilityStyles}>
+            {content}
+          </div>
+        </div>
+      );
+    }
+
+    // Apply text-level styles (shadow, outline, or just color) - use absolute positioning to not affect layout
+    if (textReadabilityStyles && Object.keys(textReadabilityStyles).length > 0) {
+      return (
+        <div className="absolute inset-0" style={textReadabilityStyles}>
+          {content}
+        </div>
+      );
+    }
+
+    return content;
+  };
 
   return (
     <div
@@ -931,11 +1215,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
         height: baseHeight * scale,
         backgroundColor: slideBackgroundColor,
         borderRadius: `${CASA_BRAND.ui.borderRadius.md}px`,
-        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+        boxShadow: transparentBackground ? 'none' : '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
       }}
     >
       {/* Contenido */}
-      {renderContent()}
+      {renderContentWithReadability()}
 
       {/* Indicador de slide (no para portadas) */}
       {showIndicator && !isPortada && slide.metadata && (
@@ -947,6 +1231,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             fontFamily: CASA_BRAND.fonts.body,
             fontSize: `${18 * scale}px`,
             color: CASA_BRAND.colors.secondary.grayMedium,
+            ...textReadabilityStyles, // Apply same shadow to indicator
           }}
         >
           {slide.metadata.order}/{slide.metadata.groupTotal}

@@ -250,8 +250,11 @@ export const LogoControls: React.FC<LogoControlsProps> = ({
         <Switch
           checked={isVisibleOnCurrentSlide}
           onCheckedChange={handleVisibilityChange}
-          className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
-          thumbClassName="border-2 border-gray-400"
+          className="border-2 data-[state=unchecked]:bg-gray-700"
+          style={{
+            borderColor: isVisibleOnCurrentSlide ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+            backgroundColor: isVisibleOnCurrentSlide ? CASA_BRAND.colors.primary.amber : undefined,
+          }}
         />
       </div>
 

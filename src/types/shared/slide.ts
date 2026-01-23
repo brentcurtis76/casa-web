@@ -30,6 +30,12 @@ export interface VideoSettings {
   muted: boolean;         // Silenciar audio
   startTime?: number;     // Comenzar desde tiempo específico (segundos)
   endTime?: number;       // Terminar en tiempo específico (segundos)
+  // Size and position settings
+  size?: number;          // Percentage of slide (default 100)
+  position?: { x: number; y: number }; // Center position (default 50, 50)
+  fitMode?: 'contain' | 'cover';  // How video fits in its container (default 'contain')
+  opacity?: number;       // Opacity 0-100 (default 100)
+  rotation?: number;      // Rotation in degrees (default 0)
 }
 
 /**

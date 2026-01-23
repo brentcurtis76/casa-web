@@ -67,7 +67,14 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
 
   const handleContextMenu = (e: React.MouseEvent, index: number) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, index });
+    // Calculate if menu would go off bottom of screen
+    // Menu is approximately 130px tall (3 items * ~40px each)
+    const menuHeight = 130;
+    const windowHeight = window.innerHeight;
+    const y = e.clientY + menuHeight > windowHeight
+      ? e.clientY - menuHeight  // Position above click if would overflow
+      : e.clientY;
+    setContextMenu({ x: e.clientX, y, index });
   };
 
   return (

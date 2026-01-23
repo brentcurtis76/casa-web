@@ -8,14 +8,10 @@ import React, { useRef, useEffect, useState, useCallback, useImperativeHandle, f
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { extractYouTubeId, extractVimeoId, validateVideoUrl } from '@/lib/presentation/videoService';
 import type { Slide, VideoSettings } from '@/types/shared/slide';
+import type { VideoPlaybackState } from '@/lib/presentation/types';
 
-export interface VideoPlaybackState {
-  isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  muted: boolean;
-  volume: number;
-}
+// Re-export for backwards compatibility
+export type { VideoPlaybackState };
 
 export interface VideoSlideRendererRef {
   play: () => void;
@@ -57,10 +53,25 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
   const [isReady, setIsReady] = useState(false);
 
   const videoUrl = slide.content.videoUrl || '';
-  const settings = slide.content.videoSettings || {
+
+  // Fallback: set isReady after 3 seconds if video events don't fire (blob URL issue)
+  useEffect(() => {
+    if (!isReady && videoUrl && !isReady) {
+      const timeout = setTimeout(() => {
+        console.log('VideoSlideRenderer: Fallback timeout - setting isReady');
+        setIsReady(true);
+      }, 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isReady, videoUrl]);
+  const settings: VideoSettings = {
     autoPlay: true,
     loop: false,
     muted: false,
+    size: 100,
+    position: { x: 50, y: 50 },
+    fitMode: 'contain',
+    ...slide.content.videoSettings,
   };
 
   const validation = validateVideoUrl(videoUrl);
@@ -259,6 +270,11 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
       );
     }
 
+    const embedSize = settings.size ?? 100;
+    const embedPosition = settings.position ?? { x: 50, y: 50 };
+    const embedOpacity = (settings.opacity ?? 100) / 100;
+    const embedRotation = settings.rotation ?? 0;
+
     return (
       <div
         className="relative overflow-hidden"
@@ -272,9 +288,15 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
         <iframe
           ref={iframeRef}
           src={embedUrl}
-          className="w-full h-full"
+          className="absolute"
           style={{
             border: 'none',
+            width: `${embedSize}%`,
+            height: `${embedSize}%`,
+            left: `${embedPosition.x}%`,
+            top: `${embedPosition.y}%`,
+            transform: `translate(-50%, -50%) rotate(${embedRotation}deg)`,
+            opacity: embedOpacity,
           }}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
@@ -301,6 +323,12 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
   }
 
   // Render HTML5 video
+  const videoSize = settings.size ?? 100;
+  const videoPosition = settings.position ?? { x: 50, y: 50 };
+  const videoFitMode = settings.fitMode ?? 'contain';
+  const videoOpacity = (settings.opacity ?? 100) / 100;
+  const videoRotation = settings.rotation ?? 0;
+
   return (
     <div
       className="relative overflow-hidden"
@@ -314,11 +342,20 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
       <video
         ref={videoRef}
         src={videoUrl}
-        className="w-full h-full object-contain"
+        className="absolute"
+        style={{
+          width: `${videoSize}%`,
+          height: `${videoSize}%`,
+          left: `${videoPosition.x}%`,
+          top: `${videoPosition.y}%`,
+          transform: `translate(-50%, -50%) rotate(${videoRotation}deg)`,
+          objectFit: videoFitMode,
+          opacity: videoOpacity,
+        }}
         playsInline
         muted={settings.muted}
         loop={settings.loop}
-        controls={showControls}
+        controls={showControls || isPreview}
         preload="metadata"
       />
 
@@ -334,16 +371,21 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
         </div>
       )}
 
-      {/* Preview overlay when not live */}
-      {isPreview && !isLive && isReady && (
+      {/* Preview overlay when not live - clickable to play/pause */}
+      {isPreview && !isLive && isReady && !playbackState.isPlaying && (
         <div
-          className="absolute inset-0 flex items-center justify-center bg-black/40"
+          className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer hover:bg-black/30 transition-colors"
+          onClick={() => {
+            if (videoRef.current) {
+              videoRef.current.play();
+            }
+          }}
         >
           <div
             className="flex flex-col items-center gap-2"
           >
             <div
-              className="w-16 h-16 rounded-full flex items-center justify-center"
+              className="w-16 h-16 rounded-full flex items-center justify-center hover:scale-110 transition-transform"
               style={{ backgroundColor: CASA_BRAND.colors.primary.amber + '80' }}
             >
               <svg
@@ -362,7 +404,7 @@ export const VideoSlideRenderer = forwardRef<VideoSlideRendererRef, VideoSlideRe
                 color: CASA_BRAND.colors.primary.white,
               }}
             >
-              Video listo para reproducir
+              Clic para reproducir
             </p>
           </div>
         </div>

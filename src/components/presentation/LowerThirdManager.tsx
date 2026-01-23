@@ -77,34 +77,15 @@ export const LowerThirdManager: React.FC<LowerThirdManagerProps> = ({
         })}
       </div>
 
-      {/* Input with template preview */}
+      {/* Input and send button */}
       <div className="flex gap-2">
-        <div className="flex-1 relative">
-          {selectedTemplate !== 'custom' && (
-            <span
-              className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '14px',
-                color: CASA_BRAND.colors.secondary.grayMedium,
-              }}
-            >
-              {LOWER_THIRD_TEMPLATES[selectedTemplate].prefix}
-            </span>
-          )}
-          <Input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={LOWER_THIRD_TEMPLATES[selectedTemplate].placeholder}
-            className="bg-black border-gray-700 text-white"
-            style={{
-              paddingLeft: selectedTemplate !== 'custom'
-                ? `${LOWER_THIRD_TEMPLATES[selectedTemplate].prefix.length * 8 + 16}px`
-                : undefined,
-            }}
-          />
-        </div>
+        <Input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={LOWER_THIRD_TEMPLATES[selectedTemplate].placeholder}
+          className="flex-1 bg-black border-gray-700 text-white"
+        />
 
         <Button
           onClick={handleSend}
@@ -134,6 +115,30 @@ export const LowerThirdManager: React.FC<LowerThirdManagerProps> = ({
           </Button>
         )}
       </div>
+
+      {/* Preview of full message when using a template */}
+      {selectedTemplate !== 'custom' && message.trim() && (
+        <div
+          className="mt-2 px-3 py-2 rounded text-sm"
+          style={{
+            backgroundColor: CASA_BRAND.colors.primary.black,
+            border: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
+          }}
+        >
+          <span style={{ color: CASA_BRAND.colors.secondary.grayMedium, fontSize: '11px' }}>
+            Vista previa:{' '}
+          </span>
+          <span style={{ color: CASA_BRAND.colors.primary.amber }}>
+            {LOWER_THIRD_TEMPLATES[selectedTemplate].prefix}
+          </span>
+          <span style={{ color: CASA_BRAND.colors.primary.white }}>
+            {message}
+          </span>
+          <span style={{ color: CASA_BRAND.colors.primary.amber }}>
+            {LOWER_THIRD_TEMPLATES[selectedTemplate].suffix}
+          </span>
+        </div>
+      )}
     </>
   );
 

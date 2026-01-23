@@ -8,8 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 // Tipos de video soportados
 const VALID_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
-// Tamaño máximo de archivo: 100MB
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
+// Tamaño máximo de archivo: 500MB
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 // Bucket de Supabase Storage para medios de presentación
 const STORAGE_BUCKET = 'presentation-media';
@@ -30,7 +30,7 @@ export function validateVideoFile(file: File): { valid: boolean; error?: string 
   if (file.size > MAX_FILE_SIZE) {
     return {
       valid: false,
-      error: 'Video demasiado grande. Máximo 100MB.',
+      error: 'Video demasiado grande. Máximo 500MB.',
     };
   }
 

@@ -52,6 +52,8 @@ interface ImageOverlayControlsProps {
   onRemove: (id: string) => void;
   /** When true, renders without header/expand (for use inside CollapsiblePanel) */
   compact?: boolean;
+  /** Background color of current slide for preview */
+  slideBackgroundColor?: string;
 }
 
 export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
@@ -63,6 +65,7 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
   onUpdate,
   onRemove,
   compact = false,
+  slideBackgroundColor = CASA_BRAND.colors.primary.white,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -74,8 +77,10 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
   const [scope, setScope] = useState<OverlayScope>({ type: 'all' });
   const [position, setPosition] = useState({ x: 50, y: 50 });
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // Get all overlays
   const allOverlays = imageOverlayState.overlays;
@@ -149,13 +154,13 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
         position,
       });
     } else {
-      // Create new overlay (starts as NOT visible so user can position it)
+      // Create new overlay - visible by default since user just configured it
       const newOverlay: ImageOverlay = {
         id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         imageUrl: previewUrl,
         position,
         style,
-        visible: false,
+        visible: true,
         scope,
       };
       onAdd(newOverlay);
@@ -239,6 +244,37 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
     setSelectorOpen(false);
   }, [elements]);
 
+  // Handle drag in preview container
+  const handlePreviewMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!previewContainerRef.current) return;
+    e.preventDefault();
+    setIsDragging(true);
+
+    const updatePosition = (clientX: number, clientY: number) => {
+      if (!previewContainerRef.current) return;
+      const rect = previewContainerRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+      const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+      setPosition({ x: Math.round(x), y: Math.round(y) });
+    };
+
+    // Initial position update
+    updatePosition(e.clientX, e.clientY);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      updatePosition(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
   const content = (
     <div className="space-y-3">
       {/* Overlay list */}
@@ -262,7 +298,7 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
             return (
               <div
                 key={overlay.id}
-                className="flex items-center gap-2 p-2 rounded"
+                className="p-3 rounded"
                 style={{
                   backgroundColor: CASA_BRAND.colors.primary.black,
                   border: isOnCurrentSlide
@@ -271,99 +307,101 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                   opacity: overlay.visible ? 1 : 0.6,
                 }}
               >
-                {/* Image thumbnail */}
-                <div
-                  className="w-10 h-10 rounded overflow-hidden flex-shrink-0"
-                  style={{
-                    backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                  }}
-                >
-                  <img
-                    src={overlay.imageUrl}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
+                {/* Top row: thumbnail + actions */}
+                <div className="flex items-start gap-3">
+                  {/* Image thumbnail */}
+                  <div
+                    className="w-12 h-12 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 transition-all"
+                    onClick={() => handleEditClick(overlay)}
+                    title="Editar imagen"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                      // @ts-expect-error CSS custom property for hover ring
+                      '--tw-ring-color': CASA_BRAND.colors.primary.amber + '80',
+                    }}
+                  >
+                    <img
+                      src={overlay.imageUrl}
+                      alt=""
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+
+                  {/* Info column */}
+                  <div className="flex-1 min-w-0">
+                    {/* Settings row */}
+                    <div className="flex items-center gap-2 text-xs" style={{ color: CASA_BRAND.colors.secondary.grayLight }}>
+                      <span>Tamaño: {Math.round(overlay.style.size)}%</span>
+                      <span>•</span>
+                      <span>Opacidad: {Math.round(overlay.style.opacity * 100)}%</span>
+                      {overlay.style.rotation !== 0 && (
+                        <>
+                          <span>•</span>
+                          <span>{overlay.style.rotation}°</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Scope row */}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {overlay.scope.type === 'all' ? (
+                        <Globe size={12} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                      ) : (
+                        <Layers size={12} style={{ color: CASA_BRAND.colors.primary.amber }} />
+                      )}
+                      <span
+                        className="truncate"
+                        style={{
+                          fontSize: '11px',
+                          color: overlay.scope.type === 'all'
+                            ? CASA_BRAND.colors.secondary.grayMedium
+                            : CASA_BRAND.colors.primary.amber,
+                          fontFamily: CASA_BRAND.fonts.body,
+                        }}
+                      >
+                        {scopeLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => onRemove(overlay.id)}
+                      className="p-1.5 rounded hover:bg-red-900/50 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={14} style={{ color: '#ef4444' }} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Content info */}
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="truncate text-xs"
+                {/* Bottom row: visibility toggle */}
+                <div
+                  className="flex items-center justify-between mt-3 pt-2"
+                  style={{ borderTop: `1px solid ${CASA_BRAND.colors.secondary.grayDark}` }}
+                >
+                  <span
+                    className="text-xs"
                     style={{
-                      color: overlay.visible
-                        ? CASA_BRAND.colors.primary.white
+                      color: isOnCurrentSlide
+                        ? CASA_BRAND.colors.primary.amber
                         : CASA_BRAND.colors.secondary.grayMedium,
                       fontFamily: CASA_BRAND.fonts.body,
                     }}
                   >
-                    {Math.round(overlay.style.size)}% • {Math.round(overlay.style.opacity * 100)}%
-                    {overlay.style.rotation ? ` • ${overlay.style.rotation}°` : ''}
-                  </p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    {overlay.scope.type === 'all' ? (
-                      <Globe
-                        size={10}
-                        style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-                      />
-                    ) : (
-                      <Layers
-                        size={10}
-                        style={{ color: CASA_BRAND.colors.primary.amber }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: overlay.scope.type === 'all'
-                          ? CASA_BRAND.colors.secondary.grayMedium
-                          : CASA_BRAND.colors.primary.amber,
-                      }}
-                    >
-                      {scopeLabel}
-                    </span>
-                    {isOnCurrentSlide && (
-                      <span
-                        className="ml-1 px-1.5 py-0.5 rounded text-[9px]"
-                        style={{
-                          backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                          color: CASA_BRAND.colors.primary.amber,
-                        }}
-                      >
-                        activo
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Edit button */}
-                <button
-                  onClick={() => handleEditClick(overlay)}
-                  className="p-1.5 rounded hover:bg-gray-700 transition-colors"
-                  title="Editar"
-                >
-                  <ImageIcon
-                    size={14}
-                    style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                    {isOnCurrentSlide ? 'Visible en este slide' : 'No visible aquí'}
+                  </span>
+                  <Switch
+                    checked={isOnCurrentSlide}
+                    onCheckedChange={(v) => handleVisibilityToggle(overlay, v)}
+                    className="border-2 data-[state=unchecked]:bg-gray-700"
+                    style={{
+                      borderColor: isOnCurrentSlide ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                      backgroundColor: isOnCurrentSlide ? CASA_BRAND.colors.primary.amber : undefined,
+                    }}
                   />
-                </button>
-
-                {/* Visibility toggle */}
-                <Switch
-                  checked={isOnCurrentSlide}
-                  onCheckedChange={(v) => handleVisibilityToggle(overlay, v)}
-                  className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
-                  thumbClassName="border-2 border-gray-400"
-                  title={isOnCurrentSlide ? 'Visible en este elemento' : 'No visible en este elemento'}
-                />
-
-                {/* Delete button */}
-                <button
-                  onClick={() => onRemove(overlay.id)}
-                  className="p-1.5 rounded hover:bg-red-900/50 transition-colors"
-                  title="Eliminar"
-                >
-                  <Trash2 size={14} style={{ color: '#ef4444' }} />
-                </button>
+                </div>
               </div>
             );
           })}
@@ -402,13 +440,13 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
       {/* Editor dialog */}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent
-          className="sm:max-w-md"
+          className="sm:max-w-md max-h-[90vh] flex flex-col"
           style={{
             backgroundColor: CASA_BRAND.colors.secondary.carbon,
             border: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
           }}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle
               style={{
                 fontFamily: CASA_BRAND.fonts.heading,
@@ -419,7 +457,7 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             {/* Image upload */}
             <div>
               <input
@@ -431,55 +469,90 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
               />
 
               {previewUrl ? (
-                <div className="relative">
+                <div className="space-y-2">
+                  {/* 4:3 aspect ratio preview container (matches slide) - draggable */}
                   <div
-                    className="w-full h-32 rounded overflow-hidden flex items-center justify-center"
-                    style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
+                    ref={previewContainerRef}
+                    className="w-full rounded overflow-hidden relative"
+                    style={{
+                      backgroundColor: slideBackgroundColor,
+                      aspectRatio: '4 / 3',
+                      cursor: isDragging ? 'grabbing' : 'crosshair',
+                    }}
+                    onMouseDown={handlePreviewMouseDown}
                   >
+                    {/* Image with all styles applied */}
                     <img
                       src={previewUrl}
                       alt="Preview"
-                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        left: `${position.x}%`,
+                        top: `${position.y}%`,
+                        transform: `translate(-50%, -50%) rotate(${style.rotation || 0}deg)`,
+                        width: `${style.size}%`,
+                        height: 'auto',
+                        opacity: style.opacity,
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      }}
                     />
+                    {/* Position indicator */}
+                    <div
+                      className="absolute text-xs px-1.5 py-0.5 rounded"
+                      style={{
+                        bottom: 4,
+                        left: 4,
+                        backgroundColor: CASA_BRAND.colors.secondary.carbon + 'cc',
+                        color: CASA_BRAND.colors.secondary.grayLight,
+                        fontFamily: CASA_BRAND.fonts.body,
+                        fontSize: '10px',
+                      }}
+                    >
+                      {position.x}%, {position.y}%
+                    </div>
                   </div>
+                  {/* Change image button - below preview */}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="absolute top-2 right-2 gap-1"
+                    className="w-full gap-2"
                     onClick={() => fileInputRef.current?.click()}
                     style={{
-                      backgroundColor: CASA_BRAND.colors.secondary.carbon + 'cc',
                       borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                      color: CASA_BRAND.colors.primary.white,
+                      color: CASA_BRAND.colors.secondary.grayLight,
+                      backgroundColor: 'transparent',
                     }}
                   >
-                    <RotateCcw size={12} />
-                    Cambiar
+                    <RotateCcw size={14} />
+                    Cambiar imagen
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-full h-32 gap-2 flex-col hover:bg-white/10"
+                <div
+                  className="w-full rounded flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-white/5 transition-colors"
                   onClick={() => fileInputRef.current?.click()}
                   style={{
                     borderColor: CASA_BRAND.colors.secondary.grayMedium,
                     borderStyle: 'dashed',
-                    backgroundColor: CASA_BRAND.colors.primary.black,
+                    borderWidth: '1px',
+                    backgroundColor: slideBackgroundColor,
                     color: CASA_BRAND.colors.secondary.grayMedium,
+                    aspectRatio: '4 / 3',
                   }}
                 >
-                  <Upload size={24} />
-                  <span>Seleccionar imagen</span>
-                  <span className="text-xs opacity-70">PNG, JPG, GIF, WebP</span>
-                </Button>
+                  <Upload size={28} />
+                  <span style={{ fontFamily: CASA_BRAND.fonts.body }}>Seleccionar imagen</span>
+                  <span className="text-xs opacity-70" style={{ fontFamily: CASA_BRAND.fonts.body }}>PNG, JPG, GIF, WebP</span>
+                </div>
               )}
             </div>
 
             {/* Size slider */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -494,13 +567,16 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                 max={100}
                 step={1}
                 className="w-full"
+                trackClassName="bg-gray-700"
+                rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
               />
             </div>
 
             {/* Opacity slider */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -515,13 +591,16 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                 max={100}
                 step={5}
                 className="w-full"
+                trackClassName="bg-gray-700"
+                rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
               />
             </div>
 
             {/* Rotation slider */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -536,13 +615,16 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                 max={180}
                 step={5}
                 className="w-full"
+                trackClassName="bg-gray-700"
+                rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
               />
             </div>
 
             {/* Position presets */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -561,24 +643,26 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                   { label: '↙', x: 10, y: 90 },
                   { label: '↓', x: 50, y: 90 },
                   { label: '↘', x: 90, y: 90 },
-                ].map((pos) => (
-                  <button
-                    key={`${pos.x}-${pos.y}`}
-                    onClick={() => setPosition({ x: pos.x, y: pos.y })}
-                    className={`p-2 rounded text-lg transition-colors ${
-                      position.x === pos.x && position.y === pos.y
-                        ? 'bg-amber-500/30'
-                        : 'bg-gray-800 hover:bg-gray-700'
-                    }`}
-                    style={{
-                      color: position.x === pos.x && position.y === pos.y
-                        ? CASA_BRAND.colors.primary.amber
-                        : CASA_BRAND.colors.secondary.grayMedium,
-                    }}
-                  >
-                    {pos.label}
-                  </button>
-                ))}
+                ].map((pos) => {
+                  const isSelected = position.x === pos.x && position.y === pos.y;
+                  return (
+                    <button
+                      key={`${pos.x}-${pos.y}`}
+                      onClick={() => setPosition({ x: pos.x, y: pos.y })}
+                      className="p-2 rounded text-lg transition-colors"
+                      style={{
+                        backgroundColor: isSelected
+                          ? CASA_BRAND.colors.primary.amber + '4D' // 30% opacity
+                          : CASA_BRAND.colors.primary.black,
+                        color: isSelected
+                          ? CASA_BRAND.colors.primary.amber
+                          : CASA_BRAND.colors.secondary.grayMedium,
+                      }}
+                    >
+                      {pos.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -703,7 +787,8 @@ export const ImageOverlayControls: React.FC<ImageOverlayControlsProps> = ({
                 onClick={() => setEditorOpen(false)}
                 style={{
                   borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                  color: CASA_BRAND.colors.primary.white,
+                  backgroundColor: 'transparent',
+                  color: CASA_BRAND.colors.secondary.grayLight,
                 }}
               >
                 Cancelar

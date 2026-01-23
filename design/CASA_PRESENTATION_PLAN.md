@@ -73,6 +73,40 @@ The project is complete when ALL items below are checked:
 - [ ] Current time displays in presenter
 - [ ] Service timer (elapsed since "Go Live")
 
+### Phase 3: Rich Text Editing (Future)
+
+**Problem Statement**
+Current architecture stores text as plain strings (`content.primary`, `content.secondary`, etc.). Multi-color text is only achieved via separate content fields. When users apply style changes, all text unifies to one color, destroying intentional design distinctions (e.g., leader text in white, response text in gold).
+
+**Data Model Changes**
+- [ ] Define `TextSegment` interface with text, formatting properties (color, bold, italic, font)
+- [ ] Create `RichTextContent` type as `TextSegment[]`
+- [ ] Update Slide type to support both legacy strings and `RichTextContent`
+- [ ] Create migration utilities for converting plain strings to `RichTextContent`
+
+**Rich Text Editor Component**
+- [ ] Build `RichTextEditor` component with inline formatting toolbar
+- [ ] Support text selection and applying formats (color, bold, italic)
+- [ ] Visual indicators for different text colors/styles
+- [ ] Keyboard shortcuts for common formatting (Ctrl+B, Ctrl+I)
+
+**Rendering Updates**
+- [ ] Update `UniversalSlide.tsx` to render `RichTextContent` segments
+- [ ] Maintain backward compatibility with plain string content
+- [ ] Style overrides apply to segments that match default color only
+
+**Style Controls Integration**
+- [ ] Update `StyleControls.tsx` to work with rich text
+- [ ] Option to apply color to "all text" vs "matching text only"
+- [ ] Preview rich text formatting in real-time
+
+**Database & Persistence**
+- [ ] Update Supabase schema for `RichTextContent` storage
+- [ ] Migration script for existing liturgies (optional conversion)
+- [ ] Ensure backward compatibility during transition
+
+**Estimated Scope:** 40-60 development hours
+
 ### Technical
 
 - [ ] TypeScript compiles without errors

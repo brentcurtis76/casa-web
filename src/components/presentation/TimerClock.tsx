@@ -90,7 +90,7 @@ export const TimerClock: React.FC<TimerClockProps> = ({
           size={14}
           style={{
             color: isLive
-              ? '#22c55e'
+              ? CASA_BRAND.colors.primary.amber
               : CASA_BRAND.colors.secondary.grayMedium,
           }}
         />
@@ -100,7 +100,7 @@ export const TimerClock: React.FC<TimerClockProps> = ({
             fontSize: '14px',
             fontWeight: 600,
             color: isLive
-              ? '#22c55e'
+              ? CASA_BRAND.colors.primary.amber
               : CASA_BRAND.colors.secondary.grayMedium,
           }}
         >

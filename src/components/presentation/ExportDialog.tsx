@@ -169,6 +169,11 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
               id="include-full"
               checked={includeFullSlides}
               onCheckedChange={setIncludeFullSlides}
+              className="border-2 data-[state=unchecked]:bg-gray-700"
+              style={{
+                borderColor: includeFullSlides ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                backgroundColor: includeFullSlides ? CASA_BRAND.colors.primary.amber : undefined,
+              }}
             />
           </div>
 

@@ -62,48 +62,18 @@ function getOverlayStyle(styles: SlideStyles): React.CSSProperties | null {
 }
 
 /**
- * Gets text background style wrapper
+ * Gets text background style
+ * Note: Text background is now applied directly inside UniversalSlide
+ * This function is kept for potential future use but returns null
  */
-function getTextBackgroundStyle(styles: SlideStyles, scale: number = 1): React.CSSProperties | null {
+function getTextBackgroundStyle(styles: SlideStyles, _scale: number = 1): React.CSSProperties | null {
+  // Text background is now handled inside UniversalSlide component
+  // to properly wrap around the text content
   if (!styles.textBackground || styles.textBackground.style === 'none') {
     return null;
   }
-
-  // Validate scale to prevent weird CSS output
-  const validScale = Math.max(0.1, scale);
-
-  const bgStyle: React.CSSProperties = {
-    position: 'absolute' as const,
-    left: '50%',
-    top: '50%',
-    transform: 'translate(-50%, -50%)',
-    width: 'auto',
-    minWidth: 'fit-content',
-    maxWidth: '90%',
-    padding: `${(styles.textBackground.padding || 16) * validScale}px`,
-    borderRadius: `${8 * validScale}px`,
-    pointerEvents: 'none' as const,
-    zIndex: 2,
-  };
-
-  const color = styles.textBackground.color || '#000000';
-  const opacity = (styles.textBackground.opacity || 70) / 100;
-
-  switch (styles.textBackground.style) {
-    case 'solid':
-      bgStyle.backgroundColor = color;
-      break;
-    case 'semi-transparent':
-      bgStyle.backgroundColor = `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
-      break;
-    case 'gradient':
-      bgStyle.background = `linear-gradient(180deg, ${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')} 0%, ${color}00 100%)`;
-      break;
-    default:
-      return null;
-  }
-
-  return bgStyle;
+  // Return null - text background is applied in UniversalSlide
+  return null;
 }
 
 export const SlideStyleWrapper: React.FC<SlideStyleWrapperProps> = ({
@@ -131,9 +101,6 @@ export const SlideStyleWrapper: React.FC<SlideStyleWrapperProps> = ({
     <div className="slide-style-wrapper relative w-full h-full" style={cssVars as React.CSSProperties}>
       {/* Slide background overlay */}
       {overlayStyle && <div style={overlayStyle} />}
-
-      {/* Text background layer */}
-      {textBgStyle && <div style={textBgStyle} />}
 
       {/* Main content with style overrides applied */}
       <div

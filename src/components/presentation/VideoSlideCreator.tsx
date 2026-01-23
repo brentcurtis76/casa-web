@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { Video, Upload, X, Loader2, Link, Play, Repeat, VolumeX } from 'lucide-react';
+import { Video, Upload, X, Loader2, Link, Play, Repeat, VolumeX, Maximize, Move } from 'lucide-react';
 import { validateVideoFile, validateVideoUrl, getYouTubeThumbnail, uploadVideo } from '@/lib/presentation/videoService';
 import type { Slide, VideoSettings } from '@/types/shared/slide';
 
@@ -40,17 +41,25 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
   const [loop, setLoop] = useState(false);
   const [muted, setMuted] = useState(false);
 
+  // Size and position options
+  const [videoSize, setVideoSize] = useState(100);
+  const [videoPosition, setVideoPosition] = useState({ x: 50, y: 50 });
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
+  const [videoOpacity, setVideoOpacity] = useState(100);
+  const [videoRotation, setVideoRotation] = useState(0);
+
   const [insertPosition, setInsertPosition] = useState<'after' | 'end'>('after');
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const slideCreatedRef = useRef(false);
 
-  // Cleanup blob URL when component unmounts or videoPreviewUrl changes
+  // Cleanup blob URL when component unmounts
   useEffect(() => {
     return () => {
-      if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:')) {
+      if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:') && !slideCreatedRef.current) {
         URL.revokeObjectURL(videoPreviewUrl);
       }
     };
@@ -68,7 +77,6 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
       const validation = validateVideoUrl(urlInput.trim());
       setUrlValidation(validation);
 
-      // Try to get YouTube thumbnail
       if (validation.valid && validation.type === 'youtube') {
         const thumb = getYouTubeThumbnail(urlInput.trim());
         setThumbnailUrl(thumb);
@@ -94,7 +102,6 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
       URL.revokeObjectURL(videoPreviewUrl);
     }
 
-    // Create blob URL for preview
     const url = URL.createObjectURL(file);
     setVideoFile(file);
     setVideoPreviewUrl(url);
@@ -104,7 +111,6 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDragging(false);
-
       const file = e.dataTransfer.files[0];
       if (file) {
         handleFile(file);
@@ -152,30 +158,12 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
 
     try {
       if (activeTab === 'upload' && videoFile) {
-        // Upload the video file
         setIsUploading(true);
         try {
           finalVideoUrl = await uploadVideo(videoFile);
         } catch (uploadError) {
-          console.warn('Supabase upload failed:', uploadError);
-
-          // For small files (<5MB), use data URL as fallback for local dev
-          // For larger files, fail gracefully - data URLs cause memory issues
-          const MAX_LOCAL_SIZE = 5 * 1024 * 1024; // 5MB
-          if (videoFile.size <= MAX_LOCAL_SIZE) {
-            const response = await fetch(videoPreviewUrl!);
-            const blob = await response.blob();
-            finalVideoUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-          } else {
-            throw new Error(
-              'No se pudo subir el video al servidor. Para videos mayores a 5MB, configure el almacenamiento de Supabase.'
-            );
-          }
+          console.warn('Supabase upload failed, using blob URL for local dev:', uploadError);
+          finalVideoUrl = videoPreviewUrl!;
         }
         setIsUploading(false);
       } else if (activeTab === 'url' && urlValidation?.valid) {
@@ -192,6 +180,11 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
         autoPlay,
         loop,
         muted,
+        size: videoSize,
+        position: videoPosition,
+        fitMode,
+        opacity: videoOpacity,
+        rotation: videoRotation,
       };
 
       const slide: Slide = {
@@ -213,11 +206,7 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
         },
       };
 
-      // Cleanup blob URL since we've uploaded or converted
-      if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(videoPreviewUrl);
-      }
-
+      slideCreatedRef.current = true;
       onCreateSlide(slide, insertPosition);
     } catch (err) {
       console.error('Error creating video slide:', err);
@@ -235,6 +224,11 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
     autoPlay,
     loop,
     muted,
+    videoSize,
+    videoPosition,
+    fitMode,
+    videoOpacity,
+    videoRotation,
     insertPosition,
     onCreateSlide,
     isCreating,
@@ -245,22 +239,30 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
     (activeTab === 'url' && urlValidation?.valid);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 max-h-[80vh] overflow-y-auto">
       {/* Tabs for Upload / URL */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'upload' | 'url')}>
         <TabsList className="grid w-full grid-cols-2" style={{ backgroundColor: CASA_BRAND.colors.primary.black }}>
           <TabsTrigger
             value="upload"
-            className="data-[state=active]:bg-amber-600/20"
-            style={{ fontFamily: CASA_BRAND.fonts.body }}
+            className="data-[state=active]:text-black"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              backgroundColor: activeTab === 'upload' ? CASA_BRAND.colors.primary.amber : 'transparent',
+              color: activeTab === 'upload' ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayLight,
+            }}
           >
             <Upload size={16} className="mr-2" />
             Subir Archivo
           </TabsTrigger>
           <TabsTrigger
             value="url"
-            className="data-[state=active]:bg-amber-600/20"
-            style={{ fontFamily: CASA_BRAND.fonts.body }}
+            className="data-[state=active]:text-black"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              backgroundColor: activeTab === 'url' ? CASA_BRAND.colors.primary.amber : 'transparent',
+              color: activeTab === 'url' ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayLight,
+            }}
           >
             <Link size={16} className="mr-2" />
             URL
@@ -273,7 +275,7 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
-            className="relative rounded-lg transition-all cursor-pointer"
+            className="relative rounded-lg transition-all cursor-pointer overflow-hidden"
             style={{
               backgroundColor: isDragging
                 ? CASA_BRAND.colors.primary.amber + '20'
@@ -285,7 +287,6 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
                   ? '#ef4444'
                   : CASA_BRAND.colors.secondary.grayDark
               }`,
-              minHeight: '160px',
             }}
             onClick={() => !videoFile && fileInputRef.current?.click()}
           >
@@ -298,39 +299,59 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
             />
 
             {videoPreviewUrl ? (
-              <div className="relative">
+              <div
+                className="relative w-full overflow-hidden rounded-lg"
+                style={{
+                  aspectRatio: '4 / 3',
+                  backgroundColor: CASA_BRAND.colors.primary.black,
+                }}
+              >
                 <video
                   src={videoPreviewUrl}
-                  className="w-full h-40 object-contain rounded-lg bg-black"
-                  controls={false}
-                  muted
+                  className="absolute"
+                  style={{
+                    width: `${videoSize}%`,
+                    height: `${videoSize}%`,
+                    left: `${videoPosition.x}%`,
+                    top: `${videoPosition.y}%`,
+                    transform: `translate(-50%, -50%) rotate(${videoRotation}deg)`,
+                    objectFit: fitMode,
+                    opacity: videoOpacity / 100,
+                  }}
+                  controls
+                  muted={muted}
+                  preload="auto"
                 />
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleClearVideo();
                   }}
-                  className="absolute top-2 right-2 p-1 rounded-full"
+                  className="absolute top-2 right-2 p-1.5 rounded-full z-20"
                   style={{
-                    backgroundColor: CASA_BRAND.colors.primary.black + 'CC',
+                    backgroundColor: CASA_BRAND.colors.secondary.carbon + 'CC',
                   }}
                   aria-label="Eliminar video"
                 >
                   <X size={16} style={{ color: CASA_BRAND.colors.primary.white }} />
                 </button>
                 <p
-                  className="text-center mt-2 truncate px-2"
+                  className="absolute bottom-2 left-2 right-2 text-center truncate px-2 py-1 rounded z-20"
                   style={{
                     fontFamily: CASA_BRAND.fonts.body,
                     fontSize: '12px',
-                    color: CASA_BRAND.colors.secondary.grayMedium,
+                    color: CASA_BRAND.colors.secondary.grayLight,
+                    backgroundColor: CASA_BRAND.colors.secondary.carbon + 'CC',
                   }}
                 >
                   {videoFile?.name}
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-40 gap-2">
+              <div
+                className="flex flex-col items-center justify-center gap-2 w-full"
+                style={{ aspectRatio: '4 / 3' }}
+              >
                 <Upload
                   size={32}
                   style={{
@@ -352,7 +373,7 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
                   <span style={{ fontSize: '12px' }}>o haz clic para seleccionar</span>
                   <br />
                   <span style={{ fontSize: '11px', color: CASA_BRAND.colors.secondary.grayDark }}>
-                    MP4, WebM, MOV (máx. 100MB)
+                    MP4, WebM, MOV (máx. 500MB)
                   </span>
                 </p>
               </div>
@@ -449,23 +470,28 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
           Opciones de Reproducción
         </Label>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="flex flex-wrap gap-2">
           <div
-            className="flex items-center gap-2 p-2 rounded-lg"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
           >
             <Switch
               id="autoplay"
               checked={autoPlay}
               onCheckedChange={setAutoPlay}
+              className="border-2"
+              style={{
+                borderColor: autoPlay ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                backgroundColor: autoPlay ? CASA_BRAND.colors.primary.amber : undefined,
+              }}
             />
             <Label
               htmlFor="autoplay"
-              className="flex items-center gap-1 cursor-pointer"
+              className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               style={{
                 fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '12px',
-                color: CASA_BRAND.colors.secondary.grayLight,
+                fontSize: '13px',
+                color: CASA_BRAND.colors.primary.white,
               }}
             >
               <Play size={14} />
@@ -474,21 +500,26 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
           </div>
 
           <div
-            className="flex items-center gap-2 p-2 rounded-lg"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
           >
             <Switch
               id="loop"
               checked={loop}
               onCheckedChange={setLoop}
+              className="border-2"
+              style={{
+                borderColor: loop ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                backgroundColor: loop ? CASA_BRAND.colors.primary.amber : undefined,
+              }}
             />
             <Label
               htmlFor="loop"
-              className="flex items-center gap-1 cursor-pointer"
+              className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               style={{
                 fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '12px',
-                color: CASA_BRAND.colors.secondary.grayLight,
+                fontSize: '13px',
+                color: CASA_BRAND.colors.primary.white,
               }}
             >
               <Repeat size={14} />
@@ -497,27 +528,190 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
           </div>
 
           <div
-            className="flex items-center gap-2 p-2 rounded-lg"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
           >
             <Switch
               id="muted"
               checked={muted}
               onCheckedChange={setMuted}
+              className="border-2"
+              style={{
+                borderColor: muted ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                backgroundColor: muted ? CASA_BRAND.colors.primary.amber : undefined,
+              }}
             />
             <Label
               htmlFor="muted"
-              className="flex items-center gap-1 cursor-pointer"
+              className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               style={{
                 fontFamily: CASA_BRAND.fonts.body,
-                fontSize: '12px',
-                color: CASA_BRAND.colors.secondary.grayLight,
+                fontSize: '13px',
+                color: CASA_BRAND.colors.primary.white,
               }}
             >
               <VolumeX size={14} />
               Mudo
             </Label>
           </div>
+        </div>
+      </div>
+
+      {/* Size and Fit Options */}
+      <div className="space-y-3 pt-2">
+        <Label
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.primary.white,
+            fontWeight: 600,
+          }}
+        >
+          <Maximize size={14} className="inline mr-2" />
+          Tamaño y Ajuste
+        </Label>
+
+        {/* Fit Mode Toggle */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFitMode('contain')}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              backgroundColor: fitMode === 'contain' ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.primary.black,
+              color: fitMode === 'contain' ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            Contener
+          </button>
+          <button
+            onClick={() => setFitMode('cover')}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              backgroundColor: fitMode === 'cover' ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.primary.black,
+              color: fitMode === 'cover' ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            Cubrir
+          </button>
+        </div>
+
+        {/* Size Slider */}
+        <div>
+          <label
+            className="text-xs mb-2 block"
+            style={{
+              color: CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            Tamaño: {videoSize}%
+          </label>
+          <Slider
+            value={[videoSize]}
+            onValueChange={(v) => setVideoSize(v[0])}
+            min={10}
+            max={150}
+            step={5}
+            className="w-full"
+            trackClassName="bg-gray-700"
+            rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+            thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
+          />
+        </div>
+
+        {/* Position presets */}
+        <div>
+          <label
+            className="text-xs mb-2 block"
+            style={{
+              color: CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            <Move size={12} className="inline mr-1" />
+            Posición
+          </label>
+          <div className="grid grid-cols-3 gap-1">
+            {[
+              { label: '↖', x: 25, y: 25 },
+              { label: '↑', x: 50, y: 25 },
+              { label: '↗', x: 75, y: 25 },
+              { label: '←', x: 25, y: 50 },
+              { label: '●', x: 50, y: 50 },
+              { label: '→', x: 75, y: 50 },
+              { label: '↙', x: 25, y: 75 },
+              { label: '↓', x: 50, y: 75 },
+              { label: '↘', x: 75, y: 75 },
+            ].map((pos) => {
+              const isSelected = videoPosition.x === pos.x && videoPosition.y === pos.y;
+              return (
+                <button
+                  key={`${pos.x}-${pos.y}`}
+                  onClick={() => setVideoPosition({ x: pos.x, y: pos.y })}
+                  className="p-1.5 rounded text-sm transition-colors"
+                  style={{
+                    backgroundColor: isSelected
+                      ? CASA_BRAND.colors.primary.amber + '4D'
+                      : CASA_BRAND.colors.primary.black,
+                    color: isSelected
+                      ? CASA_BRAND.colors.primary.amber
+                      : CASA_BRAND.colors.secondary.grayMedium,
+                  }}
+                >
+                  {pos.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Opacity Slider */}
+        <div>
+          <label
+            className="text-xs mb-2 block"
+            style={{
+              color: CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            Opacidad: {videoOpacity}%
+          </label>
+          <Slider
+            value={[videoOpacity]}
+            onValueChange={(v) => setVideoOpacity(v[0])}
+            min={10}
+            max={100}
+            step={5}
+            className="w-full"
+            trackClassName="bg-gray-700"
+            rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+            thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
+          />
+        </div>
+
+        {/* Rotation Slider */}
+        <div>
+          <label
+            className="text-xs mb-2 block"
+            style={{
+              color: CASA_BRAND.colors.secondary.grayLight,
+              fontFamily: CASA_BRAND.fonts.body,
+            }}
+          >
+            Rotación: {videoRotation}°
+          </label>
+          <Slider
+            value={[videoRotation]}
+            onValueChange={(v) => setVideoRotation(v[0])}
+            min={-180}
+            max={180}
+            step={5}
+            className="w-full"
+            trackClassName="bg-gray-700"
+            rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+            thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
+          />
         </div>
       </div>
 
@@ -569,13 +763,19 @@ export const VideoSlideCreator: React.FC<VideoSlideCreatorProps> = ({
 
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
-        <Button variant="ghost" onClick={onCancel}>
+        <Button
+          variant="ghost"
+          onClick={onCancel}
+          style={{
+            color: CASA_BRAND.colors.secondary.grayLight,
+          }}
+        >
           Cancelar
         </Button>
         <Button
           onClick={handleCreate}
           disabled={!hasValidVideo || isCreating}
-          className="gap-2"
+          className="gap-2 disabled:opacity-50"
           style={{
             backgroundColor: CASA_BRAND.colors.primary.amber,
             color: CASA_BRAND.colors.primary.black,

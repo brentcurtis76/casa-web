@@ -40,9 +40,9 @@ import { useAutoSave, getSavedPresentationState, clearSavedPresentationState, ty
 import { useNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { loadLiturgyForPresentation } from '@/lib/presentation/presentationService';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, ImageOverlay, ImageOverlayState, VideoBackground, VideoBackgroundState, OverlayScope, LogoState, PublishPayload, SlideStyles, StyleScope, StyleState } from '@/lib/presentation/types';
+import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, ImageOverlay, ImageOverlayState, VideoBackground, VideoBackgroundState, OverlayScope, LogoState, PublishPayload, SlideStyles, StyleScope, StyleState, VideoPlaybackState } from '@/lib/presentation/types';
 import { shouldShowLogo, getAllOverlaysForSlide, getAllImageOverlaysForSlide, getActiveVideoBackground, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, getResolvedStyles, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
-import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video } from 'lucide-react';
+import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import type { ImportValidationResult } from '@/lib/presentation/types';
 import { applyImport } from '@/lib/presentation/exportImport';
 import { loadSession, updateSession, createSessionState, mergeTempSlides } from '@/lib/presentation/sessionService';
@@ -84,7 +84,10 @@ export const PresenterView: React.FC = () => {
   const [loadSessionDialogOpen, setLoadSessionDialogOpen] = useState(false);
   const [saveToLiturgyDialogOpen, setSaveToLiturgyDialogOpen] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  // null = individual control, 'collapsed' = all closed, 'expanded' = all open
+  const [panelMode, setPanelMode] = useState<null | 'collapsed' | 'expanded'>(null);
   const [isUpdatingSession, setIsUpdatingSession] = useState(false);
+  const [videoPlaybackState, setVideoPlaybackState] = useState<{ slideId: string; state: VideoPlaybackState } | null>(null);
   const outputWindowRef = useRef<Window | null>(null);
   const syncStateRef = useRef<((state: import('@/lib/presentation/types').PresentationState) => void) | null>(null);
   const recoveryCheckedRef = useRef(false);
@@ -177,6 +180,12 @@ export const PresenterView: React.FC = () => {
     switch (message.type) {
       case 'REQUEST_STATE':
         syncStateRef.current?.(state);
+        break;
+      case 'VIDEO_PLAYBACK_STATE':
+        setVideoPlaybackState({
+          slideId: message.slideId,
+          state: message.state,
+        });
         break;
     }
   }, [state]);
@@ -495,7 +504,30 @@ export const PresenterView: React.FC = () => {
       ? (stateRef.current?.previewSlideIndex ?? 0)
       : ((stateRef.current?.data?.slides.length ?? 1) - 1);
 
-    insertSlide(slide, insertAfterIndex);
+    // Determine element info based on slide type for Orden del Servicio
+    const getElementInfo = (slide: import('@/types/shared/slide').Slide): { type: string; title: string } => {
+      const slideType = slide.type;
+      const title = slide.content.secondary || slide.content.primary?.slice(0, 30) || 'Diapositiva';
+
+      switch (slideType) {
+        case 'bible-verse':
+          return { type: 'lectura', title: slide.content.reference || 'Versículo' };
+        case 'announcement':
+          return { type: 'anuncio', title: title + (title.length >= 30 ? '...' : '') };
+        case 'announcement-image':
+          return { type: 'anuncio', title: 'Imagen' };
+        case 'video':
+          return { type: 'anuncio', title: 'Video' };
+        case 'blank':
+          return { type: 'anuncio', title: 'Diapositiva en Blanco' };
+        default:
+          return { type: 'anuncio', title: title + (title.length >= 30 ? '...' : '') };
+      }
+    };
+
+    // Use insertSlides with elementInfo to create entry in Orden del Servicio
+    const elementInfo = getElementInfo(slide);
+    insertSlides([slide], insertAfterIndex, elementInfo);
 
     if (createSlideTimeoutRef.current) {
       clearTimeout(createSlideTimeoutRef.current);
@@ -507,7 +539,7 @@ export const PresenterView: React.FC = () => {
         send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
       }
     }, 100);
-  }, [insertSlide, send]);
+  }, [insertSlides, send]);
 
   // Handler for creating multiple slides at once (scenes)
   const handleCreateSlides = useCallback((
@@ -731,41 +763,20 @@ export const PresenterView: React.FC = () => {
   }, [removeImageOverlay, state.imageOverlayState, send]);
 
   // ============ VIDEO BACKGROUND HANDLERS ============
+  // Note: These handlers only update local state. Changes are sent to projector
+  // only when the user publishes (via handlePublish).
 
   const handleAddVideoBackground = useCallback((background: VideoBackground) => {
     addVideoBackground(background);
-    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
-    const newState: VideoBackgroundState = {
-      backgrounds: [background], // Only one at a time
-    };
-    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
-  }, [addVideoBackground, state.videoBackgroundState, send]);
+  }, [addVideoBackground]);
 
   const handleUpdateVideoBackground = useCallback((id: string, updates: Partial<VideoBackground>) => {
     updateVideoBackground(id, updates);
-    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
-    const newState: VideoBackgroundState = {
-      backgrounds: currentBackgrounds.map((bg) =>
-        bg.id === id
-          ? {
-              ...bg,
-              ...updates,
-              settings: updates.settings ? { ...bg.settings, ...updates.settings } : bg.settings,
-            }
-          : bg
-      ),
-    };
-    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
-  }, [updateVideoBackground, state.videoBackgroundState, send]);
+  }, [updateVideoBackground]);
 
   const handleRemoveVideoBackground = useCallback((id: string) => {
     removeVideoBackground(id);
-    const currentBackgrounds = state.videoBackgroundState?.backgrounds ?? [];
-    const newState: VideoBackgroundState = {
-      backgrounds: currentBackgrounds.filter((bg) => bg.id !== id),
-    };
-    send({ type: 'VIDEO_BACKGROUND_UPDATE', videoBackgroundState: newState });
-  }, [removeVideoBackground, state.videoBackgroundState, send]);
+  }, [removeVideoBackground]);
 
   // Get the slide being edited
   const editingSlide = editingSlideIndex !== null && state.data
@@ -899,6 +910,11 @@ export const PresenterView: React.FC = () => {
               onTextOverlayPositionChange={(id, position) => updateTextOverlay(id, { position })}
               onImageOverlayPositionChange={(id, position) => handleUpdateImageOverlay(id, { position })}
               styles={previewResolvedStyles}
+              videoPlaybackState={
+                videoPlaybackState && currentSlide?.id === videoPlaybackState.slideId
+                  ? videoPlaybackState.state
+                  : undefined
+              }
             />
           </div>
 
@@ -926,12 +942,45 @@ export const PresenterView: React.FC = () => {
             borderLeft: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
           }}
         >
+          {/* Panel header with collapse all button */}
+          <div
+            className="flex items-center justify-end px-3 py-2 flex-shrink-0"
+            style={{
+              borderBottom: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
+            }}
+          >
+            <button
+              onClick={() => setPanelMode(panelMode === 'collapsed' ? 'expanded' : 'collapsed')}
+              className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-800/50 transition-colors"
+              style={{
+                color: CASA_BRAND.colors.secondary.grayMedium,
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '11px',
+              }}
+              title={panelMode === 'collapsed' ? 'Expandir todos' : 'Colapsar todos'}
+            >
+              {panelMode === 'collapsed' ? (
+                <>
+                  <ChevronsUpDown size={14} />
+                  Expandir
+                </>
+              ) : (
+                <>
+                  <ChevronsDownUp size={14} />
+                  Colapsar
+                </>
+              )}
+            </button>
+          </div>
+
           <div className="flex-1 overflow-y-auto">
             {/* Presenter Notes - expanded by default */}
             <CollapsiblePanel
               title="Notas del Presentador"
               icon={<FileText size={16} />}
               defaultOpen={true}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
             >
               <PresenterNotes currentElement={currentElement} currentSlide={currentSlide} compact />
             </CollapsiblePanel>
@@ -941,16 +990,18 @@ export const PresenterView: React.FC = () => {
               title="Lower-Third"
               icon={<MessageSquare size={16} />}
               defaultOpen={true}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
                 state.lowerThird.visible ? (
                   <span
                     className="px-2 py-0.5 rounded text-xs animate-pulse"
                     style={{
-                      backgroundColor: '#22c55e30',
-                      color: '#22c55e',
+                      backgroundColor: `${CASA_BRAND.colors.primary.amber}30`,
+                      color: CASA_BRAND.colors.primary.amber,
                     }}
                   >
-                    LIVE
+                    EN VIVO
                   </span>
                 ) : null
               }
@@ -968,18 +1019,22 @@ export const PresenterView: React.FC = () => {
               title="Logo CASA"
               icon={<ImageIcon size={16} />}
               defaultOpen={false}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
-                state.logoState?.settings?.visible ? (
-                  <span
-                    className="px-2 py-0.5 rounded text-xs"
-                    style={{
-                      backgroundColor: '#22c55e30',
-                      color: '#22c55e',
-                    }}
-                  >
-                    ON
-                  </span>
-                ) : null
+                <span
+                  className="px-2 py-0.5 rounded text-xs"
+                  style={{
+                    backgroundColor: showLogoOnCurrentSlide
+                      ? `${CASA_BRAND.colors.primary.amber}30`
+                      : `${CASA_BRAND.colors.secondary.grayMedium}30`,
+                    color: showLogoOnCurrentSlide
+                      ? CASA_BRAND.colors.primary.amber
+                      : CASA_BRAND.colors.secondary.grayMedium,
+                  }}
+                >
+                  {showLogoOnCurrentSlide ? 'ON' : 'OFF'}
+                </span>
               }
             >
               <LogoControls
@@ -999,6 +1054,8 @@ export const PresenterView: React.FC = () => {
               title="Textos"
               icon={<Type size={16} />}
               defaultOpen={false}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
                 (state.textOverlayState?.overlays?.length ?? 0) > 0 ? (
                   <span
@@ -1030,6 +1087,8 @@ export const PresenterView: React.FC = () => {
               title="Imágenes"
               icon={<ImageIcon size={16} />}
               defaultOpen={false}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
                 (state.imageOverlayState?.overlays?.length ?? 0) > 0 ? (
                   <span
@@ -1053,6 +1112,7 @@ export const PresenterView: React.FC = () => {
                 onUpdate={handleUpdateImageOverlay}
                 onRemove={handleRemoveImageOverlay}
                 compact
+                slideBackgroundColor={currentSlide?.style?.backgroundColor}
               />
             </CollapsiblePanel>
 
@@ -1061,6 +1121,8 @@ export const PresenterView: React.FC = () => {
               title="Video de Fondo"
               icon={<Video size={16} />}
               defaultOpen={false}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
                 (state.videoBackgroundState?.backgrounds?.length ?? 0) > 0 ? (
                   <span
@@ -1096,6 +1158,8 @@ export const PresenterView: React.FC = () => {
               title="Estilos"
               icon={<Palette size={16} />}
               defaultOpen={false}
+              isOpen={panelMode === 'collapsed' ? false : panelMode === 'expanded' ? true : undefined}
+              onToggle={panelMode !== null ? () => setPanelMode(null) : undefined}
               badge={
                 hasActiveStyles(state.styleState) ? (
                   <span
@@ -1116,27 +1180,17 @@ export const PresenterView: React.FC = () => {
                 currentSlideIndex={state.previewSlideIndex}
                 currentElement={currentElement}
                 onApplyStyles={(styles: SlideStyles, scope: StyleScope) => {
+                  // Only update local preview state - projector syncs on publish
                   applyStyles(
                     styles,
                     scope,
                     currentSlide?.id,
                     currentElement?.id
                   );
-                  setTimeout(() => {
-                    const currentState = stateRef.current;
-                    if (currentState) {
-                      send({ type: 'STYLES_UPDATE', styleState: currentState.styleState });
-                    }
-                  }, 0);
                 }}
                 onResetStyles={(scope: StyleScope) => {
+                  // Only update local preview state - projector syncs on publish
                   resetStyles(scope, currentSlide?.id, currentElement?.id);
-                  setTimeout(() => {
-                    const currentState = stateRef.current;
-                    if (currentState) {
-                      send({ type: 'STYLES_UPDATE', styleState: currentState.styleState });
-                    }
-                  }, 0);
                 }}
               />
             </CollapsiblePanel>

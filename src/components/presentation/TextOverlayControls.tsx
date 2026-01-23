@@ -251,8 +251,11 @@ export const TextOverlayControls: React.FC<TextOverlayControlsProps> = ({
                 <Switch
                   checked={isOnCurrentSlide}
                   onCheckedChange={(v) => handleVisibilityToggle(overlay, v)}
-                  className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
-                  thumbClassName="border-2 border-gray-400"
+                  className="border-2 data-[state=unchecked]:bg-gray-700"
+                  style={{
+                    borderColor: isOnCurrentSlide ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                    backgroundColor: isOnCurrentSlide ? CASA_BRAND.colors.primary.amber : undefined,
+                  }}
                   title={isOnCurrentSlide ? 'Visible en este elemento' : 'No visible en este elemento'}
                 />
 

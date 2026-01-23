@@ -264,7 +264,7 @@ export const SlideCreatorModal: React.FC<SlideCreatorModalProps> = ({
       case 'scene':
         return 'Agregar Escena';
       default:
-        return 'Crear Diapositiva';
+        return 'Crear Diapositivas o Escenas';
     }
   };
 
@@ -277,9 +277,9 @@ export const SlideCreatorModal: React.FC<SlideCreatorModalProps> = ({
           border: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
         }}
       >
-        <DialogHeader className="flex flex-row items-center justify-between">
+        <DialogHeader className={view === 'menu' ? 'text-center' : 'flex flex-row items-center justify-between'}>
           <DialogTitle
-            className="flex items-center gap-2"
+            className={view === 'menu' ? 'text-center w-full' : 'flex items-center gap-2'}
             style={{
               fontFamily: CASA_BRAND.fonts.heading,
               color: CASA_BRAND.colors.primary.white,
@@ -292,7 +292,7 @@ export const SlideCreatorModal: React.FC<SlideCreatorModalProps> = ({
                 onClick={() => setView('menu')}
                 className="mr-2 h-8 w-8 p-0"
               >
-                <X size={16} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                <X size={16} style={{ color: CASA_BRAND.colors.secondary.grayLight }} />
               </Button>
             )}
             {getTitle()}

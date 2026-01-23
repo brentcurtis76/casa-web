@@ -100,174 +100,14 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
       className="flex items-center justify-between px-4 py-3 transition-all duration-300"
       style={{
         background: isLive
-          ? `linear-gradient(90deg, ${CASA_BRAND.colors.secondary.carbon} 0%, rgba(239, 68, 68, 0.08) 100%)`
+          ? `linear-gradient(90deg, ${CASA_BRAND.colors.secondary.carbon} 0%, ${CASA_BRAND.colors.primary.amber}10 100%)`
           : CASA_BRAND.colors.secondary.carbon,
         borderBottom: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
-        borderLeft: isLive ? '4px solid #ef4444' : '4px solid transparent',
         minHeight: '64px',
       }}
     >
-      {/* ZONE 1: File Menu (LEFT) */}
-      <div
-        className="flex items-center gap-3 transition-opacity duration-200"
-        style={{ opacity: isLive ? 0.6 : 1, minWidth: '160px' }}
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="gap-2 h-9 px-3"
-              style={{
-                color: CASA_BRAND.colors.secondary.grayMedium,
-              }}
-              disabled={loading}
-              aria-label="Abrir menú de archivo"
-            >
-              {loading ? (
-                <Loader2 className="animate-spin" size={16} />
-              ) : (
-                <FolderOpen size={16} />
-              )}
-              <span style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', fontWeight: 500 }}>
-                Archivo
-              </span>
-              <ChevronDown size={14} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-56"
-            style={{
-              backgroundColor: CASA_BRAND.colors.secondary.carbon,
-              borderColor: CASA_BRAND.colors.secondary.grayDark,
-            }}
-          >
-            <DropdownMenuItem
-              onClick={onSelectLiturgy}
-              style={{ color: CASA_BRAND.colors.primary.white }}
-            >
-              <FolderOpen size={16} className="mr-2" />
-              {hasData ? 'Cambiar Liturgia...' : 'Seleccionar Liturgia...'}
-            </DropdownMenuItem>
-
-            {hasData && (
-              <>
-                <DropdownMenuSeparator
-                  style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
-                />
-
-                {/* Sessions submenu */}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger
-                    style={{ color: CASA_BRAND.colors.primary.white }}
-                  >
-                    <Database size={16} className="mr-2" />
-                    Sesiones
-                    {currentSessionId && (
-                      <span
-                        className="ml-auto px-1.5 py-0.5 text-xs rounded"
-                        style={{
-                          backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                          color: CASA_BRAND.colors.primary.amber,
-                        }}
-                      >
-                        Activa
-                      </span>
-                    )}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent
-                    style={{
-                      backgroundColor: CASA_BRAND.colors.secondary.carbon,
-                      borderColor: CASA_BRAND.colors.secondary.grayDark,
-                    }}
-                  >
-                    <DropdownMenuItem
-                      onClick={onSaveSession}
-                      style={{ color: CASA_BRAND.colors.primary.white }}
-                    >
-                      <Save size={16} className="mr-2" />
-                      Guardar sesión...
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={onLoadSession}
-                      style={{ color: CASA_BRAND.colors.primary.white }}
-                    >
-                      <FolderOpen size={16} className="mr-2" />
-                      Cargar sesión...
-                    </DropdownMenuItem>
-                    {currentSessionId && (
-                      <>
-                        <DropdownMenuSeparator
-                          style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
-                        />
-                        <DropdownMenuItem
-                          onClick={onUpdateSession}
-                          disabled={isUpdatingSession}
-                          style={{ color: CASA_BRAND.colors.primary.amber }}
-                        >
-                          {isUpdatingSession ? (
-                            <Loader2 size={16} className="mr-2 animate-spin" />
-                          ) : (
-                            <RefreshCw size={16} className="mr-2" />
-                          )}
-                          Actualizar sesión actual
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-
-                <DropdownMenuSeparator
-                  style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
-                />
-
-                {/* Import images */}
-                {onImportImages && (
-                  <DropdownMenuItem
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{ color: CASA_BRAND.colors.primary.white }}
-                  >
-                    <ImagePlus size={16} className="mr-2" />
-                    Importar imágenes...
-                  </DropdownMenuItem>
-                )}
-
-                {/* Export/Import presentation */}
-                <DropdownMenuItem
-                  onClick={onExport}
-                  style={{ color: CASA_BRAND.colors.primary.white }}
-                >
-                  <Download size={16} className="mr-2" />
-                  Exportar presentación...
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={onImport}
-                  style={{ color: CASA_BRAND.colors.primary.white }}
-                >
-                  <Upload size={16} className="mr-2" />
-                  Importar presentación...
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator
-                  style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
-                />
-
-                {/* Save to liturgy */}
-                <DropdownMenuItem
-                  onClick={onSaveToLiturgy}
-                  style={{ color: CASA_BRAND.colors.primary.white }}
-                >
-                  <Database size={16} className="mr-2" />
-                  Guardar en liturgia...
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* ZONE 2: Context Info (CENTER-LEFT) */}
-      <div className="flex-1 flex items-center justify-start ml-4">
+      {/* ZONE 1: Context Info / Title (LEFT) */}
+      <div className="flex items-center gap-3" style={{ minWidth: '280px' }}>
         {hasData && liturgyTitle ? (
           <div className="flex items-center gap-3">
             <div>
@@ -303,8 +143,8 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
               <span
                 className="px-2 py-1 rounded text-xs font-semibold animate-pulse"
                 style={{
-                  backgroundColor: '#ef444430',
-                  color: '#ef4444',
+                  backgroundColor: `${CASA_BRAND.colors.primary.amber}30`,
+                  color: CASA_BRAND.colors.primary.amber,
                 }}
               >
                 EN VIVO
@@ -324,26 +164,188 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
         )}
       </div>
 
-      {/* ZONE 3: Timer (CENTER-RIGHT) */}
-      <div className="flex items-center mx-4">
+      {/* ZONE 2: Timer (CENTER) */}
+      <div className="flex items-center">
         <TimerClock isLive={isLive} liveStartTime={liveStartTime} />
       </div>
 
-      {/* ZONE 4: Presentation Controls (RIGHT) */}
-      <div className="flex items-center gap-3" style={{ minWidth: '280px', justifyContent: 'flex-end' }}>
+      {/* ZONE 3: File Menu + Controls (RIGHT) */}
+      <div className="flex items-center gap-2" style={{ justifyContent: 'flex-end' }}>
+        {/* File Menu - icon only when not live */}
+        <div
+          className="transition-opacity duration-200"
+          style={{ opacity: isLive ? 0.6 : 1 }}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 hover:bg-gray-800/50"
+                style={{
+                  color: CASA_BRAND.colors.secondary.grayLight,
+                }}
+                disabled={loading}
+                aria-label="Abrir menú de archivo"
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <FolderOpen size={18} />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56"
+              style={{
+                backgroundColor: CASA_BRAND.colors.secondary.carbon,
+                borderColor: CASA_BRAND.colors.secondary.grayDark,
+              }}
+            >
+              <DropdownMenuItem
+                onClick={onSelectLiturgy}
+                style={{ color: CASA_BRAND.colors.primary.white }}
+              >
+                <FolderOpen size={16} className="mr-2" />
+                {hasData ? 'Cambiar Liturgia...' : 'Seleccionar Liturgia...'}
+              </DropdownMenuItem>
+
+              {hasData && (
+                <>
+                  <DropdownMenuSeparator
+                    style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
+                  />
+
+                  {/* Sessions submenu */}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                      style={{ color: CASA_BRAND.colors.primary.white }}
+                    >
+                      <Database size={16} className="mr-2" />
+                      Sesiones
+                      {currentSessionId && (
+                        <span
+                          className="ml-auto px-1.5 py-0.5 text-xs rounded"
+                          style={{
+                            backgroundColor: CASA_BRAND.colors.primary.amber + '30',
+                            color: CASA_BRAND.colors.primary.amber,
+                          }}
+                        >
+                          Activa
+                        </span>
+                      )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      style={{
+                        backgroundColor: CASA_BRAND.colors.secondary.carbon,
+                        borderColor: CASA_BRAND.colors.secondary.grayDark,
+                      }}
+                    >
+                      <DropdownMenuItem
+                        onClick={onSaveSession}
+                        style={{ color: CASA_BRAND.colors.primary.white }}
+                      >
+                        <Save size={16} className="mr-2" />
+                        Guardar sesión...
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={onLoadSession}
+                        style={{ color: CASA_BRAND.colors.primary.white }}
+                      >
+                        <FolderOpen size={16} className="mr-2" />
+                        Cargar sesión...
+                      </DropdownMenuItem>
+                      {currentSessionId && (
+                        <>
+                          <DropdownMenuSeparator
+                            style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
+                          />
+                          <DropdownMenuItem
+                            onClick={onUpdateSession}
+                            disabled={isUpdatingSession}
+                            style={{ color: CASA_BRAND.colors.primary.amber }}
+                          >
+                            {isUpdatingSession ? (
+                              <Loader2 size={16} className="mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw size={16} className="mr-2" />
+                            )}
+                            Actualizar sesión actual
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+
+                  <DropdownMenuSeparator
+                    style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
+                  />
+
+                  {/* Import images */}
+                  {onImportImages && (
+                    <DropdownMenuItem
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{ color: CASA_BRAND.colors.primary.white }}
+                    >
+                      <ImagePlus size={16} className="mr-2" />
+                      Importar imágenes...
+                    </DropdownMenuItem>
+                  )}
+
+                  {/* Export/Import presentation */}
+                  <DropdownMenuItem
+                    onClick={onExport}
+                    style={{ color: CASA_BRAND.colors.primary.white }}
+                  >
+                    <Download size={16} className="mr-2" />
+                    Exportar presentación...
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={onImport}
+                    style={{ color: CASA_BRAND.colors.primary.white }}
+                  >
+                    <Upload size={16} className="mr-2" />
+                    Importar presentación...
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator
+                    style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
+                  />
+
+                  {/* Save to liturgy */}
+                  <DropdownMenuItem
+                    onClick={onSaveToLiturgy}
+                    style={{ color: CASA_BRAND.colors.primary.white }}
+                  >
+                    <Database size={16} className="mr-2" />
+                    Guardar en liturgia...
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Divider */}
+        <div
+          className="h-6 w-px mx-1"
+          style={{ backgroundColor: CASA_BRAND.colors.secondary.grayDark }}
+        />
+
         {/* Projector button - hidden when live */}
         {!isLive && (
           <Button
             onClick={onOpenOutput}
-            variant="outline"
-            className="gap-2 h-10 px-4"
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 hover:bg-gray-800/50"
             style={{
-              borderColor: CASA_BRAND.colors.secondary.grayDark,
-              color: CASA_BRAND.colors.secondary.grayMedium,
+              color: CASA_BRAND.colors.secondary.grayLight,
             }}
+            title="Abrir proyector"
           >
-            <Monitor size={16} />
-            Proyector
+            <Monitor size={18} />
           </Button>
         )}
 
@@ -351,16 +353,17 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
         <Button
           onClick={onToggleBlack}
           disabled={!hasData}
-          variant="outline"
-          className="gap-2 h-10 px-4 transition-all duration-200"
+          variant="ghost"
+          size="icon"
+          className={`h-10 w-10 transition-all duration-200 ${!isBlack ? 'hover:bg-gray-800/50' : ''}`}
           style={{
-            borderColor: isBlack ? '#ef4444' : CASA_BRAND.colors.secondary.grayDark,
-            backgroundColor: isBlack ? '#ef4444' : 'transparent',
-            color: isBlack ? '#ffffff' : CASA_BRAND.colors.secondary.grayMedium,
+            backgroundColor: isBlack ? CASA_BRAND.colors.primary.black : 'transparent',
+            color: isBlack ? CASA_BRAND.colors.primary.white : CASA_BRAND.colors.secondary.grayLight,
+            border: isBlack ? `2px solid ${CASA_BRAND.colors.secondary.grayLight}` : 'none',
           }}
+          title={isBlack ? 'Salir de negro (B)' : 'Pantalla negra (B)'}
         >
-          <Square size={16} />
-          {isBlack ? 'Salir Negro' : 'Negro (B)'}
+          <Square size={18} />
         </Button>
 
         {/* GO LIVE / TERMINAR button - Primary CTA */}
@@ -370,13 +373,13 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
           className="gap-2 h-11 px-6 transition-all duration-200 font-semibold"
           style={{
             backgroundColor: isLive
-              ? '#ef4444'
+              ? 'transparent'
               : CASA_BRAND.colors.primary.amber,
-            color: isLive ? '#ffffff' : CASA_BRAND.colors.primary.black,
+            color: isLive ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.primary.black,
             boxShadow: isLive
-              ? '0 0 16px rgba(239, 68, 68, 0.5)'
+              ? `0 0 16px ${CASA_BRAND.colors.primary.amber}50`
               : `0 0 16px ${CASA_BRAND.colors.primary.amber}50`,
-            border: isLive ? '2px solid #ef4444' : 'none',
+            border: isLive ? `2px solid ${CASA_BRAND.colors.primary.amber}` : 'none',
             animation: isLive ? 'terminatePulse 1.5s ease-in-out infinite' : 'none',
           }}
         >

@@ -363,6 +363,29 @@ export function getAllImageOverlaysForSlide(
 // ============================================
 
 /**
+ * Text readability preset for video backgrounds
+ */
+export type TextReadabilityPreset = 'none' | 'shadow' | 'box' | 'gradient' | 'outline' | 'frosted';
+
+/**
+ * Text readability settings for video backgrounds
+ */
+export interface TextReadabilitySettings {
+  preset: TextReadabilityPreset;
+  intensity: number;      // 0-100, how strong the effect is
+  textColor?: string;     // Override text color (e.g., '#FFFFFF' for white)
+}
+
+/**
+ * Default text readability settings
+ */
+export const DEFAULT_TEXT_READABILITY: TextReadabilitySettings = {
+  preset: 'shadow',
+  intensity: 50,
+  textColor: '#FFFFFF',   // White by default for video backgrounds
+};
+
+/**
  * Video background settings
  * Controls how the video plays and appears
  */
@@ -373,6 +396,7 @@ export interface VideoBackgroundSettings {
   opacity: number;        // 0-1, default: 0.5
   blur?: number;          // Optional blur in pixels
   fitMode: 'cover' | 'contain';  // Default: 'cover'
+  textReadability?: TextReadabilitySettings; // Text readability enhancement
 }
 
 /**
@@ -409,6 +433,7 @@ export const DEFAULT_VIDEO_BACKGROUND_SETTINGS: VideoBackgroundSettings = {
   muted: true,
   opacity: 0.5,
   fitMode: 'cover',
+  textReadability: DEFAULT_TEXT_READABILITY,
 };
 
 /**
@@ -631,30 +656,38 @@ export const FONT_FAMILIES = [
 
 /**
  * Resuelve estilos aplicando cascada: global -> element -> slide
+ *
+ * IMPORTANT: This returns ONLY explicitly-set style overrides.
+ * Properties that haven't been set by the user will be undefined,
+ * allowing slides to use their original/default colors.
+ *
+ * DO NOT start with DEFAULT_SLIDE_STYLES - that would override
+ * the slide's own colors even when the user hasn't made changes.
  */
 export function getResolvedStyles(
   styleState: StyleState,
   slideId: string,
   elementId: string | null
 ): SlideStyles {
-  // Deep clone to prevent mutation of defaults
+  // Start with empty objects - only user-applied styles should be returned
+  // This ensures slides keep their original colors until user explicitly changes them
   const result: SlideStyles = {
-    font: { ...DEFAULT_SLIDE_STYLES.font },
-    textBackground: { ...DEFAULT_SLIDE_STYLES.textBackground },
-    slideBackground: { ...DEFAULT_SLIDE_STYLES.slideBackground },
+    font: {},
+    textBackground: {},
+    slideBackground: {},
   };
 
-  // Apply global styles
+  // Apply global styles (if user has set any)
   if (styleState.globalStyles) {
     mergeStyles(result, styleState.globalStyles);
   }
 
-  // Apply element styles
+  // Apply element styles (if user has set any)
   if (elementId && styleState.elementStyles[elementId]) {
     mergeStyles(result, styleState.elementStyles[elementId]);
   }
 
-  // Apply slide styles (highest priority)
+  // Apply slide styles (highest priority, if user has set any)
   if (styleState.slideStyles[slideId]) {
     mergeStyles(result, styleState.slideStyles[slideId]);
   }
@@ -687,7 +720,7 @@ function mergeStyles(target: SlideStyles, source: SlideStyles): void {
  * Contiene todo el estado que debe sincronizarse al output
  */
 export interface PublishPayload {
-  slideIndex: number;
+  slideIndex?: number;  // Only included when followMode is ON
   overlays: TextOverlay[];
   imageOverlays: ImageOverlay[];
   logoState: LogoState;
@@ -763,7 +796,20 @@ export type SyncMessage =
   | { type: 'VIDEO_PLAY'; slideId: string }
   | { type: 'VIDEO_PAUSE'; slideId: string }
   | { type: 'VIDEO_SEEK'; slideId: string; time: number }
-  | { type: 'VIDEO_MUTE'; slideId: string; muted: boolean };
+  | { type: 'VIDEO_MUTE'; slideId: string; muted: boolean }
+  // Video playback state sync (output -> presenter)
+  | { type: 'VIDEO_PLAYBACK_STATE'; slideId: string; state: VideoPlaybackState };
+
+/**
+ * Video playback state for sync between output and presenter
+ */
+export interface VideoPlaybackState {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  muted: boolean;
+  volume: number;
+}
 
 /**
  * Rol del participante en la sincronización

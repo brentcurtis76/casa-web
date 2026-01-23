@@ -43,11 +43,13 @@ import type {
   VideoBackgroundSettings,
   FlattenedElement,
   OverlayScope,
+  TextReadabilityPreset,
 } from '@/lib/presentation/types';
 import {
   getScopeLabel,
   getActiveVideoBackground,
   DEFAULT_VIDEO_BACKGROUND_SETTINGS,
+  DEFAULT_TEXT_READABILITY,
 } from '@/lib/presentation/types';
 import { ElementSelectorModal } from './ElementSelectorModal';
 
@@ -138,8 +140,8 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
     setEditorOpen(true);
   };
 
-  // Max file size: 50MB (video files can be large)
-  const MAX_FILE_SIZE_MB = 50;
+  // Max file size: 200MB (video files can be large)
+  const MAX_FILE_SIZE_MB = 200;
   const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
   // Handle file selection
@@ -189,19 +191,9 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
     let finalVideoUrl = videoUrl;
 
     if (activeTab === 'upload' && videoFile) {
-      // For upload, convert to data URL (not ideal for large files, but works for MVP)
-      // In production, this should upload to storage
-      try {
-        finalVideoUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(videoFile);
-        });
-      } catch {
-        toast.error('Error al procesar el video');
-        return;
-      }
+      // Use blob URL for local preview (much faster than data URL for large files)
+      // In production, this should upload to storage and use the storage URL
+      finalVideoUrl = URL.createObjectURL(videoFile);
     }
 
     if (!finalVideoUrl) {
@@ -293,11 +285,14 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
           {allBackgrounds.map((background) => {
             const scopeLabel = getScopeLabel(background.scope, elements);
             const isOnCurrentSlide = isActiveOnSlide(background);
+            const readabilityPreset = background.settings.textReadability?.preset || 'shadow';
+            const readabilityIntensity = background.settings.textReadability?.intensity ?? 50;
+            const textColor = background.settings.textReadability?.textColor || '#FFFFFF';
 
             return (
               <div
                 key={background.id}
-                className="flex items-center gap-2 p-2 rounded"
+                className="p-3 rounded"
                 style={{
                   backgroundColor: CASA_BRAND.colors.primary.black,
                   border: isOnCurrentSlide
@@ -306,96 +301,275 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                   opacity: background.visible ? 1 : 0.6,
                 }}
               >
-                {/* Video thumbnail/icon */}
-                <div
-                  className="w-10 h-10 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
-                  style={{
-                    backgroundColor: CASA_BRAND.colors.secondary.grayDark,
-                  }}
-                >
-                  <Video size={20} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                {/* Top row: thumbnail + info + actions */}
+                <div className="flex items-start gap-3">
+                  {/* Video thumbnail/icon */}
+                  <div
+                    className="w-12 h-12 rounded overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:ring-2 transition-all"
+                    onClick={() => handleEditClick(background)}
+                    title="Editar video"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                      // @ts-expect-error CSS custom property for hover ring
+                      '--tw-ring-color': CASA_BRAND.colors.primary.amber + '80',
+                    }}
+                  >
+                    <Video size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                  </div>
+
+                  {/* Info column */}
+                  <div className="flex-1 min-w-0">
+                    {/* Settings row */}
+                    <div className="flex items-center gap-2 text-xs" style={{ color: CASA_BRAND.colors.secondary.grayLight }}>
+                      <span>{Math.round(background.settings.opacity * 100)}% opacidad</span>
+                      {background.settings.blur && background.settings.blur > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>{background.settings.blur}px blur</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Scope row */}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {background.scope.type === 'all' ? (
+                        <Globe size={12} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                      ) : (
+                        <Layers size={12} style={{ color: CASA_BRAND.colors.primary.amber }} />
+                      )}
+                      <span
+                        className="truncate"
+                        style={{
+                          fontSize: '11px',
+                          color: background.scope.type === 'all'
+                            ? CASA_BRAND.colors.secondary.grayMedium
+                            : CASA_BRAND.colors.primary.amber,
+                          fontFamily: CASA_BRAND.fonts.body,
+                        }}
+                      >
+                        {scopeLabel}
+                      </span>
+                      {isOnCurrentSlide && (
+                        <span
+                          className="ml-1 px-1.5 py-0.5 rounded text-[9px]"
+                          style={{
+                            backgroundColor: CASA_BRAND.colors.primary.amber + '30',
+                            color: CASA_BRAND.colors.primary.amber,
+                          }}
+                        >
+                          activo
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => onRemove(background.id)}
+                      className="p-1.5 rounded hover:bg-red-900/50 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={14} style={{ color: '#ef4444' }} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Content info */}
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="truncate text-xs"
+                {/* Bottom row: visibility toggle */}
+                <div
+                  className="flex items-center justify-between mt-3 pt-2"
+                  style={{ borderTop: `1px solid ${CASA_BRAND.colors.secondary.grayDark}` }}
+                >
+                  <span
+                    className="text-xs"
                     style={{
-                      color: background.visible
-                        ? CASA_BRAND.colors.primary.white
+                      color: isOnCurrentSlide
+                        ? CASA_BRAND.colors.primary.amber
                         : CASA_BRAND.colors.secondary.grayMedium,
                       fontFamily: CASA_BRAND.fonts.body,
                     }}
                   >
-                    {Math.round(background.settings.opacity * 100)}% opacity
-                    {background.settings.loop ? ' • Loop' : ''}
-                    {background.settings.muted ? ' • Mudo' : ''}
-                  </p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    {background.scope.type === 'all' ? (
-                      <Globe
-                        size={10}
-                        style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-                      />
-                    ) : (
-                      <Layers
-                        size={10}
-                        style={{ color: CASA_BRAND.colors.primary.amber }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: background.scope.type === 'all'
-                          ? CASA_BRAND.colors.secondary.grayMedium
-                          : CASA_BRAND.colors.primary.amber,
-                      }}
-                    >
-                      {scopeLabel}
-                    </span>
-                    {isOnCurrentSlide && (
-                      <span
-                        className="ml-1 px-1.5 py-0.5 rounded text-[9px]"
-                        style={{
-                          backgroundColor: CASA_BRAND.colors.primary.amber + '30',
-                          color: CASA_BRAND.colors.primary.amber,
-                        }}
-                      >
-                        activo
-                      </span>
-                    )}
-                  </div>
+                    {isOnCurrentSlide ? 'Activo en este slide' : 'No activo aquí'}
+                  </span>
+                  <Switch
+                    checked={background.visible}
+                    onCheckedChange={(v) => handleVisibilityToggle(background, v)}
+                    className="border-2 data-[state=unchecked]:bg-gray-700"
+                    style={{
+                      borderColor: background.visible ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                      backgroundColor: background.visible ? CASA_BRAND.colors.primary.amber : undefined,
+                    }}
+                  />
                 </div>
 
-                {/* Edit button */}
-                <button
-                  onClick={() => handleEditClick(background)}
-                  className="p-1.5 rounded hover:bg-gray-700 transition-colors"
-                  title="Editar"
-                >
-                  <Video
-                    size={14}
-                    style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-                  />
-                </button>
+                {/* Text Readability Controls - only show when active */}
+                {isOnCurrentSlide && background.visible && (
+                  <div
+                    className="mt-3 pt-3 space-y-3"
+                    style={{ borderTop: `1px solid ${CASA_BRAND.colors.secondary.grayDark}` }}
+                  >
+                    <label
+                      className="text-xs block"
+                      style={{
+                        color: CASA_BRAND.colors.secondary.grayLight,
+                        fontFamily: CASA_BRAND.fonts.body,
+                      }}
+                    >
+                      Legibilidad del Texto
+                    </label>
 
-                {/* Visibility toggle */}
-                <Switch
-                  checked={background.visible}
-                  onCheckedChange={(v) => handleVisibilityToggle(background, v)}
-                  className="data-[state=checked]:bg-white data-[state=unchecked]:bg-gray-700"
-                  thumbClassName="border-2 border-gray-400"
-                  title={background.visible ? 'Visible' : 'Oculto'}
-                />
+                    {/* Preset buttons */}
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { value: 'none', label: 'Ninguno' },
+                        { value: 'shadow', label: 'Sombra' },
+                        { value: 'box', label: 'Caja' },
+                        { value: 'gradient', label: 'Degradado' },
+                        { value: 'outline', label: 'Contorno' },
+                        { value: 'frosted', label: 'Cristal' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.value}
+                          onClick={() => onUpdate(background.id, {
+                            settings: {
+                              ...background.settings,
+                              textReadability: {
+                                preset: preset.value as TextReadabilityPreset,
+                                intensity: readabilityIntensity,
+                                textColor,
+                              },
+                            },
+                          })}
+                          className="px-2 py-1.5 rounded text-xs transition-colors"
+                          style={{
+                            backgroundColor: readabilityPreset === preset.value
+                              ? CASA_BRAND.colors.primary.amber
+                              : CASA_BRAND.colors.secondary.grayDark,
+                            color: readabilityPreset === preset.value
+                              ? CASA_BRAND.colors.primary.black
+                              : CASA_BRAND.colors.secondary.grayLight,
+                            fontFamily: CASA_BRAND.fonts.body,
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
 
-                {/* Delete button */}
-                <button
-                  onClick={() => onRemove(background.id)}
-                  className="p-1.5 rounded hover:bg-red-900/50 transition-colors"
-                  title="Eliminar"
-                >
-                  <Trash2 size={14} style={{ color: '#ef4444' }} />
-                </button>
+                    {/* Intensity slider - only show if preset is not 'none' */}
+                    {readabilityPreset !== 'none' && (
+                      <div>
+                        <label
+                          className="text-xs mb-2 block"
+                          style={{
+                            color: CASA_BRAND.colors.secondary.grayLight,
+                            fontFamily: CASA_BRAND.fonts.body,
+                          }}
+                        >
+                          Intensidad: {readabilityIntensity}%
+                        </label>
+                        <Slider
+                          value={[readabilityIntensity]}
+                          onValueChange={(v) => onUpdate(background.id, {
+                            settings: {
+                              ...background.settings,
+                              textReadability: {
+                                preset: readabilityPreset,
+                                intensity: v[0],
+                                textColor,
+                              },
+                            },
+                          })}
+                          min={10}
+                          max={100}
+                          step={5}
+                          className="w-full"
+                          trackClassName="bg-gray-700"
+                          rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                          thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Text Color */}
+                    <div>
+                      <label
+                        className="text-xs mb-2 block"
+                        style={{
+                          color: CASA_BRAND.colors.secondary.grayLight,
+                          fontFamily: CASA_BRAND.fonts.body,
+                        }}
+                      >
+                        Color del Texto
+                      </label>
+                      <div className="flex gap-2 items-center">
+                        {/* Preset color swatches */}
+                        {[
+                          { value: '#FFFFFF', label: 'Blanco' },
+                          { value: '#000000', label: 'Negro' },
+                          { value: CASA_BRAND.colors.primary.amber, label: 'Ámbar' },
+                        ].map((color) => (
+                          <button
+                            key={color.value}
+                            onClick={() => onUpdate(background.id, {
+                              settings: {
+                                ...background.settings,
+                                textReadability: {
+                                  preset: readabilityPreset,
+                                  intensity: readabilityIntensity,
+                                  textColor: color.value,
+                                },
+                              },
+                            })}
+                            className="w-7 h-7 rounded-md border-2 transition-all hover:scale-110"
+                            title={color.label}
+                            style={{
+                              backgroundColor: color.value,
+                              borderColor: textColor === color.value
+                                ? CASA_BRAND.colors.primary.amber
+                                : 'rgba(255,255,255,0.2)',
+                              boxShadow: textColor === color.value
+                                ? `0 0 0 2px ${CASA_BRAND.colors.primary.amber}40`
+                                : 'inset 0 0 0 1px rgba(0,0,0,0.1)',
+                            }}
+                          />
+                        ))}
+                        {/* Custom color picker - styled wrapper around hidden native input */}
+                        <label
+                          className="relative w-7 h-7 rounded-md cursor-pointer transition-all hover:scale-110 overflow-hidden"
+                          title="Color personalizado"
+                          style={{
+                            background: 'conic-gradient(from 0deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+                          }}
+                        >
+                          <div
+                            className="absolute inset-[2px] rounded flex items-center justify-center"
+                            style={{
+                              backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+                            }}
+                          >
+                            <span style={{ fontSize: '14px', color: CASA_BRAND.colors.secondary.grayLight }}>+</span>
+                          </div>
+                          <input
+                            type="color"
+                            value={textColor}
+                            onChange={(e) => onUpdate(background.id, {
+                              settings: {
+                                ...background.settings,
+                                textReadability: {
+                                  preset: readabilityPreset,
+                                  intensity: readabilityIntensity,
+                                  textColor: e.target.value.toUpperCase(),
+                                },
+                              },
+                            })}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -409,7 +583,6 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
           variant="outline"
           size="sm"
           className="w-full gap-2 hover:bg-white/10"
-          disabled={allBackgrounds.length >= 1} // Only allow one video background for now
           style={{
             borderColor: CASA_BRAND.colors.secondary.grayMedium,
             backgroundColor: CASA_BRAND.colors.secondary.grayDark,
@@ -421,26 +594,16 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
         </Button>
       </div>
 
-      {/* Limit indicator */}
-      {allBackgrounds.length >= 1 && (
-        <p
-          className="text-xs text-center"
-          style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-        >
-          Solo se permite un video de fondo
-        </p>
-      )}
-
       {/* Editor dialog */}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent
-          className="sm:max-w-md"
+          className="sm:max-w-md max-h-[85vh] flex flex-col"
           style={{
             backgroundColor: CASA_BRAND.colors.secondary.carbon,
             border: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
           }}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle
               style={{
                 fontFamily: CASA_BRAND.fonts.heading,
@@ -451,22 +614,30 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             {/* Tabs for URL / Upload */}
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'upload' | 'url')}>
-              <TabsList className="grid w-full grid-cols-2" style={{ backgroundColor: CASA_BRAND.colors.primary.black }}>
+              <TabsList className="grid w-full grid-cols-2" style={{ backgroundColor: CASA_BRAND.colors.secondary.carbon }}>
                 <TabsTrigger
                   value="url"
-                  className="data-[state=active]:bg-amber-600/20"
-                  style={{ fontFamily: CASA_BRAND.fonts.body }}
+                  className="data-[state=active]:text-amber-500"
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    color: activeTab === 'url' ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                    backgroundColor: activeTab === 'url' ? `${CASA_BRAND.colors.primary.amber}20` : 'transparent',
+                  }}
                 >
                   <Link size={16} className="mr-2" />
                   URL
                 </TabsTrigger>
                 <TabsTrigger
                   value="upload"
-                  className="data-[state=active]:bg-amber-600/20"
-                  style={{ fontFamily: CASA_BRAND.fonts.body }}
+                  className="data-[state=active]:text-amber-500"
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    color: activeTab === 'upload' ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                    backgroundColor: activeTab === 'upload' ? `${CASA_BRAND.colors.primary.amber}20` : 'transparent',
+                  }}
                 >
                   <Upload size={16} className="mr-2" />
                   Subir
@@ -516,10 +687,16 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 />
 
                 {videoPreviewUrl && activeTab === 'upload' ? (
-                  <div className="relative">
+                  <div className="relative rounded-lg overflow-hidden bg-black" style={{ aspectRatio: '16/9' }}>
                     <video
                       src={videoPreviewUrl}
-                      className="w-full h-32 object-cover rounded-lg bg-black"
+                      className="w-full h-full"
+                      style={{
+                        objectFit: settings.fitMode,
+                        opacity: settings.opacity,
+                        filter: settings.blur ? `blur(${settings.blur}px)` : undefined,
+                        transform: settings.blur ? `scale(${1 + (settings.blur * 0.02)})` : undefined,
+                      }}
                       controls={false}
                       muted
                       loop
@@ -543,7 +720,7 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 ) : (
                   <Button
                     variant="outline"
-                    className="w-full h-32 gap-2 flex-col hover:bg-white/10"
+                    className="w-full h-24 gap-2 flex-col hover:bg-white/10"
                     onClick={() => fileInputRef.current?.click()}
                     style={{
                       borderColor: CASA_BRAND.colors.secondary.grayMedium,
@@ -563,7 +740,7 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
             {/* Opacity slider */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -578,13 +755,16 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 max={100}
                 step={5}
                 className="w-full"
+                trackClassName="bg-gray-700"
+                rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
               />
             </div>
 
             {/* Blur slider */}
             <div>
               <label
-                className="text-sm mb-2 block"
+                className="text-xs mb-2 block"
                 style={{
                   color: CASA_BRAND.colors.secondary.grayLight,
                   fontFamily: CASA_BRAND.fonts.body,
@@ -599,6 +779,9 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 max={20}
                 step={1}
                 className="w-full"
+                trackClassName="bg-gray-700"
+                rangeStyle={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                thumbStyle={{ borderColor: CASA_BRAND.colors.primary.amber }}
               />
             </div>
 
@@ -616,21 +799,25 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
 
               <div className="grid grid-cols-2 gap-3">
                 <div
-                  className="flex items-center gap-2 p-2 rounded-lg"
+                  className="flex items-center gap-3 p-2 rounded-lg"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
                 >
                   <Switch
                     id="loop"
                     checked={settings.loop}
                     onCheckedChange={(v) => setSettings({ ...settings, loop: v })}
+                    className="border-2"
+                    style={{
+                      borderColor: settings.loop ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                    }}
                   />
                   <Label
                     htmlFor="loop"
-                    className="flex items-center gap-1 cursor-pointer"
+                    className="flex items-center gap-2 cursor-pointer"
                     style={{
                       fontFamily: CASA_BRAND.fonts.body,
-                      fontSize: '12px',
-                      color: CASA_BRAND.colors.secondary.grayLight,
+                      fontSize: '13px',
+                      color: CASA_BRAND.colors.primary.white,
                     }}
                   >
                     <Repeat size={14} />
@@ -639,21 +826,25 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 </div>
 
                 <div
-                  className="flex items-center gap-2 p-2 rounded-lg"
+                  className="flex items-center gap-3 p-2 rounded-lg"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
                 >
                   <Switch
                     id="muted"
                     checked={settings.muted}
                     onCheckedChange={(v) => setSettings({ ...settings, muted: v })}
+                    className="border-2"
+                    style={{
+                      borderColor: settings.muted ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                    }}
                   />
                   <Label
                     htmlFor="muted"
-                    className="flex items-center gap-1 cursor-pointer"
+                    className="flex items-center gap-2 cursor-pointer"
                     style={{
                       fontFamily: CASA_BRAND.fonts.body,
-                      fontSize: '12px',
-                      color: CASA_BRAND.colors.secondary.grayLight,
+                      fontSize: '13px',
+                      color: CASA_BRAND.colors.primary.white,
                     }}
                   >
                     <VolumeX size={14} />
@@ -841,7 +1032,8 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
                 onClick={() => setEditorOpen(false)}
                 style={{
                   borderColor: CASA_BRAND.colors.secondary.grayMedium,
-                  color: CASA_BRAND.colors.primary.white,
+                  backgroundColor: CASA_BRAND.colors.secondary.carbon,
+                  color: CASA_BRAND.colors.secondary.grayMedium,
                 }}
               >
                 Cancelar
