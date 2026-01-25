@@ -84,24 +84,15 @@ export async function publishCuentacuento(params: {
 
   const pdfUrl = urlData.publicUrl;
 
-  // 3. Deactivate any existing active cuentacuento
-  const { error: deactivateError } = await supabase
+  // 3. Check if there's an existing active cuentacuento
+  const { data: existingResource } = await supabase
     .from('published_resources')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .select('id')
     .eq('resource_type', 'cuentacuento')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .maybeSingle();
 
-  // If deactivation fails (e.g., no rows to update), that's OK - continue
-  // But log it for debugging
-  if (deactivateError) {
-    console.warn('[publishCuentacuento] Deactivation warning:', deactivateError.message);
-  }
-
-  // Small delay to ensure the update is committed before insert
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // 4. Insert new published resource (with conflict handling)
-  const newResource = {
+  const resourceData = {
     resource_type: 'cuentacuento' as const,
     liturgy_id: liturgyId,
     liturgy_date: liturgyDate.toISOString().split('T')[0],
@@ -111,44 +102,35 @@ export async function publishCuentacuento(params: {
     pdf_filename: filename,
     file_size_bytes: pdfBlob.size,
     is_active: true,
+    updated_at: new Date().toISOString(),
   };
 
   let data;
   let error;
 
-  // Try insert first
-  const insertResult = await supabase
-    .from('published_resources')
-    .insert(newResource)
-    .select()
-    .single();
+  if (existingResource) {
+    // Update the existing active record
+    console.log('[publishCuentacuento] Updating existing record:', existingResource.id);
+    const updateResult = await supabase
+      .from('published_resources')
+      .update(resourceData)
+      .eq('id', existingResource.id)
+      .select()
+      .single();
 
-  if (insertResult.error) {
-    // If unique constraint violation, try to update the existing active record
-    if (insertResult.error.code === '23505' || insertResult.error.message.includes('unique constraint')) {
-      console.log('[publishCuentacuento] Constraint violation, updating existing record...');
-
-      // Force deactivate all and retry
-      await supabase
-        .from('published_resources')
-        .update({ is_active: false })
-        .eq('resource_type', 'cuentacuento');
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      const retryResult = await supabase
-        .from('published_resources')
-        .insert(newResource)
-        .select()
-        .single();
-
-      data = retryResult.data;
-      error = retryResult.error;
-    } else {
-      error = insertResult.error;
-    }
+    data = updateResult.data;
+    error = updateResult.error;
   } else {
+    // Insert new record
+    console.log('[publishCuentacuento] Inserting new record');
+    const insertResult = await supabase
+      .from('published_resources')
+      .insert(resourceData)
+      .select()
+      .single();
+
     data = insertResult.data;
+    error = insertResult.error;
   }
 
   if (error) throw new Error(`Error al publicar: ${error.message}`);
@@ -186,21 +168,15 @@ export async function publishReflexion(params: {
 
   const pdfUrl = urlData.publicUrl;
 
-  // 3. Deactivate any existing active reflexion
-  const { error: deactivateError } = await supabase
+  // 3. Check if there's an existing active reflexion
+  const { data: existingResource } = await supabase
     .from('published_resources')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .select('id')
     .eq('resource_type', 'reflexion')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .maybeSingle();
 
-  if (deactivateError) {
-    console.warn('[publishReflexion] Deactivation warning:', deactivateError.message);
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // 4. Insert new published resource (with conflict handling)
-  const newResource = {
+  const resourceData = {
     resource_type: 'reflexion' as const,
     liturgy_id: liturgyId,
     liturgy_date: liturgyDate.toISOString().split('T')[0],
@@ -210,41 +186,35 @@ export async function publishReflexion(params: {
     pdf_filename: filename,
     file_size_bytes: pdfFile.size,
     is_active: true,
+    updated_at: new Date().toISOString(),
   };
 
   let data;
   let error;
 
-  const insertResult = await supabase
-    .from('published_resources')
-    .insert(newResource)
-    .select()
-    .single();
+  if (existingResource) {
+    // Update the existing active record
+    console.log('[publishReflexion] Updating existing record:', existingResource.id);
+    const updateResult = await supabase
+      .from('published_resources')
+      .update(resourceData)
+      .eq('id', existingResource.id)
+      .select()
+      .single();
 
-  if (insertResult.error) {
-    if (insertResult.error.code === '23505' || insertResult.error.message.includes('unique constraint')) {
-      console.log('[publishReflexion] Constraint violation, updating existing record...');
-
-      await supabase
-        .from('published_resources')
-        .update({ is_active: false })
-        .eq('resource_type', 'reflexion');
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      const retryResult = await supabase
-        .from('published_resources')
-        .insert(newResource)
-        .select()
-        .single();
-
-      data = retryResult.data;
-      error = retryResult.error;
-    } else {
-      error = insertResult.error;
-    }
+    data = updateResult.data;
+    error = updateResult.error;
   } else {
+    // Insert new record
+    console.log('[publishReflexion] Inserting new record');
+    const insertResult = await supabase
+      .from('published_resources')
+      .insert(resourceData)
+      .select()
+      .single();
+
     data = insertResult.data;
+    error = insertResult.error;
   }
 
   if (error) throw new Error(`Error al publicar: ${error.message}`);
