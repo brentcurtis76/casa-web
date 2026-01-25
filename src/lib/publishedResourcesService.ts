@@ -232,3 +232,31 @@ export async function unpublishResource(resourceId: string): Promise<void> {
 
   if (error) throw new Error(`Error al despublicar: ${error.message}`);
 }
+
+/**
+ * Get all published resources for archive (active and inactive)
+ * Supports filtering by type and pagination
+ */
+export async function getArchivedResources(params?: {
+  type?: 'cuentacuento' | 'reflexion' | 'all';
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: PublishedResource[]; count: number }> {
+  const { type = 'all', limit = 20, offset = 0 } = params || {};
+
+  let query = supabase
+    .from('published_resources')
+    .select('*', { count: 'exact' })
+    .order('liturgy_date', { ascending: false });
+
+  if (type !== 'all') {
+    query = query.eq('resource_type', type);
+  }
+
+  query = query.range(offset, offset + limit - 1);
+
+  const { data, error, count } = await query;
+
+  if (error) throw error;
+  return { data: (data || []) as PublishedResource[], count: count || 0 };
+}

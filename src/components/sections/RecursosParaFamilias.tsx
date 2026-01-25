@@ -4,8 +4,9 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Download, Book, FileText, Calendar } from 'lucide-react';
+import { Download, Book, FileText, Calendar, Archive } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 // Animation variants (matching Sermones.tsx pattern)
@@ -188,6 +189,23 @@ export function RecursosParaFamilias() {
               )}
             </>
           )}
+        </motion.div>
+
+        {/* Archive link */}
+        <motion.div
+          className="text-center mt-10"
+          variants={itemVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+        >
+          <Link
+            to="/recursos/archivo"
+            className="inline-flex items-center gap-2 text-[#8A8A8A] hover:text-[#D4A853] transition-colors font-mont text-sm"
+          >
+            <Archive size={16} />
+            Ver recursos anteriores
+          </Link>
         </motion.div>
       </div>
     </section>

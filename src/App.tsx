@@ -27,6 +27,7 @@ import PresenterPage from "./pages/PresenterPage";
 import OutputPage from "./pages/OutputPage";
 import SermonEditorPage from "./pages/SermonEditorPage";
 import SermonEditorTestPage from "./pages/SermonEditorTestPage";
+import ArchivoRecursosPage from "./pages/ArchivoRecursosPage";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const router = createBrowserRouter([
   { path: "/output", element: <OutputPage /> },
   { path: "/admin/sermon-editor", element: <SermonEditorPage /> },
   { path: "/test/sermon-editor", element: <SermonEditorTestPage /> },
+  { path: "/recursos/archivo", element: <ArchivoRecursosPage /> },
   // Catch-all route for 404
   { path: "*", element: <NotFound /> },
 ]);
