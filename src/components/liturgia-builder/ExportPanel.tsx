@@ -87,6 +87,8 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     setExportingCelebrant(true);
     setError(null);
 
+    console.log('[ExportPanel] Exporting celebrant PDF:', elementOrder.length, 'in order,', elements.size, 'in map');
+
     try {
       await exportLiturgy({
         format: 'pdf-celebrant',

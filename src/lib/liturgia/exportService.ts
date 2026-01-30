@@ -301,12 +301,15 @@ async function exportToCelebrantPDF(
 
   // CONTENIDO
   let elementNumber = 1;
+  console.log(`[celebrant-pdf] Generating PDF: ${elementOrder.length} elements in order, ${elements.size} in map`);
 
   for (const elementType of elementOrder) {
     try {
       const element = elements.get(elementType);
       if (!element) continue;
       if (element.status === 'skipped') continue;
+      // Skip pending elements (no content to render)
+      if (element.status === 'pending' && !element.slides && !element.editedSlides) continue;
 
       const slideGroup = element.editedSlides || element.slides;
       const slideCount = slideGroup?.slides?.length || 0;
@@ -321,7 +324,7 @@ async function exportToCelebrantPDF(
 
       pdf.setTextColor(CASA_BRAND.colors.primary.black);
       const elementLabel = getElementLabel(elementType);
-      const elementTitle = slideGroup?.title || element.title || elementLabel;
+      const elementTitle = String(slideGroup?.title || element.title || elementLabel);
       pdf.text(elementTitle.toUpperCase(), margin + 8, currentY);
 
       currentY += 8;
@@ -344,9 +347,10 @@ async function exportToCelebrantPDF(
       if (slideGroup?.slides) {
         let lastSpeaker: 'celebrante' | 'congregacion' | null = null;
 
-        for (const slide of slideGroup.slides) {
+        for (let si = 0; si < slideGroup.slides.length; si++) {
+          const slide = slideGroup.slides[si];
           // Saltar slides vacíos
-          if (!slide.content.primary && !slide.content.secondary) continue;
+          if (!slide.content?.primary && !slide.content?.secondary) continue;
 
           // Saltar slides de título - ya tenemos el título en el encabezado de sección
           if (slide.type === 'title') continue;
@@ -355,9 +359,9 @@ async function exportToCelebrantPDF(
 
           // Determinar quién habla basándose en el color del texto
           // Ámbar = Congregación, Negro/otros = Celebrante
-          const primaryIsAmber = slide.style.primaryColor === CASA_BRAND.colors.primary.amber;
+          const primaryIsAmber = slide.style?.primaryColor === CASA_BRAND.colors.primary.amber;
 
-          if (slide.content.primary) {
+          if (slide.content?.primary) {
             const speaker = primaryIsAmber ? 'congregacion' : 'celebrante';
 
             // Mostrar etiqueta solo cuando cambia el hablante
@@ -383,13 +387,14 @@ async function exportToCelebrantPDF(
             }
             pdf.setFontSize(11);
             pdf.setTextColor(CASA_BRAND.colors.primary.black);
-            const lines = pdf.splitTextToSize(slide.content.primary, contentWidth);
+            const primaryText = String(slide.content.primary || '');
+            const lines = pdf.splitTextToSize(primaryText, contentWidth);
             pdf.text(lines, margin, currentY);
             currentY += lines.length * 5 + 4;
           }
 
           // Para slides tipo antiphonal que tienen primary (celebrante) y secondary (congregación)
-          if (slide.content.secondary) {
+          if (slide.content?.secondary) {
             checkNewPage(20);
 
             // Secondary siempre es congregación
@@ -405,7 +410,8 @@ async function exportToCelebrantPDF(
             pdf.setFont('helvetica', 'bold');
             pdf.setFontSize(11);
             pdf.setTextColor(CASA_BRAND.colors.primary.black);
-            const lines = pdf.splitTextToSize(slide.content.secondary, contentWidth);
+            const secondaryText = String(slide.content.secondary || '');
+            const lines = pdf.splitTextToSize(secondaryText, contentWidth);
             pdf.text(lines, margin, currentY);
             currentY += lines.length * 5 + 4;
           }
@@ -426,7 +432,8 @@ async function exportToCelebrantPDF(
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(11);
           pdf.setTextColor(CASA_BRAND.colors.primary.black);
-          const lines = pdf.splitTextToSize(reading.text, contentWidth);
+          const readingText = String(reading.text || '');
+          const lines = pdf.splitTextToSize(readingText, contentWidth);
 
           for (const line of lines) {
             checkNewPage(6);
@@ -537,8 +544,8 @@ async function exportToCelebrantPDF(
 
     currentY += 8;
     elementNumber++;
-    } catch (err) {
-      console.error(`[exportService] Error processing element ${elementType}:`, err);
+    } catch (err: any) {
+      console.error(`[celebrant-pdf] Error processing ${elementType}:`, err?.message || err);
       // Continue with next element even if this one fails
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(10);
@@ -548,6 +555,20 @@ async function exportToCelebrantPDF(
       elementNumber++;
     }
   }
+
+  console.log(`[celebrant-pdf] PDF complete: ${elementNumber - 1} elements, ${pdf.getNumberOfPages()} pages`);
+
+  // Diagnostic: add summary at end of last page
+  checkNewPage(30);
+  currentY += 10;
+  pdf.setDrawColor(CASA_BRAND.colors.secondary.grayLight);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, currentY, pageWidth - margin, currentY);
+  currentY += 8;
+  pdf.setFont('helvetica', 'italic');
+  pdf.setFontSize(8);
+  pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
+  pdf.text(`— Fin de la Guía Litúrgica · ${elementNumber - 1} elementos · ${pdf.getNumberOfPages()} páginas —`, pageWidth / 2, currentY, { align: 'center' });
 
   const fileName = generateFileName(liturgyContext, 'pdf').replace('.pdf', '_Celebrante.pdf');
   pdf.save(fileName);

@@ -49,7 +49,7 @@ import type {
   LITURGY_ORDER,
   LiturgyOrderElement,
 } from '@/types/shared/liturgy';
-import type { SlideGroup } from '@/types/shared/slide';
+import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { Song } from '@/types/shared/song';
 import type { Story } from '@/types/shared/story';
 import ContextoTransversal from './ContextoTransversal';
@@ -339,11 +339,43 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   const [announcements, setAnnouncementsState] = useState<AnnouncementConfig[]>(initialAnnouncements);
 
   // Handler para actualizar anuncios y también el elemento de liturgia
+  // Generates slides inline so they're always in sync with the config
   const setAnnouncements = useCallback((newAnnouncements: AnnouncementConfig[] | ((prev: AnnouncementConfig[]) => AnnouncementConfig[])) => {
     setAnnouncementsState((prev) => {
       const updated = typeof newAnnouncements === 'function' ? newAnnouncements(prev) : newAnnouncements;
 
-      // Actualizar el elemento de anuncios con el nuevo config
+      // Generate slides from announcements so they're always available for Presenter
+      let slidesGroup: SlideGroup | undefined;
+      if (updated.length > 0) {
+        const groupId = uuidv4();
+        const slides: Slide[] = updated.map((ann, index) => {
+          if (ann.imageUrl) {
+            return {
+              id: uuidv4(),
+              type: 'announcement-image' as const,
+              content: { primary: ann.title, imageUrl: ann.imageUrl },
+              style: { backgroundColor: CASA_BRAND.colors.primary.white },
+              metadata: { sourceComponent: 'anuncios', sourceId: groupId, order: index + 1, groupTotal: updated.length },
+            };
+          }
+          return {
+            id: uuidv4(),
+            type: 'announcement' as const,
+            content: { primary: ann.title, secondary: ann.content, subtitle: ann.date },
+            style: {
+              primaryColor: CASA_BRAND.colors.primary.black,
+              secondaryColor: CASA_BRAND.colors.secondary.grayMedium,
+              backgroundColor: CASA_BRAND.colors.primary.white,
+              primaryFont: CASA_BRAND.fonts.heading,
+              secondaryFont: CASA_BRAND.fonts.body,
+            },
+            metadata: { sourceComponent: 'anuncios', sourceId: groupId, order: index + 1, groupTotal: updated.length },
+          };
+        });
+        slidesGroup = { id: groupId, type: 'announcement', title: 'Anuncios', slides, metadata: { sourceComponent: 'anuncios', createdAt: new Date().toISOString() } };
+      }
+
+      // Actualizar el elemento de anuncios con el nuevo config Y slides generados
       setElements((prevElements) => {
         const existingElement = prevElements.get('anuncios');
         if (existingElement || updated.length > 0) {
@@ -353,7 +385,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             order: LITURGY_ELEMENTS.findIndex((e) => e.type === 'anuncios'),
             title: 'Anuncios',
             status: updated.length > 0 ? 'completed' : 'pending',
-            slides: existingElement?.slides,
+            slides: slidesGroup || existingElement?.slides,
             config: { announcementConfigs: updated },
           };
           const newElements = new Map(prevElements);
@@ -388,11 +420,40 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   const [pendingContextChanges, setPendingContextChanges] = useState<LiturgyContextInput | null>(null);
 
   // Element order state - orden personalizado de la liturgia
-  const [elementOrder, setElementOrder] = useState<LiturgyElementType[]>(
-    initialLiturgy?.elements
-      ? initialLiturgy.elements.sort((a, b) => a.order - b.order).map((e) => e.type)
-      : LITURGY_ELEMENTS.map((e) => e.type)
-  );
+  // Siempre incluir los 18 elementos, usando el orden guardado para los que existen
+  // e insertando los faltantes en su posición por defecto
+  const [elementOrder, setElementOrder] = useState<LiturgyElementType[]>(() => {
+    const defaultOrder = LITURGY_ELEMENTS.map((e) => e.type);
+    if (!initialLiturgy?.elements || initialLiturgy.elements.length === 0) {
+      return defaultOrder;
+    }
+    // Construir orden a partir de los elementos guardados
+    const savedTypes = new Set(initialLiturgy.elements.map((e) => e.type));
+    const savedOrder = initialLiturgy.elements
+      .sort((a, b) => a.order - b.order)
+      .map((e) => e.type);
+
+    // Insertar elementos faltantes en su posición por defecto
+    const fullOrder: LiturgyElementType[] = [...savedOrder];
+    for (const type of defaultOrder) {
+      if (!savedTypes.has(type)) {
+        // Encontrar la mejor posición para insertar
+        const defaultIdx = defaultOrder.indexOf(type);
+        // Buscar el elemento anterior en el orden default que sí esté en fullOrder
+        let insertIdx = fullOrder.length;
+        for (let i = defaultIdx - 1; i >= 0; i--) {
+          const prevType = defaultOrder[i];
+          const prevIdx = fullOrder.indexOf(prevType);
+          if (prevIdx !== -1) {
+            insertIdx = prevIdx + 1;
+            break;
+          }
+        }
+        fullOrder.splice(insertIdx, 0, type);
+      }
+    }
+    return fullOrder;
+  });
 
   // Handler for element order changes
   const handleOrderChange = useCallback((newOrder: LiturgyElementType[]) => {
@@ -428,6 +489,32 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     if (initialLiturgy?.elements && initialLiturgyId) {
       console.log('[ConstructorLiturgias] Syncing elements for liturgy:', initialLiturgyId);
       setElements(new Map(initialLiturgy.elements.map((e) => [e.type, e])));
+
+      // Sync element order - merge saved order with full default order
+      const defaultOrder = LITURGY_ELEMENTS.map((e) => e.type);
+      const savedTypes = new Set(initialLiturgy.elements.map((e) => e.type));
+      const savedOrder = initialLiturgy.elements
+        .sort((a, b) => a.order - b.order)
+        .map((e) => e.type);
+
+      const fullOrder: LiturgyElementType[] = [...savedOrder];
+      for (const type of defaultOrder) {
+        if (!savedTypes.has(type)) {
+          const defaultIdx = defaultOrder.indexOf(type);
+          let insertIdx = fullOrder.length;
+          for (let i = defaultIdx - 1; i >= 0; i--) {
+            const prevType = defaultOrder[i];
+            const prevIdx = fullOrder.indexOf(prevType);
+            if (prevIdx !== -1) {
+              insertIdx = prevIdx + 1;
+              break;
+            }
+          }
+          fullOrder.splice(insertIdx, 0, type);
+        }
+      }
+      console.log('[ConstructorLiturgias] Synced elementOrder:', fullOrder.length, 'elements (', savedOrder.length, 'saved +', fullOrder.length - savedOrder.length, 'default)');
+      setElementOrder(fullOrder);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLiturgyId]); // Solo depende del ID, no del contenido completo
@@ -741,9 +828,63 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       dateISO: contextToUse.date instanceof Date ? contextToUse.date.toISOString() : contextToUse.date
     });
 
-    const sortedElements = Array.from(elements.values())
-      .filter((e) => e.status !== 'skipped')
-      .sort((a, b) => a.order - b.order);
+    // Construir lista completa de elementos en el orden actual
+    // Incluir TODOS los elementos del orden (incluyendo los que aún están pending)
+    // para que no se pierdan al re-abrir la liturgia
+    const sortedElements: LiturgyElement[] = elementOrder.map((type, index) => {
+      const existing = elements.get(type);
+      if (existing) {
+        return { ...existing, order: index };
+      }
+      // Crear un stub para elementos que no están en el Map aún
+      const def = LITURGY_ELEMENTS.find((e) => e.type === type);
+      return {
+        id: uuidv4(),
+        type,
+        order: index,
+        title: def?.label || type,
+        status: 'pending' as const,
+      };
+    });
+
+    // Safety: Ensure anuncios element has slides if it has config
+    // This handles edge cases where announcements were saved without slides
+    const anunciosIdx = sortedElements.findIndex(e => e.type === 'anuncios');
+    if (anunciosIdx !== -1) {
+      const anunciosEl = sortedElements[anunciosIdx];
+      const anuncioConfigs = anunciosEl.config?.announcementConfigs as AnnouncementConfig[] | undefined;
+      if (anuncioConfigs?.length && !anunciosEl.slides) {
+        const groupId = uuidv4();
+        const anuncioSlides: Slide[] = anuncioConfigs.map((ann, i) => {
+          if (ann.imageUrl) {
+            return {
+              id: uuidv4(),
+              type: 'announcement-image' as const,
+              content: { primary: ann.title, imageUrl: ann.imageUrl },
+              style: { backgroundColor: CASA_BRAND.colors.primary.white },
+              metadata: { sourceComponent: 'anuncios', sourceId: groupId, order: i + 1, groupTotal: anuncioConfigs.length },
+            };
+          }
+          return {
+            id: uuidv4(),
+            type: 'announcement' as const,
+            content: { primary: ann.title, secondary: ann.content, subtitle: ann.date },
+            style: {
+              primaryColor: CASA_BRAND.colors.primary.black,
+              secondaryColor: CASA_BRAND.colors.secondary.grayMedium,
+              backgroundColor: CASA_BRAND.colors.primary.white,
+              primaryFont: CASA_BRAND.fonts.heading,
+              secondaryFont: CASA_BRAND.fonts.body,
+            },
+            metadata: { sourceComponent: 'anuncios', sourceId: groupId, order: i + 1, groupTotal: anuncioConfigs.length },
+          };
+        });
+        sortedElements[anunciosIdx] = {
+          ...anunciosEl,
+          slides: { id: groupId, type: 'announcement', title: 'Anuncios', slides: anuncioSlides, metadata: { sourceComponent: 'anuncios', createdAt: new Date().toISOString() } },
+        };
+      }
+    }
 
     // DEBUG: Log cuentacuentos element being built
     const cuentacuentosEl = sortedElements.find(e => e.type === 'cuentacuentos');
@@ -1246,7 +1387,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!liturgyContext || isSaving}
+            disabled={(!liturgyContext && !pendingContextChanges) || isSaving}
             className="flex items-center gap-2 px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               backgroundColor: CASA_BRAND.colors.primary.black,

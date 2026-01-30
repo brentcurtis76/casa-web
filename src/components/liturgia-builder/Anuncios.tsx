@@ -108,6 +108,17 @@ const Anuncios: React.FC<AnunciosProps> = ({
     }
   };
 
+  // Auto-generate slides whenever announcements change
+  // This ensures slides are always in sync with the config,
+  // so the Presenter can find them when loading from the database
+  useEffect(() => {
+    if (announcements.length > 0 && onSlidesGenerated) {
+      const slideGroup = generateSlides();
+      onSlidesGenerated(slideGroup);
+      setSlidesGenerated(true);
+    }
+  }, [announcements]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load batches when selector is opened
   useEffect(() => {
     if (showBatchSelector) {

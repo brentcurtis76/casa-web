@@ -116,6 +116,7 @@ export interface PortadasConfig {
   illustrationConfig: IllustrationConfig;
   logoAlignment: LayoutAlignment;
   textAlignment: LayoutAlignment;
+  titleBreakAfterWord: number | null;
 }
 
 /**

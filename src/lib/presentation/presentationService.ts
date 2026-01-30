@@ -50,6 +50,7 @@ function migratePortadasSlides(slides: Slide[], portadasConfig: PortadasConfig |
         illustrationConfig: portadasConfig.illustrationConfig,
         textAlignment: portadasConfig.textAlignment,
         logoAlignment: portadasConfig.logoAlignment,
+        titleBreakAfterWord: portadasConfig.titleBreakAfterWord,
       },
     };
   });

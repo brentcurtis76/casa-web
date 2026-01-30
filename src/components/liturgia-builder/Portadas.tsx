@@ -128,6 +128,7 @@ export const DEFAULT_PORTADAS_CONFIG: PortadasConfig = {
   illustrationConfig: DEFAULT_ILLUSTRATION_CONFIG,
   logoAlignment: 'right',
   textAlignment: 'right',
+  titleBreakAfterWord: null,
 };
 
 // Path to CASA logo in public folder (actual logo)
@@ -172,6 +173,9 @@ const Portadas: React.FC<PortadasProps> = ({
   const [textAlignment, setTextAlignment] = useState<LayoutAlignment>(
     portadasConfig?.textAlignment || 'right'
   );
+  const [titleBreakAfterWord, setTitleBreakAfterWord] = useState<number | null>(
+    portadasConfig?.titleBreakAfterWord ?? null
+  );
   const [showLogoPreview, setShowLogoPreview] = useState(true);
 
   // Notify parent when config changes
@@ -180,9 +184,10 @@ const Portadas: React.FC<PortadasProps> = ({
       illustrationConfig,
       logoAlignment,
       textAlignment,
+      titleBreakAfterWord,
     };
     onConfigChange?.(newConfig);
-  }, [illustrationConfig, logoAlignment, textAlignment, onConfigChange]);
+  }, [illustrationConfig, logoAlignment, textAlignment, titleBreakAfterWord, onConfigChange]);
 
   // Generate default prompt based on context - requests PURE WHITE background
   // Post-processing will replace white pixels with CASA_BRAND.colors.primary.white
@@ -321,6 +326,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
         textAlignment,
         logoAlignment,
+        titleBreakAfterWord,
       },
     };
 
@@ -355,6 +361,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
         textAlignment,
         logoAlignment,
+        titleBreakAfterWord,
       },
     };
 
@@ -380,7 +387,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
       },
     };
-  }, [context, selectedIllustration, illustrationConfig, textAlignment, logoAlignment]);
+  }, [context, selectedIllustration, illustrationConfig, textAlignment, logoAlignment, titleBreakAfterWord]);
 
   // Export both slides
   const exportSlides = () => {
@@ -440,6 +447,7 @@ const Portadas: React.FC<PortadasProps> = ({
           textAlignment: textAlignment,
           logoAlignment: logoAlignment,
           illustrationConfig: illustrationConfig,
+          titleBreakAfterWord,
         },
       };
     } else {
@@ -460,10 +468,11 @@ const Portadas: React.FC<PortadasProps> = ({
           textAlignment: textAlignment,
           logoAlignment: logoAlignment,
           illustrationConfig: illustrationConfig,
+          titleBreakAfterWord,
         },
       };
     }
-  }, [context.date, context.title, selectedIllustration, textAlignment, logoAlignment, illustrationConfig]);
+  }, [context.date, context.title, selectedIllustration, textAlignment, logoAlignment, illustrationConfig, titleBreakAfterWord]);
 
   // Render cover preview using UniversalSlide - SAME component as Presenter
   // This guarantees what you see in Constructor = what you see in Presenter
@@ -648,6 +657,66 @@ const Portadas: React.FC<PortadasProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Title line break control */}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg">
+        <span
+          className="text-xs shrink-0"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.secondary.grayMedium,
+          }}
+        >
+          Salto de línea
+        </span>
+        <div className="flex flex-wrap items-center gap-0.5">
+          {context.title.split(' ').map((word, idx, arr) => (
+            <React.Fragment key={idx}>
+              <span
+                className="px-1.5 py-0.5 text-xs rounded"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                {word}
+              </span>
+              {idx < arr.length - 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTitleBreakAfterWord(titleBreakAfterWord === idx ? null : idx)
+                  }
+                  className="w-4 h-6 flex items-center justify-center rounded hover:bg-amber-50 transition-colors"
+                  title={`Salto después de "${word}"`}
+                >
+                  <div
+                    style={{
+                      width: '2px',
+                      height: '100%',
+                      backgroundColor:
+                        titleBreakAfterWord === idx
+                          ? CASA_BRAND.colors.primary.amber
+                          : '#E5E7EB',
+                      borderRadius: '1px',
+                    }}
+                  />
+                </button>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+        {titleBreakAfterWord !== null && (
+          <button
+            type="button"
+            onClick={() => setTitleBreakAfterWord(null)}
+            className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors shrink-0"
+            style={{ fontFamily: CASA_BRAND.fonts.body }}
+          >
+            Auto
+          </button>
+        )}
       </div>
 
       {/* Preview */}

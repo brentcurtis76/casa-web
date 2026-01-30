@@ -233,10 +233,24 @@ const Separator: React.FC<{ scale?: number }> = ({ scale = 1 }) => (
 );
 
 /**
+ * Applies a line break after a specific word in the title.
+ * If breakAfterWord is null or out of range, returns the title as-is.
+ */
+const applyTitleBreak = (title: string, breakAfterWord: number | null): React.ReactNode => {
+  if (breakAfterWord === null) return title;
+  const words = title.split(' ');
+  if (breakAfterWord < 0 || breakAfterWord >= words.length - 1) return title;
+  const line1 = words.slice(0, breakAfterWord + 1).join(' ');
+  const line2 = words.slice(breakAfterWord + 1).join(' ');
+  return <>{line1}<br />{line2}</>;
+};
+
+/**
  * Renderiza una portada principal
  */
 // Helper global para obtener la URL correcta de la imagen
-const getImageSrc = (url: string): string => {
+const getImageSrc = (url: string | undefined | null): string => {
+  if (!url) return '';
   // Si ya es una URL (http/https) o data URL, usarla directamente
   if (url.startsWith('http') || url.startsWith('data:')) {
     return url;
@@ -257,6 +271,7 @@ const renderPortadaMain = (slide: Slide, scale: number, showLogo: boolean, proce
   } | undefined;
   const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
   const logoAlign = (slide.metadata?.logoAlignment as 'left' | 'right') || 'right';
+  const titleBreakAfterWord = (slide.metadata?.titleBreakAfterWord as number | null) ?? null;
 
   const opacity = (config?.opacity ?? 15) / 100;
   const imgScale = config?.scale ?? 100;
@@ -264,7 +279,7 @@ const renderPortadaMain = (slide: Slide, scale: number, showLogo: boolean, proce
   const posY = config?.positionY ?? 0;
 
   // Use processed image if available, otherwise fall back to original
-  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl!);
+  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl);
 
   return (
     <div className="relative w-full h-full">
@@ -329,7 +344,7 @@ const renderPortadaMain = (slide: Slide, scale: number, showLogo: boolean, proce
             lineHeight: 1.3,
           }}
         >
-          {slide.content.primary}
+          {applyTitleBreak(slide.content.primary, titleBreakAfterWord)}
         </h1>
 
         {/* Decorative line */}
@@ -390,6 +405,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number, showLogo: boolean, 
   } | undefined;
   const textAlign = (slide.metadata?.textAlignment as 'left' | 'right') || 'right';
   const logoAlign = (slide.metadata?.logoAlignment as 'left' | 'right') || 'right';
+  const titleBreakAfterWord = (slide.metadata?.titleBreakAfterWord as number | null) ?? null;
 
   const opacity = (config?.opacity ?? 15) / 100;
   const imgScale = config?.scale ?? 100;
@@ -397,7 +413,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number, showLogo: boolean, 
   const posY = config?.positionY ?? 0;
 
   // Use processed image if available, otherwise fall back to original
-  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl!);
+  const imageSource = processedImageUrl || getImageSrc(slide.content.imageUrl);
 
   return (
     <div className="relative w-full h-full">
@@ -487,7 +503,7 @@ const renderPortadaReflexion = (slide: Slide, scale: number, showLogo: boolean, 
             lineHeight: 1.3,
           }}
         >
-          {slide.content.primary}
+          {applyTitleBreak(slide.content.primary, titleBreakAfterWord)}
         </h1>
 
         {/* Season */}
@@ -1048,7 +1064,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
         return (
           <div className="w-full h-full">
             <img
-              src={getImageSrc(slide.content.imageUrl!)}
+              src={getImageSrc(slide.content.imageUrl)}
               alt={type === 'story-cover' ? 'Portada' : type === 'story-end' ? 'Fin' : 'Escena'}
               style={{
                 width: '100%',
