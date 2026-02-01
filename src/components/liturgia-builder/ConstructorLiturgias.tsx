@@ -323,9 +323,15 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   );
 
   // Elements state - usando Map para acceso rápido
-  const [elements, setElements] = useState<Map<LiturgyElementType, LiturgyElement>>(
-    new Map(initialLiturgy?.elements.map((e) => [e.type, e]) || [])
-  );
+  const [elements, setElements] = useState<Map<LiturgyElementType, LiturgyElement>>(() => {
+    const elMap = new Map(initialLiturgy?.elements.map((e) => [e.type, e]) || []);
+    console.log('[Constructor] INIT elements Map:', elMap.size, 'entries from', initialLiturgy?.elements?.length || 0, 'DB elements');
+    for (const [type, el] of elMap) {
+      const hasSlides = !!(el.slides?.slides?.length);
+      console.log(`  [${type}] status=${el.status} hasSlides=${hasSlides} slideCount=${el.slides?.slides?.length || 0}`);
+    }
+    return elMap;
+  });
   const [selectedElement, setSelectedElement] = useState<LiturgyElementType | null>(null);
   // Initialize announcements from loaded liturgy if available
   const initialAnnouncements = React.useMemo(() => {

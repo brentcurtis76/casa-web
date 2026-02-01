@@ -205,6 +205,17 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
     const slides: Slide[] = [];
     const elements: FlattenedElement[] = [];
 
+    console.log(`[Presenter] Loading ${(elementosData || []).length} elements from DB for liturgy ${liturgyId}`);
+    console.log('[Presenter] Elements from DB:', (elementosData || []).map(e => ({
+      tipo: e.tipo,
+      orden: e.orden,
+      status: e.status,
+      hasSlides: !!e.slides,
+      hasEditedSlides: !!e.edited_slides,
+      slidesType: e.slides ? (Array.isArray(e.slides) ? 'array' : typeof e.slides) : 'null',
+      slidesKeys: e.slides && typeof e.slides === 'object' ? Object.keys(e.slides) : [],
+    })));
+
     for (const elemento of elementosData || []) {
       const startIndex = slides.length;
 
@@ -222,6 +233,8 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
           slideArray = (rawSlides as SlideGroup).slides || [];
         }
       }
+
+      console.log(`[Presenter] Element ${elemento.tipo} (order ${elemento.orden}): status=${elemento.status}, slides=${slideArray.length}, rawType=${rawSlides ? (Array.isArray(rawSlides) ? 'array' : typeof rawSlides) : 'null'}`);
 
       if (slideArray.length > 0) {
         // Para cuentacuentos, migrar signed URLs a públicas (el bucket es público)
