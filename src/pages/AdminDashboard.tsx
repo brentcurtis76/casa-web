@@ -1,5 +1,10 @@
 /**
  * Dashboard de Administración - Acceso centralizado a todos los módulos de CASA
+ *
+ * Now uses RBAC to:
+ * 1. Check admin access (new system or legacy mesa_abierta_admin_roles)
+ * 2. Filter visible modules based on user permissions
+ * 3. Show "Gestión de Usuarios" card for general_admin only
  */
 
 import React, { useState, useEffect } from 'react';
@@ -23,9 +28,13 @@ import {
   Presentation,
   ExternalLink,
   Mic2,
+  Users,
+  Shield,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import { MODULE_RESOURCE_MAP } from '@/types/rbac';
+import type { PermissionAction } from '@/types/rbac';
 
 interface ModuleCard {
   id: string;
@@ -41,19 +50,32 @@ interface ModuleCard {
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin, roles, rolesLoading, hasPermission } = useAuth();
   const { toast } = useToast();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [visibleModuleIds, setVisibleModuleIds] = useState<Set<string>>(new Set());
 
-  // Check admin status
+  // Check admin/role-based access
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkAccess = async () => {
       if (!user) {
         navigate('/');
         return;
       }
 
+      // Wait for roles to load
+      if (rolesLoading) return;
+
+      // If user has ANY roles in the new RBAC system, they can see the dashboard
+      if (roles.length > 0) {
+        setIsAuthorized(true);
+        await computeVisibleModules();
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: check legacy mesa_abierta_admin_roles table
       const { data } = await supabase
         .from('mesa_abierta_admin_roles')
         .select('role')
@@ -70,12 +92,44 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      setIsAdmin(true);
+      // Legacy admin — show all modules
+      setIsAuthorized(true);
+      setVisibleModuleIds(new Set(Object.keys(MODULE_RESOURCE_MAP)));
       setLoading(false);
     };
 
-    checkAdmin();
-  }, [user, navigate, toast]);
+    checkAccess();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, navigate, toast, rolesLoading, roles]);
+
+  // Compute which modules the user can see based on permissions
+  const computeVisibleModules = async () => {
+    // Admin sees everything
+    if (isAdmin) {
+      setVisibleModuleIds(new Set(Object.keys(MODULE_RESOURCE_MAP)));
+      return;
+    }
+
+    const visible = new Set<string>();
+    const moduleIds = Object.keys(MODULE_RESOURCE_MAP);
+
+    // Check read permission for each module in parallel
+    const checks = await Promise.all(
+      moduleIds.map(async (moduleId) => {
+        const resource = MODULE_RESOURCE_MAP[moduleId];
+        const canRead = await hasPermission(resource, 'read' as PermissionAction);
+        return { moduleId, canRead };
+      })
+    );
+
+    for (const { moduleId, canRead } of checks) {
+      if (canRead) {
+        visible.add(moduleId);
+      }
+    }
+
+    setVisibleModuleIds(visible);
+  };
 
   const modules: ModuleCard[] = [
     // General Modules
@@ -176,10 +230,14 @@ const AdminDashboard: React.FC = () => {
     },
   ];
 
-  const generalModules = modules.filter((m) => m.category === 'general');
-  const liturgiaModules = modules.filter((m) => m.category === 'liturgia');
+  // Filter modules based on user permissions
+  const filterModules = (mods: ModuleCard[]) =>
+    mods.filter((m) => visibleModuleIds.has(m.id));
 
-  if (loading) {
+  const generalModules = filterModules(modules.filter((m) => m.category === 'general'));
+  const liturgiaModules = filterModules(modules.filter((m) => m.category === 'liturgia'));
+
+  if (loading || rolesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -187,7 +245,7 @@ const AdminDashboard: React.FC = () => {
     );
   }
 
-  if (!isAdmin) {
+  if (!isAuthorized) {
     return null;
   }
 
@@ -300,39 +358,141 @@ const AdminDashboard: React.FC = () => {
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          {/* General Modules */}
-          <div className="mb-10">
-            <h2
-              className="text-lg font-semibold mb-4 flex items-center gap-2"
-              style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                color: CASA_BRAND.colors.primary.black,
-              }}
-            >
-              <Sparkles className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
-              Módulos Generales
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {generalModules.map(renderModuleCard)}
+          {/* Admin-only: User Management Card */}
+          {isAdmin && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Users className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Administración
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <Card
+                  className="cursor-pointer hover:shadow-lg hover:border-amber-300 group transition-all"
+                  onClick={() => navigate('/admin/users')}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div
+                        className="w-14 h-14 rounded-xl flex items-center justify-center transition-colors group-hover:bg-amber-100"
+                        style={{
+                          backgroundColor: `${CASA_BRAND.colors.primary.amber}15`,
+                          color: CASA_BRAND.colors.primary.amber,
+                        }}
+                      >
+                        <Users className="h-8 w-8" />
+                      </div>
+                      <ChevronRight
+                        className="h-5 w-5 text-gray-300 group-hover:text-amber-500 transition-colors"
+                      />
+                    </div>
+                    <CardTitle
+                      className="mt-4"
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.heading,
+                        color: CASA_BRAND.colors.primary.black,
+                      }}
+                    >
+                      Gestión de Usuarios
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CardDescription
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.body,
+                        color: CASA_BRAND.colors.secondary.grayMedium,
+                      }}
+                    >
+                      Administra los usuarios, asigna roles y gestiona permisos de acceso a los módulos.
+                    </CardDescription>
+                  </CardContent>
+                </Card>
+                <Card
+                  className="cursor-pointer hover:shadow-lg hover:border-amber-300 group transition-all"
+                  onClick={() => navigate('/admin/roles')}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div
+                        className="w-14 h-14 rounded-xl flex items-center justify-center transition-colors group-hover:bg-amber-100"
+                        style={{
+                          backgroundColor: `${CASA_BRAND.colors.primary.amber}15`,
+                          color: CASA_BRAND.colors.primary.amber,
+                        }}
+                      >
+                        <Shield className="h-8 w-8" />
+                      </div>
+                      <ChevronRight
+                        className="h-5 w-5 text-gray-300 group-hover:text-amber-500 transition-colors"
+                      />
+                    </div>
+                    <CardTitle
+                      className="mt-4"
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.heading,
+                        color: CASA_BRAND.colors.primary.black,
+                      }}
+                    >
+                      Gestión de Roles
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CardDescription
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.body,
+                        color: CASA_BRAND.colors.secondary.grayMedium,
+                      }}
+                    >
+                      Crea y edita roles, configura la matriz de permisos de acceso a cada módulo.
+                    </CardDescription>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* General Modules */}
+          {generalModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Sparkles className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Módulos Generales
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {generalModules.map(renderModuleCard)}
+              </div>
+            </div>
+          )}
 
           {/* Liturgia Modules */}
-          <div className="mb-10">
-            <h2
-              className="text-lg font-semibold mb-4 flex items-center gap-2"
-              style={{
-                fontFamily: CASA_BRAND.fonts.body,
-                color: CASA_BRAND.colors.primary.black,
-              }}
-            >
-              <Church className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
-              Sistema de Liturgias
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {liturgiaModules.map(renderModuleCard)}
+          {liturgiaModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Church className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Sistema de Liturgias
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {liturgiaModules.map(renderModuleCard)}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Info Card */}
           <Card className="border-dashed bg-amber-50/50 border-amber-200">

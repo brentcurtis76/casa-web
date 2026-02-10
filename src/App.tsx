@@ -28,6 +28,9 @@ import OutputPage from "./pages/OutputPage";
 import SermonEditorPage from "./pages/SermonEditorPage";
 import SermonEditorTestPage from "./pages/SermonEditorTestPage";
 import ArchivoRecursosPage from "./pages/ArchivoRecursosPage";
+import UserManagementPage from "./pages/UserManagementPage";
+import RoleManagementPage from "./pages/RoleManagementPage";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +48,8 @@ const router = createBrowserRouter([
   { path: "/profile", element: <ProfilePage /> },
   { path: "/anuncios", element: <AnnouncementSlideshow /> },
   { path: "/admin", element: <AdminDashboard /> },
+  { path: "/admin/users", element: <ProtectedRoute requires={{ role: 'general_admin' }}><UserManagementPage /></ProtectedRoute> },
+  { path: "/admin/roles", element: <ProtectedRoute requires={{ role: 'general_admin' }}><RoleManagementPage /></ProtectedRoute> },
   { path: "/admin/liturgia/temporadas", element: <LiturgicalSeasonAdminPage /> },
   { path: "/admin/liturgia/oraciones", element: <OracionesAntifonalesPage /> },
   { path: "/admin/liturgia/canciones", element: <CancionesPage /> },
