@@ -248,19 +248,26 @@ async function handleDeleteUser(
   );
   const targetEmail = targetUserData?.user?.email || "unknown";
 
-  // Delete user from auth (cascades to profiles and church_user_roles)
-  const { error: deleteError } =
-    await supabaseAdmin.auth.admin.deleteUser(userId);
+  if (targetUserData?.user) {
+    // Delete user from auth (cascades to profiles and church_user_roles via FK)
+    const { error: deleteError } =
+      await supabaseAdmin.auth.admin.deleteUser(userId);
 
-  if (deleteError) {
-    console.error("Error deleting user:", deleteError);
-    return jsonResponse(
-      {
-        success: false,
-        error: deleteError.message || "Error al eliminar el usuario",
-      },
-      200
-    );
+    if (deleteError) {
+      console.error("Error deleting user:", deleteError);
+      return jsonResponse(
+        {
+          success: false,
+          error: deleteError.message || "Error al eliminar el usuario",
+        },
+        200
+      );
+    }
+  } else {
+    // Orphaned profile (exists in profiles but not in auth.users) — clean up manually
+    console.log(`User ${userId} not found in auth.users, cleaning up orphaned data`);
+    await supabaseAdmin.from("church_user_roles").delete().eq("user_id", userId);
+    await supabaseAdmin.from("profiles").delete().eq("id", userId);
   }
 
   // Audit log
