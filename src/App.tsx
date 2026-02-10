@@ -1,10 +1,12 @@
 
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import { AuthProvider } from "@/components/auth/AuthContext";
+import { AuthProvider, useAuth } from "@/components/auth/AuthContext";
+import ForcePasswordChangeModal from "@/components/auth/ForcePasswordChangeModal";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
@@ -64,13 +66,31 @@ const router = createBrowserRouter([
   { path: "*", element: <NotFound /> },
 ]);
 
+/**
+ * ForcePasswordChangeGate — Renders the ForcePasswordChangeModal as a
+ * blocking overlay when the user has must_change_password === true.
+ * The children (RouterProvider) still render underneath but are blocked.
+ */
+function ForcePasswordChangeGate({ children }: { children: React.ReactNode }) {
+  const { user, loading, mustChangePassword } = useAuth();
+
+  return (
+    <>
+      {children}
+      {!loading && user && mustChangePassword && <ForcePasswordChangeModal />}
+    </>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <RouterProvider router={router} />
+        <ForcePasswordChangeGate>
+          <RouterProvider router={router} />
+        </ForcePasswordChangeGate>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>

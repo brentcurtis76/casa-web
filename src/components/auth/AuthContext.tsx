@@ -22,6 +22,9 @@ type AuthContextType = {
   rolesLoading: boolean;
   permissions: UserPermission[];
   permissionsLoading: boolean;
+  // Force password change
+  mustChangePassword: boolean;
+  clearMustChangePassword: () => Promise<void>;
   // Auth methods
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
@@ -50,6 +53,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Derived admin check
   const isAdmin = roles.includes(ROLE_NAMES.GENERAL_ADMIN);
+
+  // Derived force-password-change check
+  const mustChangePassword = user?.user_metadata?.must_change_password === true;
+
+  // Clear the must_change_password flag after the user sets a new password
+  const clearMustChangePassword = async () => {
+    const { error } = await supabase.auth.updateUser({
+      data: { must_change_password: false },
+    });
+    if (error) throw error;
+    // Refresh session to get updated user_metadata
+    const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+    if (refreshedSession) {
+      setUser(refreshedSession.user);
+      setSession(refreshedSession);
+    }
+  };
 
   // Fetch user profile
   async function fetchUserProfile(userId: string) {
@@ -315,6 +335,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       rolesLoading,
       permissions,
       permissionsLoading,
+      mustChangePassword,
+      clearMustChangePassword,
       login,
       signup,
       logout,

@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/auth/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -30,8 +31,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Loader2, Search, Shield, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Loader2, Search, ChevronLeft, ChevronRight, Users, UserPlus } from 'lucide-react';
 import RoleAssignmentModal from './RoleAssignmentModal';
+import AddUserDialog from './AddUserDialog';
+import UserActionsDropdown from './UserActionsDropdown';
 import type { UserWithEmail, RoleName, ChurchRole } from '@/types/rbac';
 import { ROLE_DISPLAY_INFO } from '@/types/rbac';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -43,6 +46,7 @@ interface UserWithRoles extends UserWithEmail {
 }
 
 const UserRoleManager: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserWithRoles[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +55,24 @@ const UserRoleManager: React.FC = () => {
   // Role assignment modal
   const [selectedUser, setSelectedUser] = useState<UserWithEmail | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  // Add user dialog
+  const [addUserOpen, setAddUserOpen] = useState(false);
+
+  // Helper to invoke the admin-user-management edge function
+  const callAdminUserMgmt = useCallback(
+    async (action: string, payload: Record<string, unknown>) => {
+      const { data, error } = await supabase.functions.invoke(
+        'admin-user-management',
+        { body: { action, ...payload } }
+      );
+      if (error) throw error;
+      if (data && !data.success) {
+        throw new Error(data.error || 'Error en la operación');
+      }
+      return data as Record<string, unknown>;
+    },
+    []
+  );
 
   // Fetch users and their roles
   const fetchUsers = useCallback(async () => {
@@ -192,7 +214,7 @@ const UserRoleManager: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
+      {/* Search bar + actions */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -210,6 +232,13 @@ const UserRoleManager: React.FC = () => {
           <Users className="h-4 w-4" />
           {filteredUsers.length} usuario{filteredUsers.length !== 1 ? 's' : ''}
         </div>
+        <Button
+          onClick={() => setAddUserOpen(true)}
+          className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 ml-auto"
+        >
+          <UserPlus className="h-4 w-4" />
+          Agregar Usuario
+        </Button>
       </div>
 
       {/* User table */}
@@ -299,15 +328,13 @@ const UserRoleManager: React.FC = () => {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleManageRoles(u)}
-                      className="gap-1.5"
-                    >
-                      <Shield className="h-3.5 w-3.5" />
-                      Gestionar Roles
-                    </Button>
+                    <UserActionsDropdown
+                      targetUser={u}
+                      currentUserId={currentUser?.id || ''}
+                      onManageRoles={handleManageRoles}
+                      onUserDeleted={fetchUsers}
+                      callAdminUserMgmt={callAdminUserMgmt}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -357,6 +384,14 @@ const UserRoleManager: React.FC = () => {
           onRolesUpdated={handleRolesUpdated}
         />
       )}
+
+      {/* Add User Dialog */}
+      <AddUserDialog
+        open={addUserOpen}
+        onOpenChange={setAddUserOpen}
+        onUserCreated={fetchUsers}
+        callAdminUserMgmt={callAdminUserMgmt}
+      />
     </div>
   );
 };
