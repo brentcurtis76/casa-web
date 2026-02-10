@@ -36,7 +36,7 @@ serve(async (req) => {
     // ── Verify JWT ──────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return jsonResponse({ success: false, error: "No authorization header" }, 401);
+      return jsonResponse({ success: false, error: "No authorization header" }, 200);
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -46,7 +46,7 @@ serve(async (req) => {
     } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
-      return jsonResponse({ success: false, error: "Token inválido" }, 401);
+      return jsonResponse({ success: false, error: "Token inválido" }, 200);
     }
 
     // ── Verify caller is general_admin ──────────────────────────────────
@@ -60,7 +60,7 @@ serve(async (req) => {
     if (!adminRoleRow) {
       return jsonResponse(
         { success: false, error: "No tienes permisos de administrador" },
-        403
+        200
       );
     }
 
@@ -69,7 +69,7 @@ serve(async (req) => {
     const { action } = body;
 
     if (!action) {
-      return jsonResponse({ success: false, error: "Falta el campo 'action'" }, 400);
+      return jsonResponse({ success: false, error: "Falta el campo 'action'" }, 200);
     }
 
     // ── Action dispatcher ───────────────────────────────────────────────
@@ -83,14 +83,14 @@ serve(async (req) => {
       default:
         return jsonResponse(
           { success: false, error: `Acción desconocida: ${action}` },
-          400
+          200
         );
     }
   } catch (error) {
     console.error("Error in admin-user-management:", error);
     return jsonResponse(
       { success: false, error: "Error interno del servidor" },
-      500
+      200
     );
   }
 });
@@ -114,7 +114,7 @@ async function handleCreateUser(
   if (!email || !fullName || !tempPassword) {
     return jsonResponse(
       { success: false, error: "Se requieren email, fullName y tempPassword" },
-      400
+      200
     );
   }
 
@@ -137,7 +137,7 @@ async function handleCreateUser(
         success: false,
         error: createError?.message || "Error al crear el usuario",
       },
-      500
+      200
     );
   }
 
@@ -223,14 +223,14 @@ async function handleDeleteUser(
   if (!userId) {
     return jsonResponse(
       { success: false, error: "Se requiere userId" },
-      400
+      200
     );
   }
 
   if (!UUID_RE.test(userId)) {
     return jsonResponse(
       { success: false, error: "userId no es un UUID válido" },
-      400
+      200
     );
   }
 
@@ -238,7 +238,7 @@ async function handleDeleteUser(
   if (userId === adminUserId) {
     return jsonResponse(
       { success: false, error: "No puedes eliminar tu propia cuenta" },
-      400
+      200
     );
   }
 
@@ -259,7 +259,7 @@ async function handleDeleteUser(
         success: false,
         error: deleteError.message || "Error al eliminar el usuario",
       },
-      500
+      200
     );
   }
 
@@ -307,14 +307,14 @@ async function handleResetPassword(
   if (!userId && !providedEmail) {
     return jsonResponse(
       { success: false, error: "Se requiere userId o email" },
-      400
+      200
     );
   }
 
   if (userId && !UUID_RE.test(userId)) {
     return jsonResponse(
       { success: false, error: "userId no es un UUID válido" },
-      400
+      200
     );
   }
 
@@ -331,7 +331,7 @@ async function handleResetPassword(
   if (!email) {
     return jsonResponse(
       { success: false, error: "No se pudo obtener el correo del usuario" },
-      400
+      200
     );
   }
 
@@ -355,7 +355,7 @@ async function handleResetPassword(
           linkError.message ||
           "Error al generar el enlace de recuperación",
       },
-      500
+      200
     );
   }
 
