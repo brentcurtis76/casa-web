@@ -240,7 +240,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
         <div className="space-y-1">
           <label htmlFor="filter-type" className="text-xs text-muted-foreground">Tipo</label>
           <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(0); }}>
-            <SelectTrigger id="filter-type" className="w-[130px]">
+            <SelectTrigger id="filter-type" className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -254,7 +254,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
         <div className="space-y-1">
           <label htmlFor="filter-category" className="text-xs text-muted-foreground">Categoría</label>
           <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(0); }}>
-            <SelectTrigger id="filter-category" className="w-[160px]">
+            <SelectTrigger id="filter-category" className="w-[200px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -270,7 +270,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
         <div className="space-y-1">
           <label htmlFor="filter-reconciled" className="text-xs text-muted-foreground">Conciliado</label>
           <Select value={reconciledFilter} onValueChange={(v) => { setReconciledFilter(v); setPage(0); }}>
-            <SelectTrigger id="filter-reconciled" className="w-[140px]">
+            <SelectTrigger id="filter-reconciled" className="w-[170px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -372,7 +372,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
               {transactions.map((tx) => (
                 <TableRow key={tx.id}>
                   <TableCell className="whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{tx.description}</TableCell>
+                  <TableCell className="max-w-[300px] truncate" title={tx.description}>{tx.description}</TableCell>
                   <TableCell>
                     {tx.category_id && categoryNameMap.has(tx.category_id) ? (
                       <Badge variant="secondary" className="text-xs">
