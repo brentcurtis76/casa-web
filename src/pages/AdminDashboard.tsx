@@ -30,6 +30,7 @@ import {
   Mic2,
   Users,
   Shield,
+  DollarSign,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -42,7 +43,7 @@ interface ModuleCard {
   description: string;
   icon: React.ReactNode;
   route: string;
-  category: 'general' | 'liturgia';
+  category: 'general' | 'liturgia' | 'administracion';
   status: 'available' | 'coming-soon';
   stats?: string;
   openInNewTab?: boolean;
@@ -228,6 +229,16 @@ const AdminDashboard: React.FC = () => {
       status: 'available',
       stats: '6 elementos',
     },
+    // Administracion Modules
+    {
+      id: 'finanzas',
+      title: 'Finanzas',
+      description: 'Gestión financiera: ingresos, gastos, presupuestos, reportes y nómina.',
+      icon: <DollarSign className="h-8 w-8" />,
+      route: '/admin/finanzas',
+      category: 'administracion',
+      status: 'available',
+    },
   ];
 
   // Filter modules based on user permissions
@@ -236,6 +247,7 @@ const AdminDashboard: React.FC = () => {
 
   const generalModules = filterModules(modules.filter((m) => m.category === 'general'));
   const liturgiaModules = filterModules(modules.filter((m) => m.category === 'liturgia'));
+  const adminFinModules = filterModules(modules.filter((m) => m.category === 'administracion'));
 
   if (loading || rolesLoading) {
     return (
@@ -490,6 +502,25 @@ const AdminDashboard: React.FC = () => {
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {liturgiaModules.map(renderModuleCard)}
+              </div>
+            </div>
+          )}
+
+          {/* Administracion y Finanzas Modules */}
+          {adminFinModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <DollarSign className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Administración y Finanzas
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {adminFinModules.map(renderModuleCard)}
               </div>
             </div>
           )}

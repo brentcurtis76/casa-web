@@ -60,6 +60,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'oraciones': RESOURCE_NAMES.ORACIONES,
   'canciones': RESOURCE_NAMES.CANCIONES,
   'elementos-fijos': RESOURCE_NAMES.ELEMENTOS_FIJOS,
+  'finanzas': RESOURCE_NAMES.FINANCIAL,
 };
 
 // ─── Role Display Info ────────────────────────────────────────────────────────

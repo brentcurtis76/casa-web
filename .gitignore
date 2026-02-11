@@ -36,3 +36,10 @@ dist-ssr
 
 # Pipeline state (agent-generated, session-specific)
 .pipeline/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+
+# Supabase CLI temp files
+supabase/.temp/

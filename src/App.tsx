@@ -33,6 +33,8 @@ import ArchivoRecursosPage from "./pages/ArchivoRecursosPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import RoleManagementPage from "./pages/RoleManagementPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import FinancialPage from "./pages/FinancialPage";
+import PersonnelPage from "./pages/PersonnelPage";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +64,8 @@ const router = createBrowserRouter([
   { path: "/admin/sermon-editor", element: <SermonEditorPage /> },
   { path: "/test/sermon-editor", element: <SermonEditorTestPage /> },
   { path: "/recursos/archivo", element: <ArchivoRecursosPage /> },
+  { path: "/admin/finanzas", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><FinancialPage /></ProtectedRoute> },
+  { path: "/admin/finanzas/nomina", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><PersonnelPage /></ProtectedRoute> },
   // Catch-all route for 404
   { path: "*", element: <NotFound /> },
 ]);

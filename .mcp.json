@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "https://mcp.supabase.com/mcp?read_only=true&project_ref=mulsqxfhxxdsadxsljss"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}
