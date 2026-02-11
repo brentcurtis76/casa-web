@@ -224,7 +224,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
             type="date"
             value={startDate}
             onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
-            className="w-[140px]"
+            className="w-[170px]"
           />
         </div>
         <div className="space-y-1">
@@ -234,7 +234,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
             type="date"
             value={endDate}
             onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
-            className="w-[140px]"
+            className="w-[170px]"
           />
         </div>
         <div className="space-y-1">
