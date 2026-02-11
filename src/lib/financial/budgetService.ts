@@ -120,6 +120,28 @@ export async function upsertBudgets(
 }
 
 /**
+ * Delete monthly budget rows for specific categories in a given year/month.
+ * Used when a user zeros out a monthly budget — removes the row entirely.
+ */
+export async function deleteMonthlyBudgets(
+  client: SupabaseClient,
+  year: number,
+  month: number,
+  categoryIds: string[]
+): Promise<{ error: Error | null }> {
+  if (categoryIds.length === 0) return { error: null };
+
+  const { error } = await client
+    .from('church_fin_budgets')
+    .delete()
+    .eq('year', year)
+    .eq('month', month)
+    .in('category_id', categoryIds);
+
+  return { error: error ?? null };
+}
+
+/**
  * Copy all budget amounts from the previous month into the current month.
  * Only copies categories that don't already have a budget for the target month.
  * Handles January -> December year rollback.
@@ -288,6 +310,10 @@ export interface MonthlyBudgetAnnualContext {
 /**
  * Fetch all annual budgets for a year, joined with category info.
  * Computes monthly allocation totals, remaining, and YTD actuals.
+ *
+ * NOTE: Makes 4 separate DB calls (annual budgets, categories, monthly budgets,
+ * transactions). Acceptable for current data volumes; consolidate into an RPC
+ * if performance becomes an issue.
  */
 export async function getAnnualBudgets(
   client: SupabaseClient,
@@ -408,21 +434,41 @@ export async function upsertAnnualBudgets(
 }
 
 /**
+ * Delete annual budget rows for specific categories in a given year.
+ * Used when a user zeros out an annual budget — removes the row entirely.
+ */
+export async function deleteAnnualBudgets(
+  client: SupabaseClient,
+  year: number,
+  categoryIds: string[]
+): Promise<{ error: Error | null }> {
+  if (categoryIds.length === 0) return { error: null };
+
+  const { error } = await client
+    .from('church_fin_annual_budgets')
+    .delete()
+    .eq('year', year)
+    .in('category_id', categoryIds);
+
+  return { error: error ?? null };
+}
+
+/**
  * Get annual budget context for the monthly view.
- * Returns a Map of category_id → annual context info.
+ * Returns a Record of category_id → annual context info.
  */
 export async function getAnnualContextForMonth(
   client: SupabaseClient,
   year: number
-): Promise<{ data: Map<string, MonthlyBudgetAnnualContext>; error: Error | null }> {
+): Promise<{ data: Record<string, MonthlyBudgetAnnualContext>; error: Error | null }> {
   // Fetch annual budgets for the year
   const { data: annuals, error: annualErr } = await client
     .from('church_fin_annual_budgets')
     .select('category_id, amount')
     .eq('year', year);
 
-  if (annualErr) return { data: new Map(), error: annualErr };
-  if (!annuals || annuals.length === 0) return { data: new Map(), error: null };
+  if (annualErr) return { data: {}, error: annualErr };
+  if (!annuals || annuals.length === 0) return { data: {}, error: null };
 
   // Fetch all monthly budgets for this year
   const { data: monthlyBudgets, error: monthErr } = await client
@@ -430,7 +476,7 @@ export async function getAnnualContextForMonth(
     .select('category_id, amount, month')
     .eq('year', year);
 
-  if (monthErr) return { data: new Map(), error: monthErr };
+  if (monthErr) return { data: {}, error: monthErr };
 
   // Build monthly allocation map
   const monthlyMap = new Map<string, { total: number; months: Set<number> }>();
@@ -442,13 +488,13 @@ export async function getAnnualContextForMonth(
     monthlyMap.set(catId, existing);
   }
 
-  const contextMap = new Map<string, MonthlyBudgetAnnualContext>();
+  const contextRecord: Record<string, MonthlyBudgetAnnualContext> = {};
   for (const ab of annuals) {
     const catId = ab.category_id as string;
     const annualAmount = ab.amount as number;
     const monthly = monthlyMap.get(catId) ?? { total: 0, months: new Set() };
 
-    contextMap.set(catId, {
+    contextRecord[catId] = {
       annualBudget: annualAmount,
       monthlyAllocated: monthly.total,
       remaining: annualAmount - monthly.total,
@@ -456,8 +502,8 @@ export async function getAnnualContextForMonth(
         ? Math.round((monthly.total / annualAmount) * 100)
         : (monthly.total > 0 ? 100 : 0),
       allocatedMonths: monthly.months.size,
-    });
+    };
   }
 
-  return { data: contextMap, error: null };
+  return { data: contextRecord, error: null };
 }

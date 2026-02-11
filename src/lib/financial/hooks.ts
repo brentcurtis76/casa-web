@@ -19,7 +19,7 @@ import * as budgetService from './budgetService';
 import * as personnelService from './personnelService';
 import * as payrollService from './payrollService';
 import type { TransactionFilters, TransactionUpdateFields, CategoryUpdateFields } from './financialService';
-import type { BudgetUpsertEntry, AnnualBudgetUpsertEntry } from './budgetService';
+import type { BudgetUpsertEntry, AnnualBudgetUpsertEntry, MonthlyBudgetAnnualContext } from './budgetService';
 import type { PersonnelFilters, PersonnelCreateData, PersonnelUpdateData } from './personnelService';
 import type { ChileanTaxTables } from './chileanTaxTables';
 
@@ -53,6 +53,8 @@ export const FINANCIAL_KEYS = {
     ['financial', 'annualBudgets', year] as const,
   annualContext: (year: number) =>
     ['financial', 'annualContext', year] as const,
+  categoryDependencies: (categoryId: string) =>
+    ['financial', 'categoryDeps', categoryId] as const,
   // Bank import query keys
   bankStatements: () => ['financial', 'bankStatements'] as const,
   bankTransactions: (statementId: string) =>
@@ -227,7 +229,7 @@ export function useUpdateCategory() {
 
 export function useCategoryDependencies(categoryId: string | null) {
   return useQuery({
-    queryKey: ['financial', 'categoryDeps', categoryId],
+    queryKey: FINANCIAL_KEYS.categoryDependencies(categoryId!),
     queryFn: () => financialService.getCategoryDependencies(supabase, categoryId!),
     select: (result) => result.data,
     enabled: !!categoryId,
@@ -357,6 +359,26 @@ export function useUpsertBudgets() {
   });
 }
 
+export function useDeleteMonthlyBudgets() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ year, month, categoryIds }: { year: number; month: number; categoryIds: string[] }) =>
+      budgetService.deleteMonthlyBudgets(supabase, year, month, categoryIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al eliminar presupuestos mensuales',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
 export function useCopyBudgets() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -414,6 +436,26 @@ export function useUpsertAnnualBudgets() {
     onError: (error: Error) => {
       toast({
         title: 'Error al guardar presupuestos anuales',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useDeleteAnnualBudgets() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ year, categoryIds }: { year: number; categoryIds: string[] }) =>
+      budgetService.deleteAnnualBudgets(supabase, year, categoryIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al eliminar presupuestos anuales',
         description: error.message,
         variant: 'destructive',
       });

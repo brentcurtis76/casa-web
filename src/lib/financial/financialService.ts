@@ -287,19 +287,15 @@ export async function getCategoryDependencies(
 
   if (budgetErr) return { data: { ...empty, blockers: ['Error consultando presupuestos'] }, error: budgetErr };
 
-  // Count annual budgets referencing this category (graceful fallback if table doesn't exist)
+  // Count annual budgets referencing this category (defaults to 0 on error)
   let annualCount = 0;
-  try {
-    const { count, error: annualErr } = await client
-      .from('church_fin_annual_budgets')
-      .select('id', { count: 'exact', head: true })
-      .eq('category_id', categoryId);
+  const { count: annualRawCount, error: annualErr } = await client
+    .from('church_fin_annual_budgets')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', categoryId);
 
-    if (!annualErr) {
-      annualCount = count ?? 0;
-    }
-  } catch {
-    // Table may not exist yet — treat as 0
+  if (!annualErr) {
+    annualCount = annualRawCount ?? 0;
   }
 
   // Count child categories
@@ -365,7 +361,19 @@ export async function deleteCategory(
     .delete()
     .eq('id', id);
 
-  return { error: error ?? null };
+  if (error) {
+    // Catch FK violation (23503) from TOCTOU race — data was added between check and delete
+    if (error.code === '23503') {
+      return {
+        error: new Error(
+          'No se puede eliminar: otra operación agregó datos a esta categoría. Intenta de nuevo.'
+        ),
+      };
+    }
+    return { error };
+  }
+
+  return { error: null };
 }
 
 // ─── Account Functions ───────────────────────────────────────────────────────

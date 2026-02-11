@@ -9,7 +9,7 @@
  * - Anual: Renders AnnualBudgetView for yearly budget management.
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Copy, Plus, Target, Wallet } from 'lucide-react';
+import { Calendar, Copy, Loader2, Plus, Save, Target, Wallet } from 'lucide-react';
 import CLPInput from './CLPInput';
 import BudgetForm from './BudgetForm';
 import BudgetVsActualChart from './BudgetVsActualChart';
@@ -41,6 +41,7 @@ import {
   useActiveCategories,
   useBudgetVsActual,
   useUpsertBudgets,
+  useDeleteMonthlyBudgets,
   useCopyBudgets,
   useAnnualContext,
 } from '@/lib/financial/hooks';
@@ -66,13 +67,18 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
   const { data: categories = [], isLoading: categoriesLoading } = useActiveCategories();
   const { data: budgetVsActual = [], isLoading: budgetLoading } = useBudgetVsActual(selectedYear, selectedMonth);
   const upsertMutation = useUpsertBudgets();
+  const deleteMonthlyMutation = useDeleteMonthlyBudgets();
   const copyMutation = useCopyBudgets();
-  const { data: annualContext } = useAnnualContext(selectedYear);
+  const { data: annualContext, isLoading: annualContextLoading } = useAnnualContext(selectedYear);
 
   // Whether any category has an annual budget for this year
-  const hasAnnualBudgets = annualContext && annualContext.size > 0;
+  const hasAnnualBudgets = annualContext && Object.keys(annualContext).length > 0;
 
-  // Build budget map for inline editing
+  // Local state for batch monthly budget editing
+  const [monthlyAmounts, setMonthlyAmounts] = useState<Record<string, number>>({});
+  const [hasMonthlyChanges, setHasMonthlyChanges] = useState(false);
+
+  // Build budget map for display (actual, difference, percentage from server)
   const budgetMap = useMemo(() => {
     const map = new Map<string, { budgeted: number; actual: number; difference: number; percentage: number }>();
     for (const item of budgetVsActual) {
@@ -84,6 +90,16 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
       });
     }
     return map;
+  }, [budgetVsActual]);
+
+  // Sync local monthly amounts from server data
+  useEffect(() => {
+    const initial: Record<string, number> = {};
+    for (const item of budgetVsActual) {
+      initial[item.category_id] = item.budgeted;
+    }
+    setMonthlyAmounts(initial);
+    setHasMonthlyChanges(false);
   }, [budgetVsActual]);
 
   // Group categories by type
@@ -105,37 +121,62 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
   // Check if any budgets exist
   const hasBudgets = budgetVsActual.length > 0;
 
-  // Handle inline budget edit
+  // Handle inline budget edit — updates local state only
   const handleBudgetChange = useCallback(
     (categoryId: string, amount: number) => {
-      upsertMutation.mutate([{
+      setMonthlyAmounts((prev) => ({ ...prev, [categoryId]: amount }));
+      setHasMonthlyChanges(true);
+    },
+    []
+  );
+
+  // Batch save all monthly budget changes
+  const handleMonthlySave = useCallback(async () => {
+    const entries = Object.entries(monthlyAmounts)
+      .filter(([, amount]) => amount > 0)
+      .map(([categoryId, amount]) => ({
         year: selectedYear,
         month: selectedMonth,
         category_id: categoryId,
         amount,
-      }]);
-    },
-    [selectedYear, selectedMonth, upsertMutation]
-  );
+      }));
+
+    // Find categories that had a monthly budget but were zeroed out
+    const zeroedCategoryIds = Object.entries(monthlyAmounts)
+      .filter(([categoryId, amount]) => amount === 0 && budgetMap.has(categoryId))
+      .map(([categoryId]) => categoryId);
+
+    if (zeroedCategoryIds.length > 0) {
+      await deleteMonthlyMutation.mutateAsync({
+        year: selectedYear,
+        month: selectedMonth,
+        categoryIds: zeroedCategoryIds,
+      });
+    }
+    if (entries.length > 0) {
+      await upsertMutation.mutateAsync(entries);
+    }
+    setHasMonthlyChanges(false);
+  }, [monthlyAmounts, selectedYear, selectedMonth, upsertMutation, deleteMonthlyMutation, budgetMap]);
 
   // Handle copy from previous month
   const handleCopyFromPrevious = useCallback(() => {
     copyMutation.mutate({ year: selectedYear, month: selectedMonth });
   }, [selectedYear, selectedMonth, copyMutation]);
 
-  // Compute section subtotals
+  // Compute section subtotals using local monthlyAmounts for budgeted (reflects unsaved edits)
   const computeSubtotals = useCallback(
     (cats: FinancialCategory[]) => {
       let totalBudgeted = 0;
       let totalActual = 0;
       for (const cat of cats) {
         const data = budgetMap.get(cat.id);
-        totalBudgeted += data?.budgeted ?? 0;
+        totalBudgeted += monthlyAmounts[cat.id] ?? data?.budgeted ?? 0;
         totalActual += data?.actual ?? 0;
       }
       return { totalBudgeted, totalActual, difference: totalBudgeted - totalActual };
     },
-    [budgetMap]
+    [budgetMap, monthlyAmounts]
   );
 
   const incomeSubtotals = useMemo(
@@ -156,10 +197,10 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
 
   // Annual summary totals for summary cards
   const annualSummary = useMemo(() => {
-    if (!annualContext || annualContext.size === 0) return null;
+    if (!annualContext || Object.keys(annualContext).length === 0) return null;
     let totalAnnual = 0;
     let totalAllocated = 0;
-    for (const ctx of annualContext.values()) {
+    for (const ctx of Object.values(annualContext)) {
       totalAnnual += ctx.annualBudget;
       totalAllocated += ctx.monthlyAllocated;
     }
@@ -170,7 +211,7 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
     };
   }, [annualContext]);
 
-  const isLoading = categoriesLoading || budgetLoading;
+  const isLoading = categoriesLoading || budgetLoading || annualContextLoading;
 
   // Progress bar color based on percentage
   const getProgressColor = (percentage: number): string => {
@@ -185,11 +226,11 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
   // Render a category row
   const renderCategoryRow = (category: FinancialCategory) => {
     const data = budgetMap.get(category.id);
-    const budgeted = data?.budgeted ?? 0;
+    const budgeted = monthlyAmounts[category.id] ?? data?.budgeted ?? 0;
     const actual = data?.actual ?? 0;
     const difference = budgeted - actual;
     const percentage = budgeted > 0 ? Math.round((actual / budgeted) * 100) : (actual > 0 ? 100 : 0);
-    const ctx = annualContext?.get(category.id);
+    const ctx = annualContext?.[category.id];
 
     return (
       <TableRow key={category.id}>
@@ -332,6 +373,20 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
 
         {viewMode === 'mensual' && canWrite && (
           <div className="flex gap-2 ml-auto">
+            {hasMonthlyChanges && (
+              <Button
+                size="sm"
+                onClick={handleMonthlySave}
+                disabled={upsertMutation.isPending || deleteMonthlyMutation.isPending}
+              >
+                {(upsertMutation.isPending || deleteMonthlyMutation.isPending) ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                Guardar
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

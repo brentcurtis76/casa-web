@@ -28,6 +28,7 @@ import {
   useActiveCategories,
   useAnnualBudgets,
   useUpsertAnnualBudgets,
+  useDeleteAnnualBudgets,
 } from '@/lib/financial/hooks';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ const AnnualBudgetView = ({ year, canWrite }: AnnualBudgetViewProps) => {
   const { data: categories = [], isLoading: categoriesLoading } = useActiveCategories();
   const { data: annualBudgets = [], isLoading: budgetsLoading } = useAnnualBudgets(year);
   const upsertMutation = useUpsertAnnualBudgets();
+  const deleteMutation = useDeleteAnnualBudgets();
 
   // Local state for editable amounts
   const [amounts, setAmounts] = useState<Record<string, number>>({});
@@ -100,9 +102,19 @@ const AnnualBudgetView = ({ year, canWrite }: AnnualBudgetViewProps) => {
         amount,
       }));
 
-    await upsertMutation.mutateAsync(entries);
+    // Find categories that had an annual budget but were zeroed out
+    const zeroedCategoryIds = Object.entries(amounts)
+      .filter(([categoryId, amount]) => amount === 0 && existingBudgetMap.has(categoryId))
+      .map(([categoryId]) => categoryId);
+
+    if (zeroedCategoryIds.length > 0) {
+      await deleteMutation.mutateAsync({ year, categoryIds: zeroedCategoryIds });
+    }
+    if (entries.length > 0) {
+      await upsertMutation.mutateAsync(entries);
+    }
     setHasChanges(false);
-  }, [amounts, year, upsertMutation]);
+  }, [amounts, year, upsertMutation, deleteMutation, existingBudgetMap]);
 
   // Compute section subtotals
   const computeSubtotals = useCallback(
@@ -252,7 +264,7 @@ const AnnualBudgetView = ({ year, canWrite }: AnnualBudgetViewProps) => {
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={!hasChanges || upsertMutation.isPending}
+              disabled={!hasChanges || upsertMutation.isPending || deleteMutation.isPending}
             >
               {upsertMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -303,39 +315,41 @@ const AnnualBudgetView = ({ year, canWrite }: AnnualBudgetViewProps) => {
                 </>
               )}
 
-              {/* Grand Total */}
-              <TableRow className="bg-muted font-bold border-t-2">
-                <TableCell>Total General</TableCell>
-                <TableCell className="font-mono">
-                  {formatCLP(incomeSubtotals.totalAnnual + expenseSubtotals.totalAnnual)}
-                </TableCell>
-                <TableCell className="font-mono text-right">
-                  {formatCLP(incomeSubtotals.totalAllocated + expenseSubtotals.totalAllocated)}
-                </TableCell>
-                <TableCell className={`font-mono text-right ${
-                  (incomeSubtotals.remaining + expenseSubtotals.remaining) >= 0
-                    ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {formatCLP(Math.abs(incomeSubtotals.remaining + expenseSubtotals.remaining))}
-                  {(incomeSubtotals.remaining + expenseSubtotals.remaining) < 0 ? ' (-)' : ''}
-                </TableCell>
-                <TableCell />
-                <TableCell className="font-mono text-right">
-                  {formatCLP(incomeSubtotals.totalActual + expenseSubtotals.totalActual)}
-                </TableCell>
-                <TableCell className={`font-mono text-right ${
-                  ((incomeSubtotals.totalAnnual + expenseSubtotals.totalAnnual) -
-                   (incomeSubtotals.totalActual + expenseSubtotals.totalActual)) >= 0
-                    ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {formatCLP(Math.abs(
-                    (incomeSubtotals.totalAnnual + expenseSubtotals.totalAnnual) -
-                    (incomeSubtotals.totalActual + expenseSubtotals.totalActual)
-                  ))}
-                  {((incomeSubtotals.totalAnnual + expenseSubtotals.totalAnnual) -
-                    (incomeSubtotals.totalActual + expenseSubtotals.totalActual)) < 0 ? ' (-)' : ''}
-                </TableCell>
-              </TableRow>
+              {/* Net Balance (income − expense) */}
+              {(() => {
+                const netAnnual = incomeSubtotals.totalAnnual - expenseSubtotals.totalAnnual;
+                const netAllocated = incomeSubtotals.totalAllocated - expenseSubtotals.totalAllocated;
+                const netRemaining = incomeSubtotals.remaining - expenseSubtotals.remaining;
+                const netActual = incomeSubtotals.totalActual - expenseSubtotals.totalActual;
+                const netVariance = netAnnual - netActual;
+
+                return (
+                  <TableRow className="bg-muted font-bold border-t-2">
+                    <TableCell>Superávit/Déficit Proyectado</TableCell>
+                    <TableCell className={`font-mono ${netAnnual >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCLP(Math.abs(netAnnual))}
+                      {netAnnual < 0 ? ' (-)' : ''}
+                    </TableCell>
+                    <TableCell className={`font-mono text-right ${netAllocated >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCLP(Math.abs(netAllocated))}
+                      {netAllocated < 0 ? ' (-)' : ''}
+                    </TableCell>
+                    <TableCell className={`font-mono text-right ${netRemaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCLP(Math.abs(netRemaining))}
+                      {netRemaining < 0 ? ' (-)' : ''}
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className={`font-mono text-right ${netActual >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCLP(Math.abs(netActual))}
+                      {netActual < 0 ? ' (-)' : ''}
+                    </TableCell>
+                    <TableCell className={`font-mono text-right ${netVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCLP(Math.abs(netVariance))}
+                      {netVariance < 0 ? ' (-)' : ''}
+                    </TableCell>
+                  </TableRow>
+                );
+              })()}
             </TableBody>
           </Table>
         </CardContent>
