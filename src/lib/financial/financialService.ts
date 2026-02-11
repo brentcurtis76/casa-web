@@ -247,6 +247,127 @@ export async function updateCategory(
   return { data: result as FinancialCategory, error: null };
 }
 
+// ─── Category Dependency Check ──────────────────────────────────────────────
+
+export interface CategoryDependencies {
+  transactionCount: number;
+  budgetCount: number;
+  annualBudgetCount: number;
+  childCount: number;
+  canDelete: boolean;
+  blockers: string[];
+}
+
+export async function getCategoryDependencies(
+  client: SupabaseClient,
+  categoryId: string
+): Promise<{ data: CategoryDependencies; error: Error | null }> {
+  const empty: CategoryDependencies = {
+    transactionCount: 0,
+    budgetCount: 0,
+    annualBudgetCount: 0,
+    childCount: 0,
+    canDelete: false,
+    blockers: [],
+  };
+
+  // Count transactions referencing this category
+  const { count: txCount, error: txErr } = await client
+    .from('church_fin_transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', categoryId);
+
+  if (txErr) return { data: { ...empty, blockers: ['Error consultando transacciones'] }, error: txErr };
+
+  // Count monthly budgets referencing this category
+  const { count: budgetCount, error: budgetErr } = await client
+    .from('church_fin_budgets')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', categoryId);
+
+  if (budgetErr) return { data: { ...empty, blockers: ['Error consultando presupuestos'] }, error: budgetErr };
+
+  // Count annual budgets referencing this category (graceful fallback if table doesn't exist)
+  let annualCount = 0;
+  try {
+    const { count, error: annualErr } = await client
+      .from('church_fin_annual_budgets')
+      .select('id', { count: 'exact', head: true })
+      .eq('category_id', categoryId);
+
+    if (!annualErr) {
+      annualCount = count ?? 0;
+    }
+  } catch {
+    // Table may not exist yet — treat as 0
+  }
+
+  // Count child categories
+  const { count: childCount, error: childErr } = await client
+    .from('church_fin_categories')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_id', categoryId);
+
+  if (childErr) return { data: { ...empty, blockers: ['Error consultando subcategorías'] }, error: childErr };
+
+  const t = txCount ?? 0;
+  const b = budgetCount ?? 0;
+  const c = childCount ?? 0;
+  const canDelete = t === 0 && b === 0 && annualCount === 0 && c === 0;
+
+  const blockers: string[] = [];
+  if (t > 0) blockers.push(`${t} transaccion${t > 1 ? 'es' : ''}`);
+  if (b > 0) blockers.push(`${b} presupuesto${b > 1 ? 's mensuales' : ' mensual'}`);
+  if (annualCount > 0) blockers.push(`${annualCount} presupuesto${annualCount > 1 ? 's anuales' : ' anual'}`);
+  if (c > 0) blockers.push(`${c} subcategoría${c > 1 ? 's' : ''}`);
+
+  return {
+    data: {
+      transactionCount: t,
+      budgetCount: b,
+      annualBudgetCount: annualCount,
+      childCount: c,
+      canDelete,
+      blockers,
+    },
+    error: null,
+  };
+}
+
+export async function deleteCategory(
+  client: SupabaseClient,
+  id: string,
+  userId?: string,
+  categoryName?: string
+): Promise<{ error: Error | null }> {
+  // Pre-flight dependency check
+  const { data: deps, error: depError } = await getCategoryDependencies(client, id);
+  if (depError) return { error: depError };
+  if (!deps.canDelete) {
+    return {
+      error: new Error(
+        `No se puede eliminar: ${deps.blockers.join(', ')} usan esta categoría. Desactívala en su lugar.`
+      ),
+    };
+  }
+
+  // Audit log before deleting (fire-and-forget)
+  if (userId) {
+    writeAuditLog(client, userId, 'fin_category_delete', {
+      resource_type: 'fin_category',
+      resource_id: id,
+      deleted: { id, name: categoryName ?? '' },
+    });
+  }
+
+  const { error } = await client
+    .from('church_fin_categories')
+    .delete()
+    .eq('id', id);
+
+  return { error: error ?? null };
+}
+
 // ─── Account Functions ───────────────────────────────────────────────────────
 
 export async function getAccounts(

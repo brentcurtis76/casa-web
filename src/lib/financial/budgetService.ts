@@ -9,7 +9,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { FinancialBudget, FinancialCategory, CategoryType } from '@/types/financial';
+import type { FinancialBudget, FinancialCategory, AnnualBudget, CategoryType } from '@/types/financial';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -254,4 +254,210 @@ export async function getBudgetVsActual(
   }
 
   return { data: result, error: null };
+}
+
+// ─── Annual Budget Types ────────────────────────────────────────────────────
+
+export interface AnnualBudgetWithCategory extends AnnualBudget {
+  category_name: string;
+  category_type: CategoryType;
+  category_sort_order: number;
+  monthlyAllocated: number;
+  remaining: number;
+  allocationPercentage: number;
+  yearActual: number;
+  allocatedMonths: number;
+}
+
+export interface AnnualBudgetUpsertEntry {
+  year: number;
+  category_id: string;
+  amount: number;
+}
+
+export interface MonthlyBudgetAnnualContext {
+  annualBudget: number;
+  monthlyAllocated: number;
+  remaining: number;
+  allocationPercentage: number;
+  allocatedMonths: number;
+}
+
+// ─── Annual Budget Functions ────────────────────────────────────────────────
+
+/**
+ * Fetch all annual budgets for a year, joined with category info.
+ * Computes monthly allocation totals, remaining, and YTD actuals.
+ */
+export async function getAnnualBudgets(
+  client: SupabaseClient,
+  year: number
+): Promise<{ data: AnnualBudgetWithCategory[]; error: Error | null }> {
+  const { data: annuals, error: annualErr } = await client
+    .from('church_fin_annual_budgets')
+    .select('*')
+    .eq('year', year);
+
+  if (annualErr) return { data: [], error: annualErr };
+  if (!annuals || annuals.length === 0) return { data: [], error: null };
+
+  // Fetch categories
+  const { data: categories, error: catErr } = await client
+    .from('church_fin_categories')
+    .select('id, name, type, sort_order');
+
+  if (catErr) return { data: [], error: catErr };
+
+  const categoryMap = new Map<string, { name: string; type: CategoryType; sort_order: number }>();
+  for (const cat of categories ?? []) {
+    categoryMap.set(cat.id, {
+      name: cat.name,
+      type: cat.type as CategoryType,
+      sort_order: cat.sort_order ?? 0,
+    });
+  }
+
+  // Fetch all monthly budgets for this year
+  const { data: monthlyBudgets, error: monthErr } = await client
+    .from('church_fin_budgets')
+    .select('category_id, amount, month')
+    .eq('year', year);
+
+  if (monthErr) return { data: [], error: monthErr };
+
+  // Sum monthly allocations per category + count distinct months
+  const monthlyMap = new Map<string, { total: number; months: Set<number> }>();
+  for (const mb of monthlyBudgets ?? []) {
+    const catId = mb.category_id as string;
+    const existing = monthlyMap.get(catId) ?? { total: 0, months: new Set<number>() };
+    existing.total += mb.amount as number;
+    existing.months.add(mb.month as number);
+    monthlyMap.set(catId, existing);
+  }
+
+  // Fetch yearly actuals
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const { data: transactions, error: txErr } = await client
+    .from('church_fin_transactions')
+    .select('category_id, amount')
+    .gte('date', yearStart)
+    .lte('date', yearEnd);
+
+  if (txErr) return { data: [], error: txErr };
+
+  const actualMap = new Map<string, number>();
+  for (const tx of transactions ?? []) {
+    const catId = tx.category_id as string | null;
+    if (!catId) continue;
+    actualMap.set(catId, (actualMap.get(catId) ?? 0) + (tx.amount as number));
+  }
+
+  // Build result
+  const result: AnnualBudgetWithCategory[] = annuals.map((ab) => {
+    const cat = categoryMap.get(ab.category_id);
+    const monthly = monthlyMap.get(ab.category_id) ?? { total: 0, months: new Set() };
+    const amount = ab.amount as number;
+    const monthlyAllocated = monthly.total;
+    const remaining = amount - monthlyAllocated;
+    const allocationPercentage = amount > 0
+      ? Math.round((monthlyAllocated / amount) * 100)
+      : (monthlyAllocated > 0 ? 100 : 0);
+    const yearActual = actualMap.get(ab.category_id) ?? 0;
+
+    return {
+      id: ab.id as string,
+      year: ab.year as number,
+      category_id: ab.category_id as string,
+      amount,
+      created_at: ab.created_at as string,
+      updated_at: ab.updated_at as string,
+      category_name: cat?.name ?? 'Desconocida',
+      category_type: cat?.type ?? 'expense',
+      category_sort_order: cat?.sort_order ?? 0,
+      monthlyAllocated,
+      remaining,
+      allocationPercentage,
+      yearActual,
+      allocatedMonths: monthly.months.size,
+    };
+  });
+
+  result.sort((a, b) => {
+    if (a.category_type !== b.category_type) return a.category_type === 'income' ? -1 : 1;
+    return a.category_sort_order - b.category_sort_order;
+  });
+
+  return { data: result, error: null };
+}
+
+/**
+ * Bulk upsert annual budget entries. Leverages UNIQUE(year, category_id).
+ */
+export async function upsertAnnualBudgets(
+  client: SupabaseClient,
+  entries: AnnualBudgetUpsertEntry[]
+): Promise<{ error: Error | null }> {
+  if (entries.length === 0) return { error: null };
+
+  const { error } = await client
+    .from('church_fin_annual_budgets')
+    .upsert(entries, { onConflict: 'year,category_id' });
+
+  return { error: error ?? null };
+}
+
+/**
+ * Get annual budget context for the monthly view.
+ * Returns a Map of category_id → annual context info.
+ */
+export async function getAnnualContextForMonth(
+  client: SupabaseClient,
+  year: number
+): Promise<{ data: Map<string, MonthlyBudgetAnnualContext>; error: Error | null }> {
+  // Fetch annual budgets for the year
+  const { data: annuals, error: annualErr } = await client
+    .from('church_fin_annual_budgets')
+    .select('category_id, amount')
+    .eq('year', year);
+
+  if (annualErr) return { data: new Map(), error: annualErr };
+  if (!annuals || annuals.length === 0) return { data: new Map(), error: null };
+
+  // Fetch all monthly budgets for this year
+  const { data: monthlyBudgets, error: monthErr } = await client
+    .from('church_fin_budgets')
+    .select('category_id, amount, month')
+    .eq('year', year);
+
+  if (monthErr) return { data: new Map(), error: monthErr };
+
+  // Build monthly allocation map
+  const monthlyMap = new Map<string, { total: number; months: Set<number> }>();
+  for (const mb of monthlyBudgets ?? []) {
+    const catId = mb.category_id as string;
+    const existing = monthlyMap.get(catId) ?? { total: 0, months: new Set<number>() };
+    existing.total += mb.amount as number;
+    existing.months.add(mb.month as number);
+    monthlyMap.set(catId, existing);
+  }
+
+  const contextMap = new Map<string, MonthlyBudgetAnnualContext>();
+  for (const ab of annuals) {
+    const catId = ab.category_id as string;
+    const annualAmount = ab.amount as number;
+    const monthly = monthlyMap.get(catId) ?? { total: 0, months: new Set() };
+
+    contextMap.set(catId, {
+      annualBudget: annualAmount,
+      monthlyAllocated: monthly.total,
+      remaining: annualAmount - monthly.total,
+      allocationPercentage: annualAmount > 0
+        ? Math.round((monthly.total / annualAmount) * 100)
+        : (monthly.total > 0 ? 100 : 0),
+      allocatedMonths: monthly.months.size,
+    });
+  }
+
+  return { data: contextMap, error: null };
 }

@@ -19,7 +19,7 @@ import * as budgetService from './budgetService';
 import * as personnelService from './personnelService';
 import * as payrollService from './payrollService';
 import type { TransactionFilters, TransactionUpdateFields, CategoryUpdateFields } from './financialService';
-import type { BudgetUpsertEntry } from './budgetService';
+import type { BudgetUpsertEntry, AnnualBudgetUpsertEntry } from './budgetService';
 import type { PersonnelFilters, PersonnelCreateData, PersonnelUpdateData } from './personnelService';
 import type { ChileanTaxTables } from './chileanTaxTables';
 
@@ -48,6 +48,11 @@ export const FINANCIAL_KEYS = {
     ['financial', 'budgets', year, month] as const,
   budgetVsActual: (year: number, month: number) =>
     ['financial', 'budgetVsActual', year, month] as const,
+  // Annual budget query keys
+  annualBudgets: (year: number) =>
+    ['financial', 'annualBudgets', year] as const,
+  annualContext: (year: number) =>
+    ['financial', 'annualContext', year] as const,
   // Bank import query keys
   bankStatements: () => ['financial', 'bankStatements'] as const,
   bankTransactions: (statementId: string) =>
@@ -220,6 +225,38 @@ export function useUpdateCategory() {
   });
 }
 
+export function useCategoryDependencies(categoryId: string | null) {
+  return useQuery({
+    queryKey: ['financial', 'categoryDeps', categoryId],
+    queryFn: () => financialService.getCategoryDependencies(supabase, categoryId!),
+    select: (result) => result.data,
+    enabled: !!categoryId,
+    staleTime: 0,
+  });
+}
+
+export function useDeleteCategory() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name?: string }) =>
+      financialService.deleteCategory(supabase, id, user?.id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
+      toast({ title: 'Categoría eliminada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al eliminar la categoría',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
 // ─── Account Hooks ───────────────────────────────────────────────────────────
 
 export function useAccounts() {
@@ -350,6 +387,45 @@ export function useBudgetVsActual(year: number, month: number) {
     queryKey: FINANCIAL_KEYS.budgetVsActual(year, month),
     queryFn: () => budgetService.getBudgetVsActual(supabase, year, month),
     select: (result) => result.data ?? [],
+  });
+}
+
+// ─── Annual Budget Hooks ────────────────────────────────────────────────────
+
+export function useAnnualBudgets(year: number) {
+  return useQuery({
+    queryKey: FINANCIAL_KEYS.annualBudgets(year),
+    queryFn: () => budgetService.getAnnualBudgets(supabase, year),
+    select: (result) => result.data ?? [],
+  });
+}
+
+export function useUpsertAnnualBudgets() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (entries: AnnualBudgetUpsertEntry[]) =>
+      budgetService.upsertAnnualBudgets(supabase, entries),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
+      toast({ title: 'Presupuestos anuales guardados' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al guardar presupuestos anuales',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useAnnualContext(year: number) {
+  return useQuery({
+    queryKey: FINANCIAL_KEYS.annualContext(year),
+    queryFn: () => budgetService.getAnnualContextForMonth(supabase, year),
+    select: (result) => result.data,
   });
 }
 

@@ -23,6 +23,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Loader2,
+  Trash2,
   Home,
   Zap,
   Droplets,
@@ -51,7 +52,17 @@ import {
   Tag,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useCategories, useUpdateCategory } from '@/lib/financial/hooks';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useCategories, useUpdateCategory, useDeleteCategory, useCategoryDependencies } from '@/lib/financial/hooks';
 import type { FinancialCategory, CategoryType } from '@/types/financial';
 import CategoryForm from './CategoryForm';
 
@@ -105,11 +116,16 @@ interface CategoryManagerProps {
 const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps) => {
   const { data: categories = [], isLoading } = useCategories();
   const updateMutation = useUpdateCategory();
+  const deleteMutation = useDeleteCategory();
 
   // Category form state
   const [formOpen, setFormOpen] = useState(false);
   const [formType, setFormType] = useState<CategoryType>('income');
   const [editingCategory, setEditingCategory] = useState<FinancialCategory | null>(null);
+
+  // Delete state
+  const [deletingCategory, setDeletingCategory] = useState<FinancialCategory | null>(null);
+  const { data: deps, isLoading: depsLoading } = useCategoryDependencies(deletingCategory?.id ?? null);
 
   // Split categories by type
   const incomeCategories = useMemo(
@@ -132,6 +148,19 @@ const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps)
     setFormType(cat.type);
     setFormOpen(true);
   }, []);
+
+  const handleDeleteClick = useCallback((cat: FinancialCategory) => {
+    setDeletingCategory(cat);
+  }, []);
+
+  const handleConfirmDelete = useCallback(() => {
+    if (deletingCategory) {
+      deleteMutation.mutate(
+        { id: deletingCategory.id, name: deletingCategory.name },
+        { onSettled: () => setDeletingCategory(null) }
+      );
+    }
+  }, [deletingCategory, deleteMutation]);
 
   const handleToggleActive = useCallback(
     (cat: FinancialCategory) => {
@@ -169,6 +198,7 @@ const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps)
                   onNew={() => handleNewCategory('income')}
                   onEdit={handleEditCategory}
                   onToggleActive={handleToggleActive}
+                  onDelete={handleDeleteClick}
                 />
 
                 <Separator />
@@ -181,6 +211,7 @@ const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps)
                   onNew={() => handleNewCategory('expense')}
                   onEdit={handleEditCategory}
                   onToggleActive={handleToggleActive}
+                  onDelete={handleDeleteClick}
                 />
               </>
             )}
@@ -195,6 +226,50 @@ const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps)
         categoryType={formType}
         editCategory={editingCategory}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={!!deletingCategory}
+        onOpenChange={(isOpen) => { if (!isOpen) setDeletingCategory(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {depsLoading
+                ? 'Verificando...'
+                : deps?.canDelete
+                  ? 'Eliminar Categoría'
+                  : 'No se puede eliminar'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {depsLoading ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Verificando dependencias...
+                </span>
+              ) : deps?.canDelete ? (
+                <>¿Estás seguro de que deseas eliminar &quot;{deletingCategory?.name}&quot;? Esta acción no se puede deshacer.</>
+              ) : (
+                <>No se puede eliminar &quot;{deletingCategory?.name}&quot;: {deps?.blockers.join(', ')} usan esta categoría. Desactívala en su lugar.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {deps?.canDelete ? 'Cancelar' : 'Cerrar'}
+            </AlertDialogCancel>
+            {deps?.canDelete && (
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Eliminando...' : 'Eliminar'}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
@@ -208,6 +283,7 @@ interface CategorySectionProps {
   onNew: () => void;
   onEdit: (cat: FinancialCategory) => void;
   onToggleActive: (cat: FinancialCategory) => void;
+  onDelete: (cat: FinancialCategory) => void;
 }
 
 const CategorySection = ({
@@ -217,6 +293,7 @@ const CategorySection = ({
   onNew,
   onEdit,
   onToggleActive,
+  onDelete,
 }: CategorySectionProps) => {
   const parents = useMemo(
     () => categories.filter((c) => !c.parent_id),
@@ -252,6 +329,7 @@ const CategorySection = ({
                   canWrite={canWrite}
                   onEdit={onEdit}
                   onToggleActive={onToggleActive}
+                  onDelete={onDelete}
                 />
                 {children.map((child) => {
                   const ChildIcon = getCategoryIcon(child.icon);
@@ -264,6 +342,7 @@ const CategorySection = ({
                       canWrite={canWrite}
                       onEdit={onEdit}
                       onToggleActive={onToggleActive}
+                      onDelete={onDelete}
                     />
                   );
                 })}
@@ -285,6 +364,7 @@ interface CategoryRowProps {
   canWrite: boolean;
   onEdit: (cat: FinancialCategory) => void;
   onToggleActive: (cat: FinancialCategory) => void;
+  onDelete: (cat: FinancialCategory) => void;
 }
 
 const CategoryRow = ({
@@ -294,6 +374,7 @@ const CategoryRow = ({
   canWrite,
   onEdit,
   onToggleActive,
+  onDelete,
 }: CategoryRowProps) => {
   return (
     <div
@@ -333,6 +414,15 @@ const CategoryRow = ({
             ) : (
               <ToggleLeft className="h-3 w-3" />
             )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-destructive hover:text-destructive"
+            onClick={() => onDelete(category)}
+            aria-label={`Eliminar ${category.name}`}
+          >
+            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       )}

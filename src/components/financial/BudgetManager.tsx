@@ -1,8 +1,12 @@
 /**
  * BudgetManager — Main budget view for the Presupuesto tab.
  *
- * Year/month selectors, budget table with inline editing,
- * copy from previous month, subtotals, budget vs actual chart.
+ * Supports two view modes:
+ * - Mensual: Year/month selectors, budget table with inline editing,
+ *   copy from previous month, subtotals, budget vs actual chart.
+ *   When annual budgets exist, shows an additional "Contexto Anual" column
+ *   with per-row allocation progress bars and summary cards.
+ * - Anual: Renders AnnualBudgetView for yearly budget management.
  */
 
 import { useState, useMemo, useCallback } from 'react';
@@ -25,17 +29,20 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Copy, Plus, Target } from 'lucide-react';
+import { Calendar, Copy, Plus, Target, Wallet } from 'lucide-react';
 import CLPInput from './CLPInput';
 import BudgetForm from './BudgetForm';
 import BudgetVsActualChart from './BudgetVsActualChart';
+import AnnualBudgetView from './AnnualBudgetView';
+import SummaryCard from './SummaryCard';
 import { formatCLP, MONTH_LABELS_FULL } from '@/types/financial';
-import type { FinancialCategory, CategoryType } from '@/types/financial';
+import type { FinancialCategory } from '@/types/financial';
 import {
   useActiveCategories,
   useBudgetVsActual,
   useUpsertBudgets,
   useCopyBudgets,
+  useAnnualContext,
 } from '@/lib/financial/hooks';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -44,6 +51,8 @@ interface BudgetManagerProps {
   canWrite: boolean;
 }
 
+type ViewMode = 'mensual' | 'anual';
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
@@ -51,12 +60,17 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [formOpen, setFormOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('mensual');
 
   // Data hooks
   const { data: categories = [], isLoading: categoriesLoading } = useActiveCategories();
   const { data: budgetVsActual = [], isLoading: budgetLoading } = useBudgetVsActual(selectedYear, selectedMonth);
   const upsertMutation = useUpsertBudgets();
   const copyMutation = useCopyBudgets();
+  const { data: annualContext } = useAnnualContext(selectedYear);
+
+  // Whether any category has an annual budget for this year
+  const hasAnnualBudgets = annualContext && annualContext.size > 0;
 
   // Build budget map for inline editing
   const budgetMap = useMemo(() => {
@@ -140,6 +154,22 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
                 (incomeSubtotals.totalActual + expenseSubtotals.totalActual),
   }), [incomeSubtotals, expenseSubtotals]);
 
+  // Annual summary totals for summary cards
+  const annualSummary = useMemo(() => {
+    if (!annualContext || annualContext.size === 0) return null;
+    let totalAnnual = 0;
+    let totalAllocated = 0;
+    for (const ctx of annualContext.values()) {
+      totalAnnual += ctx.annualBudget;
+      totalAllocated += ctx.monthlyAllocated;
+    }
+    return {
+      totalAnnual,
+      totalAllocated,
+      remaining: totalAnnual - totalAllocated,
+    };
+  }, [annualContext]);
+
   const isLoading = categoriesLoading || budgetLoading;
 
   // Progress bar color based on percentage
@@ -149,6 +179,9 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
     return 'h-2 [&>div]:bg-green-500';
   };
 
+  // Column count depends on whether annual context is shown
+  const colCount = hasAnnualBudgets ? 6 : 5;
+
   // Render a category row
   const renderCategoryRow = (category: FinancialCategory) => {
     const data = budgetMap.get(category.id);
@@ -156,6 +189,7 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
     const actual = data?.actual ?? 0;
     const difference = budgeted - actual;
     const percentage = budgeted > 0 ? Math.round((actual / budgeted) * 100) : (actual > 0 ? 100 : 0);
+    const ctx = annualContext?.get(category.id);
 
     return (
       <TableRow key={category.id}>
@@ -189,6 +223,30 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
             </span>
           </div>
         </TableCell>
+        {hasAnnualBudgets && (
+          <TableCell className="w-[180px]">
+            {ctx ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Progress
+                      value={Math.min(ctx.allocationPercentage, 100)}
+                      className={getProgressColor(ctx.allocationPercentage)}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground w-10 text-right">
+                    {ctx.allocationPercentage}%
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {formatCLP(ctx.remaining)} restante · {ctx.allocatedMonths}/12 meses
+                </div>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )}
       </TableRow>
     );
   };
@@ -204,6 +262,7 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
         {totals.difference < 0 ? ' (-)' : ''}
       </TableCell>
       <TableCell />
+      {hasAnnualBudgets && <TableCell />}
     </TableRow>
   );
 
@@ -211,6 +270,26 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
     <div className="space-y-6">
       {/* Header Controls */}
       <div className="flex flex-wrap items-end gap-3">
+        {/* View Mode Toggle */}
+        <div className="flex items-center border rounded-lg p-0.5">
+          <Button
+            variant={viewMode === 'mensual' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-8"
+            onClick={() => setViewMode('mensual')}
+          >
+            Mensual
+          </Button>
+          <Button
+            variant={viewMode === 'anual' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-8"
+            onClick={() => setViewMode('anual')}
+          >
+            Anual
+          </Button>
+        </div>
+
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Año</label>
           <Select
@@ -230,26 +309,28 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
           </Select>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Mes</label>
-          <Select
-            value={String(selectedMonth)}
-            onValueChange={(v) => setSelectedMonth(Number(v))}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MONTH_LABELS_FULL.map((label, idx) => (
-                <SelectItem key={idx + 1} value={String(idx + 1)}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {viewMode === 'mensual' && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Mes</label>
+            <Select
+              value={String(selectedMonth)}
+              onValueChange={(v) => setSelectedMonth(Number(v))}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MONTH_LABELS_FULL.map((label, idx) => (
+                  <SelectItem key={idx + 1} value={String(idx + 1)}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-        {canWrite && (
+        {viewMode === 'mensual' && canWrite && (
           <div className="flex gap-2 ml-auto">
             <Button
               variant="outline"
@@ -271,103 +352,144 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
         )}
       </div>
 
-      {/* Budget Table */}
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : !hasBudgets && categories.length > 0 ? (
-        /* Empty State */
-        <Card>
-          <CardContent className="py-12 text-center text-gray-500">
-            <Target className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium">Sin presupuesto para {MONTH_LABELS_FULL[selectedMonth - 1]} {selectedYear}</p>
-            <p className="text-sm mt-1 mb-4">Aún no se ha definido presupuesto para este período</p>
-            {canWrite && (
-              <Button onClick={() => setFormOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Crear Presupuesto
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Presupuesto vs Ejecución - {MONTH_LABELS_FULL[selectedMonth - 1]} {selectedYear}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="w-[160px]">Presupuesto</TableHead>
-                  <TableHead className="text-right">Gastado</TableHead>
-                  <TableHead className="text-right">Diferencia</TableHead>
-                  <TableHead className="w-[140px]">% Ejecutado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {/* Income Section */}
-                {incomeCategories.length > 0 && (
-                  <>
-                    <TableRow className="bg-green-50/50">
-                      <TableCell colSpan={5} className="font-semibold text-green-700">
-                        Ingresos
-                      </TableCell>
-                    </TableRow>
-                    {incomeCategories.map(renderCategoryRow)}
-                    {renderSubtotalRow('Subtotal Ingresos', incomeSubtotals)}
-                  </>
-                )}
-
-                {/* Expense Section */}
-                {expenseCategories.length > 0 && (
-                  <>
-                    <TableRow className="bg-red-50/50">
-                      <TableCell colSpan={5} className="font-semibold text-red-700">
-                        Gastos
-                      </TableCell>
-                    </TableRow>
-                    {expenseCategories.map(renderCategoryRow)}
-                    {renderSubtotalRow('Subtotal Gastos', expenseSubtotals)}
-                  </>
-                )}
-
-                {/* Grand Total */}
-                <TableRow className="bg-muted font-bold border-t-2">
-                  <TableCell>Total General</TableCell>
-                  <TableCell className="font-mono">{formatCLP(grandTotals.totalBudgeted)}</TableCell>
-                  <TableCell className="font-mono text-right">{formatCLP(grandTotals.totalActual)}</TableCell>
-                  <TableCell className={`font-mono text-right ${grandTotals.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCLP(Math.abs(grandTotals.difference))}
-                    {grandTotals.difference < 0 ? ' (-)' : ''}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {/* Annual View */}
+      {viewMode === 'anual' && (
+        <AnnualBudgetView year={selectedYear} canWrite={canWrite} />
       )}
 
-      {/* Budget vs Actual Chart */}
-      {budgetVsActual.length > 0 && (
-        <BudgetVsActualChart data={budgetVsActual} />
-      )}
+      {/* Monthly View */}
+      {viewMode === 'mensual' && (
+        <>
+          {/* Annual Summary Cards */}
+          {annualSummary && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <SummaryCard
+                title="Presupuesto Anual"
+                amount={annualSummary.totalAnnual}
+                icon={Calendar}
+                colorClass="text-blue-600"
+                iconColorClass="text-blue-500"
+              />
+              <SummaryCard
+                title="Asignado Mensualmente"
+                amount={annualSummary.totalAllocated}
+                icon={Target}
+                colorClass={annualSummary.totalAllocated > annualSummary.totalAnnual ? 'text-red-600' : 'text-green-600'}
+                iconColorClass={annualSummary.totalAllocated > annualSummary.totalAnnual ? 'text-red-500' : 'text-green-500'}
+              />
+              <SummaryCard
+                title="Sin Asignar"
+                amount={annualSummary.remaining}
+                icon={Wallet}
+                colorClass={annualSummary.remaining < 0 ? 'text-red-600' : 'text-amber-600'}
+                iconColorClass={annualSummary.remaining < 0 ? 'text-red-500' : 'text-amber-500'}
+              />
+            </div>
+          )}
 
-      {/* Budget Form Dialog */}
-      <BudgetForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        year={selectedYear}
-        month={selectedMonth}
-        canWrite={canWrite}
-      />
+          {/* Budget Table */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : !hasBudgets && categories.length > 0 ? (
+            /* Empty State */
+            <Card>
+              <CardContent className="py-12 text-center text-gray-500">
+                <Target className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p className="text-lg font-medium">Sin presupuesto para {MONTH_LABELS_FULL[selectedMonth - 1]} {selectedYear}</p>
+                <p className="text-sm mt-1 mb-4">Aún no se ha definido presupuesto para este período</p>
+                {canWrite && (
+                  <Button onClick={() => setFormOpen(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Crear Presupuesto
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Presupuesto vs Ejecución - {MONTH_LABELS_FULL[selectedMonth - 1]} {selectedYear}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead className="w-[160px]">Presupuesto</TableHead>
+                      <TableHead className="text-right">Gastado</TableHead>
+                      <TableHead className="text-right">Diferencia</TableHead>
+                      <TableHead className="w-[140px]">% Ejecutado</TableHead>
+                      {hasAnnualBudgets && (
+                        <TableHead className="w-[180px]">Contexto Anual</TableHead>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Income Section */}
+                    {incomeCategories.length > 0 && (
+                      <>
+                        <TableRow className="bg-green-50/50">
+                          <TableCell colSpan={colCount} className="font-semibold text-green-700">
+                            Ingresos
+                          </TableCell>
+                        </TableRow>
+                        {incomeCategories.map(renderCategoryRow)}
+                        {renderSubtotalRow('Subtotal Ingresos', incomeSubtotals)}
+                      </>
+                    )}
+
+                    {/* Expense Section */}
+                    {expenseCategories.length > 0 && (
+                      <>
+                        <TableRow className="bg-red-50/50">
+                          <TableCell colSpan={colCount} className="font-semibold text-red-700">
+                            Gastos
+                          </TableCell>
+                        </TableRow>
+                        {expenseCategories.map(renderCategoryRow)}
+                        {renderSubtotalRow('Subtotal Gastos', expenseSubtotals)}
+                      </>
+                    )}
+
+                    {/* Grand Total */}
+                    <TableRow className="bg-muted font-bold border-t-2">
+                      <TableCell>Total General</TableCell>
+                      <TableCell className="font-mono">{formatCLP(grandTotals.totalBudgeted)}</TableCell>
+                      <TableCell className="font-mono text-right">{formatCLP(grandTotals.totalActual)}</TableCell>
+                      <TableCell className={`font-mono text-right ${grandTotals.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCLP(Math.abs(grandTotals.difference))}
+                        {grandTotals.difference < 0 ? ' (-)' : ''}
+                      </TableCell>
+                      <TableCell />
+                      {hasAnnualBudgets && <TableCell />}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Budget vs Actual Chart */}
+          {budgetVsActual.length > 0 && (
+            <BudgetVsActualChart data={budgetVsActual} />
+          )}
+
+          {/* Budget Form Dialog */}
+          <BudgetForm
+            open={formOpen}
+            onOpenChange={setFormOpen}
+            year={selectedYear}
+            month={selectedMonth}
+            canWrite={canWrite}
+          />
+        </>
+      )}
     </div>
   );
 };

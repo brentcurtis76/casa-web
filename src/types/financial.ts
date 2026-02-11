@@ -137,6 +137,16 @@ export interface PayrollEntry {
   updated_at: string;
 }
 
+/** Mirrors church_fin_annual_budgets */
+export interface AnnualBudget {
+  id: string;
+  year: number;
+  category_id: string;
+  amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── CLP Formatting Helpers ──────────────────────────────────────────────────
 
 const clpFormatter = new Intl.NumberFormat('es-CL', {
