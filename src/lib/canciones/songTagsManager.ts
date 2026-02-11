@@ -1,5 +1,10 @@
 /**
- * Song Tags Manager - Funciones para gestionar el sistema de tags de canciones
+ * Song Tags Manager — UI display constants and pure filter/utility functions
+ *
+ * Mutation operations (createEmptySongTags, recordSongUsage, updateSongTempo,
+ * addSongTheme, removeSongTheme, addSuggestedMoment, removeSuggestedMoment)
+ * have been moved to songService.ts and songUsageService.ts in
+ * src/lib/music-planning/.
  */
 
 import type {
@@ -8,7 +13,6 @@ import type {
   SongTempo,
   SongTheme,
   LiturgicalMoment,
-  SongUsageRecord,
 } from '@/types/shared/song';
 
 /**
@@ -74,134 +78,22 @@ export const THEME_COLORS: Record<SongTheme, string> = {
   'cuaresma': '#7C3AED',      // Violet
 };
 
-/**
- * Crea un objeto SongTags vacío
- */
-export function createEmptySongTags(): SongTags {
-  return {
-    tempo: undefined,
-    themes: [],
-    suggestedMoments: [],
-    usageHistory: [],
-    usageCount: 0,
-  };
-}
+// =====================================================
+// Pure utility functions (stateless, no I/O)
+// =====================================================
 
 /**
- * Registra el uso de una canción
+ * Filtra canciones por tempo (operates on in-memory Song[])
  */
-export function recordSongUsage(
-  tags: SongTags | undefined,
-  moment: LiturgicalMoment,
-  liturgyId?: string
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  const now = new Date().toISOString();
-
-  const usageRecord: SongUsageRecord = {
-    date: now,
-    liturgyId,
-    moment,
-  };
-
-  return {
-    ...currentTags,
-    usageHistory: [...currentTags.usageHistory, usageRecord],
-    lastUsed: now,
-    usageCount: currentTags.usageCount + 1,
-  };
-}
-
-/**
- * Actualiza el tempo de una canción
- */
-export function updateSongTempo(
-  tags: SongTags | undefined,
-  tempo: SongTempo | undefined
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  return {
-    ...currentTags,
-    tempo,
-  };
-}
-
-/**
- * Agrega un tema a una canción
- */
-export function addSongTheme(
-  tags: SongTags | undefined,
-  theme: SongTheme
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  if (currentTags.themes.includes(theme)) {
-    return currentTags;
-  }
-  return {
-    ...currentTags,
-    themes: [...currentTags.themes, theme],
-  };
-}
-
-/**
- * Elimina un tema de una canción
- */
-export function removeSongTheme(
-  tags: SongTags | undefined,
-  theme: SongTheme
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  return {
-    ...currentTags,
-    themes: currentTags.themes.filter((t) => t !== theme),
-  };
-}
-
-/**
- * Agrega un momento sugerido
- */
-export function addSuggestedMoment(
-  tags: SongTags | undefined,
-  moment: LiturgicalMoment
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  if (currentTags.suggestedMoments.includes(moment)) {
-    return currentTags;
-  }
-  return {
-    ...currentTags,
-    suggestedMoments: [...currentTags.suggestedMoments, moment],
-  };
-}
-
-/**
- * Elimina un momento sugerido
- */
-export function removeSuggestedMoment(
-  tags: SongTags | undefined,
-  moment: LiturgicalMoment
-): SongTags {
-  const currentTags = tags || createEmptySongTags();
-  return {
-    ...currentTags,
-    suggestedMoments: currentTags.suggestedMoments.filter((m) => m !== moment),
-  };
-}
-
-/**
- * Filtra canciones por momento litúrgico
- */
-export function filterSongsByMoment(
+export function filterSongsByTempo(
   songs: Song[],
-  moment: LiturgicalMoment
+  tempo: SongTempo
 ): Song[] {
-  return songs.filter((song) =>
-    song.songTags?.suggestedMoments?.includes(moment)
-  );
+  return songs.filter((song) => song.songTags?.tempo === tempo);
 }
 
 /**
- * Filtra canciones por tema
+ * Filtra canciones por tema (operates on in-memory Song[])
  */
 export function filterSongsByTheme(
   songs: Song[],
@@ -213,38 +105,19 @@ export function filterSongsByTheme(
 }
 
 /**
- * Filtra canciones por tempo
+ * Filtra canciones por momento litúrgico (operates on in-memory Song[])
  */
-export function filterSongsByTempo(
+export function filterSongsByMoment(
   songs: Song[],
-  tempo: SongTempo
+  moment: LiturgicalMoment
 ): Song[] {
-  return songs.filter((song) => song.songTags?.tempo === tempo);
+  return songs.filter((song) =>
+    song.songTags?.suggestedMoments?.includes(moment)
+  );
 }
 
 /**
- * Obtiene canciones sugeridas para un momento, ordenadas por relevancia
- * Prioriza canciones no usadas recientemente
- */
-export function getSuggestedSongs(
-  songs: Song[],
-  moment: LiturgicalMoment,
-  limit: number = 10
-): Song[] {
-  const relevantSongs = filterSongsByMoment(songs, moment);
-
-  // Ordenar por fecha de último uso (más antiguo primero)
-  const sorted = relevantSongs.sort((a, b) => {
-    const aLastUsed = a.songTags?.lastUsed || '1900-01-01';
-    const bLastUsed = b.songTags?.lastUsed || '1900-01-01';
-    return aLastUsed.localeCompare(bLastUsed);
-  });
-
-  return sorted.slice(0, limit);
-}
-
-/**
- * Calcula estadísticas de uso de una canción
+ * Calcula estadísticas de uso de una canción (pure, operates on SongTags)
  */
 export function getSongUsageStats(tags: SongTags | undefined): {
   totalUsage: number;
@@ -284,7 +157,28 @@ export function getSongUsageStats(tags: SongTags | undefined): {
 }
 
 /**
- * Busca canciones con filtros combinados
+ * Obtiene canciones sugeridas para un momento, ordenadas por relevancia
+ * Prioriza canciones no usadas recientemente
+ */
+export function getSuggestedSongs(
+  songs: Song[],
+  moment: LiturgicalMoment,
+  limit: number = 10
+): Song[] {
+  const relevantSongs = filterSongsByMoment(songs, moment);
+
+  // Ordenar por fecha de último uso (más antiguo primero)
+  const sorted = relevantSongs.sort((a, b) => {
+    const aLastUsed = a.songTags?.lastUsed || '1900-01-01';
+    const bLastUsed = b.songTags?.lastUsed || '1900-01-01';
+    return aLastUsed.localeCompare(bLastUsed);
+  });
+
+  return sorted.slice(0, limit);
+}
+
+/**
+ * Busca canciones con filtros combinados (operates on in-memory Song[])
  */
 export function searchSongsWithFilters(
   songs: Song[],

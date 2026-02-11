@@ -2,22 +2,15 @@
  * Módulo de Canciones - Exportaciones centralizadas
  */
 
-// Tag management
+// Tag management — constants + pure filter/utility functions
 export {
   TEMPO_LABELS,
   THEME_LABELS,
   MOMENT_LABELS,
   THEME_COLORS,
-  createEmptySongTags,
-  recordSongUsage,
-  updateSongTempo,
-  addSongTheme,
-  removeSongTheme,
-  addSuggestedMoment,
-  removeSuggestedMoment,
-  filterSongsByMoment,
-  filterSongsByTheme,
   filterSongsByTempo,
+  filterSongsByTheme,
+  filterSongsByMoment,
   getSuggestedSongs,
   getSongUsageStats,
   searchSongsWithFilters,

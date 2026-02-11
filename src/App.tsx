@@ -35,6 +35,7 @@ import RoleManagementPage from "./pages/RoleManagementPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import FinancialPage from "./pages/FinancialPage";
 import PersonnelPage from "./pages/PersonnelPage";
+import MusicLibraryPage from "./pages/MusicLibraryPage";
 
 const queryClient = new QueryClient();
 
@@ -66,6 +67,7 @@ const router = createBrowserRouter([
   { path: "/recursos/archivo", element: <ArchivoRecursosPage /> },
   { path: "/admin/finanzas", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><FinancialPage /></ProtectedRoute> },
   { path: "/admin/finanzas/nomina", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><PersonnelPage /></ProtectedRoute> },
+  { path: "/admin/musica/biblioteca", element: <ProtectedRoute requires={{ resource: 'canciones', action: 'read' }}><MusicLibraryPage /></ProtectedRoute> },
   // Catch-all route for 404
   { path: "*", element: <NotFound /> },
 ]);
