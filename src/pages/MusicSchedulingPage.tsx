@@ -1,12 +1,23 @@
 /**
  * MusicSchedulingPage — Admin page for musician scheduling.
  *
- * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists | Notificaciones | Práctica
+ * Tabbed layout: Panel | Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists | Notificaciones | Práctica
  */
 
+import { useState } from 'react';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, CalendarDays, CalendarCheck, Music, ListMusic, Bell, Headphones } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Users,
+  CalendarDays,
+  CalendarCheck,
+  Music,
+  ListMusic,
+  Bell,
+  Headphones,
+} from 'lucide-react';
+import MusicDashboard from '@/components/music-scheduling/MusicDashboard';
 import MusicianRoster from '@/components/music-scheduling/MusicianRoster';
 import ServiceDateManager from '@/components/music-scheduling/ServiceDateManager';
 import AvailabilityOverview from '@/components/music-scheduling/AvailabilityOverview';
@@ -16,6 +27,8 @@ import NotificationCenter from '@/components/music-scheduling/NotificationCenter
 import PracticeTracker from '@/components/music-scheduling/PracticeTracker';
 
 const MusicSchedulingPage = () => {
+  const [activeTab, setActiveTab] = useState('panel');
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminPageHeader
@@ -30,8 +43,12 @@ const MusicSchedulingPage = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <Tabs defaultValue="musicos">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-auto">
+              <TabsTrigger value="panel" className="gap-1.5">
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                Panel
+              </TabsTrigger>
               <TabsTrigger value="musicos" className="gap-1.5">
                 <Users className="h-3.5 w-3.5" />
                 Músicos
@@ -61,6 +78,10 @@ const MusicSchedulingPage = () => {
                 Práctica
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="panel" className="mt-6">
+              <MusicDashboard onNavigateTab={setActiveTab} />
+            </TabsContent>
 
             <TabsContent value="musicos" className="mt-6">
               <MusicianRoster />

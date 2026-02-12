@@ -60,6 +60,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'temporadas': RESOURCE_NAMES.LITURGY_SEASONS,
   'oraciones': RESOURCE_NAMES.ORACIONES,
   'canciones': RESOURCE_NAMES.CANCIONES,
+  'musica-biblioteca': RESOURCE_NAMES.CANCIONES,
   'musica-programacion': RESOURCE_NAMES.MUSIC_SCHEDULING,
   'elementos-fijos': RESOURCE_NAMES.ELEMENTOS_FIJOS,
   'finanzas': RESOURCE_NAMES.FINANCIAL,

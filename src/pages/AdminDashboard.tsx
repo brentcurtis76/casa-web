@@ -31,6 +31,8 @@ import {
   Users,
   Shield,
   DollarSign,
+  ListMusic,
+  Headphones,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -228,6 +230,24 @@ const AdminDashboard: React.FC = () => {
       category: 'liturgia',
       status: 'available',
       stats: '6 elementos',
+    },
+    {
+      id: 'musica-biblioteca',
+      title: 'Biblioteca Musical',
+      description: 'Canciones, arreglos, stems, partituras y referencias de audio del equipo de adoración.',
+      icon: <ListMusic className="h-8 w-8" />,
+      route: '/admin/musica/biblioteca',
+      category: 'liturgia',
+      status: 'available',
+    },
+    {
+      id: 'musica-programacion',
+      title: 'Programación Musical',
+      description: 'Músicos, fechas de servicio, disponibilidad, ensayos, setlists, notificaciones y práctica.',
+      icon: <Headphones className="h-8 w-8" />,
+      route: '/admin/musica/programacion',
+      category: 'liturgia',
+      status: 'available',
     },
     // Administracion Modules
     {

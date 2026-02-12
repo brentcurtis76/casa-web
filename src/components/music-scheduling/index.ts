@@ -15,3 +15,4 @@ export { default as NotificationCenter } from './NotificationCenter';
 export { default as NotificationQueueDialog } from './NotificationQueueDialog';
 export { default as PracticeTracker } from './PracticeTracker';
 export { default as PracticeLogDialog } from './PracticeLogDialog';
+export { default as MusicDashboard } from './MusicDashboard';
