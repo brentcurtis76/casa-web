@@ -1,7 +1,7 @@
 /**
  * MusicSchedulingPage — Admin page for musician scheduling.
  *
- * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists | Notificaciones
+ * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists | Notificaciones | Práctica
  */
 
 import AdminPageHeader from '@/components/admin/AdminPageHeader';

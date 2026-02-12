@@ -7,7 +7,7 @@
  *   Bottom: Session table + leaderboard
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   usePracticeSessions,
@@ -43,6 +43,7 @@ import {
   Plus,
   ShieldAlert,
   Trash2,
+  Pencil,
   Headphones,
   Clock,
   Music,
@@ -352,7 +353,7 @@ const PracticeTracker = () => {
                           className="h-8 w-8 p-0"
                           onClick={() => handleEdit(session.id)}
                         >
-                          <Headphones className="h-3.5 w-3.5" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       )}
                       {canManage && (
