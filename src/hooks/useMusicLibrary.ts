@@ -14,6 +14,8 @@ import * as musicianService from '@/lib/music-planning/musicianService';
 import * as availabilityService from '@/lib/music-planning/availabilityService';
 import * as rehearsalService from '@/lib/music-planning/rehearsalService';
 import * as setlistService from '@/lib/music-planning/setlistService';
+import * as notificationService from '@/lib/music-planning/notificationService';
+import * as practiceService from '@/lib/music-planning/practiceService';
 import type {
   MusicSongInsert,
   MusicSongUpdate,
@@ -44,7 +46,15 @@ import type {
   MusicSetlistUpdate,
   MusicSetlistItemInsert,
   MusicSetlistItemUpdate,
+  MusicNotificationLogInsert,
+  MusicNotificationLogUpdate,
+  NotificationType,
+  NotificationChannel,
+  MusicPracticeSessionInsert,
+  MusicPracticeSessionUpdate,
 } from '@/types/musicPlanning';
+import type { NotificationLogFilters, NotificationContext } from '@/lib/music-planning/notificationService';
+import type { PracticeSessionFilters } from '@/lib/music-planning/practiceService';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -112,6 +122,30 @@ export const MUSIC_LIBRARY_KEYS = {
     ['music-library', 'setlist-items', setlistId] as const,
   setlistsByServiceDate: (serviceDateId: string) =>
     ['music-library', 'setlists-by-service-date', serviceDateId] as const,
+  // Notifications
+  notificationLogs: (filters?: NotificationLogFilters) =>
+    ['music-library', 'notification-logs', filters] as const,
+  notificationLogById: (id: string) =>
+    ['music-library', 'notification-log', id] as const,
+  notificationLogsForRecipient: (recipientId: string) =>
+    ['music-library', 'notification-logs-recipient', recipientId] as const,
+  notificationStats: () =>
+    ['music-library', 'notification-stats'] as const,
+  // Practice sessions
+  practiceSessions: (filters?: PracticeSessionFilters) =>
+    ['music-library', 'practice-sessions', filters] as const,
+  practiceSessionById: (id: string) =>
+    ['music-library', 'practice-session', id] as const,
+  practiceSessionsForSong: (songId: string) =>
+    ['music-library', 'practice-sessions-song', songId] as const,
+  practiceSessionsForUser: (userId: string) =>
+    ['music-library', 'practice-sessions-user', userId] as const,
+  practiceStats: () =>
+    ['music-library', 'practice-stats'] as const,
+  practiceSongLeaderboard: (limit?: number) =>
+    ['music-library', 'practice-song-leaderboard', limit] as const,
+  recentPracticeActivity: (limit?: number) =>
+    ['music-library', 'recent-practice-activity', limit] as const,
 };
 
 // ─── Song Hooks ──────────────────────────────────────────────────────────────
@@ -1284,6 +1318,266 @@ export function useReorderSetlistItems() {
     },
     onError: (error: Error) => {
       toast({ title: 'Error al reordenar canciones', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// ─── Notification Hooks ────────────────────────────────────────────────────
+
+export function useNotificationLogs(filters?: NotificationLogFilters) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.notificationLogs(filters),
+    queryFn: () => notificationService.getNotificationLogs(filters),
+  });
+}
+
+export function useNotificationLogById(id: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.notificationLogById(id!),
+    queryFn: () => notificationService.getNotificationLogById(id!),
+    enabled: !!id,
+  });
+}
+
+export function useNotificationLogsForRecipient(recipientId: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.notificationLogsForRecipient(recipientId!),
+    queryFn: () => notificationService.getNotificationLogsForRecipient(recipientId!),
+    enabled: !!recipientId,
+  });
+}
+
+export function useNotificationStats() {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.notificationStats(),
+    queryFn: () => notificationService.getNotificationStats(),
+  });
+}
+
+export function useCreateNotificationLog() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (log: MusicNotificationLogInsert) =>
+      notificationService.createNotificationLog(log),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Notificación registrada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al registrar la notificación',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useUpdateNotificationLog() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicNotificationLogUpdate }) =>
+      notificationService.updateNotificationLog(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Notificación actualizada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al actualizar la notificación',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useDeleteNotificationLog() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => notificationService.deleteNotificationLog(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Notificación eliminada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al eliminar la notificación',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useQueueNotification() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (params: {
+      recipientId: string;
+      recipientName: string;
+      type: NotificationType;
+      channel: NotificationChannel;
+      context: NotificationContext;
+    }) => notificationService.queueNotification(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Notificación encolada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al encolar la notificación',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useQueueBatchNotifications() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (params: {
+      recipients: { id: string; displayName: string; channel: NotificationChannel }[];
+      type: NotificationType;
+      context: Omit<NotificationContext, 'recipientName'>;
+    }) => notificationService.queueBatchNotifications(params),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: `${data.length} notificaciones encoladas correctamente` });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al encolar las notificaciones',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+// ─── Practice Session Hooks ────────────────────────────────────────────────
+
+export function usePracticeSessions(filters?: PracticeSessionFilters) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceSessions(filters),
+    queryFn: () => practiceService.getPracticeSessions(filters),
+  });
+}
+
+export function usePracticeSessionById(id: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceSessionById(id!),
+    queryFn: () => practiceService.getPracticeSessionById(id!),
+    enabled: !!id,
+  });
+}
+
+export function usePracticeSessionsForSong(songId: string | null, limit?: number) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceSessionsForSong(songId!),
+    queryFn: () => practiceService.getPracticeSessionsForSong(songId!, limit),
+    enabled: !!songId,
+  });
+}
+
+export function usePracticeSessionsForUser(userId: string | null, limit?: number) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceSessionsForUser(userId!),
+    queryFn: () => practiceService.getPracticeSessionsForUser(userId!, limit),
+    enabled: !!userId,
+  });
+}
+
+export function usePracticeStats() {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceStats(),
+    queryFn: () => practiceService.getPracticeStats(),
+  });
+}
+
+export function usePracticeSongLeaderboard(limit?: number) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.practiceSongLeaderboard(limit),
+    queryFn: () => practiceService.getPracticeSongLeaderboard(limit),
+  });
+}
+
+export function useRecentPracticeActivity(limit?: number) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.recentPracticeActivity(limit),
+    queryFn: () => practiceService.getRecentPracticeActivity(limit),
+  });
+}
+
+export function useCreatePracticeSession() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (session: MusicPracticeSessionInsert) =>
+      practiceService.createPracticeSession(session),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Sesión de práctica registrada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al registrar la sesión de práctica',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useUpdatePracticeSession() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicPracticeSessionUpdate }) =>
+      practiceService.updatePracticeSession(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Sesión de práctica actualizada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al actualizar la sesión de práctica',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useDeletePracticeSession() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => practiceService.deletePracticeSession(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Sesión de práctica eliminada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error al eliminar la sesión de práctica',
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 }

@@ -1,17 +1,19 @@
 /**
  * MusicSchedulingPage — Admin page for musician scheduling.
  *
- * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists
+ * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists | Notificaciones
  */
 
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, CalendarDays, CalendarCheck, Music, ListMusic } from 'lucide-react';
+import { Users, CalendarDays, CalendarCheck, Music, ListMusic, Bell, Headphones } from 'lucide-react';
 import MusicianRoster from '@/components/music-scheduling/MusicianRoster';
 import ServiceDateManager from '@/components/music-scheduling/ServiceDateManager';
 import AvailabilityOverview from '@/components/music-scheduling/AvailabilityOverview';
 import RehearsalManager from '@/components/music-scheduling/RehearsalManager';
 import SetlistBuilder from '@/components/music-scheduling/SetlistBuilder';
+import NotificationCenter from '@/components/music-scheduling/NotificationCenter';
+import PracticeTracker from '@/components/music-scheduling/PracticeTracker';
 
 const MusicSchedulingPage = () => {
   return (
@@ -50,6 +52,14 @@ const MusicSchedulingPage = () => {
                 <ListMusic className="h-3.5 w-3.5" />
                 Setlists
               </TabsTrigger>
+              <TabsTrigger value="notificaciones" className="gap-1.5">
+                <Bell className="h-3.5 w-3.5" />
+                Notificaciones
+              </TabsTrigger>
+              <TabsTrigger value="practica" className="gap-1.5">
+                <Headphones className="h-3.5 w-3.5" />
+                Práctica
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="musicos" className="mt-6">
@@ -70,6 +80,14 @@ const MusicSchedulingPage = () => {
 
             <TabsContent value="setlists" className="mt-6">
               <SetlistBuilder />
+            </TabsContent>
+
+            <TabsContent value="notificaciones" className="mt-6">
+              <NotificationCenter />
+            </TabsContent>
+
+            <TabsContent value="practica" className="mt-6">
+              <PracticeTracker />
             </TabsContent>
           </Tabs>
         </div>

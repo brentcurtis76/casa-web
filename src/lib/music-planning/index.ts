@@ -15,3 +15,7 @@ export * from './rehearsalService';
 export * from './rehearsalLabels';
 export * from './setlistService';
 export * from './setlistLabels';
+export * from './notificationService';
+export * from './notificationLabels';
+export * from './practiceService';
+export * from './practiceLabels';

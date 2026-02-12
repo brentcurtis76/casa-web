@@ -11,3 +11,7 @@ export { default as RehearsalAttendeePicker } from './RehearsalAttendeePicker';
 export { default as SetlistBuilder } from './SetlistBuilder';
 export { default as SetlistEditDialog } from './SetlistEditDialog';
 export { default as SetlistItemPicker } from './SetlistItemPicker';
+export { default as NotificationCenter } from './NotificationCenter';
+export { default as NotificationQueueDialog } from './NotificationQueueDialog';
+export { default as PracticeTracker } from './PracticeTracker';
+export { default as PracticeLogDialog } from './PracticeLogDialog';
