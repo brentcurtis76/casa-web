@@ -12,6 +12,7 @@ import * as songService from '@/lib/music-planning/songService';
 import * as usageService from '@/lib/music-planning/songUsageService';
 import * as musicianService from '@/lib/music-planning/musicianService';
 import * as availabilityService from '@/lib/music-planning/availabilityService';
+import * as rehearsalService from '@/lib/music-planning/rehearsalService';
 import type {
   MusicSongInsert,
   MusicSongUpdate,
@@ -32,6 +33,12 @@ import type {
   MusicServiceAssignmentUpdate,
   SongListFilters,
   MusicianListFilters,
+  MusicRehearsalInsert,
+  MusicRehearsalUpdate,
+  MusicRehearsalSongInsert,
+  MusicRehearsalSongUpdate,
+  MusicRehearsalAttendeeInsert,
+  MusicRehearsalAttendeeUpdate,
 } from '@/types/musicPlanning';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
@@ -82,6 +89,16 @@ export const MUSIC_LIBRARY_KEYS = {
     ['music-library', 'musicians-full-data'] as const,
   allOverridesForDates: (serviceDateIds: string[]) =>
     ['music-library', 'all-overrides-for-dates', serviceDateIds] as const,
+  rehearsals: (from?: string, to?: string) =>
+    ['music-library', 'rehearsals', from, to] as const,
+  rehearsalById: (id: string) =>
+    ['music-library', 'rehearsal', id] as const,
+  upcomingRehearsals: (limit?: number) =>
+    ['music-library', 'upcoming-rehearsals', limit] as const,
+  rehearsalSongs: (rehearsalId: string) =>
+    ['music-library', 'rehearsal-songs', rehearsalId] as const,
+  rehearsalAttendees: (rehearsalId: string) =>
+    ['music-library', 'rehearsal-attendees', rehearsalId] as const,
 };
 
 // ─── Song Hooks ──────────────────────────────────────────────────────────────
@@ -868,6 +885,229 @@ export function useDeleteAssignment() {
         description: error.message,
         variant: 'destructive',
       });
+    },
+  });
+}
+
+// ─── Rehearsal Hooks ─────────────────────────────────────────────────────────
+
+export function useRehearsals(from?: string, to?: string) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.rehearsals(from, to),
+    queryFn: () => rehearsalService.getRehearsals(from, to),
+  });
+}
+
+export function useRehearsalById(id: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.rehearsalById(id!),
+    queryFn: () => rehearsalService.getRehearsalById(id!),
+    enabled: !!id,
+  });
+}
+
+export function useUpcomingRehearsals(limit?: number) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.upcomingRehearsals(limit),
+    queryFn: () => rehearsalService.getUpcomingRehearsals(limit),
+  });
+}
+
+export function useCreateRehearsal() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (rehearsal: MusicRehearsalInsert) => rehearsalService.createRehearsal(rehearsal),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Ensayo creado correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al crear el ensayo', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useUpdateRehearsal() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicRehearsalUpdate }) =>
+      rehearsalService.updateRehearsal(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Ensayo actualizado correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al actualizar el ensayo', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useDeleteRehearsal() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => rehearsalService.deleteRehearsal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Ensayo eliminado correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al eliminar el ensayo', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// Rehearsal Songs
+
+export function useRehearsalSongs(rehearsalId: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.rehearsalSongs(rehearsalId!),
+    queryFn: () => rehearsalService.getRehearsalSongs(rehearsalId!),
+    enabled: !!rehearsalId,
+  });
+}
+
+export function useAddRehearsalSong() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (song: MusicRehearsalSongInsert) => rehearsalService.addRehearsalSong(song),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Canción agregada al ensayo' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al agregar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useUpdateRehearsalSong() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicRehearsalSongUpdate }) =>
+      rehearsalService.updateRehearsalSong(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al actualizar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useRemoveRehearsalSong() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => rehearsalService.removeRehearsalSong(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Canción eliminada del ensayo' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al eliminar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useReorderRehearsalSongs() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (items: { id: string; sort_order: number }[]) =>
+      rehearsalService.reorderRehearsalSongs(items),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al reordenar canciones', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// Rehearsal Attendees
+
+export function useRehearsalAttendees(rehearsalId: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.rehearsalAttendees(rehearsalId!),
+    queryFn: () => rehearsalService.getRehearsalAttendees(rehearsalId!),
+    enabled: !!rehearsalId,
+  });
+}
+
+export function useAddRehearsalAttendee() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (attendee: MusicRehearsalAttendeeInsert) => rehearsalService.addRehearsalAttendee(attendee),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Músico invitado al ensayo' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al invitar músico', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useUpdateRehearsalAttendee() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicRehearsalAttendeeUpdate }) =>
+      rehearsalService.updateRehearsalAttendee(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Asistencia actualizada' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al actualizar asistencia', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useRemoveRehearsalAttendee() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => rehearsalService.removeRehearsalAttendee(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Músico eliminado del ensayo' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al eliminar músico', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useBatchAddAttendees() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ rehearsalId, musicianIds }: { rehearsalId: string; musicianIds: string[] }) =>
+      rehearsalService.batchAddAttendees(rehearsalId, musicianIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Músicos invitados al ensayo' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al invitar músicos', description: error.message, variant: 'destructive' });
     },
   });
 }

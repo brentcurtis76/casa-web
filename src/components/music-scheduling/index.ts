@@ -4,3 +4,7 @@ export { default as MusicianDetailSheet } from './MusicianDetailSheet';
 export { default as MusicianEditDialog } from './MusicianEditDialog';
 export { default as ServiceDateManager } from './ServiceDateManager';
 export { default as AvailabilityOverview } from './AvailabilityOverview';
+export { default as RehearsalManager } from './RehearsalManager';
+export { default as RehearsalEditDialog } from './RehearsalEditDialog';
+export { default as RehearsalSongPicker } from './RehearsalSongPicker';
+export { default as RehearsalAttendeePicker } from './RehearsalAttendeePicker';

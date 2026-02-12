@@ -1,15 +1,16 @@
 /**
  * MusicSchedulingPage — Admin page for musician scheduling.
  *
- * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad
+ * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos
  */
 
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, CalendarDays, CalendarCheck } from 'lucide-react';
+import { Users, CalendarDays, CalendarCheck, Music } from 'lucide-react';
 import MusicianRoster from '@/components/music-scheduling/MusicianRoster';
 import ServiceDateManager from '@/components/music-scheduling/ServiceDateManager';
 import AvailabilityOverview from '@/components/music-scheduling/AvailabilityOverview';
+import RehearsalManager from '@/components/music-scheduling/RehearsalManager';
 
 const MusicSchedulingPage = () => {
   return (
@@ -40,6 +41,10 @@ const MusicSchedulingPage = () => {
                 <CalendarCheck className="h-3.5 w-3.5" />
                 Disponibilidad
               </TabsTrigger>
+              <TabsTrigger value="ensayos" className="gap-1.5">
+                <Music className="h-3.5 w-3.5" />
+                Ensayos
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="musicos" className="mt-6">
@@ -52,6 +57,10 @@ const MusicSchedulingPage = () => {
 
             <TabsContent value="disponibilidad" className="mt-6">
               <AvailabilityOverview />
+            </TabsContent>
+
+            <TabsContent value="ensayos" className="mt-6">
+              <RehearsalManager />
             </TabsContent>
           </Tabs>
         </div>
