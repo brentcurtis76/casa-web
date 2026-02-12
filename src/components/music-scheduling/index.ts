@@ -8,3 +8,6 @@ export { default as RehearsalManager } from './RehearsalManager';
 export { default as RehearsalEditDialog } from './RehearsalEditDialog';
 export { default as RehearsalSongPicker } from './RehearsalSongPicker';
 export { default as RehearsalAttendeePicker } from './RehearsalAttendeePicker';
+export { default as SetlistBuilder } from './SetlistBuilder';
+export { default as SetlistEditDialog } from './SetlistEditDialog';
+export { default as SetlistItemPicker } from './SetlistItemPicker';

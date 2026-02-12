@@ -1,16 +1,17 @@
 /**
  * MusicSchedulingPage — Admin page for musician scheduling.
  *
- * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos
+ * Tabbed layout: Músicos | Fechas de servicio | Disponibilidad | Ensayos | Setlists
  */
 
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, CalendarDays, CalendarCheck, Music } from 'lucide-react';
+import { Users, CalendarDays, CalendarCheck, Music, ListMusic } from 'lucide-react';
 import MusicianRoster from '@/components/music-scheduling/MusicianRoster';
 import ServiceDateManager from '@/components/music-scheduling/ServiceDateManager';
 import AvailabilityOverview from '@/components/music-scheduling/AvailabilityOverview';
 import RehearsalManager from '@/components/music-scheduling/RehearsalManager';
+import SetlistBuilder from '@/components/music-scheduling/SetlistBuilder';
 
 const MusicSchedulingPage = () => {
   return (
@@ -45,6 +46,10 @@ const MusicSchedulingPage = () => {
                 <Music className="h-3.5 w-3.5" />
                 Ensayos
               </TabsTrigger>
+              <TabsTrigger value="setlists" className="gap-1.5">
+                <ListMusic className="h-3.5 w-3.5" />
+                Setlists
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="musicos" className="mt-6">
@@ -61,6 +66,10 @@ const MusicSchedulingPage = () => {
 
             <TabsContent value="ensayos" className="mt-6">
               <RehearsalManager />
+            </TabsContent>
+
+            <TabsContent value="setlists" className="mt-6">
+              <SetlistBuilder />
             </TabsContent>
           </Tabs>
         </div>

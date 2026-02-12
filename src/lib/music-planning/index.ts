@@ -13,3 +13,5 @@ export * from './availabilityHelpers';
 export * from './musicianLabels';
 export * from './rehearsalService';
 export * from './rehearsalLabels';
+export * from './setlistService';
+export * from './setlistLabels';

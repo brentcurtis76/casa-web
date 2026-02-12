@@ -13,6 +13,7 @@ import * as usageService from '@/lib/music-planning/songUsageService';
 import * as musicianService from '@/lib/music-planning/musicianService';
 import * as availabilityService from '@/lib/music-planning/availabilityService';
 import * as rehearsalService from '@/lib/music-planning/rehearsalService';
+import * as setlistService from '@/lib/music-planning/setlistService';
 import type {
   MusicSongInsert,
   MusicSongUpdate,
@@ -39,6 +40,10 @@ import type {
   MusicRehearsalSongUpdate,
   MusicRehearsalAttendeeInsert,
   MusicRehearsalAttendeeUpdate,
+  MusicSetlistInsert,
+  MusicSetlistUpdate,
+  MusicSetlistItemInsert,
+  MusicSetlistItemUpdate,
 } from '@/types/musicPlanning';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
@@ -99,6 +104,14 @@ export const MUSIC_LIBRARY_KEYS = {
     ['music-library', 'rehearsal-songs', rehearsalId] as const,
   rehearsalAttendees: (rehearsalId: string) =>
     ['music-library', 'rehearsal-attendees', rehearsalId] as const,
+  setlists: (from?: string, to?: string) =>
+    ['music-library', 'setlists', from, to] as const,
+  setlistById: (id: string) =>
+    ['music-library', 'setlist', id] as const,
+  setlistItems: (setlistId: string) =>
+    ['music-library', 'setlist-items', setlistId] as const,
+  setlistsByServiceDate: (serviceDateId: string) =>
+    ['music-library', 'setlists-by-service-date', serviceDateId] as const,
 };
 
 // ─── Song Hooks ──────────────────────────────────────────────────────────────
@@ -1108,6 +1121,169 @@ export function useBatchAddAttendees() {
     },
     onError: (error: Error) => {
       toast({ title: 'Error al invitar músicos', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// ─── Setlist Hooks ──────────────────────────────────────────────────────────
+
+export function useSetlists(from?: string, to?: string) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.setlists(from, to),
+    queryFn: () => setlistService.getSetlists(from, to),
+  });
+}
+
+export function useSetlistById(id: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.setlistById(id!),
+    queryFn: () => setlistService.getSetlistById(id!),
+    enabled: !!id,
+  });
+}
+
+export function useSetlistItems(setlistId: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.setlistItems(setlistId!),
+    queryFn: () => setlistService.getSetlistItems(setlistId!),
+    enabled: !!setlistId,
+  });
+}
+
+export function useSetlistsByServiceDate(serviceDateId: string | null) {
+  return useQuery({
+    queryKey: MUSIC_LIBRARY_KEYS.setlistsByServiceDate(serviceDateId!),
+    queryFn: () => setlistService.getSetlistsForServiceDate(serviceDateId!),
+    enabled: !!serviceDateId,
+  });
+}
+
+export function useCreateSetlist() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (setlist: MusicSetlistInsert) => setlistService.createSetlist(setlist),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Setlist creada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al crear la setlist', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useUpdateSetlist() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicSetlistUpdate }) =>
+      setlistService.updateSetlist(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Setlist actualizada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al actualizar la setlist', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useDeleteSetlist() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => setlistService.deleteSetlist(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Setlist eliminada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al eliminar la setlist', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useDuplicateSetlist() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ sourceSetlistId, targetServiceDateId }: { sourceSetlistId: string; targetServiceDateId: string }) =>
+      setlistService.duplicateSetlist(sourceSetlistId, targetServiceDateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Setlist duplicada correctamente' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al duplicar la setlist', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useAddSetlistItem() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (item: MusicSetlistItemInsert) => setlistService.addSetlistItem(item),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Canción agregada a la setlist' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al agregar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useUpdateSetlistItem() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: MusicSetlistItemUpdate }) =>
+      setlistService.updateSetlistItem(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al actualizar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useRemoveSetlistItem() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => setlistService.removeSetlistItem(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+      toast({ title: 'Canción eliminada de la setlist' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al eliminar canción', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useReorderSetlistItems() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (items: { id: string; sort_order: number }[]) =>
+      setlistService.reorderSetlistItems(items),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MUSIC_LIBRARY_KEYS.all });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error al reordenar canciones', description: error.message, variant: 'destructive' });
     },
   });
 }
