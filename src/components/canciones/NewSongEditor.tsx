@@ -6,7 +6,6 @@
 import React, { useState, useCallback } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { createSlidesFromLyrics, splitLyricsIntoSlides } from '@/lib/songToSlides';
-import { saveCustomSong } from '@/lib/songStorage';
 import type { Song, Verse } from '@/types/shared/song';
 import type { SlideGroup } from '@/types/shared/slide';
 import { SongSlide } from './SongSlide';
@@ -228,7 +227,6 @@ export const NewSongEditor: React.FC<NewSongEditorProps> = ({
       }
     };
 
-    saveCustomSong(newSong);
     onSave?.(newSong);
   };
 
