@@ -7,3 +7,7 @@
 
 export * from './songService';
 export * from './songUsageService';
+export * from './musicianService';
+export * from './availabilityService';
+export * from './availabilityHelpers';
+export * from './musicianLabels';

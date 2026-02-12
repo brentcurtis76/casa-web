@@ -657,6 +657,22 @@ export interface SongFull extends MusicSongRow {
   music_audio_references: MusicAudioReferenceRow[];
 }
 
+/** Musician with instruments and recurring availability */
+export interface MusicianFull extends MusicMusicianRow {
+  music_musician_instruments: MusicMusicianInstrumentRow[];
+  music_recurring_availability: MusicRecurringAvailabilityRow[];
+}
+
+/** Service date with assignments and overrides */
+export interface ServiceDateFull extends MusicServiceDateRow {
+  music_service_assignments: (MusicServiceAssignmentRow & {
+    music_musicians: MusicMusicianRow;
+  })[];
+  music_availability_overrides: (MusicAvailabilityOverrideRow & {
+    music_musicians: MusicMusicianRow;
+  })[];
+}
+
 /** Setlist with items joined to songs */
 export interface SetlistWithItems extends MusicSetlistRow {
   music_setlist_items: (MusicSetlistItemRow & {
@@ -687,4 +703,10 @@ export interface SongListFilters {
   offset?: number;
   orderBy?: 'title' | 'number' | 'created_at';
   ascending?: boolean;
+}
+
+export interface MusicianListFilters {
+  query?: string;
+  instrument?: InstrumentType;
+  isActive?: boolean;
 }

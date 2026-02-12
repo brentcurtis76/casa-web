@@ -37,6 +37,7 @@ export const RESOURCE_NAMES = {
   LITURGY_SEASONS: 'liturgy_seasons',
   ORACIONES: 'oraciones',
   CANCIONES: 'canciones',
+  MUSIC_SCHEDULING: 'music_scheduling',
   ELEMENTOS_FIJOS: 'elementos_fijos',
   FINANCIAL: 'financial',
   LEADERSHIP: 'leadership',
@@ -59,6 +60,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'temporadas': RESOURCE_NAMES.LITURGY_SEASONS,
   'oraciones': RESOURCE_NAMES.ORACIONES,
   'canciones': RESOURCE_NAMES.CANCIONES,
+  'musica-programacion': RESOURCE_NAMES.MUSIC_SCHEDULING,
   'elementos-fijos': RESOURCE_NAMES.ELEMENTOS_FIJOS,
   'finanzas': RESOURCE_NAMES.FINANCIAL,
 };
@@ -81,7 +83,7 @@ export const ROLE_DISPLAY_INFO: Record<RoleName, { displayName: string; descript
   },
   worship_coordinator: {
     displayName: 'Coordinador de Alabanza',
-    description: 'Canciones, presentador y constructor de liturgias (lectura)',
+    description: 'Canciones, programación musical, presentador y constructor de liturgias (lectura)',
   },
   comms_volunteer: {
     displayName: 'Voluntario de Comunicaciones',
@@ -125,6 +127,7 @@ export const RESOURCE_DISPLAY_NAMES: Record<ResourceName, string> = {
   liturgy_seasons: 'Temporadas Litúrgicas',
   oraciones: 'Oraciones',
   canciones: 'Canciones',
+  music_scheduling: 'Programación Musical',
   elementos_fijos: 'Elementos Fijos',
   financial: 'Finanzas',
   leadership: 'Liderazgo',
