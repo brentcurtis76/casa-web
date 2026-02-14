@@ -2,14 +2,14 @@
  * MusicDashboard — Summary dashboard for the "Panel" tab.
  *
  * Sections:
- *   1. Stats cards row (6 cards)
+ *   1. Stats cards row (6 clickable cards — navigate to tabs or routes)
  *   2. Upcoming service dates (next 5)
  *   3. Upcoming rehearsals (next 5)
  *   4. Recent activity (last 5 practice sessions)
  *   5. Practice summary bar (conditional)
- *   6. Quick navigation links to other tabs
  */
 
+import { useNavigate } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   useSongs,
@@ -56,6 +56,7 @@ interface MusicDashboardProps {
 }
 
 const MusicDashboard = ({ onNavigateTab }: MusicDashboardProps) => {
+  const navigate = useNavigate();
   const { canRead, loading: permLoading } = usePermissions('music_scheduling');
 
   // Data queries — all use existing hooks
@@ -101,7 +102,7 @@ const MusicDashboard = ({ onNavigateTab }: MusicDashboardProps) => {
         {/* Songs */}
         <button
           type="button"
-          onClick={() => handleNav('musicos')}
+          onClick={() => navigate('/admin/musica/biblioteca')}
           aria-label="Ver canciones en la biblioteca"
           className="p-4 rounded-lg border text-left hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
           style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
