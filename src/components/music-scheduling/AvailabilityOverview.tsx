@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ShieldAlert, Check, X, HelpCircle, Minus } from 'lucide-react';
+import { ShieldAlert, Check, X, HelpCircle, Minus, AlertCircle } from 'lucide-react';
 import { OVERRIDE_STATUS_LABELS, SERVICE_TYPE_LABELS } from '@/lib/music-planning/musicianLabels';
 import { computeAvailabilityStatus } from '@/lib/music-planning/availabilityHelpers';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -62,8 +62,8 @@ const STATUS_COLORS: Record<AvailabilityStatus, string> = {
 const AvailabilityOverview = () => {
   const { canRead, canWrite, loading: permLoading } = usePermissions('music_scheduling');
 
-  const { data: upcomingDates, isLoading: datesLoading } = useUpcomingServiceDates(8);
-  const { data: fullMusicians, isLoading: musiciansLoading } = useMusiciansFullData();
+  const { data: upcomingDates, isLoading: datesLoading, isError: datesError } = useUpcomingServiceDates(8);
+  const { data: fullMusicians, isLoading: musiciansLoading, isError: musiciansError } = useMusiciansFullData();
 
   const serviceDateIds = useMemo(
     () => upcomingDates?.map((d) => d.id) ?? [],
@@ -93,6 +93,18 @@ const AvailabilityOverview = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver la disponibilidad.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (datesError || musiciansError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar la disponibilidad. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -207,6 +219,7 @@ const AvailabilityOverview = () => {
                               className="w-8 h-8 rounded-full flex items-center justify-center mx-auto transition-colors hover:opacity-80"
                               style={{ color: STATUS_COLORS[status] }}
                               title={OVERRIDE_STATUS_LABELS[status as AvailabilityOverrideStatus] ?? 'Sin respuesta'}
+                              aria-label={`Disponibilidad de ${musician.display_name} para ${format(parseISO(sd.date), 'd MMM', { locale: es })}`}
                             >
                               {STATUS_ICONS[status]}
                             </button>

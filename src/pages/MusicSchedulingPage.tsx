@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -27,7 +28,12 @@ import NotificationCenter from '@/components/music-scheduling/NotificationCenter
 import PracticeTracker from '@/components/music-scheduling/PracticeTracker';
 
 const MusicSchedulingPage = () => {
-  const [activeTab, setActiveTab] = useState('panel');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'panel';
+  const validTabs = ['panel', 'musicos', 'fechas', 'disponibilidad', 'ensayos', 'setlists', 'notificaciones', 'practica'];
+  const [activeTab, setActiveTab] = useState(
+    validTabs.includes(initialTab) ? initialTab : 'panel'
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -44,40 +50,42 @@ const MusicSchedulingPage = () => {
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="w-auto">
-              <TabsTrigger value="panel" className="gap-1.5">
-                <LayoutDashboard className="h-3.5 w-3.5" />
-                Panel
-              </TabsTrigger>
-              <TabsTrigger value="musicos" className="gap-1.5">
-                <Users className="h-3.5 w-3.5" />
-                Músicos
-              </TabsTrigger>
-              <TabsTrigger value="fechas" className="gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Fechas de servicio
-              </TabsTrigger>
-              <TabsTrigger value="disponibilidad" className="gap-1.5">
-                <CalendarCheck className="h-3.5 w-3.5" />
-                Disponibilidad
-              </TabsTrigger>
-              <TabsTrigger value="ensayos" className="gap-1.5">
-                <Music className="h-3.5 w-3.5" />
-                Ensayos
-              </TabsTrigger>
-              <TabsTrigger value="setlists" className="gap-1.5">
-                <ListMusic className="h-3.5 w-3.5" />
-                Setlists
-              </TabsTrigger>
-              <TabsTrigger value="notificaciones" className="gap-1.5">
-                <Bell className="h-3.5 w-3.5" />
-                Notificaciones
-              </TabsTrigger>
-              <TabsTrigger value="practica" className="gap-1.5">
-                <Headphones className="h-3.5 w-3.5" />
-                Práctica
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto -mx-4 px-4">
+              <TabsList className="inline-flex w-auto min-w-full md:grid md:w-full md:grid-cols-8">
+                <TabsTrigger value="panel" className="gap-1.5 whitespace-nowrap">
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  Panel
+                </TabsTrigger>
+                <TabsTrigger value="musicos" className="gap-1.5 whitespace-nowrap">
+                  <Users className="h-3.5 w-3.5" />
+                  Músicos
+                </TabsTrigger>
+                <TabsTrigger value="fechas" className="gap-1.5 whitespace-nowrap">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Fechas de servicio
+                </TabsTrigger>
+                <TabsTrigger value="disponibilidad" className="gap-1.5 whitespace-nowrap">
+                  <CalendarCheck className="h-3.5 w-3.5" />
+                  Disponibilidad
+                </TabsTrigger>
+                <TabsTrigger value="ensayos" className="gap-1.5 whitespace-nowrap">
+                  <Music className="h-3.5 w-3.5" />
+                  Ensayos
+                </TabsTrigger>
+                <TabsTrigger value="setlists" className="gap-1.5 whitespace-nowrap">
+                  <ListMusic className="h-3.5 w-3.5" />
+                  Setlists
+                </TabsTrigger>
+                <TabsTrigger value="notificaciones" className="gap-1.5 whitespace-nowrap">
+                  <Bell className="h-3.5 w-3.5" />
+                  Notificaciones
+                </TabsTrigger>
+                <TabsTrigger value="practica" className="gap-1.5 whitespace-nowrap">
+                  <Headphones className="h-3.5 w-3.5" />
+                  Práctica
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="panel" className="mt-6">
               <MusicDashboard onNavigateTab={setActiveTab} />

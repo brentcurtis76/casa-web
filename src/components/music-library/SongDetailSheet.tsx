@@ -6,6 +6,7 @@
  */
 
 import { useSongById } from '@/hooks/useMusicLibrary';
+import { useNavigate } from 'react-router-dom';
 import {
   Sheet,
   SheetContent,
@@ -18,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Pencil, Trash2, Music, Link2, BarChart3, FileText } from 'lucide-react';
+import { Pencil, Trash2, Music, Link2, BarChart3, FileText, Headphones } from 'lucide-react';
 import { TEMPO_LABELS, THEME_LABELS, THEME_COLORS, MOMENT_LABELS } from '@/lib/canciones/songTagsManager';
 import { formatDuration } from '@/lib/music-planning/formatters';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -47,6 +48,7 @@ const VERSE_TYPE_LABELS: Record<VerseType, string> = {
 
 const SongDetailSheet = ({ songId, open, onOpenChange, canWrite, canManage, onEditClick, onDeleteClick }: SongDetailSheetProps) => {
   const { data: song, isLoading } = useSongById(songId);
+  const navigate = useNavigate();
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -105,6 +107,17 @@ const SongDetailSheet = ({ songId, open, onOpenChange, canWrite, canManage, onEd
                     )}
                   </div>
                 </div>
+
+                {/* Practice link button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs mt-2"
+                  onClick={() => navigate('/admin/musica/programacion?tab=practica')}
+                >
+                  <Headphones className="h-3.5 w-3.5" />
+                  Practicar esta canción
+                </Button>
               </SheetHeader>
 
               {/* Meta row */}
@@ -159,24 +172,26 @@ const SongDetailSheet = ({ songId, open, onOpenChange, canWrite, canManage, onEd
 
             {/* Tabs */}
             <Tabs defaultValue="arreglos" className="flex-1 flex flex-col overflow-hidden">
-              <TabsList className="mx-6 mt-4 w-auto">
-                <TabsTrigger value="arreglos" className="gap-1.5">
-                  <Music className="h-3.5 w-3.5" />
-                  Arreglos
-                </TabsTrigger>
-                <TabsTrigger value="referencias" className="gap-1.5">
-                  <Link2 className="h-3.5 w-3.5" />
-                  Referencias
-                </TabsTrigger>
-                <TabsTrigger value="uso" className="gap-1.5">
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  Uso
-                </TabsTrigger>
-                <TabsTrigger value="letra" className="gap-1.5">
-                  <FileText className="h-3.5 w-3.5" />
-                  Letra
-                </TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto mx-6 mt-4">
+                <TabsList className="inline-flex w-auto min-w-full md:grid md:w-full md:grid-cols-4">
+                  <TabsTrigger value="arreglos" className="gap-1.5 whitespace-nowrap">
+                    <Music className="h-3.5 w-3.5" />
+                    Arreglos
+                  </TabsTrigger>
+                  <TabsTrigger value="referencias" className="gap-1.5 whitespace-nowrap">
+                    <Link2 className="h-3.5 w-3.5" />
+                    Referencias
+                  </TabsTrigger>
+                  <TabsTrigger value="uso" className="gap-1.5 whitespace-nowrap">
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Uso
+                  </TabsTrigger>
+                  <TabsTrigger value="letra" className="gap-1.5 whitespace-nowrap">
+                    <FileText className="h-3.5 w-3.5" />
+                    Letra
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               <ScrollArea className="flex-1">
                 <div className="p-6">

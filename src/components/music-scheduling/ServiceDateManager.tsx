@@ -47,7 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, ShieldAlert, Pencil, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, ShieldAlert, Pencil, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
 import {
   SERVICE_TYPE_LABELS,
   SERVICE_STATUS_LABELS,
@@ -78,7 +78,7 @@ const ServiceDateManager = () => {
   const fromDate = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
   const toDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
 
-  const { data: serviceDates, isLoading } = useServiceDates(fromDate, toDate);
+  const { data: serviceDates, isLoading, isError } = useServiceDates(fromDate, toDate);
   const { data: selectedServiceDate } = useServiceDateById(selectedDateId);
   const { data: overridesForSelected } = useOverridesForDate(selectedDateId);
   const { data: assignmentsForSelected } = useAssignmentsForDate(selectedDateId);
@@ -115,6 +115,18 @@ const ServiceDateManager = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver las fechas de servicio.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar las fechas de servicio. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -282,6 +294,7 @@ const ServiceDateManager = () => {
                           setDeletingDateId(selectedServiceDate.id);
                           setDeleteConfirmOpen(true);
                         }}
+                        aria-label="Eliminar fecha de servicio"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

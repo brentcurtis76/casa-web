@@ -61,6 +61,7 @@ import {
   ChevronDown,
   Music,
   Copy,
+  AlertCircle,
 } from 'lucide-react';
 import { SETLIST_STATUS_LABELS, LITURGICAL_MOMENT_LABELS } from '@/lib/music-planning/setlistLabels';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -106,7 +107,7 @@ const SetlistBuilder = () => {
   const [editingKeyValue, setEditingKeyValue] = useState('');
 
   // Data
-  const { data: setlists, isLoading } = useSetlists();
+  const { data: setlists, isLoading, isError } = useSetlists();
   const { data: selectedSetlist } = useSetlistById(selectedSetlistId);
   const { data: upcomingServiceDates } = useUpcomingServiceDates(20);
 
@@ -135,6 +136,18 @@ const SetlistBuilder = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver los setlists. Contacta al administrador.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar los setlists. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -340,6 +353,7 @@ const SetlistBuilder = () => {
                             setEditingSetlistId(selectedSetlistId);
                             setEditDialogOpen(true);
                           }}
+                          aria-label="Editar setlist"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -360,6 +374,7 @@ const SetlistBuilder = () => {
                         size="sm"
                         className="text-red-500 hover:text-red-600 border-red-200"
                         onClick={() => setDeleteConfirmOpen(true)}
+                        aria-label="Eliminar setlist"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -411,6 +426,7 @@ const SetlistBuilder = () => {
                               className="h-6 w-6 p-0"
                               disabled={index === 0}
                               onClick={() => handleMoveSort(selectedSetlist.music_setlist_items, index, -1)}
+                              aria-label="Mover arriba"
                             >
                               <ChevronUp className="h-3.5 w-3.5" />
                             </Button>
@@ -420,6 +436,7 @@ const SetlistBuilder = () => {
                               className="h-6 w-6 p-0"
                               disabled={index === selectedSetlist.music_setlist_items.length - 1}
                               onClick={() => handleMoveSort(selectedSetlist.music_setlist_items, index, 1)}
+                              aria-label="Mover abajo"
                             >
                               <ChevronDown className="h-3.5 w-3.5" />
                             </Button>
@@ -566,6 +583,7 @@ const SetlistBuilder = () => {
                               setDeletingItemId(si.id);
                               setDeleteItemConfirmOpen(true);
                             }}
+                            aria-label="Eliminar canción del setlist"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

@@ -57,6 +57,7 @@ import {
   Link2,
   Music,
   Users,
+  AlertCircle,
 } from 'lucide-react';
 import { REHEARSAL_STATUS_LABELS, RSVP_STATUS_LABELS } from '@/lib/music-planning/rehearsalLabels';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -106,7 +107,7 @@ const RehearsalManager = () => {
   const [editingNotesValue, setEditingNotesValue] = useState('');
 
   // Data
-  const { data: rehearsals, isLoading } = useRehearsals();
+  const { data: rehearsals, isLoading, isError } = useRehearsals();
   const { data: selectedRehearsal } = useRehearsalById(selectedRehearsalId);
   const { data: activeMusicians } = useMusicians({ isActive: true });
 
@@ -155,6 +156,18 @@ const RehearsalManager = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver los ensayos. Contacta al administrador.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar los ensayos. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -387,6 +400,7 @@ const RehearsalManager = () => {
                             setEditingRehearsalId(selectedRehearsalId);
                             setEditDialogOpen(true);
                           }}
+                          aria-label="Editar ensayo"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -398,6 +412,7 @@ const RehearsalManager = () => {
                         size="sm"
                         className="text-red-500 hover:text-red-600 border-red-200"
                         onClick={() => setDeleteConfirmOpen(true)}
+                        aria-label="Eliminar ensayo"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -449,6 +464,7 @@ const RehearsalManager = () => {
                               className="h-6 w-6 p-0"
                               disabled={index === 0}
                               onClick={() => handleMoveSort(selectedRehearsal.music_rehearsal_songs, index, -1)}
+                              aria-label="Mover arriba"
                             >
                               <ChevronUp className="h-3.5 w-3.5" />
                             </Button>
@@ -458,6 +474,7 @@ const RehearsalManager = () => {
                               className="h-6 w-6 p-0"
                               disabled={index === selectedRehearsal.music_rehearsal_songs.length - 1}
                               onClick={() => handleMoveSort(selectedRehearsal.music_rehearsal_songs, index, 1)}
+                              aria-label="Mover abajo"
                             >
                               <ChevronDown className="h-3.5 w-3.5" />
                             </Button>
@@ -512,6 +529,7 @@ const RehearsalManager = () => {
                               setDeletingSongId(rs.id);
                               setDeleteSongConfirmOpen(true);
                             }}
+                            aria-label="Eliminar canción del ensayo"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -605,6 +623,7 @@ const RehearsalManager = () => {
                                 setDeletingAttendeeId(att.id);
                                 setDeleteAttendeeConfirmOpen(true);
                               }}
+                              aria-label="Eliminar músico del ensayo"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>

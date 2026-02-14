@@ -49,6 +49,7 @@ import {
   Music,
   Users,
   Trophy,
+  AlertCircle,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { STEM_TYPE_LABELS } from '@/lib/music-planning/practiceLabels';
@@ -96,7 +97,7 @@ const PracticeTracker = () => {
   }, [filterSongId, filterFrom, filterTo]);
 
   // Data
-  const { data: sessions, isLoading: sessionsLoading } = usePracticeSessions(filters);
+  const { data: sessions, isLoading: sessionsLoading, isError } = usePracticeSessions(filters);
   const { data: stats } = usePracticeStats();
   const { data: leaderboard } = usePracticeSongLeaderboard(5);
   const { data: songs } = useSongs();
@@ -121,6 +122,18 @@ const PracticeTracker = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver las sesiones de práctica. Contacta al administrador.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar las sesiones de práctica. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -352,6 +365,7 @@ const PracticeTracker = () => {
                           size="sm"
                           className="h-8 w-8 p-0"
                           onClick={() => handleEdit(session.id)}
+                          aria-label="Editar sesión"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -365,6 +379,7 @@ const PracticeTracker = () => {
                             setDeletingSessionId(session.id);
                             setDeleteConfirmOpen(true);
                           }}
+                          aria-label="Eliminar sesión"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>

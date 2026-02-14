@@ -19,7 +19,6 @@ const CancionesPage: React.FC = () => {
   };
 
   const handleSaveSong = (song: Song) => {
-    console.log('Canción guardada:', song);
     setActiveTab('repository');
   };
 

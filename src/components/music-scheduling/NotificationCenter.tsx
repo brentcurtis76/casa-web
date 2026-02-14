@@ -35,6 +35,7 @@ import {
   Mail,
   MessageSquare,
   Send,
+  AlertCircle,
 } from 'lucide-react';
 import {
   NOTIFICATION_TYPE_LABELS,
@@ -77,7 +78,7 @@ const NotificationCenter: React.FC = () => {
     ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
   }), [typeFilter, channelFilter, statusFilter]);
 
-  const { data: logs, isLoading } = useNotificationLogs(filters);
+  const { data: logs, isLoading, isError } = useNotificationLogs(filters);
   const { data: stats } = useNotificationStats();
   const deleteLog = useDeleteNotificationLog();
 
@@ -108,6 +109,18 @@ const NotificationCenter: React.FC = () => {
         <AlertTitle>Acceso denegado</AlertTitle>
         <AlertDescription>
           No tienes permisos para ver las notificaciones. Contacta al administrador.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Error al cargar las notificaciones. Intenta nuevamente.
         </AlertDescription>
       </Alert>
     );
@@ -258,6 +271,7 @@ const NotificationCenter: React.FC = () => {
                   size="sm"
                   onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
                   className="shrink-0"
+                  aria-label={expandedLogId === log.id ? "Contraer detalles" : "Expandir detalles"}
                 >
                   {expandedLogId === log.id ? (
                     <ChevronUp className="h-4 w-4" />
@@ -276,6 +290,7 @@ const NotificationCenter: React.FC = () => {
                       setDeletingLogId(log.id);
                       setDeleteConfirmOpen(true);
                     }}
+                    aria-label="Eliminar notificación"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

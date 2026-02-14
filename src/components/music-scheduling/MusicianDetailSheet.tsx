@@ -276,20 +276,22 @@ const MusicianDetailSheet = ({
 
             {/* Tabs */}
             <Tabs defaultValue="instrumentos" className="flex-1 flex flex-col overflow-hidden">
-              <TabsList className="mx-6 mt-4 w-auto">
-                <TabsTrigger value="instrumentos" className="gap-1.5">
-                  <Music className="h-3.5 w-3.5" />
-                  Instrumentos
-                </TabsTrigger>
-                <TabsTrigger value="disponibilidad" className="gap-1.5">
-                  <CalendarCheck className="h-3.5 w-3.5" />
-                  Disponibilidad
-                </TabsTrigger>
-                <TabsTrigger value="excepciones" className="gap-1.5">
-                  <CalendarX2 className="h-3.5 w-3.5" />
-                  Excepciones
-                </TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto mx-6 mt-4">
+                <TabsList className="inline-flex w-auto min-w-full md:grid md:w-full md:grid-cols-3">
+                  <TabsTrigger value="instrumentos" className="gap-1.5 whitespace-nowrap">
+                    <Music className="h-3.5 w-3.5" />
+                    Instrumentos
+                  </TabsTrigger>
+                  <TabsTrigger value="disponibilidad" className="gap-1.5 whitespace-nowrap">
+                    <CalendarCheck className="h-3.5 w-3.5" />
+                    Disponibilidad
+                  </TabsTrigger>
+                  <TabsTrigger value="excepciones" className="gap-1.5 whitespace-nowrap">
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Excepciones
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               <ScrollArea className="flex-1">
                 <div className="p-6">
@@ -367,6 +369,7 @@ const MusicianDetailSheet = ({
                                       setDeletingInstrument(inst);
                                       setDeleteInstrumentOpen(true);
                                     }}
+                                    aria-label="Eliminar instrumento"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
@@ -437,6 +440,7 @@ const MusicianDetailSheet = ({
                                       setDeletingPatternId(pattern.id);
                                       setDeletePatternOpen(true);
                                     }}
+                                    aria-label="Eliminar patrón de disponibilidad"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
