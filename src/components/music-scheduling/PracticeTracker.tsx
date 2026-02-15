@@ -7,7 +7,7 @@
  *   Bottom: Session table + leaderboard
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   usePracticeSessions,
@@ -15,6 +15,7 @@ import {
   usePracticeSongLeaderboard,
   useDeletePracticeSession,
   useSongs,
+  useArrangements,
 } from '@/hooks/useMusicLibrary';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +59,7 @@ import { es } from 'date-fns/locale';
 import type { PracticeSessionFilters } from '@/lib/music-planning/practiceService';
 import type { StemType } from '@/types/musicPlanning';
 import PracticeLogDialog from './PracticeLogDialog';
+import StemPlayer from './StemPlayer';
 
 const ALL_SONGS = '__all__';
 
@@ -71,13 +73,22 @@ const formatDuration = (seconds: number | null): string => {
   return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
 };
 
-const PracticeTracker = () => {
+interface PracticeTrackerProps {
+  songId?: string | null;
+}
+
+const PracticeTracker = ({ songId: propSongId }: PracticeTrackerProps) => {
   const { canRead, canWrite, canManage, loading: permLoading } = usePermissions('music_scheduling');
 
   // Filters
   const [filterSongId, setFilterSongId] = useState<string>(ALL_SONGS);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+
+  // Stem Player state
+  const [stemPlayerOpen, setStemPlayerOpen] = useState(false);
+  const [selectedSongForPlayer, setSelectedSongForPlayer] = useState<string | null>(null);
+  const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
 
   // Dialog state
   const [logDialogOpen, setLogDialogOpen] = useState(false);
@@ -86,6 +97,14 @@ const PracticeTracker = () => {
   // Delete confirmation
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+
+  // Auto-select song if songId prop provided
+  useEffect(() => {
+    if (propSongId && propSongId !== filterSongId) {
+      setFilterSongId(propSongId);
+      setSelectedSongForPlayer(propSongId);
+    }
+  }, [propSongId, filterSongId]);
 
   // Build filters object
   const filters: PracticeSessionFilters | undefined = useMemo(() => {
@@ -101,9 +120,14 @@ const PracticeTracker = () => {
   const { data: stats } = usePracticeStats();
   const { data: leaderboard } = usePracticeSongLeaderboard(5);
   const { data: songs } = useSongs();
+  const { data: arrangements } = useArrangements(selectedSongForPlayer);
 
   // Mutations
   const deleteSession = useDeletePracticeSession();
+
+  // Get selected song and arrangement details
+  const selectedSong = songs?.find(s => s.id === selectedSongForPlayer);
+  const selectedArrangement = arrangements?.find(a => a.id === selectedArrangementId);
 
   // Permission gate
   if (permLoading) {
@@ -159,8 +183,103 @@ const PracticeTracker = () => {
     setLogDialogOpen(true);
   };
 
+  const handleOpenStemPlayer = () => {
+    if (selectedSongForPlayer && selectedArrangementId) {
+      setStemPlayerOpen(true);
+    }
+  };
+
+  const handleCloseStemPlayer = () => {
+    setStemPlayerOpen(false);
+  };
+
+  // If Stem Player is open, show only Stem Player
+  if (stemPlayerOpen && selectedSong && selectedArrangementId) {
+    return (
+      <div className="space-y-6">
+        <StemPlayer
+          songId={selectedSong.id}
+          arrangementId={selectedArrangementId}
+          songTitle={selectedSong.title}
+          arrangementName={selectedArrangement?.name}
+          onClose={handleCloseStemPlayer}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Song/Arrangement Selector + Stem Player Button */}
+      <div className="p-4 bg-white rounded-lg border border-gray-200">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: CASA_BRAND.colors.primary.black }}>
+          Stem Player
+        </h3>
+        <div className="flex flex-wrap items-end gap-4">
+          {/* Song Selector */}
+          <div className="space-y-1 flex-1 min-w-[200px]">
+            <Label className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Canción</Label>
+            <Select value={selectedSongForPlayer || '__none__'} onValueChange={(val) => {
+              if (val === '__none__') {
+                setSelectedSongForPlayer(null);
+                setSelectedArrangementId(null);
+              } else {
+                setSelectedSongForPlayer(val);
+                setSelectedArrangementId(null);
+              }
+            }}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Seleccionar canción..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">(Ninguna)</SelectItem>
+                {songs?.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Arrangement Selector */}
+          <div className="space-y-1 flex-1 min-w-[200px]">
+            <Label className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Arreglo</Label>
+            <Select
+              value={selectedArrangementId || '__none__'}
+              onValueChange={(val) => setSelectedArrangementId(val === '__none__' ? null : val)}
+              disabled={!selectedSongForPlayer}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Seleccionar arreglo..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">(Ninguno)</SelectItem>
+                {arrangements?.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}{a.arrangement_key ? ` (${a.arrangement_key})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Open Stem Player Button */}
+          <Button
+            onClick={handleOpenStemPlayer}
+            disabled={!selectedSongForPlayer || !selectedArrangementId}
+            className="gap-2"
+            style={{
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.black,
+            }}
+          >
+            <Headphones className="h-4 w-4" />
+            Abrir Stem Player
+          </Button>
+        </div>
+      </div>
+
       {/* Stats cards */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

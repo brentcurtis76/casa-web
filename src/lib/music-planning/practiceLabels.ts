@@ -1,8 +1,8 @@
 import type { StemType } from '@/types/musicPlanning';
 
 export const STEM_TYPE_LABELS: Record<StemType, string> = {
-  click: 'Click',
-  cues: 'Cues',
+  click: 'Clic',
+  cues: 'Señales',
   pads: 'Pads',
   bass: 'Bajo',
   drums: 'Batería',

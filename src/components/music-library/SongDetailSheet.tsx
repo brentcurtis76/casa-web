@@ -113,7 +113,7 @@ const SongDetailSheet = ({ songId, open, onOpenChange, canWrite, canManage, onEd
                   variant="ghost"
                   size="sm"
                   className="gap-1.5 text-xs mt-2"
-                  onClick={() => navigate('/admin/musica/programacion?tab=practica')}
+                  onClick={() => navigate(`/admin/musica/programacion?tab=practica&songId=${song.id}`)}
                 >
                   <Headphones className="h-3.5 w-3.5" />
                   Practicar esta canción

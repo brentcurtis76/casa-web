@@ -30,6 +30,7 @@ import PracticeTracker from '@/components/music-scheduling/PracticeTracker';
 const MusicSchedulingPage = () => {
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'panel';
+  const songId = searchParams.get('songId');
   const validTabs = ['panel', 'musicos', 'fechas', 'disponibilidad', 'ensayos', 'setlists', 'notificaciones', 'practica'];
   const [activeTab, setActiveTab] = useState(
     validTabs.includes(initialTab) ? initialTab : 'panel'
@@ -116,7 +117,7 @@ const MusicSchedulingPage = () => {
             </TabsContent>
 
             <TabsContent value="practica" className="mt-6">
-              <PracticeTracker />
+              <PracticeTracker songId={songId} />
             </TabsContent>
           </Tabs>
         </div>
