@@ -440,17 +440,18 @@ const PayrollManager = ({ canWrite }: PayrollManagerProps) => {
         )}
       </div>
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      )}
+      {/* Loading and Content State */}
+      <div aria-live="polite" aria-busy={isLoading}>
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        )}
 
-      {/* Empty State */}
-      {!isLoading && payrollEntries.length === 0 && (
+        {/* Empty State */}
+        {!isLoading && payrollEntries.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-gray-500">
             <Receipt className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -488,10 +489,10 @@ const PayrollManager = ({ canWrite }: PayrollManagerProps) => {
                     <TableHead>Nombre</TableHead>
                     <TableHead>RUT</TableHead>
                     <TableHead className="text-right">Sueldo Bruto</TableHead>
-                    <TableHead className="text-right">AFP</TableHead>
-                    <TableHead className="text-right">Salud</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">AFP</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">Salud</TableHead>
                     <TableHead className="text-right">Imp. Único</TableHead>
-                    <TableHead className="text-right">Otros</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">Otros</TableHead>
                     <TableHead className="text-right">Sueldo Líquido</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow>
@@ -515,10 +516,10 @@ const PayrollManager = ({ canWrite }: PayrollManagerProps) => {
                     <TableCell>Total ({payrollEntries.length})</TableCell>
                     <TableCell />
                     <TableCell className="font-mono text-right">{formatCLP(totals.gross)}</TableCell>
-                    <TableCell className="font-mono text-right">{formatCLP(totals.afp)}</TableCell>
-                    <TableCell className="font-mono text-right">{formatCLP(totals.health)}</TableCell>
+                    <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(totals.afp)}</TableCell>
+                    <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(totals.health)}</TableCell>
                     <TableCell className="font-mono text-right">{formatCLP(totals.tax)}</TableCell>
-                    <TableCell className="font-mono text-right">{formatCLP(totals.other)}</TableCell>
+                    <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(totals.other)}</TableCell>
                     <TableCell className="font-mono text-right text-amber-700">
                       {formatCLP(totals.net)}
                     </TableCell>
@@ -537,7 +538,8 @@ const PayrollManager = ({ canWrite }: PayrollManagerProps) => {
             previousSummary={previousSummary}
           />
         </>
-      )}
+        )}
+      </div>
 
       {/* Tax Settings Dialog */}
       <TaxSettingsDialog
@@ -562,7 +564,7 @@ const PayrollManager = ({ canWrite }: PayrollManagerProps) => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmActionHandler}>Confirmar</AlertDialogAction>
+            <AlertDialogAction onClick={confirmActionHandler}>Sí, confirmar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -604,10 +606,10 @@ const PayrollTableRow = ({ entry, isExpanded, onToggle, taxTables, year, month }
         <TableCell className="font-medium">{entry.personnel_name}</TableCell>
         <TableCell className="text-sm text-gray-500">{maskRut(entry.personnel_rut)}</TableCell>
         <TableCell className="font-mono text-right">{formatCLP(entry.gross)}</TableCell>
-        <TableCell className="font-mono text-right">{formatCLP(entry.afp_deduction)}</TableCell>
-        <TableCell className="font-mono text-right">{formatCLP(entry.isapre_deduction)}</TableCell>
+        <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(entry.afp_deduction)}</TableCell>
+        <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(entry.isapre_deduction)}</TableCell>
         <TableCell className="font-mono text-right">{formatCLP(entry.impuesto_unico)}</TableCell>
-        <TableCell className="font-mono text-right">{formatCLP(entry.other_deductions)}</TableCell>
+        <TableCell className="font-mono text-right hidden md:table-cell">{formatCLP(entry.other_deductions)}</TableCell>
         <TableCell className="font-mono text-right font-semibold">{formatCLP(entry.net)}</TableCell>
         <TableCell>
           <Badge variant="outline" className={statusInfo.className}>

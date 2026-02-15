@@ -183,7 +183,7 @@ const CategoryManager = ({ open, onOpenChange, canWrite }: CategoryManagerProps)
             </SheetDescription>
           </SheetHeader>
 
-          <div className="mt-6 space-y-6">
+          <div className="mt-6 space-y-6" aria-live="polite" aria-busy={isLoading}>
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

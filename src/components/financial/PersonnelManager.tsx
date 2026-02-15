@@ -115,40 +115,49 @@ const PersonnelManager = ({ canWrite }: PersonnelManagerProps) => {
         </Button>
       </div>
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6 space-y-3">
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-4 w-36" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* Loading State and Content */}
+      <div aria-live="polite" aria-busy={isLoading}>
+        {isLoading && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardContent className="p-6 space-y-3">
+                  <Skeleton className="h-6 w-48" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-36" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
-      {/* Empty State */}
-      {!isLoading && personnel.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-gray-500">
-            <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium">No hay personal registrado</p>
-            <p className="text-sm mt-1">
-              {statusFilter === 'active' && 'No hay personal activo.'}
-              {statusFilter === 'inactive' && 'No hay personal inactivo.'}
-              {statusFilter === 'all' && 'Agregue personal usando el botón de arriba.'}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+        {/* Empty State */}
+        {!isLoading && personnel.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium">No hay personal registrado</p>
+              <p className="text-sm mt-1">
+                {statusFilter === 'active' && 'No hay personal activo.'}
+                {statusFilter === 'inactive' && 'No hay personal inactivo.'}
+                {statusFilter === 'all' && 'Agregue personal usando el botón de arriba.'}
+              </p>
+              {canWrite && statusFilter === 'all' && (
+                <div className="mt-6">
+                  <Button onClick={handleAdd}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Agregar Personal
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Personnel Cards */}
-      {!isLoading && personnel.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
+        {/* Personnel Cards */}
+        {!isLoading && personnel.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
           {personnel.map((person) => (
             <Card key={person.id} className={!person.is_active ? 'opacity-60' : ''}>
               <CardContent className="p-6">
@@ -239,7 +248,8 @@ const PersonnelManager = ({ canWrite }: PersonnelManagerProps) => {
             </Card>
           ))}
         </div>
-      )}
+        )}
+      </div>
 
       {/* Toggle Confirmation Dialog */}
       <AlertDialog open={!!confirmToggle} onOpenChange={(open) => { if (!open) setConfirmToggle(null); }}>

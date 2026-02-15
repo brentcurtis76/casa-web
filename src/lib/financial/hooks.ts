@@ -182,11 +182,12 @@ export function useActiveCategories() {
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: (
       data: Omit<FinancialCategory, 'id' | 'created_at'>
-    ) => financialService.createCategory(supabase, data),
+    ) => financialService.createCategory(supabase, data, user?.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
       toast({ title: 'Categoría creada correctamente' });
@@ -204,6 +205,7 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: ({
@@ -212,7 +214,7 @@ export function useUpdateCategory() {
     }: {
       id: string;
       data: Partial<CategoryUpdateFields>;
-    }) => financialService.updateCategory(supabase, id, data),
+    }) => financialService.updateCategory(supabase, id, data, user?.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.all });
       toast({ title: 'Categoría actualizada correctamente' });

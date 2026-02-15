@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Personnel, ContractType } from '@/types/financial';
+import { maskRut } from '@/types/financial';
 import { validateRut } from './rutValidator';
 import { writeAuditLog } from './financialService';
 
@@ -31,6 +32,22 @@ export interface PersonnelCreateData {
 }
 
 export type PersonnelUpdateData = Partial<PersonnelCreateData>;
+
+// ─── Sensitive Data Redaction ───────────────────────────────────────────────
+
+/**
+ * Redact sensitive PII fields before writing to audit log.
+ * Masks RUT to show only last 5 characters.
+ * Masks bank account to show only last 4 digits.
+ */
+export function redactSensitiveFields(details: Record<string, unknown>): Record<string, unknown> {
+  const redacted = { ...details };
+  if (typeof redacted.rut === 'string') redacted.rut = maskRut(redacted.rut);
+  if (typeof redacted.bank_account_number === 'string') {
+    redacted.bank_account_number = '****' + redacted.bank_account_number.slice(-4);
+  }
+  return redacted;
+}
 
 // ─── Service Functions ──────────────────────────────────────────────────────
 
@@ -84,7 +101,14 @@ export async function createPersonnel(
     writeAuditLog(client, userId, 'fin_personnel_create', {
       resource_type: 'fin_personnel',
       resource_id: (result as Personnel).id,
-      name: data.name,
+      changes: redactSensitiveFields({
+        name: data.name,
+        rut: data.rut,
+        role_position: data.role_position,
+        contract_type: data.contract_type,
+        gross_salary: data.gross_salary,
+        bank_account_number: data.bank_account_number,
+      }),
     });
   }
 
@@ -121,6 +145,7 @@ export async function updatePersonnel(
     writeAuditLog(client, userId, 'fin_personnel_update', {
       resource_type: 'fin_personnel',
       resource_id: id,
+      changes: redactSensitiveFields(data as Record<string, unknown>),
     });
   }
 

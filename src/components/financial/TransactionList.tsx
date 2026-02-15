@@ -312,24 +312,39 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
       </div>
 
       {/* Table */}
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : transactions.length === 0 ? (
-        <div className="py-16 text-center text-muted-foreground">
-          <p className="text-lg font-medium">No hay transacciones</p>
-          <p className="text-sm mt-1">
-            {hasActiveFilters
-              ? 'No hay transacciones para el período seleccionado'
-              : 'Aún no se han registrado transacciones'}
-          </p>
-        </div>
-      ) : (
-        <>
-          <Table>
+      <div aria-live="polite" aria-busy={isLoading}>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="py-16 text-center text-muted-foreground">
+            <p className="text-lg font-medium">No hay transacciones</p>
+            <p className="text-sm mt-1">
+              {hasActiveFilters
+                ? 'No hay transacciones para el período seleccionado'
+                : 'Aún no se han registrado transacciones'}
+            </p>
+            {canWrite && (
+              <div className="mt-6 flex gap-2 justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-green-600 border-green-200 hover:bg-green-50"
+                  onClick={() => handleNewTransaction('income')}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Registrar transacción
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <Table>
             <TableHeader>
               <TableRow>
                 <TableHead
@@ -338,6 +353,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
                   role="button"
                   tabIndex={0}
                   aria-label="Ordenar por fecha"
+                  aria-sort={sortBy === 'date' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   <div className="flex items-center gap-1">
                     Fecha
@@ -355,6 +371,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
                   role="button"
                   tabIndex={0}
                   aria-label="Ordenar por monto"
+                  aria-sort={sortBy === 'amount' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   <div className="flex items-center gap-1 justify-end">
                     Monto
@@ -364,7 +381,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
                     )}
                   </div>
                 </TableHead>
-                <TableHead className="text-center">Conciliado</TableHead>
+                <TableHead className="text-center hidden md:table-cell">Conciliado</TableHead>
                 {canWrite && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
             </TableHeader>
@@ -391,7 +408,7 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
                       {tx.type === 'income' ? '+' : '-'}{formatCLP(tx.amount)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="text-center hidden md:table-cell">
                     <Checkbox
                       checked={tx.reconciled}
                       onCheckedChange={() => canWrite && handleToggleReconciled(tx)}
@@ -423,58 +440,64 @@ const TransactionList = ({ canWrite }: TransactionListProps) => {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+            </Table>
+            </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <button
-                    className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
-                    onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    disabled={page === 0}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Anterior
-                  </button>
-                </PaginationItem>
-                {paginationItems.map((item, idx) =>
-                  item.type === 'ellipsis' ? (
-                    <PaginationItem key={`e-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={item.value}>
-                      <PaginationLink
-                        isActive={page === item.value}
-                        onClick={() => setPage(item.value)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {item.value + 1}
-                      </PaginationLink>
-                    </PaginationItem>
-                  )
-                )}
-                <PaginationItem>
-                  <button
-                    className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
-                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                    disabled={page >= totalPages - 1}
-                  >
-                    Siguiente
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          )}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination aria-label="Paginación de transacciones">
+                <PaginationContent>
+                  <PaginationItem>
+                    <button
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      aria-label="Página anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </button>
+                  </PaginationItem>
+                  {paginationItems.map((item, idx) =>
+                    item.type === 'ellipsis' ? (
+                      <PaginationItem key={`e-${idx}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={item.value}>
+                        <PaginationLink
+                          isActive={page === item.value}
+                          onClick={() => setPage(item.value)}
+                          style={{ cursor: 'pointer' }}
+                          aria-label={`Página ${item.value + 1}`}
+                          aria-current={page === item.value ? 'page' : undefined}
+                        >
+                          {item.value + 1}
+                        </PaginationLink>
+                      </PaginationItem>
+                    )
+                  )}
+                  <PaginationItem>
+                    <button
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
+                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                      disabled={page >= totalPages - 1}
+                      aria-label="Página siguiente"
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
 
-          <div className="text-xs text-muted-foreground text-center">
-            Mostrando {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, totalCount)} de {totalCount} transacciones
-          </div>
-        </>
-      )}
+            <div className="text-xs text-muted-foreground text-center" aria-label={`Página ${page + 1} de ${totalPages}`}>
+              Mostrando {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, totalCount)} de {totalCount} transacciones
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Transaction Form Dialog */}
       <TransactionForm

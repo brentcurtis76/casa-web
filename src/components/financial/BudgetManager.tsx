@@ -443,13 +443,14 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
           )}
 
           {/* Budget Table */}
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : !hasBudgets && categories.length > 0 ? (
+          <div aria-live="polite" aria-busy={isLoading}>
+            {isLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : !hasBudgets && categories.length > 0 ? (
             /* Empty State */
             <Card>
               <CardContent className="py-12 text-center text-gray-500">
@@ -528,7 +529,8 @@ const BudgetManager = ({ canWrite }: BudgetManagerProps) => {
                 </Table>
               </CardContent>
             </Card>
-          )}
+            )}
+          </div>
 
           {/* Budget vs Actual Chart */}
           {budgetVsActual.length > 0 && (

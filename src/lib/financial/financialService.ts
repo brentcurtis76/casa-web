@@ -219,7 +219,8 @@ export async function getCategories(
 
 export async function createCategory(
   client: SupabaseClient,
-  data: Omit<FinancialCategory, 'id' | 'created_at'>
+  data: Omit<FinancialCategory, 'id' | 'created_at'>,
+  userId?: string
 ): Promise<{ data: FinancialCategory | null; error: Error | null }> {
   const { data: result, error } = await client
     .from('church_fin_categories')
@@ -228,13 +229,24 @@ export async function createCategory(
     .single();
 
   if (error) return { data: null, error };
+
+  // Audit log: fire-and-forget
+  if (userId) {
+    writeAuditLog(client, userId, 'fin_category_create', {
+      resource_type: 'fin_category',
+      resource_id: (result as FinancialCategory).id,
+      changes: { name: data.name, type: data.type },
+    });
+  }
+
   return { data: result as FinancialCategory, error: null };
 }
 
 export async function updateCategory(
   client: SupabaseClient,
   id: string,
-  data: Partial<CategoryUpdateFields>
+  data: Partial<CategoryUpdateFields>,
+  userId?: string
 ): Promise<{ data: FinancialCategory | null; error: Error | null }> {
   const { data: result, error } = await client
     .from('church_fin_categories')
@@ -244,6 +256,16 @@ export async function updateCategory(
     .single();
 
   if (error) return { data: null, error };
+
+  // Audit log: fire-and-forget
+  if (userId) {
+    writeAuditLog(client, userId, 'fin_category_update', {
+      resource_type: 'fin_category',
+      resource_id: id,
+      changes: data,
+    });
+  }
+
   return { data: result as FinancialCategory, error: null };
 }
 

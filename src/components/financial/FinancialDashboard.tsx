@@ -173,18 +173,19 @@ const FinancialDashboard = ({
       </div>
 
       {/* Summary Cards */}
-      {summaryLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-16 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div aria-live="polite" aria-busy={summaryLoading}>
+        {summaryLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="pt-6">
+                  <Skeleton className="h-16 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <SummaryCard
             title="Ingresos del Mes"
             amount={summary?.totalIncome ?? 0}
@@ -214,10 +215,11 @@ const FinancialDashboard = ({
             iconColorClass="text-amber-600"
           />
         </div>
-      )}
+        )}
+      </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div aria-live="polite" aria-busy={trendLoading || breakdownLoading} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bar Chart — 6-month trend */}
         <Card>
           <CardHeader>
@@ -322,21 +324,22 @@ const FinancialDashboard = ({
       </div>
 
       {/* Recent Transactions */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Transacciones Recientes</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onNavigateToTransactions}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Ver todas
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recentLoading ? (
+      <div aria-live="polite" aria-busy={recentLoading}>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Transacciones Recientes</CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onNavigateToTransactions}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Ver todas
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {recentLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
@@ -376,9 +379,10 @@ const FinancialDashboard = ({
                 </div>
               ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
