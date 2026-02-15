@@ -64,6 +64,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'musica-programacion': RESOURCE_NAMES.MUSIC_SCHEDULING,
   'elementos-fijos': RESOURCE_NAMES.ELEMENTOS_FIJOS,
   'finanzas': RESOURCE_NAMES.FINANCIAL,
+  'children-ministry': RESOURCE_NAMES.CHILDREN_MINISTRY,
 };
 
 // ─── Role Display Info ────────────────────────────────────────────────────────
