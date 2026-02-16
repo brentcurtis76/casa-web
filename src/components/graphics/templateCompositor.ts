@@ -4,6 +4,22 @@
  * Portado de casa_template.py
  */
 
+import type {
+  ElementPositions,
+  IllustrationPosition,
+  LogoPosition,
+  TextAlign,
+} from './graphicsTypes';
+
+export {
+  type ElementPositions,
+  type IllustrationPosition,
+  type LogoPosition,
+  type TextAlign,
+} from './graphicsTypes';
+
+export { DEFAULT_ELEMENT_POSITIONS, FORMAT_DIMENSIONS, clonePositions } from './graphicsTypes';
+
 // ============================================
 // TIPOS
 // ============================================
@@ -170,7 +186,7 @@ function fitTextToArea(
     ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
 
     // Procesar texto: reemplazar \\n con \n real
-    let processedText = text.replace(/\\n/g, '\n');
+    const processedText = text.replace(/\\n/g, '\n');
 
     // Si tiene saltos de línea manuales, respetarlos
     if (processedText.includes('\n')) {
@@ -1361,6 +1377,345 @@ export async function preloadFonts(): Promise<void> {
       }
     })
   );
+}
+
+// ============================================
+// UNIFIED LAYOUT WITH ELEMENT POSITIONS
+// ============================================
+
+/**
+ * Format-specific config for the unified layout function.
+ * Contains only the things that vary between formats (font sizes, icon sizes, line positions, etc.)
+ */
+interface FormatLayoutConfig {
+  baseWidth: number;
+  baseHeight: number;
+  titleFontWeight: string;
+  baseTitleFontSize: number;
+  minTitleFontSize: number;
+  titleMaxWidth: number;
+  titleMaxHeight: number;
+  subtitleFontSize: number;
+  detailFontSize: number;
+  iconSize: number;
+  iconToTextGap: number;  // gap between icon and text X
+  iconOffsetY: number;    // Y correction for icon alignment
+  detailLineHeight: number;
+  subtitleGap: number;    // gap between title and subtitle
+  subtitleExtraOffsetForDetails: number; // push details down when subtitle present
+  hasAmberLines: boolean;
+  amberLines?: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+  hasLogo: boolean;
+  // For illustration area sizing
+  illustAreaW: number;
+  illustAreaH: number;
+  // Multipliers for illustration offset percentage conversion
+  illustOffsetRangeX: number;
+  illustOffsetRangeY: number;
+  // FB-specific: vertical centering of title
+  titleVerticalCenter?: boolean;
+  titleAreaTop?: number;
+  titleAreaBottom?: number;
+}
+
+const FORMAT_LAYOUT_CONFIGS: Record<FormatType, FormatLayoutConfig> = {
+  ppt_4_3: {
+    baseWidth: 1024, baseHeight: 768,
+    titleFontWeight: '300', baseTitleFontSize: 115, minTitleFontSize: 60,
+    titleMaxWidth: 600, titleMaxHeight: 270,
+    subtitleFontSize: 36, detailFontSize: 31, iconSize: 40,
+    iconToTextGap: 54, iconOffsetY: 3, detailLineHeight: 56,
+    subtitleGap: 15, subtitleExtraOffsetForDetails: 50,
+    hasAmberLines: true,
+    amberLines: [
+      { x1: 77, y1: 83, x2: 425, y2: 83 },
+      { x1: 599, y1: 83, x2: 947, y2: 83 },
+      { x1: 75, y1: 690, x2: 947, y2: 690 },
+    ],
+    hasLogo: true,
+    illustAreaW: 470, illustAreaH: 513,
+    illustOffsetRangeX: 500, illustOffsetRangeY: 400,
+  },
+  instagram_post: {
+    baseWidth: 1080, baseHeight: 1080,
+    titleFontWeight: '400', baseTitleFontSize: 140, minTitleFontSize: 70,
+    titleMaxWidth: 900, titleMaxHeight: 320,
+    subtitleFontSize: 45, detailFontSize: 47, iconSize: 52,
+    iconToTextGap: 67, iconOffsetY: 4, detailLineHeight: 50,
+    subtitleGap: 15, subtitleExtraOffsetForDetails: 60,
+    hasAmberLines: true,
+    amberLines: [
+      { x1: 42, y1: 109, x2: 1038, y2: 109 },
+      { x1: 42, y1: 940, x2: 461, y2: 940 },
+      { x1: 613, y1: 940, x2: 1032, y2: 940 },
+    ],
+    hasLogo: true,
+    illustAreaW: 954, illustAreaH: 1041,
+    illustOffsetRangeX: 500, illustOffsetRangeY: 500,
+  },
+  instagram_story: {
+    baseWidth: 1080, baseHeight: 1920,
+    titleFontWeight: '400', baseTitleFontSize: 175, minTitleFontSize: 90,
+    titleMaxWidth: 900, titleMaxHeight: 490,
+    subtitleFontSize: 55, detailFontSize: 65, iconSize: 69,
+    iconToTextGap: 89, iconOffsetY: 5, detailLineHeight: 70,
+    subtitleGap: 20, subtitleExtraOffsetForDetails: 80,
+    hasAmberLines: false,
+    hasLogo: false,
+    illustAreaW: 954, illustAreaH: 1041,
+    illustOffsetRangeX: 500, illustOffsetRangeY: 800,
+  },
+  facebook_post: {
+    baseWidth: 1200, baseHeight: 630,
+    titleFontWeight: '400', baseTitleFontSize: 130, minTitleFontSize: 65,
+    titleMaxWidth: 550, titleMaxHeight: 400,
+    subtitleFontSize: 38, detailFontSize: 34, iconSize: 36,
+    iconToTextGap: 46, iconOffsetY: 3, detailLineHeight: 38,
+    subtitleGap: 10, subtitleExtraOffsetForDetails: 40,
+    hasAmberLines: true,
+    amberLines: [
+      { x1: 63, y1: 63, x2: 1137, y2: 63 },
+      { x1: 63, y1: 560, x2: 1025, y2: 560 },
+    ],
+    hasLogo: true,
+    illustAreaW: 545, illustAreaH: 595,
+    illustOffsetRangeX: 600, illustOffsetRangeY: 300,
+    titleVerticalCenter: true,
+    titleAreaTop: 63, titleAreaBottom: 560,
+  },
+};
+
+/**
+ * Draw text with configurable alignment.
+ * x represents the anchor point:
+ * - 'left': x is the left edge (default)
+ * - 'center': x is the center
+ * - 'right': x is the right edge
+ */
+function drawAlignedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  align: TextAlign = 'left'
+): void {
+  ctx.save();
+  ctx.textAlign = align;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+/**
+ * Unified layout function that uses ElementPositions for absolute positioning.
+ * This replaces the 4 format-specific layout functions for the drag editor.
+ */
+async function createUnifiedLayout(
+  ctx: CanvasRenderingContext2D,
+  format: FormatType,
+  event: EventData,
+  illustrationBase64: string | null,
+  logoBase64: string | null,
+  width: number,
+  height: number,
+  positions: ElementPositions
+): Promise<void> {
+  const cfg = FORMAT_LAYOUT_CONFIGS[format];
+  const s = width / cfg.baseWidth;
+  const lineThickness = Math.round(4 * s);
+
+  // 1. FONDO CREMA
+  ctx.fillStyle = rgbToString(COLORS.cream);
+  ctx.fillRect(0, 0, width, height);
+
+  // 2. ILUSTRACIÓN (behind everything)
+  if (illustrationBase64) {
+    try {
+      const illustImg = await loadImageFromBase64(illustrationBase64);
+      const illust = await processIllustrationWithTransparentBackground(illustImg);
+
+      const imgAspect = illust.width / illust.height;
+      const areaAspect = cfg.illustAreaW / cfg.illustAreaH;
+
+      let drawW: number, drawH: number;
+      if (imgAspect > areaAspect) {
+        drawW = cfg.illustAreaW;
+        drawH = cfg.illustAreaW / imgAspect;
+      } else {
+        drawH = cfg.illustAreaH;
+        drawW = cfg.illustAreaH * imgAspect;
+      }
+
+      const illPos = positions.illustration;
+      const illustW = Math.round(drawW * illPos.scale * s);
+      const illustH = Math.round(drawH * illPos.scale * s);
+      const illustX = Math.round(illPos.x * s);
+      const illustY = Math.round(illPos.y * s);
+
+      ctx.globalAlpha = illPos.opacity;
+      ctx.drawImage(illust, illustX, illustY, illustW, illustH);
+      ctx.globalAlpha = 1;
+    } catch (e) {
+      console.warn('No se pudo cargar ilustración:', e);
+    }
+  }
+
+  // 3. AMBER LINES
+  if (cfg.hasAmberLines && cfg.amberLines) {
+    ctx.strokeStyle = rgbToString(COLORS.amber);
+    ctx.lineWidth = lineThickness;
+    ctx.lineCap = 'round';
+
+    for (const line of cfg.amberLines) {
+      ctx.beginPath();
+      ctx.moveTo(line.x1 * s, line.y1 * s);
+      ctx.lineTo(line.x2 * s, line.y2 * s);
+      ctx.stroke();
+    }
+  }
+
+  // 4. LOGO
+  if (cfg.hasLogo && logoBase64 && positions.logo.size > 0) {
+    try {
+      const logo = await loadImageFromBase64(logoBase64);
+      const logoSize = Math.round(positions.logo.size * s);
+      ctx.drawImage(logo, Math.round(positions.logo.x * s), Math.round(positions.logo.y * s), logoSize, logoSize);
+    } catch (e) {
+      console.warn('No se pudo cargar logo:', e);
+    }
+  }
+
+  // 5. TITLE
+  ctx.textBaseline = 'top';
+
+  const titleMaxWidth = Math.round(cfg.titleMaxWidth * s);
+  const titleMaxHeight = Math.round(cfg.titleMaxHeight * s);
+  const baseTitleFontSize = Math.round(cfg.baseTitleFontSize * s);
+  const minTitleFontSize = Math.round(cfg.minTitleFontSize * s);
+
+  const { fontSize: titleFontSize, lines: titleLines } = fitTextToArea(
+    ctx, event.title, titleMaxWidth, titleMaxHeight,
+    baseTitleFontSize, minTitleFontSize,
+    cfg.titleFontWeight, 'Montserrat, sans-serif', 1.0
+  );
+
+  ctx.font = `${cfg.titleFontWeight} ${titleFontSize}px Montserrat, sans-serif`;
+  ctx.fillStyle = rgbToString(COLORS.black);
+
+  const titleAlign = positions.title.textAlign || 'left';
+  let titleY: number;
+
+  if (positions.title.y >= 0) {
+    titleY = Math.round(positions.title.y * s);
+  } else if (cfg.titleVerticalCenter && cfg.titleAreaTop != null && cfg.titleAreaBottom != null) {
+    // FB-style vertical centering
+    const totalTitleHeight = titleLines.length * titleFontSize;
+    const areaH = cfg.titleAreaBottom - cfg.titleAreaTop;
+    titleY = Math.round((cfg.titleAreaTop + (areaH - totalTitleHeight / s) / 2) * s);
+  } else {
+    titleY = Math.round(positions.title.y * s);
+  }
+
+  const titleX = Math.round(positions.title.x * s);
+
+  for (const line of titleLines) {
+    drawAlignedText(ctx, line, titleX, titleY, titleAlign);
+    titleY += titleFontSize;
+  }
+
+  // 6. SUBTITLE
+  if (event.subtitle) {
+    const subtitleFontSize = Math.round(cfg.subtitleFontSize * s);
+    ctx.font = `italic 400 ${subtitleFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+
+    const subtitleAlign = positions.subtitle.textAlign || 'left';
+    const subtitleY = positions.subtitle.y >= 0
+      ? Math.round(positions.subtitle.y * s)
+      : titleY + Math.round(cfg.subtitleGap * s);
+    const subtitleX = Math.round(positions.subtitle.x * s);
+
+    drawAlignedText(ctx, event.subtitle, subtitleX, subtitleY, subtitleAlign);
+  }
+
+  // 7. DETAILS (date, time, location) with icons
+  const detailFontSize = Math.round(cfg.detailFontSize * s);
+  ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+  ctx.fillStyle = rgbToString(COLORS.amber);
+  const iconSize = Math.round(cfg.iconSize * s);
+  const iconOffsetY = Math.round(cfg.iconOffsetY * s);
+  const iconToTextGap = Math.round(cfg.iconToTextGap * s);
+
+  if (event.date) {
+    const dateY = Math.round(positions.date.y * s);
+    const dateX = Math.round(positions.date.x * s);
+    drawIcon(ctx, 'calendar', dateX, dateY - iconOffsetY, iconSize, COLORS.amber);
+
+    ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+    drawAlignedText(ctx, event.date, dateX + iconToTextGap, dateY, positions.date.textAlign || 'left');
+  }
+
+  if (event.time) {
+    const timeY = Math.round(positions.time.y * s);
+    const timeX = Math.round(positions.time.x * s);
+    drawIcon(ctx, 'clock', timeX, timeY - iconOffsetY, Math.round((cfg.iconSize - 1) * s), COLORS.amber);
+
+    ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+    drawAlignedText(ctx, event.time, timeX + iconToTextGap, timeY, positions.time.textAlign || 'left');
+  }
+
+  if (event.location) {
+    const locY = Math.round(positions.location.y * s);
+    const locX = Math.round(positions.location.x * s);
+    drawIcon(ctx, 'location', locX, locY - iconOffsetY, iconSize, COLORS.amber);
+
+    ctx.font = `400 ${detailFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+    const maxTextWidth = Math.round((cfg.baseWidth * 0.5) * s);
+    const locationLines = wrapText(ctx, event.location, maxTextWidth);
+    let ly = locY;
+    const locLineHeight = Math.round(cfg.detailLineHeight * s);
+
+    for (const line of locationLines) {
+      drawAlignedText(ctx, line, locX + iconToTextGap, ly, positions.location.textAlign || 'left');
+      ly += locLineHeight;
+    }
+  }
+
+  ctx.textBaseline = 'alphabetic';
+}
+
+/**
+ * Generate a graphic using the new absolute-position ElementPositions model.
+ * This is the primary API for the drag-and-drop editor.
+ */
+export async function generateGraphicWithPositions(
+  format: FormatType,
+  event: EventData,
+  illustrationBase64: string | null,
+  logoBase64: string | null,
+  positions: ElementPositions
+): Promise<GeneratedGraphic> {
+  const config = FORMATS[format];
+  const width = config.width * config.scale;
+  const height = config.height * config.scale;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    throw new Error('No se pudo crear contexto de canvas');
+  }
+
+  await createUnifiedLayout(ctx, format, event, illustrationBase64, logoBase64, width, height, positions);
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+
+  return { format, base64, width, height };
 }
 
 /**
