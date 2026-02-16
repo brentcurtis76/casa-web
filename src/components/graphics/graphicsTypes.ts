@@ -127,6 +127,22 @@ export const FORMAT_DIMENSIONS: Record<FormatType, { width: number; height: numb
   facebook_post: { width: 1200, height: 630 },
 };
 
+/** Illustration area dimensions per format (from compositor layout configs) */
+export const ILLUSTRATION_AREA: Record<FormatType, { width: number; height: number }> = {
+  ppt_4_3: { width: 470, height: 513 },
+  instagram_post: { width: 954, height: 1041 },
+  instagram_story: { width: 954, height: 1041 },
+  facebook_post: { width: 545, height: 595 },
+};
+
+/** Title max width per format (for text alignment anchor calculation) */
+export const TITLE_MAX_WIDTH: Record<FormatType, number> = {
+  ppt_4_3: 600,
+  instagram_post: 900,
+  instagram_story: 900,
+  facebook_post: 550,
+};
+
 /** Element metadata for the drag editor */
 export const ELEMENT_META: Record<string, { label: string; color: string }> = {
   title: { label: 'Titulo', color: '#1A1A1A' },

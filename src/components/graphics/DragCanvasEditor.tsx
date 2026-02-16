@@ -17,6 +17,7 @@ import {
   type TextAlign,
   DEFAULT_ELEMENT_POSITIONS,
   FORMAT_DIMENSIONS,
+  ILLUSTRATION_AREA,
   ELEMENT_META,
   SELECTION_COLORS,
 } from './graphicsTypes';
@@ -37,8 +38,8 @@ interface DragCanvasEditorProps {
 
 type ElementId = 'title' | 'subtitle' | 'date' | 'time' | 'location' | 'illustration' | 'logo';
 
-/** Approximate element sizes in base coordinates per format */
-function getElementSize(id: ElementId, format: FormatType): { width: number; height: number } {
+/** Element sizes in base coordinates per format */
+function getElementSize(id: ElementId, format: FormatType, positions: ElementPositions): { width: number; height: number } {
   const dims = FORMAT_DIMENSIONS[format];
 
   switch (id) {
@@ -51,10 +52,13 @@ function getElementSize(id: ElementId, format: FormatType): { width: number; hei
       return { width: dims.width * 0.35, height: dims.height * 0.05 };
     case 'location':
       return { width: dims.width * 0.4, height: dims.height * 0.06 };
-    case 'illustration':
-      return { width: dims.width * 0.45, height: dims.height * 0.55 };
+    case 'illustration': {
+      const area = ILLUSTRATION_AREA[format];
+      const scale = positions.illustration.scale;
+      return { width: area.width * scale, height: area.height * scale };
+    }
     case 'logo': {
-      const logoSize = DEFAULT_ELEMENT_POSITIONS[format].logo.size;
+      const logoSize = positions.logo.size;
       return { width: logoSize, height: logoSize };
     }
     default:
@@ -191,10 +195,10 @@ export function DragCanvasEditor({
 
   const dims = FORMAT_DIMENSIONS[format];
   const aspectClass =
-    format === 'ppt_4_3' ? 'aspect-[4/3]' :
-    format === 'instagram_post' ? 'aspect-square' :
+    format === 'ppt_4_3' ? 'aspect-[4/3] max-h-[450px]' :
+    format === 'instagram_post' ? 'aspect-square max-h-[500px]' :
     format === 'instagram_story' ? 'aspect-[9/16] max-h-[500px]' :
-    'aspect-[1200/630]';
+    'aspect-[1200/630] max-h-[400px]';
 
   // Selected element info
   const selectedIsText = selectedElement && TEXT_ELEMENTS.includes(selectedElement);
@@ -250,7 +254,7 @@ export function DragCanvasEditor({
             const effectiveY = Math.max(displayY, 0);
 
             const domPos = mapper.toDOM(pos.x, effectiveY);
-            const size = getElementSize(id, format);
+            const size = getElementSize(id, format, positions);
             const domSize = {
               width: size.width / mapper.scaleFactor,
               height: size.height / mapper.scaleFactor,

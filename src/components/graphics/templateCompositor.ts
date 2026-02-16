@@ -1615,7 +1615,13 @@ async function createUnifiedLayout(
     titleY = Math.round(positions.title.y * s);
   }
 
-  const titleX = Math.round(positions.title.x * s);
+  // Adjust X anchor based on alignment: left=left edge, center=midpoint, right=right edge
+  let titleX = Math.round(positions.title.x * s);
+  if (titleAlign === 'center') {
+    titleX += titleMaxWidth / 2;
+  } else if (titleAlign === 'right') {
+    titleX += titleMaxWidth;
+  }
 
   for (const line of titleLines) {
     drawAlignedText(ctx, line, titleX, titleY, titleAlign);
@@ -1632,7 +1638,12 @@ async function createUnifiedLayout(
     const subtitleY = positions.subtitle.y >= 0
       ? Math.round(positions.subtitle.y * s)
       : titleY + Math.round(cfg.subtitleGap * s);
-    const subtitleX = Math.round(positions.subtitle.x * s);
+    let subtitleX = Math.round(positions.subtitle.x * s);
+    if (subtitleAlign === 'center') {
+      subtitleX += titleMaxWidth / 2;
+    } else if (subtitleAlign === 'right') {
+      subtitleX += titleMaxWidth;
+    }
 
     drawAlignedText(ctx, event.subtitle, subtitleX, subtitleY, subtitleAlign);
   }
