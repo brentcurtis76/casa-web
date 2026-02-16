@@ -373,7 +373,7 @@ export function transformRows(
  * Normalize various date formats to YYYY-MM-DD.
  * Handles: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, DD.MM.YYYY
  */
-function normalizeDate(dateStr: string): string {
+export function normalizeDate(dateStr: string): string {
   if (!dateStr) return '';
 
   const trimmed = dateStr.trim();
@@ -397,4 +397,35 @@ function normalizeDate(dateStr: string): string {
   }
 
   return trimmed;
+}
+
+// ─── Raw Parsing (for bank detection) ───────────────────────────────────────
+
+/**
+ * Parse an XLSX file into raw array-of-arrays (no header extraction).
+ * Used by bank profile detection to inspect all rows including metadata headers.
+ */
+export async function parseXLSXRaw(file: File): Promise<unknown[][]> {
+  const XLSX = await import('xlsx');
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return [];
+  const sheet = workbook.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+}
+
+/**
+ * Parse a CSV file into raw array-of-arrays (no header extraction).
+ * Used by bank profile detection to inspect all rows including metadata headers.
+ */
+export async function parseCSVRaw(file: File): Promise<string[][]> {
+  let text = await readFileAsText(file, 'UTF-8');
+  if (text.includes('\uFFFD') || /Ã[¡-¿]/.test(text)) {
+    text = await readFileAsText(file, 'ISO-8859-1');
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return [];
+  const separator = detectSeparator(lines[0]);
+  return lines.map((line) => parseCSVLine(line, separator));
 }

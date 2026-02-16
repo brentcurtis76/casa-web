@@ -28,14 +28,25 @@ import type { BankTransaction, FinancialTransaction, BankFileType } from '@/type
 import ColumnMapper from './ColumnMapper';
 import ReconciliationView from './ReconciliationView';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   validateFile,
   getFileExtension,
   parseCSV,
   parseXLSX,
+  parseXLSXRaw,
+  parseCSVRaw,
   autoDetectColumns,
   transformRows,
 } from '@/lib/financial/bankImportParser';
 import type { ColumnMapping, ParsedRow, ParseFileResult } from '@/lib/financial/bankImportParser';
+import { detectBank, getBankProfile, BANK_PROFILES } from '@/lib/financial/bankProfiles';
+import type { BankProfile, BankFileMetadata } from '@/lib/financial/bankProfiles';
 import { matchTransactions } from '@/lib/financial/transactionMatcher';
 import type { MatchResult } from '@/lib/financial/transactionMatcher';
 import {
@@ -45,6 +56,7 @@ import {
   useUpdateMatch,
   useBulkConfirmMatches,
   useCreateTransaction,
+  useActiveCategories,
 } from '@/lib/financial/hooks';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -80,6 +92,14 @@ const BankImport = ({ canWrite }: BankImportProps) => {
   );
   const [isDragging, setIsDragging] = useState(false);
 
+  // Bank detection state
+  const [selectedBankId, setSelectedBankId] = useState('auto');
+  const [detectedBank, setDetectedBank] = useState<{
+    profile: BankProfile;
+    confidence: number;
+  } | null>(null);
+  const [skippedColumnMapping, setSkippedColumnMapping] = useState(false);
+
   // Step 2: Column mapping state
   const [fileData, setFileData] = useState<ParseFileResult | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({
@@ -111,16 +131,35 @@ const BankImport = ({ canWrite }: BankImportProps) => {
   const updateMatchMutation = useUpdateMatch();
   const bulkConfirmMutation = useBulkConfirmMatches();
   const createTransactionMutation = useCreateTransaction();
+  const { data: categories = [] } = useActiveCategories();
 
   // ─── Step 1: File Handling ────────────────────────────────────────────
 
-  const handleFileSelect = useCallback((file: File) => {
+  const handleFileSelect = useCallback(async (file: File) => {
     const validation = validateFile(file);
     if (!validation.valid) {
       toast({ title: validation.error ?? 'Archivo no válido', variant: 'destructive' });
       return;
     }
     setSelectedFile(file);
+
+    // Run bank detection immediately on file select
+    try {
+      const ext = getFileExtension(file);
+      const rawRows = ext === 'xlsx'
+        ? await parseXLSXRaw(file)
+        : (await parseCSVRaw(file)) as unknown[][];
+
+      if (rawRows.length > 0) {
+        const bankResult = detectBank(rawRows);
+        setDetectedBank(bankResult);
+        if (bankResult && bankResult.confidence >= 0.7) {
+          setBankName(bankResult.profile.displayName);
+        }
+      }
+    } catch {
+      // Detection failure is non-critical — user can still proceed manually
+    }
   }, [toast]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -153,38 +192,99 @@ const BankImport = ({ canWrite }: BankImportProps) => {
     if (!selectedFile) return;
 
     setIsParsing(true);
+    setSkippedColumnMapping(false);
     try {
       const ext = getFileExtension(selectedFile);
-      const result = ext === 'xlsx'
-        ? await parseXLSX(selectedFile)
-        : await parseCSV(selectedFile);
 
-      if (result.headers.length === 0) {
+      // Parse raw rows for bank detection
+      const rawRows = ext === 'xlsx'
+        ? await parseXLSXRaw(selectedFile)
+        : (await parseCSVRaw(selectedFile)) as unknown[][];
+
+      if (rawRows.length === 0) {
         toast({ title: 'El archivo no contiene datos', variant: 'destructive' });
         setIsParsing(false);
         return;
       }
 
-      if (result.rows.length === 0) {
-        toast({ title: 'El archivo no contiene filas de datos', variant: 'destructive' });
-        setIsParsing(false);
-        return;
+      // Attempt bank detection
+      const bankResult = detectBank(rawRows);
+      setDetectedBank(bankResult);
+
+      // Determine which profile to use
+      const effectiveBankId = selectedBankId === 'auto'
+        ? bankResult?.profile.id ?? null
+        : selectedBankId === 'generic' ? null : selectedBankId;
+
+      const targetProfile = effectiveBankId ? getBankProfile(effectiveBankId) : null;
+      const useProfile = targetProfile && (
+        selectedBankId !== 'auto' || (bankResult && bankResult.confidence >= 0.7)
+      );
+
+      if (useProfile && targetProfile) {
+        // Bank-specific preprocessing
+        const fallbackYear = statementDate
+          ? parseInt(statementDate.substring(0, 4), 10)
+          : new Date().getFullYear();
+        const preprocessed = targetProfile.preprocess(rawRows, fallbackYear);
+
+        if (preprocessed.rows.length === 0) {
+          toast({ title: 'El archivo no contiene filas de datos', variant: 'destructive' });
+          setIsParsing(false);
+          return;
+        }
+
+        setFileData({ headers: preprocessed.headers, rows: preprocessed.rows });
+        setColumnMapping(preprocessed.columnMapping);
+
+        // Auto-fill bank name from metadata
+        if (!bankName || bankName.length < 2) {
+          setBankName(preprocessed.metadata.bankName);
+        }
+
+        // Auto-fill statement date from metadata if available
+        if (preprocessed.metadata.statementPeriod?.end) {
+          setStatementDate(preprocessed.metadata.statementPeriod.end);
+        }
+
+        // Skip column mapping — go straight to Preview
+        const rows = transformRows(preprocessed.rows, preprocessed.columnMapping);
+        setParsedRows(rows);
+        setSkippedColumnMapping(true);
+        setCurrentStep(2);
+      } else {
+        // Generic flow (existing behavior)
+        const result = ext === 'xlsx'
+          ? await parseXLSX(selectedFile)
+          : await parseCSV(selectedFile);
+
+        if (result.headers.length === 0) {
+          toast({ title: 'El archivo no contiene datos', variant: 'destructive' });
+          setIsParsing(false);
+          return;
+        }
+
+        if (result.rows.length === 0) {
+          toast({ title: 'El archivo no contiene filas de datos', variant: 'destructive' });
+          setIsParsing(false);
+          return;
+        }
+
+        setFileData(result);
+
+        // Auto-detect columns
+        const detected = autoDetectColumns(result.headers);
+        setColumnMapping(detected);
+
+        setCurrentStep(1);
       }
-
-      setFileData(result);
-
-      // Auto-detect columns
-      const detected = autoDetectColumns(result.headers);
-      setColumnMapping(detected);
-
-      setCurrentStep(1);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Error al leer el archivo';
       toast({ title: msg, variant: 'destructive' });
     } finally {
       setIsParsing(false);
     }
-  }, [selectedFile, toast]);
+  }, [selectedFile, selectedBankId, bankName, statementDate, toast]);
 
   // ─── Step 3: Transform and Preview ────────────────────────────────────
 
@@ -343,7 +443,7 @@ const BankImport = ({ canWrite }: BankImportProps) => {
     );
   }, [updateMatchMutation]);
 
-  const handleCreateTransaction = useCallback(async (bankTxId: string) => {
+  const handleCreateTransaction = useCallback(async (bankTxId: string, categoryId: string | null) => {
     const bt = bankTransactions.find((t) => t.id === bankTxId);
     if (!bt) return;
 
@@ -352,7 +452,7 @@ const BankImport = ({ canWrite }: BankImportProps) => {
       description: bt.description,
       amount: Math.abs(bt.amount),
       type: bt.amount >= 0 ? 'income' : 'expense',
-      category_id: null,
+      category_id: categoryId,
       account_id: null,
       reference: bt.reference,
       notes: `Importado desde estado bancario`,
@@ -373,6 +473,41 @@ const BankImport = ({ canWrite }: BankImportProps) => {
           : t
         )
       );
+    }
+  }, [bankTransactions, createTransactionMutation, updateMatchMutation, user]);
+
+  const handleBulkCreate = useCallback(async (bankTxIds: string[], categoryId: string | null) => {
+    for (const txId of bankTxIds) {
+      const bt = bankTransactions.find((t) => t.id === txId);
+      if (!bt) continue;
+
+      const result = await createTransactionMutation.mutateAsync({
+        date: bt.date,
+        description: bt.description,
+        amount: Math.abs(bt.amount),
+        type: bt.amount >= 0 ? 'income' : 'expense',
+        category_id: categoryId,
+        account_id: null,
+        reference: bt.reference,
+        notes: `Importado desde estado bancario`,
+        created_by: user?.id ?? null,
+      });
+
+      if (result.data) {
+        await updateMatchMutation.mutateAsync({
+          id: txId,
+          matchedTransactionId: result.data.id,
+          confidence: 1.0,
+          status: 'created',
+        });
+
+        setBankTransactions((prev) =>
+          prev.map((t) => t.id === txId
+            ? { ...t, status: 'created', matched_transaction_id: result.data!.id, match_confidence: 1.0 }
+            : t
+          )
+        );
+      }
     }
   }, [bankTransactions, createTransactionMutation, updateMatchMutation, user]);
 
@@ -403,6 +538,9 @@ const BankImport = ({ canWrite }: BankImportProps) => {
     setSelectedFile(null);
     setBankName('');
     setStatementDate(new Date().toISOString().split('T')[0]);
+    setSelectedBankId('auto');
+    setDetectedBank(null);
+    setSkippedColumnMapping(false);
     setFileData(null);
     setColumnMapping({ date: null, description: null, amount: null, reference: null, confidence: 0 });
     setParsedRows([]);
@@ -492,6 +630,30 @@ const BankImport = ({ canWrite }: BankImportProps) => {
                 </div>
               )}
             </div>
+
+            {/* Bank Selector */}
+            {selectedFile && (
+              <div className="space-y-1">
+                <Label htmlFor="bank-selector">Formato del Banco</Label>
+                <Select value={selectedBankId} onValueChange={setSelectedBankId}>
+                  <SelectTrigger id="bank-selector">
+                    <SelectValue placeholder="Auto-detectar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detectar</SelectItem>
+                    {BANK_PROFILES.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.displayName}</SelectItem>
+                    ))}
+                    <SelectItem value="generic">Otro banco (generico)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {detectedBank && selectedBankId === 'auto' && (
+                  <p className="text-xs text-green-600">
+                    Detectado: {detectedBank.profile.displayName} ({Math.round(detectedBank.confidence * 100)}% confianza)
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Bank Name */}
             <div className="space-y-1">
@@ -604,7 +766,7 @@ const BankImport = ({ canWrite }: BankImportProps) => {
             )}
 
             <div className="flex justify-between">
-              <Button variant="outline" onClick={() => setCurrentStep(1)}>
+              <Button variant="outline" onClick={() => setCurrentStep(skippedColumnMapping ? 0 : 1)}>
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 Anterior
               </Button>
@@ -628,10 +790,12 @@ const BankImport = ({ canWrite }: BankImportProps) => {
             bankTransactions={bankTransactions}
             existingTransactions={existingTransactions}
             matchResults={matchResults}
+            categories={categories}
             onConfirmMatch={handleConfirmMatch}
             onUndoMatch={handleUndoMatch}
             onIgnore={handleIgnore}
             onCreateTransaction={handleCreateTransaction}
+            onBulkCreate={handleBulkCreate}
             onBulkConfirm={handleBulkConfirm}
             isPending={isMutating}
           />
