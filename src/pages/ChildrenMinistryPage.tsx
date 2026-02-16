@@ -7,13 +7,15 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/components/auth/AuthContext';
 import { LayoutDashboard, BookOpen, Calendar, Users, Package, BarChart3 } from 'lucide-react';
 import LessonManager from '@/components/children-ministry/LessonManager';
 import ChildrenCalendar from '@/components/children-ministry/ChildrenCalendar';
 import VolunteerManager from '@/components/children-ministry/VolunteerManager';
+import ChildrenDashboard from '@/components/children-ministry/ChildrenDashboard';
+import InventoryManager from '@/components/children-ministry/InventoryManager';
+import AttendanceReports from '@/components/children-ministry/AttendanceReports';
 
 const ChildrenMinistryPage = () => {
   const [searchParams] = useSearchParams();
@@ -92,18 +94,7 @@ const ChildrenMinistryPage = () => {
             </div>
 
             <TabsContent value="dashboard" className="mt-6">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-12">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                      Dashboard — Próximamente
-                    </h3>
-                    <p className="text-gray-500">
-                      El dashboard del ministerio infantil será disponible en la siguiente versión.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              <ChildrenDashboard canWrite={canWrite} isVolunteerOnly={isVolunteerOnly} userId={user?.id} />
             </TabsContent>
 
             <TabsContent value="lecciones" className="mt-6">
@@ -126,33 +117,11 @@ const ChildrenMinistryPage = () => {
             {canWrite && (
               <>
                 <TabsContent value="inventario" className="mt-6">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-12">
-                        <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                          Inventario — Próximamente
-                        </h3>
-                        <p className="text-gray-500">
-                          La gestión de inventario será disponible en la siguiente versión.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <InventoryManager />
                 </TabsContent>
 
                 <TabsContent value="asistencia" className="mt-6">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-12">
-                        <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                          Reportes de Asistencia — Próximamente
-                        </h3>
-                        <p className="text-gray-500">
-                          Los reportes de asistencia serán disponibles en la siguiente versión.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <AttendanceReports />
                 </TabsContent>
               </>
             )}
