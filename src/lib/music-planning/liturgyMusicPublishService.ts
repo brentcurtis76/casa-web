@@ -18,7 +18,7 @@ import type {
   MusicSetlistRow,
   MusicServiceDateRow,
 } from '@/types/musicPlanning';
-import { getSongById, getSongBySlug } from '@/lib/music-planning/songService';
+import { getSongById, getSongBySlug, getSongBySlugWithArrangements } from '@/lib/music-planning/songService';
 import { createServiceDate, getServiceDates } from '@/lib/music-planning/availabilityService';
 import {
   createSetlist,
@@ -86,10 +86,14 @@ async function resolveSong(
       }
     }
 
-    // Fallback to slug lookup
-    const songBySlug = await getSongBySlug(sourceId);
+    // Fallback to slug lookup (with arrangements for arrangement_id resolution)
+    const songBySlug = await getSongBySlugWithArrangements(sourceId);
     if (songBySlug) {
-      return { resolved: { song: songBySlug, element, arrangementId: null }, warning: null };
+      const arrangementId =
+        songBySlug.music_arrangements && songBySlug.music_arrangements.length > 0
+          ? songBySlug.music_arrangements.sort((a, b) => a.sort_order - b.sort_order)[0].id
+          : null;
+      return { resolved: { song: songBySlug, element, arrangementId }, warning: null };
     }
 
     return {
@@ -108,6 +112,7 @@ async function resolveSong(
 
 /**
  * Check asset availability for a single song.
+ * Accepts UUID or slug — normalizes to UUID before querying.
  * Queries arrangements, chord charts, audio references, and stems.
  */
 export async function checkSongAssets(songId: string): Promise<AssetWarnings> {
@@ -118,11 +123,19 @@ export async function checkSongAssets(songId: string): Promise<AssetWarnings> {
   };
 
   try {
+    // Normalize: if songId is not a UUID, resolve via slug lookup
+    let resolvedId = songId;
+    if (!isUUID(songId)) {
+      const slugSong = await getSongBySlug(songId);
+      if (!slugSong) return warnings;
+      resolvedId = slugSong.id;
+    }
+
     // Check arrangements and their chord charts / stems
     const { data: arrangements } = await supabase
       .from('music_arrangements')
       .select('id')
-      .eq('song_id', songId);
+      .eq('song_id', resolvedId);
 
     if (arrangements && arrangements.length > 0) {
       const arrangementIds = arrangements.map((a) => a.id);
@@ -154,7 +167,7 @@ export async function checkSongAssets(songId: string): Promise<AssetWarnings> {
     const { data: audioRefs } = await supabase
       .from('music_audio_references')
       .select('id')
-      .eq('song_id', songId)
+      .eq('song_id', resolvedId)
       .limit(1);
 
     if (audioRefs && audioRefs.length > 0) {
@@ -356,24 +369,34 @@ export async function publishLiturgyMusic(
     });
   }
 
-  // 5. Determine starting sort_order for 'add' mode
+  // 5. Determine starting sort_order and existing songs for 'add' mode
   let startOrder = 0;
+  let existingSongIds: Set<string> = new Set();
   if (mode === 'add') {
     const { data: existingItems } = await supabase
       .from('music_setlist_items')
-      .select('sort_order')
+      .select('sort_order, song_id')
       .eq('setlist_id', setlistRow.id)
-      .order('sort_order', { ascending: false })
-      .limit(1);
+      .order('sort_order', { ascending: false });
 
     if (existingItems && existingItems.length > 0) {
       startOrder = (existingItems[0] as { sort_order: number }).sort_order + 1;
+      existingSongIds = new Set(
+        existingItems.map((item: { song_id: string }) => item.song_id)
+      );
     }
   }
 
-  // 6. Add setlist items
+  // 6. Add setlist items (skip duplicates in 'add' mode)
+  let insertIndex = 0;
   for (let i = 0; i < resolvedSongs.length; i++) {
     const { song, element, arrangementId } = resolvedSongs[i];
+
+    // In 'add' mode, skip songs already in the setlist
+    if (mode === 'add' && existingSongIds.has(song.id)) {
+      continue;
+    }
+
     const liturgicalMoment = LITURGICAL_MOMENT_MAP[element.type] || null;
 
     await addSetlistItem({
@@ -381,8 +404,9 @@ export async function publishLiturgyMusic(
       song_id: song.id,
       arrangement_id: arrangementId,
       liturgical_moment: liturgicalMoment,
-      sort_order: startOrder + i,
+      sort_order: startOrder + insertIndex,
     });
+    insertIndex++;
   }
 
   // 7. Get current user for published_by
@@ -431,6 +455,6 @@ export async function publishLiturgyMusic(
     publicationId,
     publishVersion,
     warnings,
-    songsPublished: resolvedSongs.length,
+    songsPublished: mode === 'add' ? insertIndex : resolvedSongs.length,
   };
 }

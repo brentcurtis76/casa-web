@@ -188,6 +188,26 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     }
   };
 
+  // Re-check existing setlist when service date or type changes while dialog is open
+  useEffect(() => {
+    if (!publishDialogOpen || !publishServiceDate) return;
+
+    let cancelled = false;
+    const recheckSetlist = async () => {
+      try {
+        const existing = await checkExistingSetlist(publishServiceDate, publishServiceType);
+        if (!cancelled) {
+          setExistingSetlistDetected(!!existing);
+        }
+      } catch {
+        // Silently fail — setlist check is non-critical
+      }
+    };
+
+    recheckSetlist();
+    return () => { cancelled = true; };
+  }, [publishDialogOpen, publishServiceDate, publishServiceType]);
+
   // Handle publish music
   const handlePublishMusic = async () => {
     if (!liturgyContext?.id) return;

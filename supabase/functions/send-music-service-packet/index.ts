@@ -128,15 +128,74 @@ serve(async (req) => {
       throw new Error("Fecha de servicio no encontrada");
     }
 
-    // Fetch setlist with items
+    // Fetch setlist with items (include song id for audio reference lookups)
     const { data: setlist, error: slError } = await supabase
       .from("music_setlists")
-      .select("*, music_setlist_items(*, music_songs(title))")
+      .select("*, music_setlist_items(*, music_songs(id, title))")
       .eq("id", publication.setlist_id)
       .single();
 
     if (slError || !setlist) {
       throw new Error("Setlist no encontrada");
+    }
+
+    // Fetch audio/video references for all songs in the setlist
+    const songIds = [
+      ...new Set(
+        (setlist.music_setlist_items || []).map(
+          (item: { music_songs: { id: string } }) => item.music_songs.id
+        )
+      ),
+    ];
+
+    const audioRefsBySong: Record<
+      string,
+      { url: string; source_type: string | null; description: string | null }[]
+    > = {};
+
+    if (songIds.length > 0) {
+      const { data: audioRefs } = await supabase
+        .from("music_audio_references")
+        .select("song_id, url, source_type, description")
+        .in("song_id", songIds);
+
+      for (const ref of audioRefs || []) {
+        if (!audioRefsBySong[ref.song_id]) {
+          audioRefsBySong[ref.song_id] = [];
+        }
+        audioRefsBySong[ref.song_id].push({
+          url: ref.url,
+          source_type: ref.source_type,
+          description: ref.description,
+        });
+      }
+    }
+
+    // Check stem availability per song (via arrangements)
+    const stemsBySong: Record<string, boolean> = {};
+    if (songIds.length > 0) {
+      const { data: arrangements } = await supabase
+        .from("music_arrangements")
+        .select("song_id, id")
+        .in("song_id", songIds);
+
+      if (arrangements && arrangements.length > 0) {
+        const arrangementIds = arrangements.map((a: { id: string }) => a.id);
+        const { data: stems } = await supabase
+          .from("music_stems")
+          .select("arrangement_id")
+          .in("arrangement_id", arrangementIds);
+
+        const arrangementIdsWithStems = new Set(
+          (stems || []).map((s: { arrangement_id: string }) => s.arrangement_id)
+        );
+
+        for (const arr of arrangements) {
+          if (arrangementIdsWithStems.has(arr.id)) {
+            stemsBySong[arr.song_id] = true;
+          }
+        }
+      }
     }
 
     // Fetch assigned musicians for this service date
@@ -158,9 +217,11 @@ serve(async (req) => {
       email: string;
     }[] = [];
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     for (const assignment of assignments || []) {
       const musician = assignment.music_musicians;
-      if (musician?.email) {
+      if (musician?.email && emailRegex.test(musician.email)) {
         // Deduplicate by email
         if (!musiciansToNotify.some((m) => m.email === musician.email)) {
           musiciansToNotify.push({
@@ -198,16 +259,24 @@ serve(async (req) => {
       }
     }
 
-    // Build song list for email
+    // Build song list for email (with audio/video references and stem availability)
     const sortedItems = [...(setlist.music_setlist_items || [])].sort(
       (a: { sort_order: number }, b: { sort_order: number }) =>
         a.sort_order - b.sort_order
     );
+
+    const sourceTypeLabels: Record<string, string> = {
+      youtube: "YouTube",
+      spotify: "Spotify",
+      upload: "Audio",
+      other: "Enlace",
+    };
+
     const songListHtml = sortedItems
       .map(
         (
           item: {
-            music_songs: { title: string };
+            music_songs: { id: string; title: string };
             liturgical_moment: string | null;
           },
           idx: number
@@ -215,7 +284,23 @@ serve(async (req) => {
           const moment = item.liturgical_moment
             ? ` <span style="color:#888;">(${item.liturgical_moment})</span>`
             : "";
-          return `${idx + 1}. <strong>${item.music_songs.title}</strong>${moment}`;
+
+          const hasStemsLabel = stemsBySong[item.music_songs.id]
+            ? ' <span style="color:#16a34a;font-size:11px;">&#9835; Stems disponibles</span>'
+            : "";
+
+          // Build reference links for this song
+          const refs = audioRefsBySong[item.music_songs.id] || [];
+          let refsHtml = "";
+          if (refs.length > 0) {
+            const refLinks = refs.map((r) => {
+              const label = r.description || sourceTypeLabels[r.source_type || "other"] || "Referencia";
+              return `<a href="${r.url}" style="color:#D4A843;text-decoration:underline;font-size:12px;">${label}</a>`;
+            });
+            refsHtml = `<br><span style="padding-left:16px;">${refLinks.join(" &middot; ")}</span>`;
+          }
+
+          return `${idx + 1}. <strong>${item.music_songs.title}</strong>${moment}${hasStemsLabel}${refsHtml}`;
         }
       )
       .join("<br>");

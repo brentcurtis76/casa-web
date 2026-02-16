@@ -143,7 +143,7 @@ async function addCoverPage(
 async function fetchChordChartBytes(storagePath: string): Promise<Uint8Array | null> {
   try {
     const { data, error } = await supabase.storage
-      .from('music-library')
+      .from('music-chord-charts')
       .download(storagePath);
 
     if (error || !data) return null;
