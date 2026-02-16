@@ -152,6 +152,7 @@ export function DraggableElement({
         onSelect();
         handlePointerDown(e);
       }}
+      onClick={(e) => e.stopPropagation()}
       onPointerEnter={() => setIsHovered(true)}
       onPointerLeave={() => setIsHovered(false)}
     >
