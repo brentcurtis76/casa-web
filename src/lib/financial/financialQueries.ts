@@ -561,3 +561,279 @@ export async function getBudgetReport(
 
   return { totalBudget, totalActual, totalDifference, totalPercentage, items, notes };
 }
+
+export interface AnnualMonthlyItem {
+  month: number;
+  label: string;
+  income: number;
+  expenses: number;
+  balance: number;
+}
+
+export interface AnnualCategoryItem {
+  category_id: string;
+  category_name: string;
+  total: number;
+  percentage: number;
+}
+
+export interface AnnualBudgetComparisonItem {
+  category_id: string;
+  categoryName: string;
+  budgeted: number;
+  actual: number;
+  difference: number;
+  percentage: number;
+}
+
+export interface AnnualReportData {
+  totalIncome: number;
+  totalExpenses: number;
+  balance: number;
+  monthlyData: AnnualMonthlyItem[];
+  topIncomeCategories: AnnualCategoryItem[];
+  topExpenseCategories: AnnualCategoryItem[];
+  isPartialYear: boolean;
+  lastMonthWithData: number;
+  budgetComparison: {
+    totalBudget: number;
+    totalActual: number;
+    totalDifference: number;
+    totalPercentage: number;
+    items: AnnualBudgetComparisonItem[];
+  } | null;
+  notes: string[];
+}
+
+/**
+ * Fetch annual report data for a given year.
+ * Returns monthly breakdown, category totals, optional budget comparison, and auto-generated notes.
+ */
+export async function getAnnualReport(
+  client: SupabaseClient,
+  year: number
+): Promise<AnnualReportData> {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const isPartialYear = year === currentYear;
+  const lastMonthWithData = isPartialYear ? currentMonth : 12;
+
+  // Fetch all transactions for the year
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  const { data: transactions } = await client
+    .from('church_fin_transactions')
+    .select('date, amount, type, category_id')
+    .gte('date', yearStart)
+    .lte('date', yearEnd);
+
+  // Fetch all categories
+  const { data: categories } = await client
+    .from('church_fin_categories')
+    .select('id, name, type');
+
+  // Fetch annual budgets (if they exist)
+  const { data: annualBudgets } = await client
+    .from('church_fin_annual_budgets')
+    .select('category_id, amount')
+    .eq('year', year);
+
+  // Build category map
+  const categoryMap = new Map<string, { name: string; type: string }>();
+  if (categories) {
+    for (const cat of categories) {
+      categoryMap.set(cat.id, { name: cat.name, type: cat.type });
+    }
+  }
+
+  // ─── Monthly Aggregation ───────────────────────────────────────────────────
+  const monthlyMap = new Map<number, { income: number; expenses: number }>();
+  for (let m = 1; m <= 12; m++) {
+    monthlyMap.set(m, { income: 0, expenses: 0 });
+  }
+
+  let totalIncome = 0;
+  let totalExpenses = 0;
+
+  if (transactions) {
+    for (const tx of transactions) {
+      const d = new Date(tx.date);
+      const month = d.getMonth() + 1;
+      const agg = monthlyMap.get(month);
+      if (agg) {
+        if (tx.type === 'income') {
+          agg.income += tx.amount;
+          totalIncome += tx.amount;
+        } else if (tx.type === 'expense') {
+          agg.expenses += tx.amount;
+          totalExpenses += tx.amount;
+        }
+      }
+    }
+  }
+
+  // Build monthly data array (only include months through lastMonthWithData)
+  const monthlyData: AnnualMonthlyItem[] = [];
+  for (let m = 1; m <= lastMonthWithData; m++) {
+    const agg = monthlyMap.get(m) ?? { income: 0, expenses: 0 };
+    monthlyData.push({
+      month: m,
+      label: MONTH_LABELS_SHORT[m - 1],
+      income: agg.income,
+      expenses: agg.expenses,
+      balance: agg.income - agg.expenses,
+    });
+  }
+
+  // ─── Category Breakdown ────────────────────────────────────────────────────
+  const categoryTotalsMap = new Map<string, number>();
+  if (transactions) {
+    for (const tx of transactions) {
+      const catId = tx.category_id ?? 'sin_categoria';
+      categoryTotalsMap.set(catId, (categoryTotalsMap.get(catId) ?? 0) + tx.amount);
+    }
+  }
+
+  // Build income and expense category lists
+  const incomeCategoryItems: AnnualCategoryItem[] = [];
+  const expenseCategoryItems: AnnualCategoryItem[] = [];
+
+  for (const [catId, total] of categoryTotalsMap) {
+    const catInfo = categoryMap.get(catId);
+    const catName = catId === 'sin_categoria' ? 'Sin Categoría' : (catInfo?.name ?? 'Desconocida');
+    const catType = catId === 'sin_categoria' ? 'expense' : (catInfo?.type ?? 'expense');
+
+    const percentage = catType === 'income'
+      ? (totalIncome > 0 ? Math.round((total / totalIncome) * 100) : 0)
+      : (totalExpenses > 0 ? Math.round((total / totalExpenses) * 100) : 0);
+
+    const item: AnnualCategoryItem = {
+      category_id: catId,
+      category_name: catName,
+      total,
+      percentage,
+    };
+
+    if (catType === 'income') {
+      incomeCategoryItems.push(item);
+    } else {
+      expenseCategoryItems.push(item);
+    }
+  }
+
+  // Sort and take top 10
+  incomeCategoryItems.sort((a, b) => b.total - a.total);
+  expenseCategoryItems.sort((a, b) => b.total - a.total);
+  const topIncomeCategories = incomeCategoryItems.slice(0, 10);
+  const topExpenseCategories = expenseCategoryItems.slice(0, 10);
+
+  // ─── Budget Comparison (optional) ──────────────────────────────────────────
+  let budgetComparison: AnnualReportData['budgetComparison'] = null;
+
+  if (annualBudgets && annualBudgets.length > 0) {
+    const budgetMap = new Map<string, number>();
+    for (const b of annualBudgets) {
+      budgetMap.set(b.category_id as string, b.amount as number);
+    }
+
+    const budgetActualMap = new Map<string, number>();
+    if (transactions) {
+      for (const tx of transactions) {
+        const catId = tx.category_id ?? 'sin_categoria';
+        budgetActualMap.set(catId, (budgetActualMap.get(catId) ?? 0) + tx.amount);
+      }
+    }
+
+    const budgetItems: AnnualBudgetComparisonItem[] = [];
+    let totalBudget = 0;
+    let totalActual = 0;
+
+    for (const [catId, budgeted] of budgetMap) {
+      const actual = budgetActualMap.get(catId) ?? 0;
+      const catInfo = categoryMap.get(catId);
+      const categoryName = catInfo?.name ?? 'Desconocida';
+
+      const difference = budgeted - actual;
+      const percentage = budgeted > 0 ? Math.round((actual / budgeted) * 100) : (actual > 0 ? 100 : 0);
+
+      budgetItems.push({
+        category_id: catId,
+        categoryName,
+        budgeted,
+        actual,
+        difference,
+        percentage,
+      });
+
+      totalBudget += budgeted;
+      totalActual += actual;
+    }
+
+    budgetItems.sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+    const totalDifference = totalBudget - totalActual;
+    const totalPercentage = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
+
+    budgetComparison = {
+      totalBudget,
+      totalActual,
+      totalDifference,
+      totalPercentage,
+      items: budgetItems,
+    };
+  }
+
+  // ─── Auto-generated Notes ─────────────────────────────────────────────────
+  const notes: string[] = [];
+
+  // Find best and worst income months
+  const incomeMonths = monthlyData.filter(m => m.income > 0).sort((a, b) => b.income - a.income);
+  if (incomeMonths.length > 0) {
+    const best = incomeMonths[0];
+    notes.push(`Mejor mes de ingresos: ${best.label} con ${formatCLP(best.income)}`);
+  }
+
+  const expenseMonths = monthlyData.filter(m => m.expenses > 0).sort((a, b) => b.expenses - a.expenses);
+  if (expenseMonths.length > 0) {
+    const worst = expenseMonths[0];
+    notes.push(`Mayor gasto: ${worst.label} con ${formatCLP(worst.expenses)}`);
+  }
+
+  // Budget overspend alerts
+  if (budgetComparison) {
+    for (const item of budgetComparison.items) {
+      if (item.budgeted === 0) continue;
+      const variance = Math.abs(item.percentage - 100);
+      if (variance > 20) {
+        if (item.percentage > 120) {
+          notes.push(
+            `${item.categoryName}: Excede el presupuesto anual en ${item.percentage - 100}% (${formatCLP(Math.abs(item.difference))} sobre lo presupuestado)`
+          );
+        }
+      }
+    }
+  }
+
+  // Overall balance trend
+  const balance = totalIncome - totalExpenses;
+  if (balance > 0) {
+    notes.push(`Balance anual positivo de ${formatCLP(balance)}`);
+  } else if (balance < 0) {
+    notes.push(`Déficit anual de ${formatCLP(Math.abs(balance))}`);
+  }
+
+  return {
+    totalIncome,
+    totalExpenses,
+    balance,
+    monthlyData,
+    topIncomeCategories,
+    topExpenseCategories,
+    isPartialYear,
+    lastMonthWithData,
+    budgetComparison,
+    notes,
+  };
+}

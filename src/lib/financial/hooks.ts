@@ -66,6 +66,8 @@ export const FINANCIAL_KEYS = {
     ['financial', 'report', 'category', categoryIds, startYear, startMonth, endYear, endMonth] as const,
   budgetReport: (year: number, month: number) =>
     ['financial', 'report', 'budget', year, month] as const,
+  annualReport: (year: number) =>
+    ['financial', 'report', 'annual', year] as const,
   // Personnel query keys
   personnel: (filters?: PersonnelFilters) =>
     ['financial', 'personnel', filters] as const,
@@ -624,6 +626,14 @@ export function useBudgetReport(year: number, month: number, enabled: boolean = 
   return useQuery({
     queryKey: FINANCIAL_KEYS.budgetReport(year, month),
     queryFn: () => financialQueries.getBudgetReport(supabase, year, month),
+    enabled,
+  });
+}
+
+export function useAnnualReport(year: number, enabled: boolean = false) {
+  return useQuery({
+    queryKey: FINANCIAL_KEYS.annualReport(year),
+    queryFn: () => financialQueries.getAnnualReport(supabase, year),
     enabled,
   });
 }

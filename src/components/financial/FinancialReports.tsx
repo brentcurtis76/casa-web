@@ -1,7 +1,7 @@
 /**
  * FinancialReports — Report selector and configuration panel for the Reportes tab.
  *
- * Provides three report types with configurable date ranges and PDF export.
+ * Provides four report types with configurable date ranges and PDF export.
  */
 
 import { useState, useCallback } from 'react';
@@ -16,21 +16,23 @@ import {
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Loader2, FileDown, BarChart3, PieChart, Target } from 'lucide-react';
+import { Loader2, FileDown, BarChart3, PieChart, Target, CalendarRange } from 'lucide-react';
 import { MONTH_LABELS_FULL } from '@/types/financial';
 import {
   useMonthlySummaryReport,
   useCategoryReport,
   useBudgetReport,
+  useAnnualReport,
   useActiveCategories,
 } from '@/lib/financial/hooks';
 import { downloadFinancialPDF } from '@/lib/financial/reportPdfGenerator';
-import type { MonthlySummaryReportData, CategoryReportData, BudgetReportData } from '@/lib/financial/financialQueries';
+import type { MonthlySummaryReportData, CategoryReportData, BudgetReportData, AnnualReportData } from '@/lib/financial/financialQueries';
 import MonthlySummaryReport from './reports/MonthlySummaryReport';
 import CategoryReport from './reports/CategoryReport';
 import BudgetReport from './reports/BudgetReport';
+import AnnualReport from './reports/AnnualReport';
 
-type ReportType = 'monthly' | 'category' | 'budget';
+type ReportType = 'monthly' | 'category' | 'budget' | 'annual';
 
 interface FinancialReportsProps {
   canWrite: boolean;
@@ -53,6 +55,7 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
     generated && reportType === 'category'
   );
   const budgetReport = useBudgetReport(year, month, generated && reportType === 'budget');
+  const annualReport = useAnnualReport(year, generated && reportType === 'annual');
 
   // Categories list for the category report selector
   const { data: categories = [] } = useActiveCategories();
@@ -70,8 +73,10 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
       downloadFinancialPDF('category', categoryReport.data, config);
     } else if (reportType === 'budget' && budgetReport.data) {
       downloadFinancialPDF('budget', budgetReport.data, config);
+    } else if (reportType === 'annual' && annualReport.data) {
+      downloadFinancialPDF('annual', annualReport.data, config);
     }
-  }, [reportType, year, month, endYear, endMonth, monthlyReport.data, categoryReport.data, budgetReport.data]);
+  }, [reportType, year, month, endYear, endMonth, monthlyReport.data, categoryReport.data, budgetReport.data, annualReport.data]);
 
   const handleReportTypeChange = useCallback((value: string) => {
     setReportType(value as ReportType);
@@ -90,12 +95,14 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
   const isLoading =
     (reportType === 'monthly' && monthlyReport.isLoading) ||
     (reportType === 'category' && categoryReport.isLoading) ||
-    (reportType === 'budget' && budgetReport.isLoading);
+    (reportType === 'budget' && budgetReport.isLoading) ||
+    (reportType === 'annual' && annualReport.isLoading);
 
   const hasData =
     (reportType === 'monthly' && monthlyReport.data) ||
     (reportType === 'category' && categoryReport.data) ||
-    (reportType === 'budget' && budgetReport.data);
+    (reportType === 'budget' && budgetReport.data) ||
+    (reportType === 'annual' && annualReport.data);
 
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i);
 
@@ -111,7 +118,7 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
           <RadioGroup
             value={reportType}
             onValueChange={handleReportTypeChange}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-4 gap-4"
           >
             <div>
               <RadioGroupItem value="monthly" id="monthly" className="peer sr-only" />
@@ -145,6 +152,17 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
                 <span className="text-sm font-medium">Presupuesto vs Real</span>
               </Label>
             </div>
+
+            <div>
+              <RadioGroupItem value="annual" id="annual" className="peer sr-only" />
+              <Label
+                htmlFor="annual"
+                className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+              >
+                <CalendarRange className="mb-3 h-6 w-6" />
+                <span className="text-sm font-medium">Informe Anual</span>
+              </Label>
+            </div>
           </RadioGroup>
 
           {/* Date Range Configuration */}
@@ -163,38 +181,11 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
               </Select>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-sm">{reportType === 'category' ? 'Desde — Mes' : 'Mes'}</Label>
-              <Select value={String(month)} onValueChange={(v) => { setMonth(Number(v)); setGenerated(false); }}>
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTH_LABELS_FULL.map((label, i) => (
-                    <SelectItem key={i} value={String(i + 1)}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {reportType === 'category' && (
+            {reportType !== 'annual' && (
               <>
                 <div className="space-y-1">
-                  <Label className="text-sm">Hasta — Año</Label>
-                  <Select value={String(endYear)} onValueChange={(v) => { setEndYear(Number(v)); setGenerated(false); }}>
-                    <SelectTrigger className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {yearOptions.map((y) => (
-                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-sm">Hasta — Mes</Label>
-                  <Select value={String(endMonth)} onValueChange={(v) => { setEndMonth(Number(v)); setGenerated(false); }}>
+                  <Label className="text-sm">{reportType === 'category' ? 'Desde — Mes' : 'Mes'}</Label>
+                  <Select value={String(month)} onValueChange={(v) => { setMonth(Number(v)); setGenerated(false); }}>
                     <SelectTrigger className="w-36">
                       <SelectValue />
                     </SelectTrigger>
@@ -205,6 +196,37 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {reportType === 'category' && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-sm">Hasta — Año</Label>
+                      <Select value={String(endYear)} onValueChange={(v) => { setEndYear(Number(v)); setGenerated(false); }}>
+                        <SelectTrigger className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearOptions.map((y) => (
+                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-sm">Hasta — Mes</Label>
+                      <Select value={String(endMonth)} onValueChange={(v) => { setEndMonth(Number(v)); setGenerated(false); }}>
+                        <SelectTrigger className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MONTH_LABELS_FULL.map((label, i) => (
+                            <SelectItem key={i} value={String(i + 1)}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -280,6 +302,13 @@ const FinancialReports = ({ canWrite: _canWrite }: FinancialReportsProps) => {
               data={budgetReport.data as BudgetReportData}
               year={year}
               month={month}
+            />
+          )}
+
+          {reportType === 'annual' && annualReport.data && (
+            <AnnualReport
+              data={annualReport.data as AnnualReportData}
+              year={year}
             />
           )}
         </>

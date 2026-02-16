@@ -224,6 +224,32 @@ interface BudgetReportData {
   notes: string[];
 }
 
+interface AnnualReportData {
+  totalIncome: number;
+  totalExpenses: number;
+  balance: number;
+  monthlyData: Array<{ month: number; label: string; income: number; expenses: number; balance: number }>;
+  topIncomeCategories: Array<{ category_id: string; category_name: string; total: number; percentage: number }>;
+  topExpenseCategories: Array<{ category_id: string; category_name: string; total: number; percentage: number }>;
+  isPartialYear: boolean;
+  lastMonthWithData: number;
+  budgetComparison: {
+    totalBudget: number;
+    totalActual: number;
+    totalDifference: number;
+    totalPercentage: number;
+    items: Array<{
+      category_id: string;
+      categoryName: string;
+      budgeted: number;
+      actual: number;
+      difference: number;
+      percentage: number;
+    }>;
+  } | null;
+  notes: string[];
+}
+
 function generateMonthlySummaryPdf(data: MonthlySummaryData, config: ReportConfig): jsPDF {
   const doc = createBasePdf();
   const monthName = MONTH_LABELS_FULL[config.month - 1];
@@ -379,12 +405,140 @@ function generateBudgetReportPdf(data: BudgetReportData, config: ReportConfig): 
   return doc;
 }
 
+function generateAnnualReportPdf(data: AnnualReportData, config: ReportConfig): jsPDF {
+  const doc = createBasePdf();
+  const title = `Informe Financiero Anual — ${config.year}`;
+  const dateRange = data.isPartialYear
+    ? `Enero — ${MONTH_LABELS_FULL[data.lastMonthWithData - 1]} (parcial)`
+    : 'Enero — Diciembre';
+
+  let y = addHeader(doc, title, dateRange);
+
+  y = addSummaryBox(doc, [
+    { label: 'Total Ingresos', value: formatCLP(data.totalIncome) },
+    { label: 'Total Gastos', value: formatCLP(data.totalExpenses) },
+    { label: 'Balance', value: formatCLP(data.balance) },
+  ], y);
+
+  // Monthly breakdown table
+  y = addTable(doc, {
+    title: 'Desglose Mensual',
+    headers: ['Mes', 'Ingresos', 'Gastos', 'Balance'],
+    rows: data.monthlyData.map((item) => [
+      MONTH_LABELS_FULL[item.month - 1],
+      formatCLP(item.income),
+      formatCLP(item.expenses),
+      formatCLP(item.balance),
+    ]),
+    rightAlignColumns: [1, 2, 3],
+  }, y + 5);
+
+  // Top income categories
+  if (data.topIncomeCategories.length > 0) {
+    y += 8;
+    if (y > 240) {
+      doc.addPage();
+      y = PAGE_MARGIN + 10;
+    }
+
+    y = addTable(doc, {
+      title: 'Top 10 Categorías de Ingresos',
+      headers: ['Categoría', 'Total Anual', '% del Total'],
+      rows: data.topIncomeCategories.map((item) => [
+        item.category_name,
+        formatCLP(item.total),
+        `${item.percentage}%`,
+      ]),
+      rightAlignColumns: [1, 2],
+    }, y);
+  }
+
+  // Top expense categories
+  if (data.topExpenseCategories.length > 0) {
+    y += 8;
+    if (y > 240) {
+      doc.addPage();
+      y = PAGE_MARGIN + 10;
+    }
+
+    y = addTable(doc, {
+      title: 'Top 10 Categorías de Gastos',
+      headers: ['Categoría', 'Total Anual', '% del Total'],
+      rows: data.topExpenseCategories.map((item) => [
+        item.category_name,
+        formatCLP(item.total),
+        `${item.percentage}%`,
+      ]),
+      rightAlignColumns: [1, 2],
+    }, y);
+  }
+
+  // Budget comparison (if available)
+  if (data.budgetComparison) {
+    y += 8;
+    if (y > 240) {
+      doc.addPage();
+      y = PAGE_MARGIN + 10;
+    }
+
+    // Budget summary metrics
+    y = addSummaryBox(doc, [
+      { label: 'Presupuesto Anual', value: formatCLP(data.budgetComparison.totalBudget) },
+      { label: 'Ejecutado', value: formatCLP(data.budgetComparison.totalActual) },
+      { label: '% Ejecutado', value: `${data.budgetComparison.totalPercentage}%` },
+    ], y);
+
+    y = addTable(doc, {
+      title: 'Comparación Presupuesto vs Ejecutado',
+      headers: ['Categoría', 'Presupuestado', 'Ejecutado', '% Ejecutado'],
+      rows: data.budgetComparison.items.map((item) => [
+        item.categoryName,
+        formatCLP(item.budgeted),
+        formatCLP(item.actual),
+        `${item.percentage}%`,
+      ]),
+      rightAlignColumns: [1, 2, 3],
+    }, y + 5);
+  }
+
+  // Notes section
+  if (data.notes.length > 0) {
+    y += 8;
+    if (y > 240) {
+      doc.addPage();
+      y = PAGE_MARGIN + 10;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    doc.text('Observaciones', PAGE_MARGIN, y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+
+    y += 5;
+    for (const note of data.notes) {
+      if (y > 260) {
+        doc.addPage();
+        y = PAGE_MARGIN + 10;
+      }
+      doc.text(`• ${note}`, PAGE_MARGIN + 2, y);
+      y += 4;
+    }
+  }
+
+  addFooter(doc);
+  return doc;
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-export type ReportData = MonthlySummaryData | CategoryReportData | BudgetReportData;
+export type ReportData = MonthlySummaryData | CategoryReportData | BudgetReportData | AnnualReportData;
 
 export function generateFinancialPDF(
-  reportType: 'monthly' | 'category' | 'budget',
+  reportType: 'monthly' | 'category' | 'budget' | 'annual',
   data: ReportData,
   config: ReportConfig
 ): jsPDF {
@@ -395,11 +549,13 @@ export function generateFinancialPDF(
       return generateCategoryReportPdf(data as CategoryReportData, config);
     case 'budget':
       return generateBudgetReportPdf(data as BudgetReportData, config);
+    case 'annual':
+      return generateAnnualReportPdf(data as AnnualReportData, config);
   }
 }
 
 export function downloadFinancialPDF(
-  reportType: 'monthly' | 'category' | 'budget',
+  reportType: 'monthly' | 'category' | 'budget' | 'annual',
   data: ReportData,
   config: ReportConfig
 ): void {
@@ -409,12 +565,18 @@ export function downloadFinancialPDF(
     monthly: 'Resumen_Mensual',
     category: 'Informe_Categoria',
     budget: 'Presupuesto_vs_Real',
+    annual: 'Informe_Anual',
   };
 
-  const monthStr = String(config.month).padStart(2, '0');
-  const filename = `CASA_${typeNames[reportType]}_${config.year}_${monthStr}.pdf`;
+  let filename: string;
+  if (reportType === 'annual') {
+    filename = `CASA_${typeNames[reportType]}_${config.year}.pdf`;
+  } else {
+    const monthStr = String(config.month).padStart(2, '0');
+    filename = `CASA_${typeNames[reportType]}_${config.year}_${monthStr}.pdf`;
+  }
 
   doc.save(filename);
 }
 
-export type { MonthlySummaryData, CategoryReportData, BudgetReportData };
+export type { MonthlySummaryData, CategoryReportData, BudgetReportData, AnnualReportData };
