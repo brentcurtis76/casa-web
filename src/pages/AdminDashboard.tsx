@@ -33,6 +33,7 @@ import {
   DollarSign,
   ListMusic,
   Headphones,
+  Baby,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -256,6 +257,15 @@ const AdminDashboard: React.FC = () => {
       description: 'Gestión financiera: ingresos, gastos, presupuestos, reportes y nómina.',
       icon: <DollarSign className="h-8 w-8" />,
       route: '/admin/finanzas',
+      category: 'administracion',
+      status: 'available',
+    },
+    {
+      id: 'children-ministry',
+      title: 'Ministerio Infantil',
+      description: 'Lecciones, calendario, voluntarios y asistencia',
+      icon: <Baby className="h-8 w-8" />,
+      route: '/admin/ninos',
       category: 'administracion',
       status: 'available',
     },
