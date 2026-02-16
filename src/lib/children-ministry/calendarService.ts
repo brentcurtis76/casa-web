@@ -129,3 +129,25 @@ export async function getUpcomingSessions(limit?: number): Promise<ChildrenCalen
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as ChildrenCalendarFull[];
 }
+
+/**
+ * Get a session by date and age_group_id (idempotency check).
+ * Normalizes date to YYYY-MM-DD to prevent mismatches from ISO datetime strings.
+ */
+export async function getSessionByDateAndAgeGroup(
+  date: string,
+  ageGroupId: string
+): Promise<ChildrenCalendarRow | null> {
+  // Normalize to YYYY-MM-DD — handles both "2026-02-22" and "2026-02-22T04:00:00.000Z"
+  const normalizedDate = date.includes('T') ? date.split('T')[0] : date;
+
+  const { data, error } = await supabase
+    .from('church_children_calendar')
+    .select('*')
+    .eq('date', normalizedDate)
+    .eq('age_group_id', ageGroupId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return (data as ChildrenCalendarRow) || null;
+}

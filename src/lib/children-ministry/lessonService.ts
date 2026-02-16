@@ -131,6 +131,40 @@ export async function addLessonMaterial(
 }
 
 /**
+ * Upsert a material by lesson_id + type: update if exists, insert if not.
+ * Used for story materials to prevent duplicate rows on republish.
+ */
+export async function upsertLessonMaterialByType(
+  material: ChildrenLessonMaterialInsert,
+): Promise<ChildrenLessonMaterialRow> {
+  // Check for existing material with same lesson_id and type
+  const { data: existing, error: queryError } = await supabase
+    .from('church_children_lesson_materials')
+    .select('*')
+    .eq('lesson_id', material.lesson_id)
+    .eq('type', material.type)
+    .maybeSingle();
+
+  if (queryError) throw new Error(queryError.message);
+
+  if (existing) {
+    // Update existing row
+    const { data, error } = await supabase
+      .from('church_children_lesson_materials')
+      .update({ name: material.name, url: material.url, story_id: material.story_id })
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as ChildrenLessonMaterialRow;
+  }
+
+  // Insert new row
+  return addLessonMaterial(material);
+}
+
+/**
  * Delete a lesson material.
  */
 export async function deleteLessonMaterial(id: string): Promise<void> {
@@ -140,4 +174,22 @@ export async function deleteLessonMaterial(id: string): Promise<void> {
     .eq('id', id);
 
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Get a lesson by liturgy_id and age_group_id (idempotency check).
+ */
+export async function getLessonByLiturgyAndAgeGroup(
+  liturgyId: string,
+  ageGroupId: string
+): Promise<ChildrenLessonRow | null> {
+  const { data, error } = await supabase
+    .from('church_children_lessons')
+    .select('*')
+    .eq('liturgy_id', liturgyId)
+    .eq('age_group_id', ageGroupId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return (data as ChildrenLessonRow) || null;
 }

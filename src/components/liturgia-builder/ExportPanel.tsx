@@ -22,6 +22,7 @@ import {
 import type { LiturgyElement, LiturgyElementType, LiturgyContext } from '@/types/shared/liturgy';
 import type { Story } from '@/types/shared/story';
 import type { ServiceType, PublishMode, MusicPublicationStateRow } from '@/types/musicPlanning';
+import type { ChildrenPublicationStateRow } from '@/types/childrenPublicationState';
 import { exportLiturgy } from '@/lib/liturgia/exportService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
 import { publishCuentacuento } from '@/lib/publishedResourcesService';
@@ -59,8 +60,10 @@ import {
 import {
   generateMusicPacket,
 } from '@/lib/music-planning/packetGenerationService';
+import { getPublicationsByLiturgyId } from '@/lib/children-ministry/childrenPublicationStateService';
 import { supabase } from '@/integrations/supabase/client';
 import { SERVICE_TYPE_LABELS } from '@/lib/music-planning/musicianLabels';
+import { ChildrenActivityDialog } from './ChildrenActivityDialog';
 
 interface ExportPanelProps {
   elements: Map<LiturgyElementType, LiturgyElement>;
@@ -106,6 +109,13 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const [generatingPacket, setGeneratingPacket] = useState(false);
   const [existingPublication, setExistingPublication] = useState<MusicPublicationStateRow | null>(null);
 
+  // Children activities state
+  const [childrenActivityDialogOpen, setChildrenActivityDialogOpen] = useState(false);
+  const [childrenSendDialogOpen, setChildrenSendDialogOpen] = useState(false);
+  const [sendingChildrenPacket, setSendingChildrenPacket] = useState(false);
+  const [childrenPublications, setChildrenPublications] = useState<ChildrenPublicationStateRow[]>([]);
+  const [existingChildrenPublication, setExistingChildrenPublication] = useState<ChildrenPublicationStateRow | null>(null);
+
   // RBAC: Can this user publish music?
   const canPublishMusic = hasRole(ROLE_NAMES.LITURGIST) ||
     hasRole(ROLE_NAMES.WORSHIP_COORDINATOR) ||
@@ -115,7 +125,12 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const canSendPacket = hasRole(ROLE_NAMES.WORSHIP_COORDINATOR) ||
     hasRole(ROLE_NAMES.GENERAL_ADMIN);
 
-  // Load existing publication state for this liturgy
+  // RBAC: Can this user manage children activities?
+  const canPublishChildrenActivities = hasRole(ROLE_NAMES.LITURGIST) ||
+    hasRole(ROLE_NAMES.CHILDREN_MINISTRY_COORDINATOR) ||
+    hasRole(ROLE_NAMES.GENERAL_ADMIN);
+
+  // Load existing publication state for this liturgy (both music and children)
   const loadPublicationState = useCallback(async () => {
     if (!liturgyContext?.id) return;
     try {
@@ -123,6 +138,18 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       setExistingPublication(pub);
     } catch {
       // Silently fail — publication state may not exist yet
+    }
+
+    try {
+      const childrenPubs = await getPublicationsByLiturgyId(liturgyContext.id);
+      setChildrenPublications(childrenPubs);
+      if (childrenPubs.length > 0) {
+        setExistingChildrenPublication(childrenPubs[0]);
+      } else {
+        setExistingChildrenPublication(null);
+      }
+    } catch {
+      // Silently fail — children publication state may not exist yet
     }
   }, [liturgyContext?.id]);
 
@@ -322,6 +349,50 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     } finally {
       setSendingPacket(false);
       setGeneratingPacket(false);
+    }
+  };
+
+  // Handle send children packet — sends to ALL publications for this liturgy
+  const handleSendChildrenPacket = async () => {
+    if (!liturgyContext?.id || childrenPublications.length === 0) return;
+
+    setSendingChildrenPacket(true);
+    setError(null);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error('Sesion no valida. Inicia sesion nuevamente.');
+      }
+
+      const publicationIds = childrenPublications.map((p) => p.id);
+
+      const response = await supabase.functions.invoke('send-children-service-packet', {
+        body: { liturgyId: liturgyContext.id, publicationIds },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Error al enviar paquete');
+      }
+
+      const result = response.data as { success: boolean; sent: number; failed: number; errors: string[]; error?: string };
+
+      if (result.error && !result.success) {
+        throw new Error(result.error);
+      }
+
+      toast({
+        title: 'Paquete enviado',
+        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}${result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''}`,
+      });
+
+      setChildrenSendDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al enviar paquete a voluntarios');
+    } finally {
+      setSendingChildrenPacket(false);
     }
   };
 
@@ -634,6 +705,118 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         </div>
       )}
 
+      {/* Children Activities Section */}
+      {canPublishChildrenActivities && storyData && (
+        <div className="space-y-3">
+          <h3
+            className="text-center"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '16px',
+              fontWeight: 600,
+              color: CASA_BRAND.colors.primary.black,
+            }}
+          >
+            Actividades de Niños
+          </h3>
+
+          <div
+            className="p-5 rounded-xl"
+            style={{
+              background: `linear-gradient(135deg, ${CASA_BRAND.colors.secondary.grayLight}15 0%, ${CASA_BRAND.colors.secondary.grayLight}08 100%)`,
+              border: `1px solid ${CASA_BRAND.colors.secondary.grayLight}50`,
+            }}
+          >
+            <div className="flex items-start gap-4">
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: `${CASA_BRAND.colors.secondary.grayLight}30` }}
+              >
+                <Heart size={22} style={{ color: CASA_BRAND.colors.primary.amber }} />
+              </div>
+              <div className="flex-1">
+                <h4
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.heading,
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: CASA_BRAND.colors.primary.black,
+                  }}
+                >
+                  Generar Actividades
+                </h4>
+                <p
+                  className="mt-1"
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                    color: CASA_BRAND.colors.secondary.grayDark,
+                  }}
+                >
+                  Crear actividades infantiles adaptadas por grupos de edad desde el cuento
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setChildrenActivityDialogOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    style={{
+                      backgroundColor: CASA_BRAND.colors.primary.amber,
+                      color: CASA_BRAND.colors.primary.black,
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '13px',
+                    }}
+                  >
+                    <Heart size={16} />
+                    Generar Actividades de Niños
+                  </button>
+
+                  {canPublishChildrenActivities && existingChildrenPublication && (
+                    <button
+                      onClick={() => setChildrenSendDialogOpen(true)}
+                      disabled={sendingChildrenPacket}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      style={{
+                        backgroundColor: CASA_BRAND.colors.primary.black,
+                        color: CASA_BRAND.colors.primary.white,
+                        fontFamily: CASA_BRAND.fonts.body,
+                        fontSize: '13px',
+                      }}
+                    >
+                      <Send size={16} />
+                      Enviar a Voluntarios
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Children Activity Dialog */}
+      {storyData && liturgyContext && (
+        <ChildrenActivityDialog
+          isOpen={childrenActivityDialogOpen}
+          onClose={() => setChildrenActivityDialogOpen(false)}
+          onSuccess={() => {
+            loadPublicationState();
+            setChildrenActivityDialogOpen(false);
+          }}
+          liturgyId={liturgyContext.id}
+          liturgyTitle={liturgyContext.title}
+          liturgySummary={liturgyContext.summary || ''}
+          bibleText={liturgyContext.bibleText || ''}
+          liturgyDate={(() => {
+            const d = liturgyContext.date instanceof Date
+              ? liturgyContext.date
+              : new Date(liturgyContext.date);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          })()}
+          storyData={storyData}
+        />
+      )}
+
       {/* Publish Music Dialog */}
       <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -777,6 +960,56 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
               disabled={sendingPacket || generatingPacket}
             >
               {sendingPacket ? (
+                <>
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send size={16} className="mr-2" />
+                  Enviar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Children Packet Dialog */}
+      <Dialog open={childrenSendDialogOpen} onOpenChange={setChildrenSendDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: CASA_BRAND.fonts.heading, fontWeight: 300 }}>
+              Enviar Actividad a Voluntarios
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <p style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '14px', color: CASA_BRAND.colors.secondary.grayDark }}>
+              Se enviara un correo electronico a todos los voluntarios asignados a las sesiones infantiles de esta actividad con los detalles de la leccion, materiales y fases.
+            </p>
+            {existingChildrenPublication && (
+              <div className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                Version de publicacion: v{existingChildrenPublication.publish_version}
+              </div>
+            )}
+            {sendingChildrenPacket && (
+              <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.primary.amber }}>
+                <Loader2 size={14} className="animate-spin" />
+                Enviando correos...
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChildrenSendDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSendChildrenPacket}
+              disabled={sendingChildrenPacket}
+            >
+              {sendingChildrenPacket ? (
                 <>
                   <Loader2 size={16} className="animate-spin mr-2" />
                   Enviando...
