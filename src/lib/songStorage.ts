@@ -102,6 +102,15 @@ export async function getAllSongEntries(): Promise<SongIndexEntry[]> {
 }
 
 /**
+ * @deprecated Use songService.getSongs() directly.
+ * Returns all songs mapped to the legacy Song shape.
+ */
+export async function getAllSongs(): Promise<Song[]> {
+  const rows = await songService.getSongs({ orderBy: 'number', ascending: true });
+  return rows.map(rowToSong);
+}
+
+/**
  * @deprecated Use songService.getSongBySlug() directly.
  * Loads a song by its legacy ID (which is the slug column in the DB).
  */
