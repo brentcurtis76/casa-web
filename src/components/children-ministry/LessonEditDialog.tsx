@@ -69,11 +69,17 @@ const LessonEditDialog = ({
         const groups = await getAgeGroups();
         setAgeGroups(groups);
 
+        // Canonical table is 'liturgias' with column 'titulo' (not 'liturgies'/'title')
         const { data: liturgyData } = await supabase
-          .from('liturgies')
-          .select('id, title')
-          .order('title', { ascending: true });
-        setLitururgies((liturgyData ?? []) as { id: string; title: string }[]);
+          .from('liturgias')
+          .select('id, titulo')
+          .order('titulo', { ascending: true });
+        setLitururgies(
+          (liturgyData ?? []).map((l: { id: string; titulo: string }) => ({
+            id: l.id,
+            title: l.titulo,
+          }))
+        );
       } catch {
         // Toast handles user-facing errors; silently fail on dropdown load
       }
