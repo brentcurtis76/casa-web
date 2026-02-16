@@ -4,7 +4,7 @@
  * Two-panel layout: Calendar on left, service date list/detail on right.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   useServiceDates,
@@ -47,7 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, ShieldAlert, Pencil, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Plus, ShieldAlert, Pencil, Trash2, ArrowLeft, AlertCircle, Send, Music, Loader2 } from 'lucide-react';
 import {
   SERVICE_TYPE_LABELS,
   SERVICE_STATUS_LABELS,
@@ -57,16 +57,24 @@ import {
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { format, startOfMonth, endOfMonth, isSameDay, parseISO, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
-import type { ServiceType, ServiceDateStatus, MusicServiceDateRow } from '@/types/musicPlanning';
+import type { ServiceType, ServiceDateStatus, MusicServiceDateRow, PublicationWithDeliverySummary } from '@/types/musicPlanning';
+import { getPublicationWithDeliverySummary } from '@/lib/music-planning/publicationStateService';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 const ServiceDateManager = () => {
   const { canRead, canWrite, canManage, loading: permLoading } = usePermissions('music_scheduling');
+  const { toast } = useToast();
 
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [selectedDateId, setSelectedDateId] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingDateId, setDeletingDateId] = useState<string | null>(null);
+
+  // Publication status
+  const [publicationInfo, setPublicationInfo] = useState<PublicationWithDeliverySummary | null>(null);
+  const [resendingPacket, setResendingPacket] = useState(false);
 
   // Create form state
   const [newDate, setNewDate] = useState('');
@@ -98,6 +106,64 @@ const ServiceDateManager = () => {
     if (!serviceDates) return [];
     return serviceDates.filter((sd) => isSameMonth(parseISO(sd.date), selectedMonth));
   }, [serviceDates, selectedMonth]);
+
+  // Load publication status when a service date is selected
+  const loadPublicationInfo = useCallback(async (dateId: string) => {
+    try {
+      const info = await getPublicationWithDeliverySummary(dateId);
+      setPublicationInfo(info);
+    } catch {
+      setPublicationInfo(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedDateId) {
+      loadPublicationInfo(selectedDateId);
+    } else {
+      setPublicationInfo(null);
+    }
+  }, [selectedDateId, loadPublicationInfo]);
+
+  // Handle resend packet
+  const handleResendPacket = async () => {
+    if (!publicationInfo) return;
+
+    setResendingPacket(true);
+    try {
+      const response = await supabase.functions.invoke('send-music-service-packet', {
+        body: { publicationId: publicationInfo.id },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const result = response.data as { success: boolean; sent: number; failed: number; error?: string };
+
+      if (result.error && !result.success) {
+        throw new Error(result.error);
+      }
+
+      toast({
+        title: 'Paquete reenviado',
+        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}`,
+      });
+
+      // Reload publication info to update delivery summary
+      if (selectedDateId) {
+        await loadPublicationInfo(selectedDateId);
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Error al reenviar paquete',
+        variant: 'destructive',
+      });
+    } finally {
+      setResendingPacket(false);
+    }
+  };
 
   if (permLoading) {
     return (
@@ -302,6 +368,63 @@ const ServiceDateManager = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Publication status section */}
+              {publicationInfo && (
+                <div
+                  className="border rounded-lg p-4"
+                  style={{
+                    borderColor: `${CASA_BRAND.colors.primary.amber}40`,
+                    backgroundColor: `${CASA_BRAND.colors.primary.amber}08`,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Music size={16} style={{ color: CASA_BRAND.colors.primary.amber }} />
+                      <h4
+                        className="text-sm font-semibold"
+                        style={{ color: CASA_BRAND.colors.primary.amber }}
+                      >
+                        {publicationInfo.publish_version > 1
+                          ? `Publicado desde Liturgia v${publicationInfo.publish_version}`
+                          : 'Publicado desde Liturgia'}
+                      </h4>
+                    </div>
+                    <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      {format(new Date(publicationInfo.published_at), "d MMM yyyy, HH:mm", { locale: es })}
+                    </span>
+                  </div>
+
+                  {publicationInfo.deliverySummary.total > 0 && (
+                    <div className="flex items-center gap-3 text-xs mb-3" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                      <span>{publicationInfo.deliverySummary.sent} enviado{publicationInfo.deliverySummary.sent !== 1 ? 's' : ''}</span>
+                      {publicationInfo.deliverySummary.failed > 0 && (
+                        <span className="text-red-500">{publicationInfo.deliverySummary.failed} fallido{publicationInfo.deliverySummary.failed !== 1 ? 's' : ''}</span>
+                      )}
+                      {publicationInfo.deliverySummary.pending > 0 && (
+                        <span>{publicationInfo.deliverySummary.pending} pendiente{publicationInfo.deliverySummary.pending !== 1 ? 's' : ''}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {canWrite && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={handleResendPacket}
+                      disabled={resendingPacket}
+                    >
+                      {resendingPacket ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                      Reenviar Paquete
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {/* Availability section */}
               <div>

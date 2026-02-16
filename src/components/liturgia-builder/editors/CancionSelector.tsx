@@ -21,6 +21,7 @@ import {
 import type { Song, SongTempo } from '@/types/shared/song';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
 import type { LiturgyElementType } from '@/types/shared/liturgy';
+import type { AssetWarnings } from '@/types/musicPlanning';
 import {
   TEMPO_LABELS,
   filterSongsByTempo,
@@ -29,6 +30,8 @@ import {
 } from '@/lib/canciones/songTagsManager';
 import { songToSlides } from '@/lib/songToSlides';
 import { SongSlide } from '@/components/canciones/SongSlide';
+import { getAllSongs } from '@/lib/songStorage';
+import { checkSongAssets } from '@/lib/music-planning/liturgyMusicPublishService';
 
 type SongElementType =
   | 'cancion-invocacion'
@@ -84,7 +87,8 @@ const SongCard: React.FC<{
   song: Song;
   isSelected: boolean;
   onSelect: () => void;
-}> = ({ song, isSelected, onSelect }) => {
+  assetWarnings?: AssetWarnings;
+}> = ({ song, isSelected, onSelect, assetWarnings }) => {
   const stats = getSongUsageStats(song.songTags);
 
   return (
@@ -174,10 +178,52 @@ const SongCard: React.FC<{
                 }}
               >
                 <Calendar size={10} />
-                Hace {stats.daysSinceLastUse} días
+                Hace {stats.daysSinceLastUse} dias
               </span>
             )}
           </div>
+
+          {/* Asset warning badges */}
+          {assetWarnings && (assetWarnings.missingChordCharts || assetWarnings.missingAudioReferences || assetWarnings.missingStems) && (
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {assetWarnings.missingChordCharts && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    color: '#92400E',
+                    fontFamily: CASA_BRAND.fonts.body,
+                  }}
+                >
+                  Sin partitura
+                </span>
+              )}
+              {assetWarnings.missingAudioReferences && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    color: '#92400E',
+                    fontFamily: CASA_BRAND.fonts.body,
+                  }}
+                >
+                  Sin referencia
+                </span>
+              )}
+              {assetWarnings.missingStems && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    color: '#92400E',
+                    fontFamily: CASA_BRAND.fonts.body,
+                  }}
+                >
+                  Sin stems
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Checkmark */}
@@ -210,6 +256,9 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
 
+  // Asset warnings state
+  const [assetStatus, setAssetStatus] = useState<Record<string, AssetWarnings>>({});
+
   const defaultTempo = DEFAULT_TEMPO_BY_ELEMENT[elementType];
   const elementLabel = ELEMENT_LABELS[elementType];
 
@@ -218,28 +267,8 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
     const loadSongs = async () => {
       setIsLoading(true);
       try {
-        // Intentar cargar desde el índice
-        const indexResponse = await fetch('/data/canciones/index.json');
-        if (indexResponse.ok) {
-          const indexData = await indexResponse.json();
-
-          // Cargar detalles de cada canción
-          const songPromises = indexData.songs.map(async (entry: { id: string; slug: string }) => {
-            try {
-              // Los archivos están nombrados con el id (ej: "01-el-espiritu.json")
-              const songResponse = await fetch(`/data/canciones/${entry.id}.json`);
-              if (songResponse.ok) {
-                return songResponse.json();
-              }
-            } catch {
-              return null;
-            }
-            return null;
-          });
-
-          const loadedSongs = (await Promise.all(songPromises)).filter(Boolean);
-          setSongs(loadedSongs);
-        }
+        const loadedSongs = await getAllSongs();
+        setSongs(loadedSongs);
       } catch (error) {
         console.error('Error loading songs:', error);
       } finally {
@@ -310,7 +339,44 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
     return result;
   }, [songs, tempoFilter, showAllTempos, searchQuery]);
 
-  // Manejar selección de canción
+  // Load asset warnings for displayed songs
+  useEffect(() => {
+    if (filteredSongs.length === 0) return;
+
+    let cancelled = false;
+    const loadAssets = async () => {
+      const newStatus: Record<string, AssetWarnings> = {};
+
+      // Only check first 20 songs to avoid excessive queries
+      const songsToCheck = filteredSongs.slice(0, 20);
+
+      for (const song of songsToCheck) {
+        if (cancelled) break;
+        // Skip if already loaded
+        if (assetStatus[song.id]) {
+          newStatus[song.id] = assetStatus[song.id];
+          continue;
+        }
+        try {
+          const warnings = await checkSongAssets(song.id);
+          newStatus[song.id] = warnings;
+        } catch {
+          // Skip on error
+        }
+      }
+
+      if (!cancelled) {
+        setAssetStatus((prev) => ({ ...prev, ...newStatus }));
+      }
+    };
+
+    loadAssets();
+    return () => { cancelled = true; };
+  // Only re-run when the filtered song IDs change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredSongs.map((s) => s.id).join(',')]);
+
+  // Manejar seleccion de cancion
   const handleSelectSong = useCallback((song: Song) => {
     setSelectedSong(song);
     const slides = songToSlides(song);
@@ -517,6 +583,7 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
                   song={song}
                   isSelected={selectedSong?.id === song.id}
                   onSelect={() => handleSelectSong(song)}
+                  assetWarnings={assetStatus[song.id]}
                 />
               ))}
             </>

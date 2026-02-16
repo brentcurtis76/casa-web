@@ -6,7 +6,7 @@
  *   Right: Selected setlist detail (Info, Canciones with reorder, key, moment, notes)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   useSetlists,
@@ -67,7 +67,8 @@ import { SETLIST_STATUS_LABELS, LITURGICAL_MOMENT_LABELS } from '@/lib/music-pla
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import type { SetlistStatus, MusicSetlistItemRow, MusicSongRow } from '@/types/musicPlanning';
+import type { SetlistStatus, MusicSetlistItemRow, MusicSongRow, MusicPublicationStateRow } from '@/types/musicPlanning';
+import { supabase } from '@/integrations/supabase/client';
 import SetlistEditDialog from './SetlistEditDialog';
 import SetlistItemPicker from './SetlistItemPicker';
 
@@ -105,6 +106,47 @@ const SetlistBuilder = () => {
   // Inline editing for song_key
   const [editingKeyItemId, setEditingKeyItemId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState('');
+
+  // Publication state for selected setlist
+  const [publicationState, setPublicationState] = useState<MusicPublicationStateRow | null>(null);
+
+  useEffect(() => {
+    if (!selectedSetlistId) {
+      setPublicationState(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchPublication = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('music_publication_state')
+          .select('*')
+          .eq('setlist_id', selectedSetlistId)
+          .order('published_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!cancelled && !error) {
+          setPublicationState(data as MusicPublicationStateRow | null);
+        }
+      } catch {
+        // Silently ignore
+      }
+    };
+    fetchPublication();
+    return () => { cancelled = true; };
+  }, [selectedSetlistId]);
+
+  const publicationBadge = publicationState ? (
+    <Badge
+      variant="secondary"
+      className="text-xs"
+      style={{ backgroundColor: `${CASA_BRAND.colors.primary.amber}20`, color: CASA_BRAND.colors.primary.amber }}
+    >
+      Publicado desde Liturgia{publicationState.publish_version > 1 ? ` v${publicationState.publish_version}` : ''}
+    </Badge>
+  ) : null;
 
   // Data
   const { data: setlists, isLoading, isError } = useSetlists();
@@ -317,10 +359,11 @@ const SetlistBuilder = () => {
                     >
                       {selectedSetlist.title || 'Sin título'}
                     </h3>
-                    <div className="mt-2 flex gap-2 flex-wrap">
+                    <div className="mt-2 flex gap-2 flex-wrap items-center">
                       <Badge variant={getSetlistStatusVariant(selectedSetlist.status)}>
                         {SETLIST_STATUS_LABELS[selectedSetlist.status]}
                       </Badge>
+                      {publicationBadge}
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
