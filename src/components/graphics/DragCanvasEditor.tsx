@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useCoordinateMapper } from '@/hooks/useCoordinateMapper';
 import { DraggableElement } from './DraggableElement';
@@ -18,6 +18,7 @@ import {
   DEFAULT_ELEMENT_POSITIONS,
   FORMAT_DIMENSIONS,
   ELEMENT_META,
+  SELECTION_COLORS,
 } from './graphicsTypes';
 
 interface DragCanvasEditorProps {
@@ -26,7 +27,6 @@ interface DragCanvasEditorProps {
   previewLoading: boolean;
   positions: ElementPositions;
   onPositionsChange: (positions: ElementPositions) => void;
-  /** Which fields are visible (based on form toggles) */
   visibleFields: {
     subtitle: boolean;
     date: boolean;
@@ -124,6 +124,16 @@ export function DragCanvasEditor({
     [positions, onPositionsChange]
   );
 
+  const updateLogoSize = useCallback(
+    (size: number) => {
+      onPositionsChange({
+        ...positions,
+        logo: { ...positions.logo, size },
+      });
+    },
+    [positions, onPositionsChange]
+  );
+
   const resetToDefaults = useCallback(() => {
     onPositionsChange(JSON.parse(JSON.stringify(DEFAULT_ELEMENT_POSITIONS[format])));
     setSelectedElement(null);
@@ -135,8 +145,49 @@ export function DragCanvasEditor({
     if (id === 'time') return visibleFields.time;
     if (id === 'location') return visibleFields.location;
     if (id === 'logo') return DEFAULT_ELEMENT_POSITIONS[format].logo.size > 0;
-    return true; // title, illustration always visible
+    return true;
   };
+
+  // Keyboard shortcuts for nudging selected element
+  useEffect(() => {
+    if (!selectedElement) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!selectedElement) return;
+
+      const step = e.shiftKey ? 10 : 1;
+      const pos = selectedElement === 'illustration' ? positions.illustration :
+                  selectedElement === 'logo' ? positions.logo :
+                  positions[selectedElement as 'title' | 'subtitle' | 'date' | 'time' | 'location'];
+      const displayY = pos.y >= 0 ? pos.y : 0;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          updatePosition(selectedElement, pos.x - step, displayY);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          updatePosition(selectedElement, pos.x + step, displayY);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          updatePosition(selectedElement, pos.x, displayY - step);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          updatePosition(selectedElement, pos.x, displayY + step);
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setSelectedElement(null);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElement, positions, updatePosition]);
 
   const dims = FORMAT_DIMENSIONS[format];
   const aspectClass =
@@ -150,6 +201,13 @@ export function DragCanvasEditor({
   const selectedAlign = selectedElement && selectedIsText
     ? (positions[selectedElement as 'title' | 'subtitle'].textAlign || 'left')
     : 'left';
+
+  // Get selected element position for coordinate display
+  const selectedPos = selectedElement
+    ? (selectedElement === 'illustration' ? positions.illustration :
+       selectedElement === 'logo' ? positions.logo :
+       positions[selectedElement as 'title' | 'subtitle' | 'date' | 'time' | 'location'])
+    : null;
 
   return (
     <div className="space-y-3">
@@ -176,7 +234,7 @@ export function DragCanvasEditor({
           </div>
         )}
 
-        {/* Drag overlay — positioned over the image area */}
+        {/* Drag overlay */}
         <div
           ref={overlayRef}
           className="absolute inset-0"
@@ -188,8 +246,6 @@ export function DragCanvasEditor({
                        id === 'logo' ? positions.logo :
                        positions[id as 'title' | 'subtitle' | 'date' | 'time' | 'location'];
 
-            // Use the actual stored y, but for auto-positioned elements (y=-1),
-            // use the default as a fallback for display
             const displayY = pos.y >= 0 ? pos.y : DEFAULT_ELEMENT_POSITIONS[format][id as keyof ElementPositions].y;
             const effectiveY = Math.max(displayY, 0);
 
@@ -210,74 +266,122 @@ export function DragCanvasEditor({
                 domHeight={domSize.height}
                 baseX={pos.x}
                 baseY={effectiveY}
+                baseWidth={size.width}
+                baseHeight={size.height}
                 onPositionChange={(x, y) => updatePosition(id, x, y)}
                 toBaseDelta={mapper.toBaseDelta}
                 isSelected={selectedElement === id}
                 onSelect={() => setSelectedElement(id)}
                 visible={isElementVisible(id)}
+                isResizable={id === 'illustration' || id === 'logo'}
+                currentScale={id === 'illustration' ? positions.illustration.scale : undefined}
+                onScaleChange={id === 'illustration' ? updateIllustrationScale : undefined}
+                currentSize={id === 'logo' ? positions.logo.size : undefined}
+                onSizeChange={id === 'logo' ? updateLogoSize : undefined}
               />
             );
           })}
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground text-center">
-        Arrastra los elementos para moverlos. Haz clic para seleccionar.
-      </p>
-
-      {/* Toolbar for selected element */}
-      {selectedElement && (
-        <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border">
-          <span className="text-sm font-medium text-amber-700">
-            {ELEMENT_META[selectedElement]?.label || selectedElement}
-          </span>
-
-          {/* Text alignment (only for text elements) */}
-          {selectedIsText && (
-            <div className="flex items-center gap-2">
-              <Label className="text-xs">Alinear:</Label>
-              <AlignmentToolbar
-                value={selectedAlign as TextAlign}
-                onChange={(align) => updateTextAlign(selectedElement, align)}
-              />
+      {/* Persistent Toolbar */}
+      <div
+        className="p-3 rounded-lg border transition-colors"
+        style={{
+          background: selectedElement ? '#f8f9fa' : '#fafafa',
+          borderColor: selectedElement ? SELECTION_COLORS.borderHover : '#e5e7eb',
+        }}
+      >
+        {!selectedElement ? (
+          <p className="text-sm text-muted-foreground text-center">
+            Haz clic en un elemento para seleccionarlo. Arrastra para mover.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {/* Element name + coordinates */}
+            <div className="flex items-center justify-between">
+              <span
+                className="text-sm font-medium px-2 py-0.5 rounded"
+                style={{ background: SELECTION_COLORS.badgeBg, color: SELECTION_COLORS.badgeText }}
+              >
+                {ELEMENT_META[selectedElement]?.label || selectedElement}
+              </span>
+              {selectedPos && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  X: {Math.round(selectedPos.x)}  Y: {Math.round(selectedPos.y >= 0 ? selectedPos.y : 0)}
+                </span>
+              )}
             </div>
-          )}
 
-          {/* Illustration controls */}
-          {selectedElement === 'illustration' && (
-            <>
-              <div className="flex items-center gap-2 flex-1">
+            {/* Text alignment (only for text elements) */}
+            {selectedIsText && (
+              <div className="flex items-center gap-3">
+                <Label className="text-xs">Alinear:</Label>
+                <AlignmentToolbar
+                  value={selectedAlign as TextAlign}
+                  onChange={(align) => updateTextAlign(selectedElement, align)}
+                />
+              </div>
+            )}
+
+            {/* Illustration controls */}
+            {selectedElement === 'illustration' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs whitespace-nowrap">Tamano:</Label>
+                  <Slider
+                    value={[positions.illustration.scale * 100]}
+                    onValueChange={([v]) => updateIllustrationScale(v / 100)}
+                    min={30}
+                    max={200}
+                    step={5}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground w-10 text-right">
+                    {Math.round(positions.illustration.scale * 100)}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs whitespace-nowrap">Opacidad:</Label>
+                  <Slider
+                    value={[positions.illustration.opacity * 100]}
+                    onValueChange={([v]) => updateIllustrationOpacity(v / 100)}
+                    min={5}
+                    max={100}
+                    step={1}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground w-10 text-right">
+                    {Math.round(positions.illustration.opacity * 100)}%
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Logo size control */}
+            {selectedElement === 'logo' && (
+              <div className="flex items-center gap-2">
                 <Label className="text-xs whitespace-nowrap">Tamano:</Label>
                 <Slider
-                  value={[positions.illustration.scale * 100]}
-                  onValueChange={([v]) => updateIllustrationScale(v / 100)}
-                  min={30}
-                  max={200}
-                  step={5}
-                  className="w-24"
-                />
-                <span className="text-xs text-muted-foreground w-10">
-                  {Math.round(positions.illustration.scale * 100)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-1">
-                <Label className="text-xs whitespace-nowrap">Opacidad:</Label>
-                <Slider
-                  value={[positions.illustration.opacity * 100]}
-                  onValueChange={([v]) => updateIllustrationOpacity(v / 100)}
-                  min={5}
-                  max={100}
+                  value={[positions.logo.size]}
+                  onValueChange={([v]) => updateLogoSize(v)}
+                  min={40}
+                  max={300}
                   step={1}
-                  className="w-24"
+                  className="flex-1 max-w-[200px]"
                 />
-                <span className="text-xs text-muted-foreground w-10">
-                  {Math.round(positions.illustration.opacity * 100)}%
+                <span className="text-xs text-muted-foreground w-10 text-right">
+                  {Math.round(positions.logo.size)}px
                 </span>
               </div>
-            </>
-          )}
-        </div>
-      )}
+            )}
+
+            <p className="text-[10px] text-muted-foreground">
+              Flechas del teclado: mover 1px | Shift+Flechas: mover 10px | Esc: deseleccionar
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Precision controls (collapsed) */}
       <Collapsible open={showPrecision} onOpenChange={setShowPrecision}>

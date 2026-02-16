@@ -28,7 +28,7 @@ export function useDragElement({
   disabled = false,
 }: UseDragElementOptions): UseDragElementReturn {
   const [isDragging, setIsDragging] = useState(false);
-  const startRef = useRef<{ domX: number; domY: number; baseX: number; baseY: number } | null>(null);
+  const startRef = useRef<{ domX: number; domY: number; baseX: number; baseY: number; dragStarted: boolean } | null>(null);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -44,6 +44,7 @@ export function useDragElement({
         domY: e.clientY,
         baseX: position.x,
         baseY: position.y,
+        dragStarted: false,
       };
       setIsDragging(true);
 
@@ -51,6 +52,13 @@ export function useDragElement({
         if (!startRef.current) return;
         const domDX = ev.clientX - startRef.current.domX;
         const domDY = ev.clientY - startRef.current.domY;
+
+        // 3px threshold to prevent click jitter
+        if (!startRef.current.dragStarted) {
+          if (Math.abs(domDX) < 3 && Math.abs(domDY) < 3) return;
+          startRef.current.dragStarted = true;
+        }
+
         const { dx, dy } = toBaseDelta(domDX, domDY);
         onChange(
           Math.round(startRef.current.baseX + dx),

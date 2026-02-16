@@ -7,6 +7,20 @@ export type FormatType = 'ppt_4_3' | 'instagram_post' | 'instagram_story' | 'fac
 
 export type TextAlign = 'left' | 'center' | 'right';
 
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+/** Google Slides-style selection colors */
+export const SELECTION_COLORS = {
+  border: '#4285f4',
+  borderHover: 'rgba(66, 133, 244, 0.4)',
+  handleFill: '#ffffff',
+  handleBorder: '#dadce0',
+  handleShadow: '0 1px 2px rgba(0,0,0,0.1)',
+  badgeBg: '#4285f4',
+  badgeText: '#ffffff',
+  selectedBg: 'rgba(66, 133, 244, 0.04)',
+} as const;
+
 export interface EventData {
   title: string;
   subtitle?: string;

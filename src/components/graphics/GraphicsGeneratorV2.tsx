@@ -573,7 +573,7 @@ export const GraphicsGeneratorV2 = () => {
       } finally {
         setAdjustPreviewLoading(false);
       }
-    }, 200);
+    }, 100);
 
     return () => clearTimeout(timeoutId);
   }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations]);
