@@ -710,3 +710,118 @@ export interface MusicianListFilters {
   instrument?: InstrumentType;
   isActive?: boolean;
 }
+
+// =====================================================
+// 7. PUBLICATION STATE (2 tables)
+// =====================================================
+
+/** Delivery status for packet emails */
+export type PacketDeliveryStatus = 'pending' | 'sent' | 'delivered' | 'failed';
+
+/** Publish mode: add songs to existing setlist or replace all */
+export type PublishMode = 'add' | 'replace';
+
+// --- 7.1 music_publication_state ---
+
+export interface MusicPublicationStateRow {
+  id: string;
+  liturgy_id: string;
+  service_date_id: string;
+  setlist_id: string;
+  publish_version: number;
+  published_by: string | null;
+  published_at: string;
+  last_packet_path: string | null;
+  warning_snapshot: WarningSnapshot | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MusicPublicationStateInsert {
+  id?: string;
+  liturgy_id: string;
+  service_date_id: string;
+  setlist_id: string;
+  publish_version?: number;
+  published_by?: string | null;
+  published_at?: string;
+  last_packet_path?: string | null;
+  warning_snapshot?: WarningSnapshot | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type MusicPublicationStateUpdate = Partial<MusicPublicationStateInsert>;
+
+// --- 7.2 music_packet_deliveries ---
+
+export interface MusicPacketDeliveryRow {
+  id: string;
+  publication_id: string;
+  musician_id: string | null;
+  email: string;
+  status: PacketDeliveryStatus;
+  external_id: string | null;
+  sent_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface MusicPacketDeliveryInsert {
+  id?: string;
+  publication_id: string;
+  musician_id?: string | null;
+  email: string;
+  status?: PacketDeliveryStatus;
+  external_id?: string | null;
+  sent_at?: string | null;
+  error_message?: string | null;
+  created_at?: string;
+}
+
+export type MusicPacketDeliveryUpdate = Partial<MusicPacketDeliveryInsert>;
+
+// =====================================================
+// PUBLISH ORCHESTRATION TYPES
+// =====================================================
+
+/** Warning snapshot stored in publication state */
+export interface WarningSnapshot {
+  missingSongs: string[];
+  missingAssets: Record<string, string[]>;
+}
+
+/** Asset warnings for a single song */
+export interface AssetWarnings {
+  missingChordCharts: boolean;
+  missingAudioReferences: boolean;
+  missingStems: boolean;
+}
+
+/** Preflight warnings aggregated before publishing */
+export interface PreflightWarnings {
+  missingSongs: string[];
+  missingAssets: Record<string, string[]>;
+  songCount: number;
+}
+
+/** Result returned from publishLiturgyMusic orchestration */
+export interface PublishResult {
+  success: boolean;
+  setlistId?: string;
+  serviceDateId?: string;
+  publicationId?: string;
+  publishVersion?: number;
+  warnings: PreflightWarnings;
+  songsPublished: number;
+}
+
+/** Publication state with delivery summary (for UI) */
+export interface PublicationWithDeliverySummary extends MusicPublicationStateRow {
+  deliverySummary: {
+    total: number;
+    sent: number;
+    failed: number;
+    pending: number;
+  };
+}

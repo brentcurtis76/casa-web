@@ -108,6 +108,26 @@ export async function getSongBySlug(slug: string): Promise<MusicSongRow | null> 
 }
 
 /**
+ * Lookup a song by slug with arrangements (sorted by sort_order).
+ * Used by publish service to resolve arrangement_id for slug-based songs.
+ */
+export async function getSongBySlugWithArrangements(
+  slug: string
+): Promise<(MusicSongRow & { music_arrangements: MusicArrangementRow[] }) | null> {
+  const { data, error } = await supabase
+    .from('music_songs')
+    .select('*, music_arrangements(*)')
+    .eq('slug', slug)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null; // not found
+    throw new Error(error.message);
+  }
+  return data as unknown as MusicSongRow & { music_arrangements: MusicArrangementRow[] };
+}
+
+/**
  * Lookup a song by its number column.
  */
 export async function getSongByNumber(num: number): Promise<MusicSongRow | null> {

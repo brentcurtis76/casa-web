@@ -51,8 +51,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  generateAllFormats,
   generateGraphic,
+  generateGraphicWithPositions,
   downloadGraphic,
   downloadAllGraphics,
   preloadFonts,
@@ -66,6 +66,13 @@ import {
   type FieldPositionAdjustments,
   type AllFieldPositionAdjustments,
 } from './templateCompositor';
+import {
+  type ElementPositions,
+  type AllElementPositions,
+  DEFAULT_ELEMENT_POSITIONS,
+  clonePositions,
+} from './graphicsTypes';
+import { DragCanvasEditor } from './DragCanvasEditor';
 import { Slider } from '@/components/ui/slider';
 
 // Tipos de evento disponibles
@@ -291,6 +298,11 @@ export const GraphicsGeneratorV2 = () => {
     JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS))
   );
 
+  // New: Element positions for drag-and-drop editor (absolute positions in base coords)
+  const [elementPositions, setElementPositions] = useState<AllElementPositions>(
+    clonePositions(DEFAULT_ELEMENT_POSITIONS)
+  );
+
   // Format date range for display
   const formatDateRange = (range: DateRange | undefined): string => {
     if (!range?.from) return '';
@@ -498,6 +510,7 @@ export const GraphicsGeneratorV2 = () => {
     // Reset adjustments to defaults
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
+    setElementPositions(clonePositions(DEFAULT_ELEMENT_POSITIONS));
     setAdjustFormat('ppt_4_3');
     setPhase('adjusting');
   };
@@ -531,7 +544,7 @@ export const GraphicsGeneratorV2 = () => {
     }));
   };
 
-  // Generate preview for adjustment phase
+  // Generate preview for adjustment phase using drag-and-drop positions
   useEffect(() => {
     if (phase !== 'adjusting' || selectedIllustration === null) return;
     if (!fontsLoaded || !logoBase64) return;
@@ -547,13 +560,12 @@ export const GraphicsGeneratorV2 = () => {
           time: includeTime ? (time || '19:00 hrs') : '',
           location: includeLocation ? (location || 'Ubicación del evento') : '',
         };
-        const graphic = await generateGraphic(
+        const graphic = await generateGraphicWithPositions(
           adjustFormat,
           eventData,
           selectedBase64,
           logoBase64,
-          illustrationAdjustments[adjustFormat],
-          fieldPositionAdjustments[adjustFormat]
+          elementPositions[adjustFormat]
         );
         setAdjustPreview(graphic.base64);
       } catch (e) {
@@ -564,7 +576,7 @@ export const GraphicsGeneratorV2 = () => {
     }, 200);
 
     return () => clearTimeout(timeoutId);
-  }, [phase, adjustFormat, illustrationAdjustments, fieldPositionAdjustments, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations]);
+  }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations]);
 
   // Generate all formats with current adjustments
   const handleGenerateWithAdjustments = async () => {
@@ -576,7 +588,7 @@ export const GraphicsGeneratorV2 = () => {
     const selectedBase64 = illustrations[selectedIllustration];
 
     try {
-      // Generate each format with its own title and adjustments
+      // Generate each format with its own title and positions
       const formats: FormatType[] = ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'];
       const graphics = await Promise.all(
         formats.map(format => {
@@ -587,7 +599,7 @@ export const GraphicsGeneratorV2 = () => {
             time: includeTime ? time : '',
             location: includeLocation ? location : '',
           };
-          return generateGraphic(format, eventData, selectedBase64, logoBase64, illustrationAdjustments[format], fieldPositionAdjustments[format]);
+          return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format]);
         })
       );
 
@@ -739,6 +751,7 @@ export const GraphicsGeneratorV2 = () => {
     setBatchName('');
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
+    setElementPositions(clonePositions(DEFAULT_ELEMENT_POSITIONS));
     setAdjustFormat('ppt_4_3');
     setAdjustPreview(null);
   };
@@ -1148,385 +1161,72 @@ export const GraphicsGeneratorV2 = () => {
         </Card>
       )}
 
-      {/* Phase: Adjusting Illustration */}
+      {/* Phase: Adjusting — Drag-and-Drop Editor */}
       {phase === 'adjusting' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Controles de ajuste */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Ajustar Ilustración</CardTitle>
-              <CardDescription>
-                Modifica el tamaño, posición y opacidad de la ilustración para cada formato
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Selector de formato */}
-              <div className="space-y-2">
-                <Label>Formato</Label>
-                <div className="flex flex-wrap gap-1">
-                  {(['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).map((format) => (
-                    <button
-                      key={format}
-                      onClick={() => setAdjustFormat(format)}
-                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                        adjustFormat === format
-                          ? 'bg-amber-500 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      {FORMAT_LABELS[format]}
-                    </button>
-                  ))}
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Ajustar Elementos</CardTitle>
+            <CardDescription>
+              Arrastra los elementos para posicionarlos. Selecciona uno para ver opciones de alineación y tamaño.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Selector de formato */}
+            <div className="space-y-2">
+              <Label>Formato</Label>
+              <div className="flex flex-wrap gap-1">
+                {(['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).map((fmt) => (
+                  <button
+                    key={fmt}
+                    onClick={() => setAdjustFormat(fmt)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      adjustFormat === fmt
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {FORMAT_LABELS[fmt]}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              {/* Slider: Tamaño */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Label>Tamaño</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {Math.round(illustrationAdjustments[adjustFormat].scale * 100)}%
-                  </span>
-                </div>
-                <Slider
-                  value={[illustrationAdjustments[adjustFormat].scale * 100]}
-                  onValueChange={([value]) => updateAdjustment('scale', value / 100)}
-                  min={30}
-                  max={200}
-                  step={5}
-                  className="w-full"
-                />
-              </div>
+            {/* Drag Canvas Editor */}
+            <DragCanvasEditor
+              format={adjustFormat}
+              previewBase64={adjustPreview}
+              previewLoading={adjustPreviewLoading}
+              positions={elementPositions[adjustFormat]}
+              onPositionsChange={(pos) =>
+                setElementPositions((prev) => ({ ...prev, [adjustFormat]: pos }))
+              }
+              visibleFields={{
+                subtitle: includeSubtitle,
+                date: includeDate,
+                time: includeTime,
+                location: includeLocation,
+              }}
+            />
 
-              {/* Slider: Posición X */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Label>Posición Horizontal</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {illustrationAdjustments[adjustFormat].offsetX > 0 ? '+' : ''}{illustrationAdjustments[adjustFormat].offsetX}%
-                  </span>
-                </div>
-                <Slider
-                  value={[illustrationAdjustments[adjustFormat].offsetX]}
-                  onValueChange={([value]) => updateAdjustment('offsetX', value)}
-                  min={-100}
-                  max={100}
-                  step={5}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Slider: Posición Y */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Label>Posición Vertical</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {illustrationAdjustments[adjustFormat].offsetY > 0 ? '+' : ''}{illustrationAdjustments[adjustFormat].offsetY}%
-                  </span>
-                </div>
-                <Slider
-                  value={[illustrationAdjustments[adjustFormat].offsetY]}
-                  onValueChange={([value]) => updateAdjustment('offsetY', value)}
-                  min={-100}
-                  max={100}
-                  step={5}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Slider: Opacidad */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Label>Opacidad</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {Math.round(illustrationAdjustments[adjustFormat].opacity * 100)}%
-                  </span>
-                </div>
-                <Slider
-                  value={[illustrationAdjustments[adjustFormat].opacity * 100]}
-                  onValueChange={([value]) => updateAdjustment('opacity', value / 100)}
-                  min={5}
-                  max={100}
-                  step={1}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Separador */}
-              <div className="border-t pt-4">
-                <Label className="text-sm font-medium mb-3 block">Posición de Campos</Label>
-
-                {/* Título - X e Y */}
-                <div className="space-y-2 mb-4 p-3 bg-gray-50 rounded-lg">
-                  <Label className="text-xs text-amber-600 flex items-center gap-1">
-                    <Heading className="h-3 w-3" /> Título
-                  </Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-muted-foreground">X</span>
-                        <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].title.offsetX}px</span>
-                      </div>
-                      <Slider
-                        value={[fieldPositionAdjustments[adjustFormat].title.offsetX]}
-                        onValueChange={([value]) => updateFieldPosition('title', 'offsetX', value)}
-                        min={-200}
-                        max={200}
-                        step={5}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-muted-foreground">Y</span>
-                        <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].title.offsetY}px</span>
-                      </div>
-                      <Slider
-                        value={[fieldPositionAdjustments[adjustFormat].title.offsetY]}
-                        onValueChange={([value]) => updateFieldPosition('title', 'offsetY', value)}
-                        min={-200}
-                        max={200}
-                        step={5}
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subtítulo - X e Y */}
-                {includeSubtitle && (
-                  <div className="space-y-2 mb-4 p-3 bg-gray-50 rounded-lg">
-                    <Label className="text-xs text-amber-600 flex items-center gap-1">
-                      <Type className="h-3 w-3" /> Subtítulo
-                    </Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">X</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].subtitle.offsetX}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].subtitle.offsetX]}
-                          onValueChange={([value]) => updateFieldPosition('subtitle', 'offsetX', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">Y</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].subtitle.offsetY}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].subtitle.offsetY]}
-                          onValueChange={([value]) => updateFieldPosition('subtitle', 'offsetY', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Fecha - X e Y */}
-                {includeDate && (
-                  <div className="space-y-2 mb-4 p-3 bg-gray-50 rounded-lg">
-                    <Label className="text-xs text-amber-600 flex items-center gap-1">
-                      <CalendarIcon className="h-3 w-3" /> Fecha
-                    </Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">X</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].date.offsetX}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].date.offsetX]}
-                          onValueChange={([value]) => updateFieldPosition('date', 'offsetX', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">Y</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].date.offsetY}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].date.offsetY]}
-                          onValueChange={([value]) => updateFieldPosition('date', 'offsetY', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Hora - X e Y */}
-                {includeTime && (
-                  <div className="space-y-2 mb-4 p-3 bg-gray-50 rounded-lg">
-                    <Label className="text-xs text-amber-600 flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Hora
-                    </Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">X</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].time.offsetX}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].time.offsetX]}
-                          onValueChange={([value]) => updateFieldPosition('time', 'offsetX', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">Y</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].time.offsetY}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].time.offsetY]}
-                          onValueChange={([value]) => updateFieldPosition('time', 'offsetY', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Ubicación - X e Y */}
-                {includeLocation && (
-                  <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
-                    <Label className="text-xs text-amber-600 flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> Ubicación
-                    </Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">X</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].location.offsetX}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].location.offsetX]}
-                          onValueChange={([value]) => updateFieldPosition('location', 'offsetX', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-muted-foreground">Y</span>
-                          <span className="text-xs text-muted-foreground">{fieldPositionAdjustments[adjustFormat].location.offsetY}px</span>
-                        </div>
-                        <Slider
-                          value={[fieldPositionAdjustments[adjustFormat].location.offsetY]}
-                          onValueChange={([value]) => updateFieldPosition('location', 'offsetY', value)}
-                          min={-200}
-                          max={200}
-                          step={5}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Botón para resetear a defaults */}
+            {/* Botones de navegación */}
+            <div className="flex gap-2 pt-4 border-t">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setIllustrationAdjustments(prev => ({
-                    ...prev,
-                    [adjustFormat]: { ...DEFAULT_ILLUSTRATION_ADJUSTMENTS[adjustFormat] },
-                  }));
-                  setFieldPositionAdjustments(prev => ({
-                    ...prev,
-                    [adjustFormat]: JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS[adjustFormat])),
-                  }));
-                }}
-                className="w-full"
+                onClick={() => setPhase('selecting')}
+                className="flex-1"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Restablecer {FORMAT_LABELS[adjustFormat]}
+                Volver
               </Button>
-
-              {/* Botones de navegación */}
-              <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setPhase('selecting')}
-                  className="flex-1"
-                >
-                  Volver
-                </Button>
-                <Button
-                  className="flex-1 bg-amber-500 hover:bg-amber-600"
-                  onClick={handleGenerateWithAdjustments}
-                >
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Generar Gráficos
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Preview del formato actual */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Vista Previa</CardTitle>
-              <CardDescription>{FORMAT_LABELS[adjustFormat]}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`relative bg-gray-100 rounded-lg overflow-hidden border ${
-                  adjustFormat === 'ppt_4_3' ? 'aspect-[4/3]' :
-                  adjustFormat === 'instagram_post' ? 'aspect-square' :
-                  adjustFormat === 'instagram_story' ? 'aspect-[9/16] max-h-[500px]' :
-                  'aspect-[1200/630]'
-                }`}
+              <Button
+                className="flex-1 bg-amber-500 hover:bg-amber-600"
+                onClick={handleGenerateWithAdjustments}
               >
-                {adjustPreview ? (
-                  <img
-                    src={`data:image/png;base64,${adjustPreview}`}
-                    alt={`Preview ${FORMAT_LABELS[adjustFormat]}`}
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
-                  </div>
-                )}
-                {adjustPreviewLoading && adjustPreview && (
-                  <div className="absolute top-2 right-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                El preview se actualiza mientras ajustas los valores
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+                <Wand2 className="h-4 w-4 mr-2" />
+                Generar Gráficos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Phase: Generating Formats */}
