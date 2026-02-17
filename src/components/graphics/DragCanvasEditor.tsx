@@ -17,10 +17,10 @@ import {
   type TextAlign,
   DEFAULT_ELEMENT_POSITIONS,
   FORMAT_DIMENSIONS,
-  ILLUSTRATION_AREA,
   ELEMENT_META,
   SELECTION_COLORS,
 } from './graphicsTypes';
+import { computeLayoutMetrics, type LayoutMetrics, type EventData } from './templateCompositor';
 
 interface DragCanvasEditorProps {
   format: FormatType;
@@ -34,37 +34,11 @@ interface DragCanvasEditorProps {
     time: boolean;
     location: boolean;
   };
+  illustrationAspectRatio?: number | null;
+  eventData: EventData;
 }
 
 type ElementId = 'title' | 'subtitle' | 'date' | 'time' | 'location' | 'illustration' | 'logo';
-
-/** Element sizes in base coordinates per format */
-function getElementSize(id: ElementId, format: FormatType, positions: ElementPositions): { width: number; height: number } {
-  const dims = FORMAT_DIMENSIONS[format];
-
-  switch (id) {
-    case 'title':
-      return { width: dims.width * 0.6, height: dims.height * 0.2 };
-    case 'subtitle':
-      return { width: dims.width * 0.5, height: dims.height * 0.05 };
-    case 'date':
-    case 'time':
-      return { width: dims.width * 0.35, height: dims.height * 0.05 };
-    case 'location':
-      return { width: dims.width * 0.4, height: dims.height * 0.06 };
-    case 'illustration': {
-      const area = ILLUSTRATION_AREA[format];
-      const scale = positions.illustration.scale;
-      return { width: area.width * scale, height: area.height * scale };
-    }
-    case 'logo': {
-      const logoSize = positions.logo.size;
-      return { width: logoSize, height: logoSize };
-    }
-    default:
-      return { width: 100, height: 40 };
-  }
-}
 
 const TEXT_ELEMENTS: ElementId[] = ['title', 'subtitle'];
 const ALL_ELEMENTS: ElementId[] = ['title', 'subtitle', 'date', 'time', 'location', 'illustration', 'logo'];
@@ -76,12 +50,24 @@ export function DragCanvasEditor({
   positions,
   onPositionsChange,
   visibleFields,
+  illustrationAspectRatio,
+  eventData,
 }: DragCanvasEditorProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const measureCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const [selectedElement, setSelectedElement] = useState<ElementId | null>(null);
   const [showPrecision, setShowPrecision] = useState(false);
+  const [layoutMetrics, setLayoutMetrics] = useState<LayoutMetrics | null>(null);
 
   const mapper = useCoordinateMapper(overlayRef, format);
+
+  // Initialize off-screen canvas for text measurement
+  if (!measureCtxRef.current) {
+    const c = document.createElement('canvas');
+    c.width = 1;
+    c.height = 1;
+    measureCtxRef.current = c.getContext('2d');
+  }
 
   const updatePosition = useCallback(
     (elementId: ElementId, x: number, y: number) => {
@@ -138,10 +124,38 @@ export function DragCanvasEditor({
     [positions, onPositionsChange]
   );
 
+  const updateFontSize = useCallback(
+    (elementId: ElementId, fontSize: number) => {
+      if (elementId !== 'title' && elementId !== 'subtitle') return;
+      const updated = { ...positions };
+      updated[elementId as 'title' | 'subtitle'] = { ...updated[elementId as 'title' | 'subtitle'], fontSize };
+      onPositionsChange(updated);
+    },
+    [positions, onPositionsChange]
+  );
+
   const resetToDefaults = useCallback(() => {
-    onPositionsChange(JSON.parse(JSON.stringify(DEFAULT_ELEMENT_POSITIONS[format])));
+    const defaultPos: ElementPositions = JSON.parse(JSON.stringify(DEFAULT_ELEMENT_POSITIONS[format]));
+    // Resolve auto-Y sentinels using compositor metrics
+    if (measureCtxRef.current) {
+      const metrics = computeLayoutMetrics(
+        format,
+        defaultPos,
+        illustrationAspectRatio || null,
+        eventData,
+        { canvasForMeasure: measureCtxRef.current }
+      );
+      // Apply resolved Y values from metrics
+      if (defaultPos.title.y < 0) {
+        defaultPos.title.y = metrics.title.y;
+      }
+      if (defaultPos.subtitle.y < 0) {
+        defaultPos.subtitle.y = metrics.subtitle.y;
+      }
+    }
+    onPositionsChange(defaultPos);
     setSelectedElement(null);
-  }, [format, onPositionsChange]);
+  }, [format, onPositionsChange, illustrationAspectRatio, eventData]);
 
   const isElementVisible = (id: ElementId): boolean => {
     if (id === 'subtitle') return visibleFields.subtitle;
@@ -151,6 +165,20 @@ export function DragCanvasEditor({
     if (id === 'logo') return DEFAULT_ELEMENT_POSITIONS[format].logo.size > 0;
     return true;
   };
+
+  // Compute layout metrics whenever positions or event data change
+  useEffect(() => {
+    if (measureCtxRef.current) {
+      const metrics = computeLayoutMetrics(
+        format,
+        positions,
+        illustrationAspectRatio || null,
+        eventData,
+        { canvasForMeasure: measureCtxRef.current }
+      );
+      setLayoutMetrics(metrics);
+    }
+  }, [format, positions, illustrationAspectRatio, eventData]);
 
   // Keyboard shortcuts for nudging selected element
   useEffect(() => {
@@ -246,19 +274,89 @@ export function DragCanvasEditor({
           onClick={() => setSelectedElement(null)}
         >
           {mapper.ready && ALL_ELEMENTS.map((id) => {
-            const pos = id === 'illustration' ? positions.illustration :
-                       id === 'logo' ? positions.logo :
-                       positions[id as 'title' | 'subtitle' | 'date' | 'time' | 'location'];
+            // Use metrics for element sizing
+            let baseX: number;
+            let baseY: number;
+            let baseWidth: number;
+            let baseHeight: number;
 
-            const displayY = pos.y >= 0 ? pos.y : DEFAULT_ELEMENT_POSITIONS[format][id as keyof ElementPositions].y;
-            const effectiveY = Math.max(displayY, 0);
+            if (!layoutMetrics) {
+              // Fallback if metrics not computed yet
+              const pos = id === 'illustration' ? positions.illustration :
+                         id === 'logo' ? positions.logo :
+                         positions[id as 'title' | 'subtitle' | 'date' | 'time' | 'location'];
+              const displayY = pos.y >= 0 ? pos.y : 0;
+              baseX = pos.x;
+              baseY = displayY;
+              baseWidth = 100;
+              baseHeight = 40;
+            } else {
+              // Use computed metrics
+              const metrics = layoutMetrics;
+              switch (id) {
+                case 'illustration':
+                  baseX = metrics.illustration.x;
+                  baseY = metrics.illustration.y;
+                  baseWidth = metrics.illustration.drawWidth;
+                  baseHeight = metrics.illustration.drawHeight;
+                  break;
+                case 'title':
+                  baseX = metrics.title.x;
+                  baseY = metrics.title.y;
+                  baseWidth = metrics.title.boxWidth;
+                  baseHeight = metrics.title.boxHeight;
+                  break;
+                case 'subtitle':
+                  baseX = metrics.subtitle.x;
+                  baseY = metrics.subtitle.y;
+                  baseWidth = metrics.subtitle.boxWidth;
+                  baseHeight = metrics.subtitle.boxHeight;
+                  break;
+                case 'date':
+                  baseX = metrics.date.x;
+                  baseY = metrics.date.y;
+                  baseWidth = metrics.date.width;
+                  baseHeight = metrics.date.height;
+                  break;
+                case 'time':
+                  baseX = metrics.time.x;
+                  baseY = metrics.time.y;
+                  baseWidth = metrics.time.width;
+                  baseHeight = metrics.time.height;
+                  break;
+                case 'location':
+                  baseX = metrics.location.x;
+                  baseY = metrics.location.y;
+                  baseWidth = metrics.location.width;
+                  baseHeight = metrics.location.height;
+                  break;
+                case 'logo':
+                  baseX = metrics.logo.x;
+                  baseY = metrics.logo.y;
+                  baseWidth = metrics.logo.size;
+                  baseHeight = metrics.logo.size;
+                  break;
+                default:
+                  baseX = 0;
+                  baseY = 0;
+                  baseWidth = 100;
+                  baseHeight = 40;
+              }
+            }
 
-            const domPos = mapper.toDOM(pos.x, effectiveY);
-            const size = getElementSize(id, format, positions);
+            const domPos = mapper.toDOM(baseX, baseY);
             const domSize = {
-              width: size.width / mapper.scaleFactor,
-              height: size.height / mapper.scaleFactor,
+              width: baseWidth / mapper.scaleFactor,
+              height: baseHeight / mapper.scaleFactor,
             };
+
+            // Determine if element is resizable (now includes text elements)
+            const isResizable = id === 'illustration' || id === 'logo' || id === 'title' || id === 'subtitle';
+
+            // Get current font size for text elements
+            const currentFontSize = (id === 'title' || id === 'subtitle')
+              ? positions[id].fontSize
+              : undefined;
 
             return (
               <DraggableElement
@@ -268,20 +366,26 @@ export function DragCanvasEditor({
                 domY={domPos.y}
                 domWidth={domSize.width}
                 domHeight={domSize.height}
-                baseX={pos.x}
-                baseY={effectiveY}
-                baseWidth={size.width}
-                baseHeight={size.height}
+                baseX={baseX}
+                baseY={baseY}
+                baseWidth={baseWidth}
+                baseHeight={baseHeight}
                 onPositionChange={(x, y) => updatePosition(id, x, y)}
                 toBaseDelta={mapper.toBaseDelta}
                 isSelected={selectedElement === id}
                 onSelect={() => setSelectedElement(id)}
                 visible={isElementVisible(id)}
-                isResizable={id === 'illustration' || id === 'logo'}
+                isResizable={isResizable}
                 currentScale={id === 'illustration' ? positions.illustration.scale : undefined}
                 onScaleChange={id === 'illustration' ? updateIllustrationScale : undefined}
                 currentSize={id === 'logo' ? positions.logo.size : undefined}
                 onSizeChange={id === 'logo' ? updateLogoSize : undefined}
+                currentFontSize={currentFontSize}
+                onFontSizeChange={
+                  (id === 'title' || id === 'subtitle')
+                    ? (fs) => updateFontSize(id, fs)
+                    : undefined
+                }
               />
             );
           })}

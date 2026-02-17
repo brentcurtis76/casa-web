@@ -41,6 +41,7 @@ export interface ElementPosition {
   x: number;
   y: number;
   textAlign?: TextAlign;
+  fontSize?: number; // Optional user-provided font size (base coords). When undefined, auto-fitted.
 }
 
 /** Illustration has extra properties */
@@ -81,7 +82,7 @@ export const DEFAULT_ELEMENT_POSITIONS: AllElementPositions = {
     date: { x: 75, y: 444, textAlign: 'left' },
     time: { x: 77, y: 500, textAlign: 'left' },
     location: { x: 75, y: 557, textAlign: 'left' },
-    illustration: { x: 530, y: 140, scale: 1.0, opacity: 0.15 },
+    illustration: { x: 530, y: 140, scale: 1.0, opacity: 1.0 },
     logo: { x: 457, y: 34, size: 110 },
   },
 
@@ -92,7 +93,7 @@ export const DEFAULT_ELEMENT_POSITIONS: AllElementPositions = {
     date: { x: 42, y: 486, textAlign: 'left' },
     time: { x: 42, y: 613, textAlign: 'left' },
     location: { x: 42, y: 740, textAlign: 'left' },
-    illustration: { x: 240, y: 0, scale: 1.0, opacity: 0.15 },
+    illustration: { x: 240, y: 0, scale: 1.0, opacity: 1.0 },
     logo: { x: 497, y: 901, size: 87 },
   },
 
@@ -103,7 +104,7 @@ export const DEFAULT_ELEMENT_POSITIONS: AllElementPositions = {
     date: { x: 72, y: 807, textAlign: 'left' },
     time: { x: 72, y: 970, textAlign: 'left' },
     location: { x: 72, y: 1133, textAlign: 'left' },
-    illustration: { x: 63, y: 750, scale: 1.0, opacity: 0.15 },
+    illustration: { x: 63, y: 750, scale: 1.0, opacity: 1.0 },
     logo: { x: 0, y: 0, size: 0 }, // No logo in IG Story
   },
 
@@ -114,7 +115,7 @@ export const DEFAULT_ELEMENT_POSITIONS: AllElementPositions = {
     date: { x: 645, y: 200, textAlign: 'left' },
     time: { x: 645, y: 295, textAlign: 'left' },
     location: { x: 645, y: 390, textAlign: 'left' },
-    illustration: { x: 50, y: 20, scale: 1.0, opacity: 0.13 },
+    illustration: { x: 50, y: 20, scale: 1.0, opacity: 1.0 },
     logo: { x: 1044, y: 512, size: 93 },
   },
 };

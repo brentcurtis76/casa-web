@@ -10,6 +10,7 @@ import type {
   LogoPosition,
   TextAlign,
 } from './graphicsTypes';
+import { TITLE_MAX_WIDTH, ILLUSTRATION_AREA } from './graphicsTypes';
 
 export {
   type ElementPositions,
@@ -18,11 +19,48 @@ export {
   type TextAlign,
 } from './graphicsTypes';
 
-export { DEFAULT_ELEMENT_POSITIONS, FORMAT_DIMENSIONS, clonePositions } from './graphicsTypes';
+export { DEFAULT_ELEMENT_POSITIONS, FORMAT_DIMENSIONS, clonePositions, TITLE_MAX_WIDTH, ILLUSTRATION_AREA } from './graphicsTypes';
 
 // ============================================
 // TIPOS
 // ============================================
+
+/**
+ * Layout metrics computed from positions and format config.
+ * Used by DragCanvasEditor to align overlay hitboxes with actual render bounds.
+ * SYNC WARNING: This interface's math must match createUnifiedLayout().
+ * If positioning logic changes there, update here too.
+ */
+export interface LayoutMetrics {
+  illustration: {
+    x: number;
+    y: number;
+    drawWidth: number;   // fitted width AFTER aspect-fit AND scale
+    drawHeight: number;  // fitted height AFTER aspect-fit AND scale
+  };
+  title: {
+    x: number;
+    y: number;           // resolved (never -1)
+    boxWidth: number;    // = TITLE_MAX_WIDTH[format]
+    boxHeight: number;   // estimated from fontSize * lineCount
+    fontSize: number;    // auto-fitted or user-provided
+  };
+  subtitle: {
+    x: number;
+    y: number;           // resolved (never -1)
+    boxWidth: number;
+    boxHeight: number;
+    fontSize: number;
+  };
+  logo: {
+    x: number;
+    y: number;
+    size: number;
+  };
+  date: { x: number; y: number; width: number; height: number };
+  time: { x: number; y: number; width: number; height: number };
+  location: { x: number; y: number; width: number; height: number };
+}
 export interface EventData {
   title: string;
   subtitle?: string;
@@ -100,10 +138,10 @@ export const DEFAULT_FIELD_POSITION_ADJUSTMENTS: AllFieldPositionAdjustments = {
 
 // Valores default por formato (los tamaños actuales del código)
 export const DEFAULT_ILLUSTRATION_ADJUSTMENTS: IllustrationAdjustments = {
-  ppt_4_3: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 0.15 },
-  instagram_post: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 0.15 },
-  instagram_story: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 0.15 },
-  facebook_post: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 0.13 }, // FB usa 13% por default
+  ppt_4_3: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 1.0 },
+  instagram_post: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 1.0 },
+  instagram_story: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 1.0 },
+  facebook_post: { scale: 1.0, offsetX: 0, offsetY: 0, opacity: 1.0 }, // FB usa 100% por default
 };
 
 // ============================================
@@ -233,7 +271,7 @@ function fitTextToArea(
 
   // Si llegamos al mínimo, usar ese tamaño
   ctx.font = `${fontWeight} ${minFontSize}px ${fontFamily}`;
-  let processedText = text.replace(/\\n/g, '\n');
+  const processedText = text.replace(/\\n/g, '\n');
 
   if (processedText.includes('\n')) {
     lines = processedText.split('\n');
@@ -562,7 +600,7 @@ async function createPptLayout(
       }
 
       // Aplicar ajustes
-      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 0.15 };
+      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 1.0 };
       const illustW = Math.round(drawW * adj.scale * s);
       const illustH = Math.round(drawH * adj.scale * s);
       // Offset como porcentaje del canvas
@@ -756,7 +794,7 @@ async function createIgStoryLayout(
       }
 
       // Aplicar ajustes
-      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 0.15 };
+      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 1.0 };
       const illustW = Math.round(drawW * adj.scale * s);
       const illustH = Math.round(drawH * adj.scale * s);
       // Offset como porcentaje del canvas
@@ -921,7 +959,7 @@ async function createIgPostLayout(
       }
 
       // Aplicar ajustes
-      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 0.15 };
+      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 1.0 };
       const illustW = Math.round(drawW * adj.scale * s);
       const illustH = Math.round(drawH * adj.scale * s);
       // Offset como porcentaje del canvas
@@ -1119,7 +1157,7 @@ async function createFbPostLayout(
       }
 
       // Aplicar ajustes
-      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 0.13 };
+      const adj = illustrationAdj || { scale: 1, offsetX: 0, offsetY: 0, opacity: 1.0 };
       const illustW = Math.round(drawW * adj.scale * s);
       const illustH = Math.round(drawH * adj.scale * s);
       // Offset como porcentaje del canvas
@@ -1506,6 +1544,168 @@ function drawAlignedText(
 }
 
 /**
+ * Compute layout metrics in base coordinates.
+ * Used by DragCanvasEditor to align overlay hitboxes with compositor render bounds.
+ *
+ * SYNC WARNING: This function's math must match createUnifiedLayout().
+ * If you change positioning logic in createUnifiedLayout(), update here too.
+ */
+export function computeLayoutMetrics(
+  format: FormatType,
+  positions: ElementPositions,
+  illustrationAspectRatio: number | null,
+  event: EventData,
+  options?: { canvasForMeasure?: CanvasRenderingContext2D }
+): LayoutMetrics {
+  const cfg = FORMAT_LAYOUT_CONFIGS[format];
+  const titleMaxWidth = TITLE_MAX_WIDTH[format];
+
+  // ========== ILLUSTRATION ==========
+  // Use provided aspect ratio, or fall back to area dimensions
+  const imgAspect = illustrationAspectRatio || (cfg.illustAreaW / cfg.illustAreaH);
+  const areaAspect = cfg.illustAreaW / cfg.illustAreaH;
+
+  let illustDrawW: number, illustDrawH: number;
+  if (imgAspect > areaAspect) {
+    illustDrawW = cfg.illustAreaW;
+    illustDrawH = cfg.illustAreaW / imgAspect;
+  } else {
+    illustDrawH = cfg.illustAreaH;
+    illustDrawW = cfg.illustAreaH * imgAspect;
+  }
+
+  const illPos = positions.illustration;
+  const illustMetrics = {
+    x: illPos.x,
+    y: illPos.y,
+    drawWidth: illustDrawW * illPos.scale,
+    drawHeight: illustDrawH * illPos.scale,
+  };
+
+  // ========== TITLE ==========
+  // Estimate title size from font measurement or heuristic
+  let titleFontSize = cfg.baseTitleFontSize;
+  let titleLines = 1;
+
+  if (positions.title.fontSize) {
+    // User-provided fontSize
+    titleFontSize = positions.title.fontSize;
+    // Estimate line count (assume average ~10 chars per line for given width/fontSize)
+    const charWidth = titleFontSize * 0.55; // Approximate char width for Montserrat
+    const charsPerLine = Math.ceil(titleMaxWidth / charWidth);
+    const titleText = event.title.replace(/\\n/g, '\n');
+    if (titleText.includes('\n')) {
+      titleLines = titleText.split('\n').length;
+    } else {
+      titleLines = Math.ceil(event.title.length / Math.max(1, charsPerLine));
+    }
+  } else if (options?.canvasForMeasure) {
+    // Use canvas for accurate measurement (preferred path)
+    const ctx = options.canvasForMeasure;
+    const result = fitTextToArea(
+      ctx,
+      event.title,
+      titleMaxWidth,
+      cfg.titleMaxHeight,
+      cfg.baseTitleFontSize,
+      cfg.minTitleFontSize,
+      cfg.titleFontWeight,
+      'Montserrat, sans-serif',
+      1.0
+    );
+    titleFontSize = result.fontSize;
+    titleLines = result.lines.length;
+  } else {
+    // Heuristic fallback
+    titleLines = 2;
+  }
+
+  // Resolve title Y position
+  let resolvedTitleY: number;
+  if (positions.title.y >= 0) {
+    resolvedTitleY = positions.title.y;
+  } else if (cfg.titleVerticalCenter && cfg.titleAreaTop != null && cfg.titleAreaBottom != null) {
+    // FB-style vertical centering
+    const totalTitleHeight = titleLines * titleFontSize;
+    const areaH = cfg.titleAreaBottom - cfg.titleAreaTop;
+    resolvedTitleY = cfg.titleAreaTop + (areaH - totalTitleHeight) / 2;
+  } else {
+    resolvedTitleY = positions.title.y >= 0 ? positions.title.y : 0;
+  }
+
+  const titleMetrics = {
+    x: positions.title.x,
+    y: resolvedTitleY,
+    boxWidth: titleMaxWidth,
+    boxHeight: titleLines * titleFontSize,
+    fontSize: titleFontSize,
+  };
+
+  // ========== SUBTITLE ==========
+  // Resolve subtitle Y position
+  let resolvedSubtitleY: number;
+  if (positions.subtitle.y >= 0) {
+    resolvedSubtitleY = positions.subtitle.y;
+  } else {
+    // y = -1 means "position below title"
+    resolvedSubtitleY = resolvedTitleY + titleMetrics.boxHeight + cfg.subtitleGap;
+  }
+
+  const subtitleFontSize = positions.subtitle.fontSize || cfg.subtitleFontSize;
+  const subtitleMetrics = {
+    x: positions.subtitle.x,
+    y: resolvedSubtitleY,
+    boxWidth: titleMaxWidth,
+    boxHeight: subtitleFontSize,
+    fontSize: subtitleFontSize,
+  };
+
+  // ========== LOGO ==========
+  const logoMetrics = {
+    x: positions.logo.x,
+    y: positions.logo.y,
+    size: positions.logo.size,
+  };
+
+  // ========== DETAILS (date, time, location) ==========
+  // These are positioned absolutely in base coords; estimate box size from text length
+  const detailFontSize = cfg.detailFontSize;
+  const iconToTextGap = cfg.iconToTextGap;
+  const iconSize = cfg.iconSize;
+
+  const dateMetrics = {
+    x: positions.date.x,
+    y: positions.date.y,
+    width: iconSize + iconToTextGap + (event.date ? event.date.length * (detailFontSize * 0.6) : 0),
+    height: detailFontSize,
+  };
+
+  const timeMetrics = {
+    x: positions.time.x,
+    y: positions.time.y,
+    width: iconSize + iconToTextGap + (event.time ? event.time.length * (detailFontSize * 0.6) : 0),
+    height: detailFontSize,
+  };
+
+  const locationMetrics = {
+    x: positions.location.x,
+    y: positions.location.y,
+    width: iconSize + iconToTextGap + (event.location ? event.location.length * (detailFontSize * 0.5) : 200),
+    height: detailFontSize,
+  };
+
+  return {
+    illustration: illustMetrics,
+    title: titleMetrics,
+    subtitle: subtitleMetrics,
+    logo: logoMetrics,
+    date: dateMetrics,
+    time: timeMetrics,
+    location: locationMetrics,
+  };
+}
+
+/**
  * Unified layout function that uses ElementPositions for absolute positioning.
  * This replaces the 4 format-specific layout functions for the drag editor.
  */
@@ -1592,11 +1792,29 @@ async function createUnifiedLayout(
   const baseTitleFontSize = Math.round(cfg.baseTitleFontSize * s);
   const minTitleFontSize = Math.round(cfg.minTitleFontSize * s);
 
-  const { fontSize: titleFontSize, lines: titleLines } = fitTextToArea(
-    ctx, event.title, titleMaxWidth, titleMaxHeight,
-    baseTitleFontSize, minTitleFontSize,
-    cfg.titleFontWeight, 'Montserrat, sans-serif', 1.0
-  );
+  let titleFontSize: number;
+  let titleLines: string[];
+
+  if (positions.title.fontSize) {
+    // User-provided fontSize
+    titleFontSize = Math.round(positions.title.fontSize * s);
+    ctx.font = `${cfg.titleFontWeight} ${titleFontSize}px Montserrat, sans-serif`;
+    const processedText = event.title.replace(/\\n/g, '\n');
+    if (processedText.includes('\n')) {
+      titleLines = processedText.split('\n');
+    } else {
+      titleLines = wrapText(ctx, event.title, titleMaxWidth);
+    }
+  } else {
+    // Auto-fit (default behavior)
+    const result = fitTextToArea(
+      ctx, event.title, titleMaxWidth, titleMaxHeight,
+      baseTitleFontSize, minTitleFontSize,
+      cfg.titleFontWeight, 'Montserrat, sans-serif', 1.0
+    );
+    titleFontSize = result.fontSize;
+    titleLines = result.lines;
+  }
 
   ctx.font = `${cfg.titleFontWeight} ${titleFontSize}px Montserrat, sans-serif`;
   ctx.fillStyle = rgbToString(COLORS.black);
@@ -1630,7 +1848,10 @@ async function createUnifiedLayout(
 
   // 6. SUBTITLE
   if (event.subtitle) {
-    const subtitleFontSize = Math.round(cfg.subtitleFontSize * s);
+    let subtitleFontSize = Math.round(cfg.subtitleFontSize * s);
+    if (positions.subtitle.fontSize) {
+      subtitleFontSize = Math.round(positions.subtitle.fontSize * s);
+    }
     ctx.font = `italic 400 ${subtitleFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
 

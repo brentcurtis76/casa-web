@@ -27,6 +27,8 @@ interface DraggableElementProps {
   onScaleChange?: (scale: number) => void;
   currentSize?: number;
   onSizeChange?: (size: number) => void;
+  currentFontSize?: number;
+  onFontSizeChange?: (fontSize: number) => void;
 }
 
 const HANDLE_SIZE = 8;
@@ -54,6 +56,8 @@ function ResizeHandleEl({
   onScaleChange,
   currentSize,
   onSizeChange,
+  currentFontSize,
+  onFontSizeChange,
   toBaseDelta,
   baseWidth,
   baseHeight,
@@ -64,6 +68,8 @@ function ResizeHandleEl({
   onScaleChange?: (s: number) => void;
   currentSize?: number;
   onSizeChange?: (s: number) => void;
+  currentFontSize?: number;
+  onFontSizeChange?: (fontSize: number) => void;
   toBaseDelta: (dx: number, dy: number) => { dx: number; dy: number };
   baseWidth: number;
   baseHeight: number;
@@ -77,6 +83,8 @@ function ResizeHandleEl({
     onScaleChange,
     currentSize,
     onSizeChange,
+    currentFontSize,
+    onFontSizeChange,
     toBaseDelta,
     baseWidth,
     baseHeight,
@@ -122,6 +130,8 @@ export function DraggableElement({
   onScaleChange,
   currentSize,
   onSizeChange,
+  currentFontSize,
+  onFontSizeChange,
 }: DraggableElementProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { isDragging, handlePointerDown } = useDragElement({
@@ -193,6 +203,8 @@ export function DraggableElement({
             onScaleChange={onScaleChange}
             currentSize={currentSize}
             onSizeChange={onSizeChange}
+            currentFontSize={currentFontSize}
+            onFontSizeChange={onFontSizeChange}
             toBaseDelta={toBaseDelta}
             baseWidth={baseWidth}
             baseHeight={baseHeight}

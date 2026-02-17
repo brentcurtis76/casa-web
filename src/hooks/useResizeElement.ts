@@ -12,6 +12,10 @@ interface UseResizeElementOptions {
   currentSize?: number;
   /** Called with new size value */
   onSizeChange?: (size: number) => void;
+  /** Current font size (for text elements) */
+  currentFontSize?: number;
+  /** Called with new font size value */
+  onFontSizeChange?: (fontSize: number) => void;
   /** Convert DOM delta to base delta */
   toBaseDelta: (domDX: number, domDY: number) => { dx: number; dy: number };
   /** Current element width in base coords (for proportional scaling) */
@@ -31,6 +35,8 @@ export function useResizeElement({
   onScaleChange,
   currentSize,
   onSizeChange,
+  currentFontSize,
+  onFontSizeChange,
   toBaseDelta,
   baseWidth,
   baseHeight,
@@ -41,6 +47,7 @@ export function useResizeElement({
     domY: number;
     initialScale: number;
     initialSize: number;
+    initialFontSize: number;
     diagonal: number;
   } | null>(null);
 
@@ -60,6 +67,7 @@ export function useResizeElement({
         domY: e.clientY,
         initialScale: currentScale ?? 1,
         initialSize: currentSize ?? 100,
+        initialFontSize: currentFontSize ?? 16,
         diagonal: diagonal || 100,
       };
 
@@ -95,6 +103,11 @@ export function useResizeElement({
           const newSize = Math.max(40, Math.min(300, Math.round(startRef.current.initialSize * (1 + scaleFraction * 2))));
           onSizeChange(newSize);
         }
+
+        if (onFontSizeChange && currentFontSize != null) {
+          const newFontSize = Math.max(16, Math.min(200, Math.round(startRef.current.initialFontSize * (1 + scaleFraction * 2))));
+          onFontSizeChange(newFontSize);
+        }
       };
 
       const handlePointerUp = () => {
@@ -106,7 +119,7 @@ export function useResizeElement({
       target.addEventListener('pointermove', handlePointerMove);
       target.addEventListener('pointerup', handlePointerUp);
     },
-    [disabled, handle, currentScale, currentSize, onScaleChange, onSizeChange, toBaseDelta, baseWidth, baseHeight]
+    [disabled, handle, currentScale, currentSize, currentFontSize, onScaleChange, onSizeChange, onFontSizeChange, toBaseDelta, baseWidth, baseHeight]
   );
 
   return { handlePointerDown };

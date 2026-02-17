@@ -58,6 +58,7 @@ import {
   preloadFonts,
   DEFAULT_ILLUSTRATION_ADJUSTMENTS,
   DEFAULT_FIELD_POSITION_ADJUSTMENTS,
+  computeLayoutMetrics,
   type EventData,
   type GeneratedGraphic,
   type FormatType,
@@ -100,6 +101,52 @@ const FORMAT_LABELS: Record<FormatType, string> = {
 };
 
 type Phase = 'form' | 'prompt' | 'selecting' | 'adjusting' | 'generating' | 'done';
+
+/**
+ * Resolve auto-positioned elements (y = -1) to concrete Y values for ALL formats.
+ * Uses computeLayoutMetrics() per format with that format's own title text,
+ * so subtitle Y matches the rendered title height for each format.
+ */
+function resolveAutoPositions(
+  positions: AllElementPositions,
+  perFormatTitles: Record<FormatType, string>,
+  sharedEvent: Omit<EventData, 'title'>,
+  illustrationAspectRatio: number | null
+): AllElementPositions {
+  const resolved = clonePositions(positions);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+
+  (['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).forEach(fmt => {
+    const formatPositions = resolved[fmt];
+
+    // Build per-format event using that format's title text
+    const event: EventData = {
+      title: perFormatTitles[fmt].replace(/\n/g, '\\n') || 'Título del Evento',
+      ...sharedEvent,
+    };
+
+    const metrics = computeLayoutMetrics(
+      fmt,
+      formatPositions,
+      illustrationAspectRatio,
+      event,
+      ctx ? { canvasForMeasure: ctx } : undefined
+    );
+
+    if (formatPositions.title.y < 0) {
+      formatPositions.title.y = metrics.title.y;
+    }
+    if (formatPositions.subtitle.y < 0) {
+      formatPositions.subtitle.y = metrics.subtitle.y;
+    }
+  });
+
+  return resolved;
+}
 
 // Base prompt para ilustraciones - requests PURE WHITE background
 // Post-processing will replace white pixels with CASA_BRAND.colors.primary.white
@@ -258,6 +305,7 @@ export const GraphicsGeneratorV2 = () => {
   const [illustrations, setIllustrations] = useState<string[]>([]);
   const [selectedIllustration, setSelectedIllustration] = useState<number | null>(null);
   const [loadingIllustrations, setLoadingIllustrations] = useState(false);
+  const [illustrationAspectRatio, setIllustrationAspectRatio] = useState<number | null>(null);
 
   // Generated graphics state
   const [generatedGraphics, setGeneratedGraphics] = useState<GeneratedGraphic[]>([]);
@@ -507,10 +555,37 @@ export const GraphicsGeneratorV2 = () => {
   // Select illustration and go to adjustment phase
   const handleSelectIllustration = (index: number) => {
     setSelectedIllustration(index);
+
+    // Compute illustration aspect ratio
+    const img = new Image();
+    img.onload = () => {
+      const aspectRatio = img.naturalWidth / img.naturalHeight;
+      setIllustrationAspectRatio(aspectRatio);
+    };
+    img.onerror = () => {
+      setIllustrationAspectRatio(null);
+    };
+    img.src = `data:image/png;base64,${illustrations[index]}`;
+
     // Reset adjustments to defaults
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
-    setElementPositions(clonePositions(DEFAULT_ELEMENT_POSITIONS));
+
+    // Resolve auto-Y positions per format using each format's own title text
+    const defaultPositions = clonePositions(DEFAULT_ELEMENT_POSITIONS);
+    const resolvedPositions = resolveAutoPositions(
+      defaultPositions,
+      titles,
+      {
+        subtitle: includeSubtitle ? subtitle : undefined,
+        date: includeDate ? (formatDateRange(dateRange) || 'Fecha del evento') : '',
+        time: includeTime ? (time || '19:00 hrs') : '',
+        location: includeLocation ? (location || 'Ubicación del evento') : '',
+      },
+      null
+    );
+    setElementPositions(resolvedPositions);
+
     setAdjustFormat('ppt_4_3');
     setPhase('adjusting');
   };
@@ -1205,6 +1280,14 @@ export const GraphicsGeneratorV2 = () => {
                 date: includeDate,
                 time: includeTime,
                 location: includeLocation,
+              }}
+              illustrationAspectRatio={illustrationAspectRatio}
+              eventData={{
+                title: titles[adjustFormat].replace(/\n/g, '\\n') || 'Título del Evento',
+                subtitle: includeSubtitle ? subtitle : undefined,
+                date: includeDate ? (formatDateRange(dateRange) || 'Fecha del evento') : '',
+                time: includeTime ? (time || '19:00 hrs') : '',
+                location: includeLocation ? (location || 'Ubicación del evento') : '',
               }}
             />
 
