@@ -133,6 +133,42 @@ function migrateAntiphonalPrayerSlides(slides: Slide[]): Slide[] {
 }
 
 /**
+ * Extrae un array de slides desde JSONB (Slide[] o SlideGroup).
+ */
+function isSlideLike(raw: unknown): raw is Slide {
+  if (!raw || typeof raw !== 'object') return false;
+
+  const candidate = raw as {
+    type?: unknown;
+    content?: { primary?: unknown } | unknown;
+  };
+
+  return (
+    typeof candidate.type === 'string' &&
+    typeof candidate.content === 'object' &&
+    candidate.content !== null &&
+    typeof (candidate.content as { primary?: unknown }).primary === 'string'
+  );
+}
+
+function extractSlideArray(raw: unknown): Slide[] {
+  if (!raw) return [];
+
+  if (Array.isArray(raw)) {
+    return raw.filter(isSlideLike);
+  }
+
+  if (typeof raw === 'object' && 'slides' in raw) {
+    const groupSlides = (raw as SlideGroup).slides;
+    if (Array.isArray(groupSlides)) {
+      return groupSlides.filter(isSlideLike);
+    }
+  }
+
+  return [];
+}
+
+/**
  * Resumen de liturgia para el selector
  */
 export interface LiturgySummary {
@@ -219,22 +255,18 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
     for (const elemento of elementosData || []) {
       const startIndex = slides.length;
 
-      // Obtener slides del elemento (pueden estar en slides o editedSlides)
-      // El formato puede ser SlideGroup { slides: Slide[] } o directamente Slide[]
-      let slideArray: Slide[] = [];
+      // Prefer edited_slides only if it is valid and non-empty.
+      // This avoids losing valid slides when edited_slides contains malformed/empty JSON.
+      const editedSlideArray = extractSlideArray(elemento.edited_slides);
+      const hasUsableEditedSlides = editedSlideArray.length > 0;
+      const rawSlides = hasUsableEditedSlides ? elemento.edited_slides : elemento.slides;
+      let slideArray: Slide[] = hasUsableEditedSlides
+        ? editedSlideArray
+        : extractSlideArray(elemento.slides);
 
-      const rawSlides = elemento.edited_slides || elemento.slides;
-      if (rawSlides) {
-        if (Array.isArray(rawSlides)) {
-          // Es directamente un array de Slides
-          slideArray = rawSlides as Slide[];
-        } else if (typeof rawSlides === 'object' && 'slides' in rawSlides) {
-          // Es un SlideGroup con { slides: Slide[] }
-          slideArray = (rawSlides as SlideGroup).slides || [];
-        }
-      }
-
-      console.log(`[Presenter] Element ${elemento.tipo} (order ${elemento.orden}): status=${elemento.status}, slides=${slideArray.length}, rawType=${rawSlides ? (Array.isArray(rawSlides) ? 'array' : typeof rawSlides) : 'null'}`);
+      console.log(
+        `[Presenter] Element ${elemento.tipo} (order ${elemento.orden}): status=${elemento.status}, slides=${slideArray.length}, usedEdited=${hasUsableEditedSlides}, rawType=${rawSlides ? (Array.isArray(rawSlides) ? 'array' : typeof rawSlides) : 'null'}`
+      );
 
       if (slideArray.length > 0) {
         // Para cuentacuentos, migrar signed URLs a públicas (el bucket es público)

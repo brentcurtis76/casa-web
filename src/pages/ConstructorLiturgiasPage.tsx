@@ -180,33 +180,31 @@ const ConstructorLiturgiasPage: React.FC = () => {
       // Save to Supabase with image and config
       const result = await saveLiturgy(liturgy, portadaImage, portadasConfig);
 
-      if (result.success) {
-        toast({
-          title: 'Guardado exitoso',
-          description: portadaImage
-            ? 'Tu liturgia e imagen han sido guardadas en la nube'
-            : 'Tu liturgia ha sido guardada en la nube',
-        });
-        // Update the selected liturgy with any new IDs
-        setSelectedLiturgy(liturgy);
-        // Update the saved config
-        if (portadasConfig) {
-          setSelectedPortadasConfig(portadasConfig);
-        }
-      } else {
-        toast({
-          title: 'Guardado local',
-          description: `Guardado localmente. Error en nube: ${result.error}`,
-          variant: 'default',
-        });
+      if (!result.success) {
+        throw new Error(result.error || 'Error desconocido guardando liturgia');
+      }
+
+      toast({
+        title: 'Guardado exitoso',
+        description: portadaImage
+          ? 'Tu liturgia e imagen han sido guardadas en la nube'
+          : 'Tu liturgia ha sido guardada en la nube',
+      });
+      // Update the selected liturgy with any new IDs
+      setSelectedLiturgy(liturgy);
+      // Update the saved config
+      if (portadasConfig) {
+        setSelectedPortadasConfig(portadasConfig);
       }
     } catch (err) {
       console.error('Error saving liturgy:', err);
+      const message = err instanceof Error ? err.message : 'Error desconocido';
       toast({
-        title: 'Error al guardar',
-        description: 'No se pudo guardar la liturgia',
+        title: 'Guardado incompleto',
+        description: `No se pudo guardar en la nube. Respaldo local disponible. ${message}`,
         variant: 'destructive',
       });
+      throw err;
     }
   }, [toast]);
 
@@ -310,8 +308,9 @@ const ConstructorLiturgiasPage: React.FC = () => {
           title="Constructor de Liturgias"
           subtitle={selectedLiturgy ? 'Editando liturgia' : 'Nueva liturgia'}
           breadcrumbs={[
-            { label: 'Liturgia', href: '/admin/liturgia/constructor' },
-            { label: 'Constructor' },
+            { label: 'Liturgia' },
+            { label: 'Mis Liturgias', href: '/admin/liturgia/constructor' },
+            { label: selectedLiturgy ? 'Editor' : 'Nueva Liturgia' },
           ]}
           onBack={handleBackToList}
           hasUnsavedChanges={isDirty}
