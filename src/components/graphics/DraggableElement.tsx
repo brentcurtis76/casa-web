@@ -32,8 +32,9 @@ interface DraggableElementProps {
   onResizePositionChange?: (x: number, y: number) => void;
 }
 
-const HANDLE_SIZE = 8;
+const HANDLE_SIZE = 14;
 const HALF = HANDLE_SIZE / 2;
+const RESIZE_HANDLE_ATTR = 'data-resize-handle';
 
 const HANDLES: Array<{
   id: ResizeHandle;
@@ -115,7 +116,8 @@ function ResizeHandleEl({
         cursor: canResize ? handle.cursor : 'default',
         zIndex: 60,
       }}
-      onPointerDown={canResize ? handlePointerDown : (e) => e.stopPropagation()}
+      {...{ [RESIZE_HANDLE_ATTR]: handle.id }}
+      onPointerDown={canResize ? (e) => { e.stopPropagation(); handlePointerDown(e); } : (e) => e.stopPropagation()}
     />
   );
 }
@@ -170,6 +172,9 @@ export function DraggableElement({
         zIndex: isDragging ? 50 : isSelected ? 40 : isHovered ? 30 : 10,
       }}
       onPointerDown={(e) => {
+        // If the click landed on a resize handle, don't start drag
+        const target = e.target as HTMLElement;
+        if (target.hasAttribute(RESIZE_HANDLE_ATTR)) return;
         onSelect();
         handlePointerDown(e);
       }}
