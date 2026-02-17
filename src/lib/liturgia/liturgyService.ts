@@ -517,13 +517,8 @@ export async function saveLiturgy(
 
     // Guardar elementos
     if (processedElements.length > 0) {
-      // Eliminar elementos existentes
-      await supabase
-        .from('liturgia_elementos')
-        .delete()
-        .eq('liturgia_id', liturgiaId);
-
-      // Insertar nuevos elementos con todos los campos necesarios
+      // Upsert all elements by (liturgia_id, tipo) to avoid transient empty liturgies
+      // caused by delete+insert and to keep save resilient against partial failures.
       const elementos = processedElements.map((e) => ({
         liturgia_id: liturgiaId,
         tipo: e.type,
@@ -552,15 +547,35 @@ export async function saveLiturgy(
         });
       }
 
-      console.log('[saveLiturgy] Inserting', elementos.length, 'elementos');
+      console.log('[saveLiturgy] Upserting', elementos.length, 'elementos');
       const { error: elementosError } = await supabase
         .from('liturgia_elementos')
-        .insert(elementos);
+        .upsert(elementos, { onConflict: 'liturgia_id,tipo' });
 
       if (elementosError) {
         console.error('[saveLiturgy] Error saving elementos:', elementosError);
+        return { success: false, error: `Error guardando elementos: ${elementosError.message}` };
       } else {
         console.log('[saveLiturgy] Elementos saved successfully');
+      }
+
+      // Cleanup orphaned element rows that are no longer part of this save payload.
+      // Run after upsert so reads never observe an empty liturgy during save.
+      const currentTipos = elementos.map((e) => e.tipo);
+      if (currentTipos.length > 0) {
+        const escapedTipos = currentTipos.map((tipo) => `"${tipo.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+        const notInFilter = `(${escapedTipos.join(',')})`;
+
+        const { error: cleanupError } = await supabase
+          .from('liturgia_elementos')
+          .delete()
+          .eq('liturgia_id', liturgiaId)
+          .not('tipo', 'in', notInFilter);
+
+        if (cleanupError) {
+          console.error('[saveLiturgy] Error cleaning orphaned elementos:', cleanupError);
+          return { success: false, error: `Error limpiando elementos obsoletos: ${cleanupError.message}` };
+        }
       }
     }
 
@@ -606,11 +621,16 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
       .order('orden');
 
     // Cargar elementos
-    const { data: elementosData } = await supabase
+    const { data: elementosData, error: elementosError } = await supabase
       .from('liturgia_elementos')
       .select('*')
       .eq('liturgia_id', id)
       .order('orden');
+
+    if (elementosError) {
+      console.error('Error loading liturgia elementos:', elementosError);
+      return null;
+    }
 
     // DEBUG: Log cuentacuentos element from database
     const cuentacuentosElement = elementosData?.find((e: DBLiturgiaElemento) => e.tipo === 'cuentacuentos');
