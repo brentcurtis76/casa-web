@@ -1564,6 +1564,23 @@ function getDetailMetrics(
 }
 
 /**
+ * Get default font sizes for a given format.
+ * Used by the drag editor to initialize font size on first resize interaction.
+ */
+export function getDefaultFontSizes(format: FormatType): {
+  title: number;
+  subtitle: number;
+  detail: number;
+} {
+  const cfg = FORMAT_LAYOUT_CONFIGS[format];
+  return {
+    title: cfg.baseTitleFontSize,
+    subtitle: cfg.subtitleFontSize,
+    detail: cfg.detailFontSize,
+  };
+}
+
+/**
  * Compute layout metrics in base coordinates.
  * Used by DragCanvasEditor to align overlay hitboxes with compositor render bounds.
  *
@@ -1688,29 +1705,52 @@ export function computeLayoutMetrics(
   };
 
   // ========== DETAILS (date, time, location) ==========
-  // Use per-detail scale factor if user provided custom fontSize
+  // Use per-detail scale factor if user provided custom fontSize.
+  // Group alignment: icon + gap + text treated as one unit.
+  // Anchor x shifts the group based on textAlign (left/center/right).
   const dateDetail = getDetailMetrics(cfg, positions, 'date');
   const timeDetail = getDetailMetrics(cfg, positions, 'time');
   const locationDetail = getDetailMetrics(cfg, positions, 'location');
 
+  const dateTextEstWidth = event.date ? event.date.length * (dateDetail.fontSize * 0.6) : 0;
+  const dateGroupWidth = dateDetail.iconToTextGap + dateTextEstWidth;
+  const dateAlign = positions.date.textAlign || 'left';
+  let dateResolvedX = positions.date.x;
+  if (dateAlign === 'center') dateResolvedX = positions.date.x - dateGroupWidth / 2;
+  else if (dateAlign === 'right') dateResolvedX = positions.date.x - dateGroupWidth;
+
   const dateMetrics = {
-    x: positions.date.x,
+    x: dateResolvedX,
     y: positions.date.y,
-    width: dateDetail.iconSize + dateDetail.iconToTextGap + (event.date ? event.date.length * (dateDetail.fontSize * 0.6) : 0),
+    width: dateGroupWidth,
     height: dateDetail.fontSize,
   };
 
+  const timeTextEstWidth = event.time ? event.time.length * (timeDetail.fontSize * 0.6) : 0;
+  const timeGroupWidth = timeDetail.iconToTextGap + timeTextEstWidth;
+  const timeAlign = positions.time.textAlign || 'left';
+  let timeResolvedX = positions.time.x;
+  if (timeAlign === 'center') timeResolvedX = positions.time.x - timeGroupWidth / 2;
+  else if (timeAlign === 'right') timeResolvedX = positions.time.x - timeGroupWidth;
+
   const timeMetrics = {
-    x: positions.time.x,
+    x: timeResolvedX,
     y: positions.time.y,
-    width: timeDetail.iconSize + timeDetail.iconToTextGap + (event.time ? event.time.length * (timeDetail.fontSize * 0.6) : 0),
+    width: timeGroupWidth,
     height: timeDetail.fontSize,
   };
 
+  const locTextEstWidth = event.location ? event.location.length * (locationDetail.fontSize * 0.5) : 200;
+  const locGroupWidth = locationDetail.iconToTextGap + locTextEstWidth;
+  const locAlign = positions.location.textAlign || 'left';
+  let locResolvedX = positions.location.x;
+  if (locAlign === 'center') locResolvedX = positions.location.x - locGroupWidth / 2;
+  else if (locAlign === 'right') locResolvedX = positions.location.x - locGroupWidth;
+
   const locationMetrics = {
-    x: positions.location.x,
+    x: locResolvedX,
     y: positions.location.y,
-    width: locationDetail.iconSize + locationDetail.iconToTextGap + (event.location ? event.location.length * (locationDetail.fontSize * 0.5) : 200),
+    width: locGroupWidth,
     height: locationDetail.fontSize,
   };
 
@@ -1897,60 +1937,108 @@ async function createUnifiedLayout(
   }
 
   // 7. DETAILS (date, time, location) with icons - use per-detail scale
+  // Group alignment: icon + gap + text are treated as a single unit.
+  // textAlign controls where the group anchor (positions.x) sits:
+  //   left: x = left edge of group (icon starts at x)
+  //   center: x = center of total group width
+  //   right: x = right edge of total group width
   ctx.fillStyle = rgbToString(COLORS.amber);
 
   if (event.date) {
     const dateDetail = getDetailMetrics(cfg, positions, 'date');
     const dateY = Math.round(positions.date.y * s);
-    const dateX = Math.round(positions.date.x * s);
+    const dateAnchorX = Math.round(positions.date.x * s);
     const dateIconSize = Math.round(dateDetail.iconSize * s);
     const dateIconOffsetY = Math.round(dateDetail.iconOffsetY * s);
     const dateIconToTextGap = Math.round(dateDetail.iconToTextGap * s);
     const dateFontSize = Math.round(dateDetail.fontSize * s);
-
-    drawIcon(ctx, 'calendar', dateX, dateY - dateIconOffsetY, dateIconSize, COLORS.amber);
+    const dateAlign = positions.date.textAlign || 'left';
 
     ctx.font = `italic 400 ${dateFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
-    drawAlignedText(ctx, event.date, dateX + dateIconToTextGap, dateY, positions.date.textAlign || 'left');
+    const dateTextWidth = ctx.measureText(event.date).width;
+    const dateGroupWidth = dateIconToTextGap + dateTextWidth;
+
+    let dateIconX = dateAnchorX;
+    if (dateAlign === 'center') {
+      dateIconX = dateAnchorX - dateGroupWidth / 2;
+    } else if (dateAlign === 'right') {
+      dateIconX = dateAnchorX - dateGroupWidth;
+    }
+
+    drawIcon(ctx, 'calendar', dateIconX, dateY - dateIconOffsetY, dateIconSize, COLORS.amber);
+    ctx.font = `italic 400 ${dateFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+    drawAlignedText(ctx, event.date, dateIconX + dateIconToTextGap, dateY, 'left');
   }
 
   if (event.time) {
     const timeDetail = getDetailMetrics(cfg, positions, 'time');
     const timeY = Math.round(positions.time.y * s);
-    const timeX = Math.round(positions.time.x * s);
+    const timeAnchorX = Math.round(positions.time.x * s);
     const timeIconSize = Math.round((timeDetail.iconSize - 1) * s);
     const timeIconOffsetY = Math.round(timeDetail.iconOffsetY * s);
     const timeIconToTextGap = Math.round(timeDetail.iconToTextGap * s);
     const timeFontSize = Math.round(timeDetail.fontSize * s);
-
-    drawIcon(ctx, 'clock', timeX, timeY - timeIconOffsetY, timeIconSize, COLORS.amber);
+    const timeAlign = positions.time.textAlign || 'left';
 
     ctx.font = `italic 400 ${timeFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
-    drawAlignedText(ctx, event.time, timeX + timeIconToTextGap, timeY, positions.time.textAlign || 'left');
+    const timeTextWidth = ctx.measureText(event.time).width;
+    const timeGroupWidth = timeIconToTextGap + timeTextWidth;
+
+    let timeIconX = timeAnchorX;
+    if (timeAlign === 'center') {
+      timeIconX = timeAnchorX - timeGroupWidth / 2;
+    } else if (timeAlign === 'right') {
+      timeIconX = timeAnchorX - timeGroupWidth;
+    }
+
+    drawIcon(ctx, 'clock', timeIconX, timeY - timeIconOffsetY, timeIconSize, COLORS.amber);
+    ctx.font = `italic 400 ${timeFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
+    drawAlignedText(ctx, event.time, timeIconX + timeIconToTextGap, timeY, 'left');
   }
 
   if (event.location) {
     const locationDetail = getDetailMetrics(cfg, positions, 'location');
     const locY = Math.round(positions.location.y * s);
-    const locX = Math.round(positions.location.x * s);
+    const locAnchorX = Math.round(positions.location.x * s);
     const locIconSize = Math.round(locationDetail.iconSize * s);
     const locIconOffsetY = Math.round(locationDetail.iconOffsetY * s);
     const locIconToTextGap = Math.round(locationDetail.iconToTextGap * s);
     const locFontSize = Math.round(locationDetail.fontSize * s);
     const locLineHeight = Math.round(locationDetail.lineHeight * s);
-
-    drawIcon(ctx, 'location', locX, locY - locIconOffsetY, locIconSize, COLORS.amber);
+    const locAlign = positions.location.textAlign || 'left';
 
     ctx.font = `400 ${locFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
     const maxTextWidth = Math.round((cfg.baseWidth * 0.5) * s);
     const locationLines = wrapText(ctx, event.location, maxTextWidth);
+
+    // Measure widest line for group width
+    let maxLineWidth = 0;
+    for (const line of locationLines) {
+      const w = ctx.measureText(line).width;
+      if (w > maxLineWidth) maxLineWidth = w;
+    }
+    const locGroupWidth = locIconToTextGap + maxLineWidth;
+
+    let locIconX = locAnchorX;
+    if (locAlign === 'center') {
+      locIconX = locAnchorX - locGroupWidth / 2;
+    } else if (locAlign === 'right') {
+      locIconX = locAnchorX - locGroupWidth;
+    }
+
+    drawIcon(ctx, 'location', locIconX, locY - locIconOffsetY, locIconSize, COLORS.amber);
+
+    ctx.font = `400 ${locFontSize}px Merriweather, serif`;
+    ctx.fillStyle = rgbToString(COLORS.amber);
     let ly = locY;
 
     for (const line of locationLines) {
-      drawAlignedText(ctx, line, locX + locIconToTextGap, ly, positions.location.textAlign || 'left');
+      drawAlignedText(ctx, line, locIconX + locIconToTextGap, ly, 'left');
       ly += locLineHeight;
     }
   }
