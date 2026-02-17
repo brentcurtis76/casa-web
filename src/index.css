@@ -333,3 +333,10 @@
   background: linear-gradient(90deg, #333333 0%, rgba(239, 68, 68, 0.08) 100%);
   border-left: 4px solid #ef4444;
 }
+
+/* Checkerboard pattern for transparent background preview */
+.checkerboard-bg {
+  background-image: repeating-conic-gradient(#ccc 0% 25%, transparent 0% 50%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}

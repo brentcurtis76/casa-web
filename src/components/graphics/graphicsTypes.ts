@@ -155,6 +155,12 @@ export const ELEMENT_META: Record<string, { label: string; color: string }> = {
   logo: { label: 'Logo', color: '#333333' },
 };
 
+/** Background settings for graphics generation */
+export interface GraphicsBackgroundSettings {
+  mode: 'solid' | 'transparent';
+  color?: string; // hex color, default #F9F7F5
+}
+
 /** Deep clone helper for ElementPositions */
 export function clonePositions(positions: AllElementPositions): AllElementPositions {
   return JSON.parse(JSON.stringify(positions));

@@ -1544,6 +1544,26 @@ function drawAlignedText(
 }
 
 /**
+ * Get per-detail scaled metrics when user provides custom fontSize.
+ * Returns scale factor and scaled values for icon/text rendering.
+ */
+function getDetailMetrics(
+  cfg: FormatLayoutConfig,
+  positions: ElementPositions,
+  elementId: 'date' | 'time' | 'location'
+) {
+  const userFontSize = positions[elementId]?.fontSize;
+  const scale = userFontSize ? userFontSize / cfg.detailFontSize : 1;
+  return {
+    fontSize: userFontSize || cfg.detailFontSize,
+    iconSize: cfg.iconSize * scale,
+    iconOffsetY: cfg.iconOffsetY * scale,
+    iconToTextGap: cfg.iconToTextGap * scale,
+    lineHeight: cfg.detailLineHeight * scale,
+  };
+}
+
+/**
  * Compute layout metrics in base coordinates.
  * Used by DragCanvasEditor to align overlay hitboxes with compositor render bounds.
  *
@@ -1668,30 +1688,30 @@ export function computeLayoutMetrics(
   };
 
   // ========== DETAILS (date, time, location) ==========
-  // These are positioned absolutely in base coords; estimate box size from text length
-  const detailFontSize = cfg.detailFontSize;
-  const iconToTextGap = cfg.iconToTextGap;
-  const iconSize = cfg.iconSize;
+  // Use per-detail scale factor if user provided custom fontSize
+  const dateDetail = getDetailMetrics(cfg, positions, 'date');
+  const timeDetail = getDetailMetrics(cfg, positions, 'time');
+  const locationDetail = getDetailMetrics(cfg, positions, 'location');
 
   const dateMetrics = {
     x: positions.date.x,
     y: positions.date.y,
-    width: iconSize + iconToTextGap + (event.date ? event.date.length * (detailFontSize * 0.6) : 0),
-    height: detailFontSize,
+    width: dateDetail.iconSize + dateDetail.iconToTextGap + (event.date ? event.date.length * (dateDetail.fontSize * 0.6) : 0),
+    height: dateDetail.fontSize,
   };
 
   const timeMetrics = {
     x: positions.time.x,
     y: positions.time.y,
-    width: iconSize + iconToTextGap + (event.time ? event.time.length * (detailFontSize * 0.6) : 0),
-    height: detailFontSize,
+    width: timeDetail.iconSize + timeDetail.iconToTextGap + (event.time ? event.time.length * (timeDetail.fontSize * 0.6) : 0),
+    height: timeDetail.fontSize,
   };
 
   const locationMetrics = {
     x: positions.location.x,
     y: positions.location.y,
-    width: iconSize + iconToTextGap + (event.location ? event.location.length * (detailFontSize * 0.5) : 200),
-    height: detailFontSize,
+    width: locationDetail.iconSize + locationDetail.iconToTextGap + (event.location ? event.location.length * (locationDetail.fontSize * 0.5) : 200),
+    height: locationDetail.fontSize,
   };
 
   return {
@@ -1717,15 +1737,22 @@ async function createUnifiedLayout(
   logoBase64: string | null,
   width: number,
   height: number,
-  positions: ElementPositions
+  positions: ElementPositions,
+  backgroundSettings?: { mode: 'solid' | 'transparent'; color?: string }
 ): Promise<void> {
   const cfg = FORMAT_LAYOUT_CONFIGS[format];
   const s = width / cfg.baseWidth;
   const lineThickness = Math.round(4 * s);
 
-  // 1. FONDO CREMA
-  ctx.fillStyle = rgbToString(COLORS.cream);
-  ctx.fillRect(0, 0, width, height);
+  // 1. BACKGROUND
+  if (backgroundSettings?.mode === 'transparent') {
+    // Skip fillRect for transparent mode (canvas default is transparent)
+  } else {
+    // Solid mode: use custom color or default cream
+    const bgColor = backgroundSettings?.color || rgbToString(COLORS.cream);
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, width, height);
+  }
 
   // 2. ILUSTRACIÓN (behind everything)
   if (illustrationBase64) {
@@ -1869,48 +1896,61 @@ async function createUnifiedLayout(
     drawAlignedText(ctx, event.subtitle, subtitleX, subtitleY, subtitleAlign);
   }
 
-  // 7. DETAILS (date, time, location) with icons
-  const detailFontSize = Math.round(cfg.detailFontSize * s);
-  ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+  // 7. DETAILS (date, time, location) with icons - use per-detail scale
   ctx.fillStyle = rgbToString(COLORS.amber);
-  const iconSize = Math.round(cfg.iconSize * s);
-  const iconOffsetY = Math.round(cfg.iconOffsetY * s);
-  const iconToTextGap = Math.round(cfg.iconToTextGap * s);
 
   if (event.date) {
+    const dateDetail = getDetailMetrics(cfg, positions, 'date');
     const dateY = Math.round(positions.date.y * s);
     const dateX = Math.round(positions.date.x * s);
-    drawIcon(ctx, 'calendar', dateX, dateY - iconOffsetY, iconSize, COLORS.amber);
+    const dateIconSize = Math.round(dateDetail.iconSize * s);
+    const dateIconOffsetY = Math.round(dateDetail.iconOffsetY * s);
+    const dateIconToTextGap = Math.round(dateDetail.iconToTextGap * s);
+    const dateFontSize = Math.round(dateDetail.fontSize * s);
 
-    ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+    drawIcon(ctx, 'calendar', dateX, dateY - dateIconOffsetY, dateIconSize, COLORS.amber);
+
+    ctx.font = `italic 400 ${dateFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
-    drawAlignedText(ctx, event.date, dateX + iconToTextGap, dateY, positions.date.textAlign || 'left');
+    drawAlignedText(ctx, event.date, dateX + dateIconToTextGap, dateY, positions.date.textAlign || 'left');
   }
 
   if (event.time) {
+    const timeDetail = getDetailMetrics(cfg, positions, 'time');
     const timeY = Math.round(positions.time.y * s);
     const timeX = Math.round(positions.time.x * s);
-    drawIcon(ctx, 'clock', timeX, timeY - iconOffsetY, Math.round((cfg.iconSize - 1) * s), COLORS.amber);
+    const timeIconSize = Math.round((timeDetail.iconSize - 1) * s);
+    const timeIconOffsetY = Math.round(timeDetail.iconOffsetY * s);
+    const timeIconToTextGap = Math.round(timeDetail.iconToTextGap * s);
+    const timeFontSize = Math.round(timeDetail.fontSize * s);
 
-    ctx.font = `italic 400 ${detailFontSize}px Merriweather, serif`;
+    drawIcon(ctx, 'clock', timeX, timeY - timeIconOffsetY, timeIconSize, COLORS.amber);
+
+    ctx.font = `italic 400 ${timeFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
-    drawAlignedText(ctx, event.time, timeX + iconToTextGap, timeY, positions.time.textAlign || 'left');
+    drawAlignedText(ctx, event.time, timeX + timeIconToTextGap, timeY, positions.time.textAlign || 'left');
   }
 
   if (event.location) {
+    const locationDetail = getDetailMetrics(cfg, positions, 'location');
     const locY = Math.round(positions.location.y * s);
     const locX = Math.round(positions.location.x * s);
-    drawIcon(ctx, 'location', locX, locY - iconOffsetY, iconSize, COLORS.amber);
+    const locIconSize = Math.round(locationDetail.iconSize * s);
+    const locIconOffsetY = Math.round(locationDetail.iconOffsetY * s);
+    const locIconToTextGap = Math.round(locationDetail.iconToTextGap * s);
+    const locFontSize = Math.round(locationDetail.fontSize * s);
+    const locLineHeight = Math.round(locationDetail.lineHeight * s);
 
-    ctx.font = `400 ${detailFontSize}px Merriweather, serif`;
+    drawIcon(ctx, 'location', locX, locY - locIconOffsetY, locIconSize, COLORS.amber);
+
+    ctx.font = `400 ${locFontSize}px Merriweather, serif`;
     ctx.fillStyle = rgbToString(COLORS.amber);
     const maxTextWidth = Math.round((cfg.baseWidth * 0.5) * s);
     const locationLines = wrapText(ctx, event.location, maxTextWidth);
     let ly = locY;
-    const locLineHeight = Math.round(cfg.detailLineHeight * s);
 
     for (const line of locationLines) {
-      drawAlignedText(ctx, line, locX + iconToTextGap, ly, positions.location.textAlign || 'left');
+      drawAlignedText(ctx, line, locX + locIconToTextGap, ly, positions.location.textAlign || 'left');
       ly += locLineHeight;
     }
   }
@@ -1927,7 +1967,8 @@ export async function generateGraphicWithPositions(
   event: EventData,
   illustrationBase64: string | null,
   logoBase64: string | null,
-  positions: ElementPositions
+  positions: ElementPositions,
+  backgroundSettings?: { mode: 'solid' | 'transparent'; color?: string }
 ): Promise<GeneratedGraphic> {
   const config = FORMATS[format];
   const width = config.width * config.scale;
@@ -1942,7 +1983,7 @@ export async function generateGraphicWithPositions(
     throw new Error('No se pudo crear contexto de canvas');
   }
 
-  await createUnifiedLayout(ctx, format, event, illustrationBase64, logoBase64, width, height, positions);
+  await createUnifiedLayout(ctx, format, event, illustrationBase64, logoBase64, width, height, positions, backgroundSettings);
 
   const dataUrl = canvas.toDataURL('image/png');
   const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');

@@ -16,6 +16,12 @@ interface UseResizeElementOptions {
   currentFontSize?: number;
   /** Called with new font size value */
   onFontSizeChange?: (fontSize: number) => void;
+  /** Called with new position when resizing changes element position */
+  onPositionChange?: (x: number, y: number) => void;
+  /** Initial X position (captured at pointer-down) */
+  initialX?: number;
+  /** Initial Y position (captured at pointer-down) */
+  initialY?: number;
   /** Convert DOM delta to base delta */
   toBaseDelta: (domDX: number, domDY: number) => { dx: number; dy: number };
   /** Current element width in base coords (for proportional scaling) */
@@ -37,6 +43,9 @@ export function useResizeElement({
   onSizeChange,
   currentFontSize,
   onFontSizeChange,
+  onPositionChange,
+  initialX,
+  initialY,
   toBaseDelta,
   baseWidth,
   baseHeight,
@@ -48,6 +57,10 @@ export function useResizeElement({
     initialScale: number;
     initialSize: number;
     initialFontSize: number;
+    initialX: number;
+    initialY: number;
+    initialWidth: number;
+    initialHeight: number;
     diagonal: number;
   } | null>(null);
 
@@ -68,6 +81,10 @@ export function useResizeElement({
         initialScale: currentScale ?? 1,
         initialSize: currentSize ?? 100,
         initialFontSize: currentFontSize ?? 16,
+        initialX: initialX ?? 0,
+        initialY: initialY ?? 0,
+        initialWidth: baseWidth,
+        initialHeight: baseHeight,
         diagonal: diagonal || 100,
       };
 
@@ -94,19 +111,64 @@ export function useResizeElement({
 
         const scaleFraction = diagDelta / startRef.current.diagonal;
 
+        // Compute new dimensions and position based on element type
+        let newWidth = startRef.current.initialWidth;
+        let newHeight = startRef.current.initialHeight;
+        let newX = startRef.current.initialX;
+        let newY = startRef.current.initialY;
+
         if (onScaleChange && currentScale != null) {
           const newScale = Math.max(0.3, Math.min(3.0, startRef.current.initialScale * (1 + scaleFraction * 2)));
           onScaleChange(Math.round(newScale * 100) / 100);
+
+          // For illustration scale: dimension change = (newScale/initialScale - 1) * baseDimensions
+          const scaleRatio = newScale / startRef.current.initialScale;
+          newWidth = startRef.current.initialWidth * scaleRatio;
+          newHeight = startRef.current.initialHeight * scaleRatio;
         }
 
         if (onSizeChange && currentSize != null) {
           const newSize = Math.max(40, Math.min(300, Math.round(startRef.current.initialSize * (1 + scaleFraction * 2))));
           onSizeChange(newSize);
+
+          // For logo size: dimension change = (newSize/initialSize - 1) * baseDimensions
+          const sizeRatio = newSize / startRef.current.initialSize;
+          newWidth = startRef.current.initialWidth * sizeRatio;
+          newHeight = startRef.current.initialHeight * sizeRatio;
         }
 
         if (onFontSizeChange && currentFontSize != null) {
           const newFontSize = Math.max(16, Math.min(200, Math.round(startRef.current.initialFontSize * (1 + scaleFraction * 2))));
           onFontSizeChange(newFontSize);
+
+          // For text fontSize: dimension change = (newFontSize/initialFontSize - 1) * baseDimensions
+          const fontRatio = newFontSize / startRef.current.initialFontSize;
+          newWidth = startRef.current.initialWidth * fontRatio;
+          newHeight = startRef.current.initialHeight * fontRatio;
+        }
+
+        // Calculate position offset per handle (anchor opposite corner)
+        if (onPositionChange) {
+          const deltaWidth = newWidth - startRef.current.initialWidth;
+          const deltaHeight = newHeight - startRef.current.initialHeight;
+
+          switch (handle) {
+            case 'se':
+              // No position change (origin stays fixed)
+              break;
+            case 'nw':
+              newX = startRef.current.initialX - deltaWidth;
+              newY = startRef.current.initialY - deltaHeight;
+              break;
+            case 'ne':
+              newY = startRef.current.initialY - deltaHeight;
+              break;
+            case 'sw':
+              newX = startRef.current.initialX - deltaWidth;
+              break;
+          }
+
+          onPositionChange(newX, newY);
         }
       };
 
@@ -119,7 +181,7 @@ export function useResizeElement({
       target.addEventListener('pointermove', handlePointerMove);
       target.addEventListener('pointerup', handlePointerUp);
     },
-    [disabled, handle, currentScale, currentSize, currentFontSize, onScaleChange, onSizeChange, onFontSizeChange, toBaseDelta, baseWidth, baseHeight]
+    [disabled, handle, currentScale, currentSize, currentFontSize, onScaleChange, onSizeChange, onFontSizeChange, onPositionChange, initialX, initialY, toBaseDelta, baseWidth, baseHeight]
   );
 
   return { handlePointerDown };
