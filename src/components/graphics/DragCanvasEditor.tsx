@@ -20,7 +20,7 @@ import {
   ELEMENT_META,
   SELECTION_COLORS,
 } from './graphicsTypes';
-import { computeLayoutMetrics, type LayoutMetrics, type EventData } from './templateCompositor';
+import { computeLayoutMetrics, getDefaultFontSizes, type LayoutMetrics, type EventData } from './templateCompositor';
 
 interface DragCanvasEditorProps {
   format: FormatType;
@@ -233,8 +233,8 @@ export function DragCanvasEditor({
     'aspect-[1200/630] max-h-[400px]';
 
   // Selected element info
-  const selectedIsAllignable = selectedElement && ALIGNABLE_ELEMENTS.includes(selectedElement);
-  const selectedAlign = selectedElement && selectedIsAllignable
+  const selectedIsAlignable = selectedElement && ALIGNABLE_ELEMENTS.includes(selectedElement);
+  const selectedAlign = selectedElement && selectedIsAlignable
     ? (positions[selectedElement as 'title' | 'subtitle' | 'date' | 'time' | 'location'].textAlign || 'left')
     : 'left';
 
@@ -358,8 +358,14 @@ export function DragCanvasEditor({
             const isResizable = id === 'illustration' || id === 'logo' || id === 'title' || id === 'subtitle' || id === 'date' || id === 'time' || id === 'location';
 
             // Get current font size for text and detail elements
+            // Resolve from positions, falling back to format defaults so resize works immediately
+            const defaultFonts = getDefaultFontSizes(format);
             const currentFontSize = (id === 'title' || id === 'subtitle' || id === 'date' || id === 'time' || id === 'location')
-              ? positions[id].fontSize
+              ? (positions[id].fontSize ?? (
+                  id === 'title' ? defaultFonts.title :
+                  id === 'subtitle' ? defaultFonts.subtitle :
+                  defaultFonts.detail
+                ))
               : undefined;
 
             return (
@@ -427,7 +433,7 @@ export function DragCanvasEditor({
             </div>
 
             {/* Text alignment (for alignable elements) */}
-            {selectedIsAllignable && (
+            {selectedIsAlignable && (
               <div className="flex items-center gap-3">
                 <Label className="text-xs">Alinear:</Label>
                 <AlignmentToolbar

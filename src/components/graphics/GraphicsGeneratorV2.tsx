@@ -788,6 +788,7 @@ export const GraphicsGeneratorV2 = () => {
           created_by: user.id,
           metadata: {
             titles, // Store all per-format titles
+            backgroundSettings, // Persist background mode and color
           },
         })
         .select()
