@@ -31,9 +31,180 @@ interface UseResizeElementOptions {
   disabled?: boolean;
 }
 
+/** Minimum dimension in base coordinates */
+const MIN_DIMENSION = 20;
+
+export interface ResizeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Pure anchor-based rectangle solver.
+ * Given a handle, initial rect, and pointer delta, compute the new rectangle
+ * by keeping the opposite corner as a fixed anchor.
+ */
+export function computeResizeRect(
+  handle: ResizeHandle,
+  initialRect: ResizeRect,
+  dx: number,
+  dy: number,
+  lockAspectRatio: boolean
+): ResizeRect {
+  const { x, y, width, height } = initialRect;
+
+  let newWidth: number;
+  let newHeight: number;
+  let newX: number;
+  let newY: number;
+
+  switch (handle) {
+    case 'se': {
+      // Anchor = top-left (x, y)
+      newWidth = width + dx;
+      newHeight = height + dy;
+      newX = x;
+      newY = y;
+      break;
+    }
+    case 'nw': {
+      // Anchor = bottom-right (x + width, y + height)
+      const anchorX = x + width;
+      const anchorY = y + height;
+      newWidth = width - dx;
+      newHeight = height - dy;
+      newX = anchorX - newWidth;
+      newY = anchorY - newHeight;
+      break;
+    }
+    case 'ne': {
+      // Anchor = bottom-left (x, y + height)
+      const anchorY = y + height;
+      newWidth = width + dx;
+      newHeight = height - dy;
+      newX = x;
+      newY = anchorY - newHeight;
+      break;
+    }
+    case 'sw': {
+      // Anchor = top-right (x + width, y)
+      const anchorX = x + width;
+      newWidth = width - dx;
+      newHeight = height + dy;
+      newX = anchorX - newWidth;
+      newY = y;
+      break;
+    }
+    // Edge handles: only move one axis
+    case 'e': {
+      newWidth = width + dx;
+      newHeight = height;
+      newX = x;
+      newY = y;
+      break;
+    }
+    case 'w': {
+      const anchorX = x + width;
+      newWidth = width - dx;
+      newHeight = height;
+      newX = anchorX - newWidth;
+      newY = y;
+      break;
+    }
+    case 's': {
+      newWidth = width;
+      newHeight = height + dy;
+      newX = x;
+      newY = y;
+      break;
+    }
+    case 'n': {
+      const anchorY = y + height;
+      newWidth = width;
+      newHeight = height - dy;
+      newX = x;
+      newY = anchorY - newHeight;
+      break;
+    }
+    default: {
+      newWidth = width;
+      newHeight = height;
+      newX = x;
+      newY = y;
+    }
+  }
+
+  // Aspect ratio lock: pick dominant axis, scale the other to match
+  if (lockAspectRatio && width > 0 && height > 0) {
+    const aspect = width / height;
+    const widthChange = Math.abs(newWidth - width);
+    const heightChange = Math.abs(newHeight - height);
+
+    if (widthChange >= heightChange) {
+      // Width is dominant — derive height from it
+      newHeight = newWidth / aspect;
+    } else {
+      // Height is dominant — derive width from it
+      newWidth = newHeight * aspect;
+    }
+
+    // Recompute position from anchor after aspect correction
+    switch (handle) {
+      case 'se':
+      case 'e':
+      case 's':
+        // Anchor is top-left, no position change needed
+        break;
+      case 'nw': {
+        const anchorX = x + width;
+        const anchorY = y + height;
+        newX = anchorX - newWidth;
+        newY = anchorY - newHeight;
+        break;
+      }
+      case 'ne':
+      case 'n': {
+        const anchorY = y + height;
+        newX = x;
+        newY = anchorY - newHeight;
+        break;
+      }
+      case 'sw':
+      case 'w': {
+        const anchorX = x + width;
+        newX = anchorX - newWidth;
+        newY = y;
+        break;
+      }
+    }
+  }
+
+  // Clamp minimum dimensions
+  if (newWidth < MIN_DIMENSION) {
+    const clampedWidth = MIN_DIMENSION;
+    // Adjust position if anchor is on the right side
+    if (handle === 'nw' || handle === 'sw' || handle === 'w') {
+      newX = newX + (newWidth - clampedWidth);
+    }
+    newWidth = clampedWidth;
+  }
+  if (newHeight < MIN_DIMENSION) {
+    const clampedHeight = MIN_DIMENSION;
+    if (handle === 'nw' || handle === 'ne' || handle === 'n') {
+      newY = newY + (newHeight - clampedHeight);
+    }
+    newHeight = clampedHeight;
+  }
+
+  return { x: newX, y: newY, width: newWidth, height: newHeight };
+}
+
 /**
  * Hook for handling resize via corner/edge handles.
- * Corner handles resize proportionally (for illustration scale / logo size).
+ * Uses anchor-based rectangle solver: the opposite corner stays fixed,
+ * the dragged corner follows the pointer.
  */
 export function useResizeElement({
   handle,
@@ -57,11 +228,7 @@ export function useResizeElement({
     initialScale: number;
     initialSize: number;
     initialFontSize: number;
-    initialX: number;
-    initialY: number;
-    initialWidth: number;
-    initialHeight: number;
-    diagonal: number;
+    initialRect: ResizeRect;
   } | null>(null);
 
   const handlePointerDown = useCallback(
@@ -73,19 +240,18 @@ export function useResizeElement({
       const target = e.currentTarget as HTMLElement;
       target.setPointerCapture(e.pointerId);
 
-      const diagonal = Math.sqrt(baseWidth * baseWidth + baseHeight * baseHeight);
-
       startRef.current = {
         domX: e.clientX,
         domY: e.clientY,
         initialScale: currentScale ?? 1,
         initialSize: currentSize ?? 100,
         initialFontSize: currentFontSize ?? 16,
-        initialX: initialX ?? 0,
-        initialY: initialY ?? 0,
-        initialWidth: baseWidth,
-        initialHeight: baseHeight,
-        diagonal: diagonal || 100,
+        initialRect: {
+          x: initialX ?? 0,
+          y: initialY ?? 0,
+          width: baseWidth,
+          height: baseHeight,
+        },
       };
 
       const handlePointerMove = (ev: PointerEvent) => {
@@ -95,80 +261,44 @@ export function useResizeElement({
         const domDY = ev.clientY - startRef.current.domY;
         const { dx, dy } = toBaseDelta(domDX, domDY);
 
-        // Compute signed diagonal delta based on handle position
-        let diagDelta: number;
-        switch (handle) {
-          case 'se': diagDelta = (dx + dy) / 2; break;
-          case 'nw': diagDelta = -(dx + dy) / 2; break;
-          case 'ne': diagDelta = (dx - dy) / 2; break;
-          case 'sw': diagDelta = (-dx + dy) / 2; break;
-          case 'e': diagDelta = dx; break;
-          case 'w': diagDelta = -dx; break;
-          case 's': diagDelta = dy; break;
-          case 'n': diagDelta = -dy; break;
-          default: diagDelta = 0;
-        }
+        const isAspectLocked = (onScaleChange != null && currentScale != null) ||
+                               (onSizeChange != null && currentSize != null);
 
-        const scaleFraction = diagDelta / startRef.current.diagonal;
+        const newRect = computeResizeRect(
+          handle,
+          startRef.current.initialRect,
+          dx,
+          dy,
+          isAspectLocked
+        );
 
-        // Compute new dimensions and position based on element type
-        let newWidth = startRef.current.initialWidth;
-        let newHeight = startRef.current.initialHeight;
-        let newX = startRef.current.initialX;
-        let newY = startRef.current.initialY;
+        const initRect = startRef.current.initialRect;
 
+        // Apply scale/size/fontSize based on dimension ratios
         if (onScaleChange && currentScale != null) {
-          const newScale = Math.max(0.3, Math.min(3.0, startRef.current.initialScale * (1 + scaleFraction * 2)));
+          // Illustration: derive scale from width ratio
+          const widthRatio = newRect.width / initRect.width;
+          const newScale = Math.max(0.1, Math.min(3.0, startRef.current.initialScale * widthRatio));
           onScaleChange(Math.round(newScale * 100) / 100);
-
-          // For illustration scale: dimension change = (newScale/initialScale - 1) * baseDimensions
-          const scaleRatio = newScale / startRef.current.initialScale;
-          newWidth = startRef.current.initialWidth * scaleRatio;
-          newHeight = startRef.current.initialHeight * scaleRatio;
         }
 
         if (onSizeChange && currentSize != null) {
-          const newSize = Math.max(40, Math.min(300, Math.round(startRef.current.initialSize * (1 + scaleFraction * 2))));
+          // Logo: derive size from width ratio
+          const widthRatio = newRect.width / initRect.width;
+          const newSize = Math.max(20, Math.min(400, Math.round(startRef.current.initialSize * widthRatio)));
           onSizeChange(newSize);
-
-          // For logo size: dimension change = (newSize/initialSize - 1) * baseDimensions
-          const sizeRatio = newSize / startRef.current.initialSize;
-          newWidth = startRef.current.initialWidth * sizeRatio;
-          newHeight = startRef.current.initialHeight * sizeRatio;
         }
 
         if (onFontSizeChange && currentFontSize != null) {
-          const newFontSize = Math.max(16, Math.min(200, Math.round(startRef.current.initialFontSize * (1 + scaleFraction * 2))));
+          // Text: derive fontSize from height ratio
+          const heightRatio = newRect.height / initRect.height;
+          const newFontSize = Math.max(12, Math.min(200, Math.round(startRef.current.initialFontSize * heightRatio)));
           onFontSizeChange(newFontSize);
-
-          // For text fontSize: dimension change = (newFontSize/initialFontSize - 1) * baseDimensions
-          const fontRatio = newFontSize / startRef.current.initialFontSize;
-          newWidth = startRef.current.initialWidth * fontRatio;
-          newHeight = startRef.current.initialHeight * fontRatio;
         }
 
-        // Calculate position offset per handle (anchor opposite corner)
+        // Update position (anchor-based: position changes for nw, ne, sw handles)
         if (onPositionChange) {
-          const deltaWidth = newWidth - startRef.current.initialWidth;
-          const deltaHeight = newHeight - startRef.current.initialHeight;
-
-          switch (handle) {
-            case 'se':
-              // No position change (origin stays fixed)
-              break;
-            case 'nw':
-              newX = startRef.current.initialX - deltaWidth;
-              newY = startRef.current.initialY - deltaHeight;
-              break;
-            case 'ne':
-              newY = startRef.current.initialY - deltaHeight;
-              break;
-            case 'sw':
-              newX = startRef.current.initialX - deltaWidth;
-              break;
-          }
-
-          onPositionChange(newX, newY);
+          onPositionChange(newRect.x, newRect.y);
         }
       };
 
