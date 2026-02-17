@@ -1351,8 +1351,7 @@ export const GraphicsGeneratorV2 = () => {
             </div>
 
             {/* Drag Canvas Editor */}
-            <div className={backgroundSettings.mode === 'transparent' ? 'checkerboard-bg rounded-lg' : ''}>
-              <DragCanvasEditor
+            <DragCanvasEditor
               format={adjustFormat}
               previewBase64={adjustPreview}
               previewLoading={adjustPreviewLoading}
@@ -1374,8 +1373,8 @@ export const GraphicsGeneratorV2 = () => {
                 time: includeTime ? (time || '19:00 hrs') : '',
                 location: includeLocation ? (location || 'Ubicación del evento') : '',
               }}
-              />
-            </div>
+              showCheckerboard={backgroundSettings.mode === 'transparent'}
+            />
 
             {/* Botones de navegación */}
             <div className="flex gap-2 pt-4 border-t">

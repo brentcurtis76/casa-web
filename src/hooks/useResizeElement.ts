@@ -1,22 +1,32 @@
 import { useCallback, useRef } from 'react';
 import type { ResizeHandle } from '@/components/graphics/graphicsTypes';
 
+export interface ResizeUpdate {
+  x: number;
+  y: number;
+  scale?: number;
+  fontSize?: number;
+  size?: number;
+}
+
 interface UseResizeElementOptions {
   /** Which handle is being used */
   handle: ResizeHandle;
   /** Current scale (for illustration) */
   currentScale?: number;
-  /** Called with new scale value */
-  onScaleChange?: (scale: number) => void;
   /** Current size (for logo) */
   currentSize?: number;
-  /** Called with new size value */
-  onSizeChange?: (size: number) => void;
   /** Current font size (for text elements) */
   currentFontSize?: number;
-  /** Called with new font size value */
+  /** Combined callback — receives ALL resize data in one call to avoid competing state updates */
+  onResizeUpdate?: (update: ResizeUpdate) => void;
+  /** @deprecated Use onResizeUpdate instead — kept for backwards compat */
+  onScaleChange?: (scale: number) => void;
+  /** @deprecated Use onResizeUpdate instead */
+  onSizeChange?: (size: number) => void;
+  /** @deprecated Use onResizeUpdate instead */
   onFontSizeChange?: (fontSize: number) => void;
-  /** Called with new position when resizing changes element position */
+  /** @deprecated Use onResizeUpdate instead */
   onPositionChange?: (x: number, y: number) => void;
   /** Initial X position (captured at pointer-down) */
   initialX?: number;
@@ -29,6 +39,10 @@ interface UseResizeElementOptions {
   /** Current element height in base coords */
   baseHeight: number;
   disabled?: boolean;
+  /** Snap position to grid */
+  snapToGrid?: boolean;
+  /** Grid cell size in base coordinates */
+  gridSize?: number;
 }
 
 /** Minimum dimension in base coordinates */
@@ -209,10 +223,11 @@ export function computeResizeRect(
 export function useResizeElement({
   handle,
   currentScale,
-  onScaleChange,
   currentSize,
-  onSizeChange,
   currentFontSize,
+  onResizeUpdate,
+  onScaleChange,
+  onSizeChange,
   onFontSizeChange,
   onPositionChange,
   initialX,
@@ -221,6 +236,8 @@ export function useResizeElement({
   baseWidth,
   baseHeight,
   disabled = false,
+  snapToGrid = false,
+  gridSize = 0,
 }: UseResizeElementOptions) {
   const startRef = useRef<{
     domX: number;
@@ -261,8 +278,7 @@ export function useResizeElement({
         const domDY = ev.clientY - startRef.current.domY;
         const { dx, dy } = toBaseDelta(domDX, domDY);
 
-        const isAspectLocked = (onScaleChange != null && currentScale != null) ||
-                               (onSizeChange != null && currentSize != null);
+        const isAspectLocked = (currentScale != null) || (currentSize != null);
 
         const newRect = computeResizeRect(
           handle,
@@ -274,29 +290,54 @@ export function useResizeElement({
 
         const initRect = startRef.current.initialRect;
 
-        // Apply scale/size/fontSize based on dimension ratios
+        // If combined callback is provided, use it for a SINGLE state update
+        if (onResizeUpdate) {
+          let snappedX = newRect.x;
+          let snappedY = newRect.y;
+          if (snapToGrid && gridSize > 0) {
+            snappedX = Math.round(snappedX / gridSize) * gridSize;
+            snappedY = Math.round(snappedY / gridSize) * gridSize;
+          }
+          const update: ResizeUpdate = { x: snappedX, y: snappedY };
+
+          if (currentScale != null) {
+            const widthRatio = newRect.width / initRect.width;
+            update.scale = Math.round(Math.max(0.1, Math.min(3.0, startRef.current.initialScale * widthRatio)) * 100) / 100;
+          }
+
+          if (currentSize != null) {
+            const widthRatio = newRect.width / initRect.width;
+            update.size = Math.max(20, Math.min(400, Math.round(startRef.current.initialSize * widthRatio)));
+          }
+
+          if (currentFontSize != null) {
+            const heightRatio = newRect.height / initRect.height;
+            update.fontSize = Math.max(12, Math.min(200, Math.round(startRef.current.initialFontSize * heightRatio)));
+          }
+
+          onResizeUpdate(update);
+          return;
+        }
+
+        // Legacy: separate callbacks (prone to competing state updates)
         if (onScaleChange && currentScale != null) {
-          // Illustration: derive scale from width ratio
           const widthRatio = newRect.width / initRect.width;
           const newScale = Math.max(0.1, Math.min(3.0, startRef.current.initialScale * widthRatio));
           onScaleChange(Math.round(newScale * 100) / 100);
         }
 
         if (onSizeChange && currentSize != null) {
-          // Logo: derive size from width ratio
           const widthRatio = newRect.width / initRect.width;
           const newSize = Math.max(20, Math.min(400, Math.round(startRef.current.initialSize * widthRatio)));
           onSizeChange(newSize);
         }
 
         if (onFontSizeChange && currentFontSize != null) {
-          // Text: derive fontSize from height ratio
           const heightRatio = newRect.height / initRect.height;
           const newFontSize = Math.max(12, Math.min(200, Math.round(startRef.current.initialFontSize * heightRatio)));
           onFontSizeChange(newFontSize);
         }
 
-        // Update position (anchor-based: position changes for nw, ne, sw handles)
         if (onPositionChange) {
           onPositionChange(newRect.x, newRect.y);
         }
@@ -311,7 +352,7 @@ export function useResizeElement({
       target.addEventListener('pointermove', handlePointerMove);
       target.addEventListener('pointerup', handlePointerUp);
     },
-    [disabled, handle, currentScale, currentSize, currentFontSize, onScaleChange, onSizeChange, onFontSizeChange, onPositionChange, initialX, initialY, toBaseDelta, baseWidth, baseHeight]
+    [disabled, handle, currentScale, currentSize, currentFontSize, onResizeUpdate, onScaleChange, onSizeChange, onFontSizeChange, onPositionChange, initialX, initialY, toBaseDelta, baseWidth, baseHeight, snapToGrid, gridSize]
   );
 
   return { handlePointerDown };
