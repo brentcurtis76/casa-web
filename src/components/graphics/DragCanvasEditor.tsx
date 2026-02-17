@@ -41,6 +41,7 @@ interface DragCanvasEditorProps {
 type ElementId = 'title' | 'subtitle' | 'date' | 'time' | 'location' | 'illustration' | 'logo';
 
 const TEXT_ELEMENTS: ElementId[] = ['title', 'subtitle'];
+const ALIGNABLE_ELEMENTS: ElementId[] = ['title', 'subtitle', 'date', 'time', 'location'];
 const ALL_ELEMENTS: ElementId[] = ['title', 'subtitle', 'date', 'time', 'location', 'illustration', 'logo'];
 
 export function DragCanvasEditor({
@@ -126,9 +127,12 @@ export function DragCanvasEditor({
 
   const updateFontSize = useCallback(
     (elementId: ElementId, fontSize: number) => {
-      if (elementId !== 'title' && elementId !== 'subtitle') return;
       const updated = { ...positions };
-      updated[elementId as 'title' | 'subtitle'] = { ...updated[elementId as 'title' | 'subtitle'], fontSize };
+      if (elementId === 'title' || elementId === 'subtitle') {
+        updated[elementId] = { ...updated[elementId], fontSize };
+      } else if (elementId === 'date' || elementId === 'time' || elementId === 'location') {
+        updated[elementId] = { ...updated[elementId], fontSize };
+      }
       onPositionsChange(updated);
     },
     [positions, onPositionsChange]
@@ -229,9 +233,9 @@ export function DragCanvasEditor({
     'aspect-[1200/630] max-h-[400px]';
 
   // Selected element info
-  const selectedIsText = selectedElement && TEXT_ELEMENTS.includes(selectedElement);
-  const selectedAlign = selectedElement && selectedIsText
-    ? (positions[selectedElement as 'title' | 'subtitle'].textAlign || 'left')
+  const selectedIsAllignable = selectedElement && ALIGNABLE_ELEMENTS.includes(selectedElement);
+  const selectedAlign = selectedElement && selectedIsAllignable
+    ? (positions[selectedElement as 'title' | 'subtitle' | 'date' | 'time' | 'location'].textAlign || 'left')
     : 'left';
 
   // Get selected element position for coordinate display
@@ -350,11 +354,11 @@ export function DragCanvasEditor({
               height: baseHeight / mapper.scaleFactor,
             };
 
-            // Determine if element is resizable (now includes text elements)
-            const isResizable = id === 'illustration' || id === 'logo' || id === 'title' || id === 'subtitle';
+            // Determine if element is resizable (now includes text and detail elements)
+            const isResizable = id === 'illustration' || id === 'logo' || id === 'title' || id === 'subtitle' || id === 'date' || id === 'time' || id === 'location';
 
-            // Get current font size for text elements
-            const currentFontSize = (id === 'title' || id === 'subtitle')
+            // Get current font size for text and detail elements
+            const currentFontSize = (id === 'title' || id === 'subtitle' || id === 'date' || id === 'time' || id === 'location')
               ? positions[id].fontSize
               : undefined;
 
@@ -382,10 +386,11 @@ export function DragCanvasEditor({
                 onSizeChange={id === 'logo' ? updateLogoSize : undefined}
                 currentFontSize={currentFontSize}
                 onFontSizeChange={
-                  (id === 'title' || id === 'subtitle')
+                  (id === 'title' || id === 'subtitle' || id === 'date' || id === 'time' || id === 'location')
                     ? (fs) => updateFontSize(id, fs)
                     : undefined
                 }
+                onResizePositionChange={(x, y) => updatePosition(id, x, y)}
               />
             );
           })}
@@ -421,8 +426,8 @@ export function DragCanvasEditor({
               )}
             </div>
 
-            {/* Text alignment (only for text elements) */}
-            {selectedIsText && (
+            {/* Text alignment (for alignable elements) */}
+            {selectedIsAllignable && (
               <div className="flex items-center gap-3">
                 <Label className="text-xs">Alinear:</Label>
                 <AlignmentToolbar

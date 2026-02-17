@@ -9,7 +9,7 @@
  * 4. Sistema genera los 4 formatos finales
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -72,9 +72,11 @@ import {
   type AllElementPositions,
   DEFAULT_ELEMENT_POSITIONS,
   clonePositions,
+  type GraphicsBackgroundSettings,
 } from './graphicsTypes';
 import { DragCanvasEditor } from './DragCanvasEditor';
 import { Slider } from '@/components/ui/slider';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 // Tipos de evento disponibles
 const EVENT_TYPES = [
@@ -156,8 +158,9 @@ const BASE_STYLE_PROMPT = `Minimalist line art illustration with PURE WHITE (#FF
 /**
  * Post-process an illustration to ensure background matches CASA_BRAND.colors.primary.white
  * Replaces white, near-white, light gray, and checkered pattern pixels with exact target color
+ * When mode is 'transparent', replaces white/gray with alpha=0 instead
  */
-async function processIllustrationBackground(base64: string, targetColor: string = CASA_BRAND.colors.primary.white): Promise<string> {
+async function processIllustrationBackground(base64: string, targetColor: string = CASA_BRAND.colors.primary.white, mode: 'solid' | 'transparent' = 'solid'): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -178,12 +181,15 @@ async function processIllustrationBackground(base64: string, targetColor: string
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // Parse target color to RGB
-      const targetR = parseInt(targetColor.slice(1, 3), 16);
-      const targetG = parseInt(targetColor.slice(3, 5), 16);
-      const targetB = parseInt(targetColor.slice(5, 7), 16);
+      // Parse target color to RGB (only for solid mode)
+      let targetR = 0, targetG = 0, targetB = 0;
+      if (mode === 'solid') {
+        targetR = parseInt(targetColor.slice(1, 3), 16);
+        targetG = parseInt(targetColor.slice(3, 5), 16);
+        targetB = parseInt(targetColor.slice(5, 7), 16);
+      }
 
-      // Replace background pixels with target color
+      // Replace background pixels with target color (solid) or alpha=0 (transparent)
       // This handles: pure white, near-white, cream, light gray, and checkered patterns
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
@@ -193,18 +199,26 @@ async function processIllustrationBackground(base64: string, targetColor: string
 
         // Replace transparent pixels
         if (a < 250) {
-          data[i] = targetR;
-          data[i + 1] = targetG;
-          data[i + 2] = targetB;
-          data[i + 3] = 255;
+          if (mode === 'transparent') {
+            data[i + 3] = 0; // Keep transparent
+          } else {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+            data[i + 3] = 255;
+          }
           continue;
         }
 
         // Replace pure white and near-white (> 240)
         if (r > 240 && g > 240 && b > 240) {
-          data[i] = targetR;
-          data[i + 1] = targetG;
-          data[i + 2] = targetB;
+          if (mode === 'transparent') {
+            data[i + 3] = 0; // Make transparent
+          } else {
+            data[i] = targetR;
+            data[i + 1] = targetG;
+            data[i + 2] = targetB;
+          }
           continue;
         }
 
@@ -213,9 +227,13 @@ async function processIllustrationBackground(base64: string, targetColor: string
           const maxDiff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
           // If it's a neutral gray (R≈G≈B), replace it
           if (maxDiff < 10) {
-            data[i] = targetR;
-            data[i + 1] = targetG;
-            data[i + 2] = targetB;
+            if (mode === 'transparent') {
+              data[i + 3] = 0; // Make transparent
+            } else {
+              data[i] = targetR;
+              data[i + 1] = targetG;
+              data[i + 2] = targetB;
+            }
           }
         }
       }
@@ -327,6 +345,15 @@ export const GraphicsGeneratorV2 = () => {
   });
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Version counter for staleness detection (refs to avoid dependency loops)
+  const previewVersionRef = useRef(0);
+  const previewVersionsRef = useRef<Record<FormatType, number>>({
+    ppt_4_3: 0,
+    instagram_post: 0,
+    instagram_story: 0,
+    facebook_post: 0,
+  });
+
   // Save batch state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [batchName, setBatchName] = useState('');
@@ -350,6 +377,12 @@ export const GraphicsGeneratorV2 = () => {
   const [elementPositions, setElementPositions] = useState<AllElementPositions>(
     clonePositions(DEFAULT_ELEMENT_POSITIONS)
   );
+
+  // Background settings for transparent/solid color control
+  const [backgroundSettings, setBackgroundSettings] = useState<GraphicsBackgroundSettings>({
+    mode: 'solid',
+    color: '#F9F7F5', // default cream
+  });
 
   // Format date range for display
   const formatDateRange = (range: DateRange | undefined): string => {
@@ -418,49 +451,56 @@ export const GraphicsGeneratorV2 = () => {
     fetchLogo();
   }, []);
 
-  // Generate live previews for all formats when form fields change
+  // Generate live preview for active format only (lazy tab rendering)
   useEffect(() => {
     if (!fontsLoaded || !logoBase64) return;
     if (phase !== 'form') return;
 
+    // Increment version counter at effect entry for staleness detection
+    previewVersionRef.current += 1;
+    const capturedVersion = previewVersionRef.current;
+
     // Debounce preview generation
     const timeoutId = setTimeout(async () => {
-      setPreviewLoading(true);
       try {
-        // Generate all 4 format previews in parallel, each with its own title
-        const formats: FormatType[] = ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'];
-        const results = await Promise.all(
-          formats.map(format => {
-            const eventData: EventData = {
-              title: titles[format] || 'Título del Evento',
-              subtitle: includeSubtitle ? subtitle : undefined,
-              date: includeDate ? (formatDateRange(dateRange) || 'Fecha del evento') : '',
-              time: includeTime ? (time || '19:00 hrs') : '',
-              location: includeLocation ? (location || 'Ubicación del evento') : '',
-            };
-            return generateGraphic(format, eventData, null, logoBase64);
-          })
-        );
+        // Check if cache is current for active format
+        if (previewVersionsRef.current[previewFormat] === capturedVersion) {
+          // Cache is current, no need to regenerate
+          setPreviewLoading(false);
+          return;
+        }
 
-        const newPreviews: Record<FormatType, string | null> = {
-          ppt_4_3: null,
-          instagram_post: null,
-          instagram_story: null,
-          facebook_post: null,
+        setPreviewLoading(true);
+
+        // Generate ONLY the active preview format
+        const eventData: EventData = {
+          title: titles[previewFormat] || 'Título del Evento',
+          subtitle: includeSubtitle ? subtitle : undefined,
+          date: includeDate ? (formatDateRange(dateRange) || 'Fecha del evento') : '',
+          time: includeTime ? (time || '19:00 hrs') : '',
+          location: includeLocation ? (location || 'Ubicación del evento') : '',
         };
-        results.forEach((graphic, index) => {
-          newPreviews[formats[index]] = graphic.base64;
-        });
-        setPreviews(newPreviews);
+        const result = await generateGraphic(previewFormat, eventData, null, logoBase64);
+
+        // Stale-on-arrival check: compare version after await
+        if (capturedVersion !== previewVersionRef.current) {
+          // A newer version was triggered, discard this result
+          return;
+        }
+
+        // Update only the active format, preserve others
+        setPreviews(prev => ({ ...prev, [previewFormat]: result.base64 }));
+        previewVersionsRef.current[previewFormat] = capturedVersion;
       } catch (e) {
-        console.warn('Error generando previews:', e);
+        console.warn('Error generando preview:', e);
       } finally {
         setPreviewLoading(false);
       }
-    }, 400); // 400ms debounce (slightly longer since we generate 4 images)
+    }, 400); // 400ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, fontsLoaded, logoBase64, phase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, fontsLoaded, logoBase64, phase, previewFormat]);
 
   // Build default prompt based on event type or user's custom theme
   const buildDefaultPrompt = (type: string, userTheme?: string): string => {
@@ -502,16 +542,23 @@ export const GraphicsGeneratorV2 = () => {
           eventType,
           count: 4,
           customPrompt: customPrompt, // Enviar prompt personalizado
+          backgroundMode: backgroundSettings.mode, // Pass background mode to edge function
         },
       });
 
       if (error) throw error;
 
       if (data?.illustrations && data.illustrations.length > 0) {
-        // Post-process each illustration to ensure background matches slide color
+        // Post-process each illustration to ensure background matches slide color or is transparent
         const validIllustrations = data.illustrations.filter((i: string) => i && i.length > 0);
         const processedIllustrations = await Promise.all(
-          validIllustrations.map((base64: string) => processIllustrationBackground(base64))
+          validIllustrations.map((base64: string) =>
+            processIllustrationBackground(
+              base64,
+              backgroundSettings.color || CASA_BRAND.colors.primary.white,
+              backgroundSettings.mode
+            )
+          )
         );
         setIllustrations(processedIllustrations);
 
@@ -640,7 +687,8 @@ export const GraphicsGeneratorV2 = () => {
           eventData,
           selectedBase64,
           logoBase64,
-          elementPositions[adjustFormat]
+          elementPositions[adjustFormat],
+          backgroundSettings
         );
         setAdjustPreview(graphic.base64);
       } catch (e) {
@@ -651,7 +699,7 @@ export const GraphicsGeneratorV2 = () => {
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations]);
+  }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations, backgroundSettings]);
 
   // Generate all formats with current adjustments
   const handleGenerateWithAdjustments = async () => {
@@ -674,7 +722,7 @@ export const GraphicsGeneratorV2 = () => {
             time: includeTime ? time : '',
             location: includeLocation ? location : '',
           };
-          return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format]);
+          return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format], backgroundSettings);
         })
       );
 
@@ -1119,7 +1167,7 @@ export const GraphicsGeneratorV2 = () => {
                 className="text-base"
               />
               <p className="text-xs text-muted-foreground">
-                Describe en español lo que quieres ver. El sistema traducirá y optimizará el prompt automáticamente.
+                Describe lo que quieres ver. Se combinará con las directrices de estilo CASA automáticamente.
               </p>
             </div>
 
@@ -1266,8 +1314,44 @@ export const GraphicsGeneratorV2 = () => {
               </div>
             </div>
 
+            {/* Background Settings */}
+            <div className="space-y-2">
+              <Label>Fondo</Label>
+              <div className="flex items-center gap-4">
+                <ToggleGroup
+                  type="single"
+                  value={backgroundSettings.mode}
+                  onValueChange={(value: 'solid' | 'transparent') => {
+                    if (value) {
+                      setBackgroundSettings(prev => ({ ...prev, mode: value }));
+                    }
+                  }}
+                >
+                  <ToggleGroupItem value="solid" aria-label="Fondo solido">
+                    Solido
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="transparent" aria-label="Fondo transparente">
+                    Transparente
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                {backgroundSettings.mode === 'solid' && (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="bg-color" className="text-sm">Color de fondo:</Label>
+                    <input
+                      id="bg-color"
+                      type="color"
+                      value={backgroundSettings.color || '#F9F7F5'}
+                      onChange={(e) => setBackgroundSettings(prev => ({ ...prev, color: e.target.value }))}
+                      className="h-8 w-16 rounded border cursor-pointer"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Drag Canvas Editor */}
-            <DragCanvasEditor
+            <div className={backgroundSettings.mode === 'transparent' ? 'checkerboard-bg rounded-lg' : ''}>
+              <DragCanvasEditor
               format={adjustFormat}
               previewBase64={adjustPreview}
               previewLoading={adjustPreviewLoading}
@@ -1289,7 +1373,8 @@ export const GraphicsGeneratorV2 = () => {
                 time: includeTime ? (time || '19:00 hrs') : '',
                 location: includeLocation ? (location || 'Ubicación del evento') : '',
               }}
-            />
+              />
+            </div>
 
             {/* Botones de navegación */}
             <div className="flex gap-2 pt-4 border-t">

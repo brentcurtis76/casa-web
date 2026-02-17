@@ -79,12 +79,28 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode } = await req.json();
 
     console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType}`);
 
-    // Usar prompt personalizado si se proporciona, sino usar el default (requesting transparent background)
-    const prompt = customPrompt || buildPrompt(eventType);
+    // Validate backgroundMode
+    if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
+      throw new Error('Invalid backgroundMode. Must be "solid", "transparent", or undefined.');
+    }
+
+    // Build prompt: always append style guardrails, even when customPrompt is provided
+    let prompt: string;
+    if (customPrompt) {
+      prompt = `${buildStylePrompt()}\n\nSubject: ${customPrompt}`;
+    } else {
+      prompt = buildPrompt(eventType);
+    }
+
+    // Add transparency extraction hint if backgroundMode === 'transparent'
+    if (backgroundMode === 'transparent') {
+      prompt += '\n\nIMPORTANT: The background MUST be PURE WHITE (#FFFFFF) with absolutely no texture, gradients, or patterns. This allows easy background extraction.';
+    }
+
     console.log(`[generate-illustration] Prompt: ${prompt.slice(0, 100)}...`);
 
     const illustrations: string[] = [];
