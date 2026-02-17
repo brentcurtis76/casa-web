@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Grid3X3, Loader2, RotateCcw } from 'lucide-react';
 import { useCoordinateMapper } from '@/hooks/useCoordinateMapper';
 import { DraggableElement } from './DraggableElement';
+import { GridOverlay } from './GridOverlay';
 import { AlignmentToolbar } from './AlignmentToolbar';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -23,6 +24,7 @@ import {
   TITLE_MAX_WIDTH,
 } from './graphicsTypes';
 import { computeLayoutMetrics, getDefaultFontSizes, type LayoutMetrics, type EventData } from './templateCompositor';
+import type { ResizeUpdate } from '@/hooks/useResizeElement';
 
 interface DragCanvasEditorProps {
   format: FormatType;
@@ -38,6 +40,8 @@ interface DragCanvasEditorProps {
   };
   illustrationAspectRatio?: number | null;
   eventData: EventData;
+  /** Show checkerboard pattern behind image for transparent backgrounds */
+  showCheckerboard?: boolean;
 }
 
 type ElementId = 'title' | 'subtitle' | 'date' | 'time' | 'location' | 'illustration' | 'logo';
@@ -55,12 +59,17 @@ export function DragCanvasEditor({
   visibleFields,
   illustrationAspectRatio,
   eventData,
+  showCheckerboard = false,
 }: DragCanvasEditorProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const measureCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const [selectedElement, setSelectedElement] = useState<ElementId | null>(null);
+  const [showGrid, setShowGrid] = useState(false);
   const [showPrecision, setShowPrecision] = useState(false);
   const [layoutMetrics, setLayoutMetrics] = useState<LayoutMetrics | null>(null);
+
+  // Grid size: divide canvas into 16 equal columns for finer snap control
+  const gridSize = FORMAT_DIMENSIONS[format].width / 16;
 
   const mapper = useCoordinateMapper(overlayRef, format);
 
@@ -134,6 +143,41 @@ export function DragCanvasEditor({
         updated[elementId] = { ...updated[elementId], fontSize };
       } else if (elementId === 'date' || elementId === 'time' || elementId === 'location') {
         updated[elementId] = { ...updated[elementId], fontSize };
+      }
+      onPositionsChange(updated);
+    },
+    [positions, onPositionsChange]
+  );
+
+  // Combined resize callback — applies position + scale/fontSize/size in ONE state update
+  // This prevents the bug where separate onScaleChange and onPositionChange calls
+  // close over the same stale `positions` and the second overwrites the first.
+  const handleResizeUpdate = useCallback(
+    (elementId: ElementId, update: ResizeUpdate) => {
+      const updated = { ...positions };
+      if (elementId === 'illustration') {
+        updated.illustration = {
+          ...updated.illustration,
+          x: update.x,
+          y: update.y,
+          ...(update.scale != null ? { scale: update.scale } : {}),
+        };
+      } else if (elementId === 'logo') {
+        updated.logo = {
+          ...updated.logo,
+          x: update.x,
+          y: update.y,
+          ...(update.size != null ? { size: update.size } : {}),
+        };
+      } else {
+        // Text elements: title, subtitle, date, time, location
+        const textId = elementId as 'title' | 'subtitle' | 'date' | 'time' | 'location';
+        updated[textId] = {
+          ...updated[textId],
+          x: update.x,
+          y: update.y,
+          ...(update.fontSize != null ? { fontSize: update.fontSize } : {}),
+        };
       }
       onPositionsChange(updated);
     },
@@ -249,8 +293,35 @@ export function DragCanvasEditor({
 
   return (
     <div className="space-y-3">
+      {/* Grid toggle */}
+      <div className="flex items-center justify-end">
+        <Button
+          variant={showGrid ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setShowGrid((v) => !v)}
+          className="text-xs gap-1.5"
+        >
+          <Grid3X3 className="h-3.5 w-3.5" />
+          Cuadricula{showGrid ? ' (snap)' : ''}
+        </Button>
+      </div>
+
       {/* Preview with drag overlay */}
       <div className={`relative bg-gray-100 rounded-lg overflow-hidden border ${aspectClass}`}>
+        {/* Checkerboard for transparent backgrounds — sized to image area only */}
+        {showCheckerboard && mapper.ready && mapper.imageDisplayWidth > 0 && (
+          <div
+            className="absolute checkerboard-bg pointer-events-none"
+            style={{
+              left: mapper.offsetX,
+              top: mapper.offsetY,
+              width: mapper.imageDisplayWidth,
+              height: mapper.imageDisplayHeight,
+              zIndex: 0,
+            }}
+          />
+        )}
+
         {/* Canvas preview image */}
         {previewBase64 ? (
           <img
@@ -279,6 +350,19 @@ export function DragCanvasEditor({
           style={{ touchAction: 'none' }}
           onClick={() => setSelectedElement(null)}
         >
+          {/* Grid overlay (rendered behind draggable elements) */}
+          {mapper.ready && (
+            <GridOverlay
+              toDOM={mapper.toDOM}
+              imageDisplayWidth={mapper.imageDisplayWidth}
+              imageDisplayHeight={mapper.imageDisplayHeight}
+              offsetX={mapper.offsetX}
+              offsetY={mapper.offsetY}
+              format={format}
+              visible={showGrid}
+            />
+          )}
+
           {mapper.ready && ALL_ELEMENTS.map((id) => {
             // Use metrics for element sizing
             let baseX: number;
@@ -416,6 +500,9 @@ export function DragCanvasEditor({
                     : undefined
                 }
                 onResizePositionChange={(x, y) => updatePosition(id, x, y)}
+                onResizeUpdate={(update) => handleResizeUpdate(id, update)}
+                snapToGrid={showGrid}
+                gridSize={gridSize}
               />
             );
           })}

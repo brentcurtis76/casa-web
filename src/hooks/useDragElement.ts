@@ -9,6 +9,10 @@ interface UseDragElementOptions {
   toBaseDelta: (domDX: number, domDY: number) => { dx: number; dy: number };
   /** Whether drag is disabled */
   disabled?: boolean;
+  /** Snap position to grid */
+  snapToGrid?: boolean;
+  /** Grid cell size in base coordinates */
+  gridSize?: number;
 }
 
 interface UseDragElementReturn {
@@ -26,6 +30,8 @@ export function useDragElement({
   onChange,
   toBaseDelta,
   disabled = false,
+  snapToGrid = false,
+  gridSize = 0,
 }: UseDragElementOptions): UseDragElementReturn {
   const [isDragging, setIsDragging] = useState(false);
   const startRef = useRef<{ domX: number; domY: number; baseX: number; baseY: number; dragStarted: boolean } | null>(null);
@@ -60,10 +66,13 @@ export function useDragElement({
         }
 
         const { dx, dy } = toBaseDelta(domDX, domDY);
-        onChange(
-          Math.round(startRef.current.baseX + dx),
-          Math.round(startRef.current.baseY + dy)
-        );
+        let newX = Math.round(startRef.current.baseX + dx);
+        let newY = Math.round(startRef.current.baseY + dy);
+        if (snapToGrid && gridSize > 0) {
+          newX = Math.round(newX / gridSize) * gridSize;
+          newY = Math.round(newY / gridSize) * gridSize;
+        }
+        onChange(newX, newY);
       };
 
       const handlePointerUp = () => {
@@ -76,7 +85,7 @@ export function useDragElement({
       target.addEventListener('pointermove', handlePointerMove);
       target.addEventListener('pointerup', handlePointerUp);
     },
-    [disabled, position.x, position.y, onChange, toBaseDelta]
+    [disabled, position.x, position.y, onChange, toBaseDelta, snapToGrid, gridSize]
   );
 
   return { isDragging, handlePointerDown };
