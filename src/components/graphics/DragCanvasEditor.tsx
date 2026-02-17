@@ -19,6 +19,8 @@ import {
   FORMAT_DIMENSIONS,
   ELEMENT_META,
   SELECTION_COLORS,
+  ILLUSTRATION_AREA,
+  TITLE_MAX_WIDTH,
 } from './graphicsTypes';
 import { computeLayoutMetrics, getDefaultFontSizes, type LayoutMetrics, type EventData } from './templateCompositor';
 
@@ -285,15 +287,32 @@ export function DragCanvasEditor({
             let baseHeight: number;
 
             if (!layoutMetrics) {
-              // Fallback if metrics not computed yet
+              // Fallback if metrics not computed yet — derive reasonable defaults from format
               const pos = id === 'illustration' ? positions.illustration :
                          id === 'logo' ? positions.logo :
                          positions[id as 'title' | 'subtitle' | 'date' | 'time' | 'location'];
               const displayY = pos.y >= 0 ? pos.y : 0;
               baseX = pos.x;
               baseY = displayY;
-              baseWidth = 100;
-              baseHeight = 40;
+              const defaultFonts = getDefaultFontSizes(format);
+              if (id === 'illustration') {
+                const area = ILLUSTRATION_AREA[format];
+                const scale = positions.illustration.scale ?? 1;
+                baseWidth = area.width * scale;
+                baseHeight = area.height * scale;
+              } else if (id === 'logo') {
+                const logoSize = positions.logo.size || 100;
+                baseWidth = logoSize;
+                baseHeight = logoSize;
+              } else if (id === 'title' || id === 'subtitle') {
+                baseWidth = TITLE_MAX_WIDTH[format];
+                const fs = id === 'title' ? defaultFonts.title : defaultFonts.subtitle;
+                baseHeight = fs * 2;
+              } else {
+                // date, time, location
+                baseWidth = defaultFonts.detail * 10;
+                baseHeight = defaultFonts.detail * 1.5;
+              }
             } else {
               // Use computed metrics
               const metrics = layoutMetrics;
