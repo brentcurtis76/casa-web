@@ -12,7 +12,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { currentSeason } from '@/data/currentSeason';
+import { currentSeason as fallbackSeason } from '@/data/currentSeason';
 import {
   Image as ImageIcon,
   Loader2,
@@ -178,6 +178,26 @@ const Portadas: React.FC<PortadasProps> = ({
   );
   const [showLogoPreview, setShowLogoPreview] = useState(true);
 
+  // Fetch liturgical season from database (same source as LiturgicalHero and admin)
+  const [seasonName, setSeasonName] = useState(fallbackSeason.name);
+  useEffect(() => {
+    const fetchSeason = async () => {
+      const { data, error } = await supabase
+        .from('site_config')
+        .select('value')
+        .eq('key', 'liturgical_season')
+        .single();
+
+      if (!error && data?.value) {
+        const season = data.value as { name: string };
+        if (season.name) {
+          setSeasonName(season.name);
+        }
+      }
+    };
+    fetchSeason();
+  }, []);
+
   // Notify parent when config changes
   useEffect(() => {
     const newConfig: PortadasConfig = {
@@ -293,7 +313,7 @@ const Portadas: React.FC<PortadasProps> = ({
     const reflectionGroupId = uuidv4();
 
     // Get current season name
-    const seasonName = currentSeason.name.toUpperCase();
+    const seasonLabel = seasonName.toUpperCase();
 
     // Main Cover Slide - includes illustration and config for proper rendering
     const mainSlide: Slide = {
@@ -302,7 +322,7 @@ const Portadas: React.FC<PortadasProps> = ({
       content: {
         primary: context.title,
         secondary: formattedDate,
-        subtitle: seasonName,
+        subtitle: seasonLabel,
         imageUrl: selectedIllustration || undefined,
       },
       style: {
@@ -337,7 +357,7 @@ const Portadas: React.FC<PortadasProps> = ({
       content: {
         primary: context.title,
         secondary: 'Reflexión',
-        subtitle: seasonName,
+        subtitle: seasonLabel,
         imageUrl: selectedIllustration || undefined,
       },
       style: {
@@ -387,7 +407,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
       },
     };
-  }, [context, selectedIllustration, illustrationConfig, textAlignment, logoAlignment, titleBreakAfterWord]);
+  }, [context, selectedIllustration, illustrationConfig, textAlignment, logoAlignment, titleBreakAfterWord, seasonName]);
 
   // Export both slides
   const exportSlides = () => {
@@ -435,7 +455,7 @@ const Portadas: React.FC<PortadasProps> = ({
         content: {
           primary: context.title,
           secondary: formattedDate,
-          subtitle: currentSeason.name,
+          subtitle: seasonName,
           imageUrl: selectedIllustration ? getIllustrationUrl(selectedIllustration) : undefined,
         },
         style: {
@@ -456,7 +476,7 @@ const Portadas: React.FC<PortadasProps> = ({
         type: 'portada-reflection',
         content: {
           primary: context.title,
-          subtitle: currentSeason.name,
+          subtitle: seasonName,
           imageUrl: selectedIllustration ? getIllustrationUrl(selectedIllustration) : undefined,
         },
         style: {
@@ -472,7 +492,7 @@ const Portadas: React.FC<PortadasProps> = ({
         },
       };
     }
-  }, [context.date, context.title, selectedIllustration, textAlignment, logoAlignment, illustrationConfig, titleBreakAfterWord]);
+  }, [context.date, context.title, selectedIllustration, textAlignment, logoAlignment, illustrationConfig, titleBreakAfterWord, seasonName]);
 
   // Render cover preview using UniversalSlide - SAME component as Presenter
   // This guarantees what you see in Constructor = what you see in Presenter
