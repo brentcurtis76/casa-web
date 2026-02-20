@@ -2,7 +2,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { User } from 'lucide-react';
+import { User, LayoutDashboard } from 'lucide-react';
+import { useAuth } from "@/components/auth/AuthContext";
 
 interface MobileMenuProps {
     isOpen: boolean;
@@ -26,6 +27,8 @@ export function MobileMenu({
     closeMenu
 }: MobileMenuProps) {
     const navigate = useNavigate();
+    const { roles } = useAuth();
+    const hasAdminAccess = roles.length > 0;
 
     if (!isOpen) return null;
 
@@ -66,6 +69,19 @@ export function MobileMenu({
                             <User size={16} />
                             Mi Perfil
                         </Button>
+                        {hasAdminAccess && (
+                            <Button
+                                variant="outline"
+                                className="w-full flex items-center justify-center gap-2"
+                                onClick={() => {
+                                    navigate('/admin');
+                                    closeMenu();
+                                }}
+                            >
+                                <LayoutDashboard size={16} />
+                                Panel de Administración
+                            </Button>
+                        )}
                         <Button
                             variant="outline"
                             onClick={() => {

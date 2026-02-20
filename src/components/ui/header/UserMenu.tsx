@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, User, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/components/auth/AuthContext";
 
 interface UserMenuProps {
     user: any;
@@ -22,25 +22,8 @@ interface UserMenuProps {
 
 export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuProps) {
     const navigate = useNavigate();
-    const [isAdmin, setIsAdmin] = useState(false);
-
-    useEffect(() => {
-        const checkAdminStatus = async () => {
-            if (!user) return;
-
-            const { data, error } = await supabase
-                .from('mesa_abierta_admin_roles')
-                .select('role')
-                .eq('user_id', user.id)
-                .single();
-
-            if (data && !error) {
-                setIsAdmin(true);
-            }
-        };
-
-        checkAdminStatus();
-    }, [user]);
+    const { roles } = useAuth();
+    const hasAdminAccess = roles.length > 0;
 
     if (isMobile) {
         return (
@@ -53,7 +36,7 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                     <User className="mr-2 h-4 w-4" />
                     Mi Perfil
                 </Button>
-                {isAdmin && (
+                {hasAdminAccess && (
                     <Button
                         variant="outline"
                         onClick={() => navigate('/admin')}
@@ -86,7 +69,7 @@ export function UserMenu({ user, profile, logout, isMobile = false }: UserMenuPr
                     <User className="mr-2 h-4 w-4" />
                     <span>Mi Perfil</span>
                 </DropdownMenuItem>
-                {isAdmin && (
+                {hasAdminAccess && (
                     <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => navigate('/admin')}>
