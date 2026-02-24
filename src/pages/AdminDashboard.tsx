@@ -34,6 +34,7 @@ import {
   ListMusic,
   Headphones,
   Baby,
+  Crown,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -266,6 +267,15 @@ const AdminDashboard: React.FC = () => {
       description: 'Lecciones, calendario, voluntarios y asistencia',
       icon: <Baby className="h-8 w-8" />,
       route: '/admin/ninos',
+      category: 'administracion',
+      status: 'available',
+    },
+    {
+      id: 'liderazgo',
+      title: 'Liderazgo Eclesiastico',
+      description: 'Reuniones del Concilio y Equipo Pastoral: actas, compromisos, grabaciones y documentos.',
+      icon: <Crown className="h-8 w-8" />,
+      route: '/admin/liderazgo',
       category: 'administracion',
       status: 'available',
     },
