@@ -3,7 +3,7 @@
  * Lista, búsqueda y selección de canciones
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { getAllSongEntries, searchSongs } from '@/lib/songStorage';
 import type { SongIndexEntry } from '@/types/shared/song';
@@ -23,12 +23,25 @@ export const SongRepository: React.FC<SongRepositoryProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewingSongId, setViewingSongId] = useState<string | null>(null);
+  const [songs, setSongs] = useState<SongIndexEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const songs = useMemo(() => {
-    if (searchQuery.trim()) {
-      return searchSongs(searchQuery);
-    }
-    return getAllSongEntries();
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    const fetchSongs = async () => {
+      const results = searchQuery.trim()
+        ? await searchSongs(searchQuery)
+        : await getAllSongEntries();
+      if (!cancelled) {
+        setSongs(results);
+        setLoading(false);
+      }
+    };
+
+    fetchSongs();
+    return () => { cancelled = true; };
   }, [searchQuery]);
 
   const handleSongClick = (song: SongIndexEntry) => {
@@ -87,24 +100,13 @@ export const SongRepository: React.FC<SongRepositoryProps> = ({
             color: CASA_BRAND.colors.secondary.grayMedium
           }}
         >
-          {songs.length} canciones encontradas
+          {loading ? 'Cargando...' : `${songs.length} canciones encontradas`}
         </p>
       </div>
 
       {/* Lista de canciones */}
       <div className="flex-1 overflow-y-auto">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {songs.map((song) => (
-            <SongCard
-              key={song.id}
-              song={song}
-              onClick={() => handleSongClick(song)}
-              isSelected={selectedSongId === song.id}
-            />
-          ))}
-        </div>
-
-        {songs.length === 0 && (
+        {loading ? (
           <div
             className="py-12 text-center text-lg"
             style={{
@@ -112,8 +114,33 @@ export const SongRepository: React.FC<SongRepositoryProps> = ({
               color: CASA_BRAND.colors.secondary.grayMedium
             }}
           >
-            No se encontraron canciones con "{searchQuery}"
+            Cargando canciones...
           </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {songs.map((song) => (
+                <SongCard
+                  key={song.id}
+                  song={song}
+                  onClick={() => handleSongClick(song)}
+                  isSelected={selectedSongId === song.id}
+                />
+              ))}
+            </div>
+
+            {songs.length === 0 && (
+              <div
+                className="py-12 text-center text-lg"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.secondary.grayMedium
+                }}
+              >
+                No se encontraron canciones con "{searchQuery}"
+              </div>
+            )}
+          </>
         )}
       </div>
 

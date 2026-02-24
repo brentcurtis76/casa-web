@@ -117,8 +117,10 @@ The gate is a **binary, automated check** — no judgment calls. You're reading 
    - For shared Supabase instances (CASA/Life OS), double-check the migration only touches tables owned by the current project
 2. **Deploy to staging**:
    - Commit changes to a feature branch if not already done
+   - **Branch name MUST be ≤20 characters** (e.g., `feat/lic-p6`, `fix/auth`). Vercel preview URLs include the branch name in a subdomain, and DNS labels are capped at 63 characters. Long names cause `ERR_NAME_NOT_RESOLVED`, breaking QA. If the current branch name is too long, rename it before pushing.
    - Push to trigger Vercel staging deployment
    - Wait for deployment to complete
+   - Verify the preview URL resolves (hostname must be ≤63 chars). If it doesn't, rename the branch shorter and re-push.
    - Write the staging URL to `.pipeline/staging-url.txt`
 3. Update `agent-status.json`
 

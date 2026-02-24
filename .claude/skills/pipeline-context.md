@@ -121,6 +121,7 @@ ALL four must pass before ANY task is reported complete.
 - Auto-deploys on git push
 - Staging: branch deploys (feature/* branches)
 - Production: main branch
+- **CRITICAL — Branch naming**: Branch names MUST be short (max 20 characters, e.g., `feat/lic-p6`, `fix/auth-bug`). Vercel preview URLs include the branch name in a subdomain, and DNS labels are capped at 63 characters. Long branch names like `feat/licitaciones-phase2-workflow` cause `ERR_NAME_NOT_RESOLVED` on the preview URL, breaking QA staging tests. Use abbreviations.
 
 ## Routes (current)
 | Path | Page |

@@ -246,6 +246,7 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
   // Estados
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tempoFilter, setTempoFilter] = useState<SongTempo | 'all'>(
     DEFAULT_TEMPO_BY_ELEMENT[elementType]
@@ -266,11 +267,16 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
   useEffect(() => {
     const loadSongs = async () => {
       setIsLoading(true);
+      setLoadError(null);
       try {
         const loadedSongs = await getAllSongs();
         setSongs(loadedSongs);
+        if (loadedSongs.length === 0) {
+          setLoadError('No hay canciones en la base de datos. Verifica que la tabla music_songs tenga datos.');
+        }
       } catch (error) {
-        console.error('Error loading songs:', error);
+        const msg = error instanceof Error ? error.message : 'Error desconocido';
+        setLoadError(`Error al cargar canciones: ${msg}`);
       } finally {
         setIsLoading(false);
       }
@@ -281,8 +287,6 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
 
   // Restaurar selección previa o resetear cuando cambia el elemento
   useEffect(() => {
-    console.log('[CancionSelector] Effect triggered:', { elementType, selectedSongId, songsCount: songs.length });
-
     // Resetear estado de confirmación y búsqueda cuando cambia el elemento
     setIsConfirmed(false);
     setSearchQuery('');
@@ -292,7 +296,6 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
     if (songs.length > 0) {
       if (selectedSongId) {
         const song = songs.find(s => s.id === selectedSongId);
-        console.log('[CancionSelector] Looking for song:', selectedSongId, 'Found:', song?.title);
         if (song) {
           setSelectedSong(song);
           setPreviewSlides(songToSlides(song));
@@ -539,6 +542,23 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
                 style={{ color: CASA_BRAND.colors.primary.amber }}
               />
             </div>
+          ) : loadError ? (
+            <div className="text-center py-8">
+              <Music
+                size={32}
+                className="mx-auto mb-2"
+                style={{ color: '#EF4444' }}
+              />
+              <p
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '14px',
+                  color: '#EF4444',
+                }}
+              >
+                {loadError}
+              </p>
+            </div>
           ) : filteredSongs.length === 0 ? (
             <div className="text-center py-8">
               <Music
@@ -553,7 +573,7 @@ const CancionSelector: React.FC<CancionSelectorProps> = ({
                   color: CASA_BRAND.colors.secondary.grayMedium,
                 }}
               >
-                No se encontraron canciones
+                No se encontraron canciones ({songs.length} total, filtro: {tempoFilter})
               </p>
               {tempoFilter !== 'all' && !showAllTempos && (
                 <button

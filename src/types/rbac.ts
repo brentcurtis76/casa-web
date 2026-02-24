@@ -65,6 +65,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'elementos-fijos': RESOURCE_NAMES.ELEMENTOS_FIJOS,
   'finanzas': RESOURCE_NAMES.FINANCIAL,
   'children-ministry': RESOURCE_NAMES.CHILDREN_MINISTRY,
+  'liderazgo': RESOURCE_NAMES.LEADERSHIP,
 };
 
 // ─── Role Display Info ────────────────────────────────────────────────────────

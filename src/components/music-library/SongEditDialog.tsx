@@ -33,7 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { TEMPO_LABELS, THEME_LABELS, MOMENT_LABELS } from '@/lib/canciones/songTagsManager';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { SongTempo, SongTheme, LiturgicalMoment } from '@/types/shared/song';
+import type { SongTempo, SongTheme, LiturgicalMoment, Verse } from '@/types/shared/song';
 
 interface SongEditDialogProps {
   songId: string | null;
@@ -70,6 +70,7 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
   const [durationSeconds, setDurationSeconds] = useState('');
   const [spotifyUrl, setSpotifyUrl] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [lyricsText, setLyricsText] = useState('');
   const [selectedThemes, setSelectedThemes] = useState<SongTheme[]>([]);
   const [selectedMoments, setSelectedMoments] = useState<LiturgicalMoment[]>([]);
 
@@ -85,6 +86,7 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
     setDurationSeconds('');
     setSpotifyUrl('');
     setYoutubeUrl('');
+    setLyricsText('');
     setSelectedThemes([]);
     setSelectedMoments([]);
   }, []);
@@ -103,6 +105,8 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
       setDurationSeconds(existingSong.duration_seconds?.toString() ?? '');
       setSpotifyUrl(existingSong.spotify_url ?? '');
       setYoutubeUrl(existingSong.youtube_url ?? '');
+      const existingLyrics = (existingSong.lyrics ?? []) as Verse[];
+      setLyricsText(existingLyrics.map(v => v.content).join('\n\n'));
       setSelectedThemes((existingSong.themes ?? []) as SongTheme[]);
       setSelectedMoments((existingSong.suggested_moments ?? []) as LiturgicalMoment[]);
     } else if (!isEditing) {
@@ -144,6 +148,19 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
       }
     }
 
+    // Parse lyrics text into Verse[] (split by blank lines)
+    const parsedLyrics: Verse[] | null = lyricsText.trim()
+      ? lyricsText
+          .split(/\n\s*\n/)
+          .map(block => block.trim())
+          .filter(block => block.length > 0)
+          .map((block, i) => ({
+            number: i + 1,
+            type: 'verse' as const,
+            content: block,
+          }))
+      : null;
+
     const songData = {
       title: title.trim(),
       slug: finalSlug,
@@ -157,6 +174,7 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
       youtube_url: youtubeUrl.trim() || null,
       themes: selectedThemes.length > 0 ? selectedThemes : null,
       suggested_moments: selectedMoments.length > 0 ? selectedMoments : null,
+      lyrics: parsedLyrics,
     };
 
     if (isEditing && songId) {
@@ -300,6 +318,23 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
                     placeholder="Ej: 240"
                   />
                 </div>
+              </div>
+
+              {/* Lyrics */}
+              <div className="space-y-2">
+                <Label htmlFor="lyrics">Letra de la canción</Label>
+                <textarea
+                  id="lyrics"
+                  value={lyricsText}
+                  onChange={(e) => setLyricsText(e.target.value)}
+                  placeholder="Pega aquí la letra de la canción...&#10;&#10;Usa líneas vacías para separar los versos."
+                  rows={8}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  style={{ resize: 'vertical' }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Separa los versos con líneas vacías. Cada bloque se convierte en un verso/slide.
+                </p>
               </div>
 
               {/* URLs */}

@@ -38,6 +38,7 @@ import PersonnelPage from "./pages/PersonnelPage";
 import MusicLibraryPage from "./pages/MusicLibraryPage";
 import MusicSchedulingPage from "./pages/MusicSchedulingPage";
 import ChildrenMinistryPage from "./pages/ChildrenMinistryPage";
+import LeadershipPage from "./pages/LeadershipPage";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
   { path: "/admin/musica/biblioteca", element: <ProtectedRoute requires={{ resource: 'canciones', action: 'read' }}><MusicLibraryPage /></ProtectedRoute> },
   { path: "/admin/musica/programacion", element: <ProtectedRoute requires={{ resource: 'music_scheduling', action: 'read' }}><MusicSchedulingPage /></ProtectedRoute> },
   { path: "/admin/ninos", element: <ProtectedRoute requires={{ resource: 'children_ministry', action: 'read' }}><ChildrenMinistryPage /></ProtectedRoute> },
+  { path: "/admin/liderazgo", element: <ProtectedRoute requires={{ resource: 'leadership', action: 'read' }}><LeadershipPage /></ProtectedRoute> },
   // Catch-all route for 404
   { path: "*", element: <NotFound /> },
 ]);
