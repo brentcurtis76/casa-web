@@ -117,8 +117,9 @@ export const SongSlide: React.FC<SongSlideProps> = ({
                 style={{
                   fontFamily: CASA_BRAND.fonts.body,
                   fontWeight: 400,
-                  fontSize: `${24 * scale}px`,
-                  color: CASA_BRAND.colors.secondary.grayMedium
+                  fontSize: `${14 * scale}px`,
+                  color: CASA_BRAND.colors.secondary.grayMedium,
+                  letterSpacing: '0.05em',
                 }}
               >
                 {slide.content.subtitle}

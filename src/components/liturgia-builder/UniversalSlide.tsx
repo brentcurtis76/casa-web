@@ -687,10 +687,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             <p
               style={{
                 fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
-                fontWeight: 500,
-                fontSize: `${36 * scale}px`,
-                color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
+                fontWeight: 400,
+                fontSize: `${18 * scale}px`,
+                color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.secondary.grayMedium,
                 marginTop: `${16 * scale}px`,
+                letterSpacing: '0.05em',
               }}
             >
               {slide.content.subtitle}
