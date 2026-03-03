@@ -10,7 +10,9 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-const MODEL = 'claude-sonnet-4-5-20250929';
+// claude-sonnet-4-6 is the current confirmed-valid Sonnet model (2026-03).
+// The prior ID 'claude-sonnet-4-5-20250929' used a date-suffix variant that is no longer valid.
+const MODEL = 'claude-sonnet-4-6';
 
 interface GenerateChildrenLessonRequest {
   liturgyId: string;

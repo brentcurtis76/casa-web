@@ -146,10 +146,24 @@ export async function publishChildrenActivities(
         body: JSON.stringify(generationRequest),
       });
 
-      const generatedData = (await generationResponse.json()) as GenerateChildrenLessonResponse;
-
+      // Check status BEFORE parsing JSON — non-OK responses may return non-JSON bodies
+      // (e.g., HTML gateway errors, Supabase timeout pages). Calling .json() first
+      // would throw a SyntaxError that surfaces as "unexpected JSON response" to the user.
       if (!generationResponse.ok) {
-        throw new Error(generatedData.error || `Edge Function error: ${generationResponse.status}`);
+        const errorText = await generationResponse.text();
+        throw new Error(
+          `Error del servicio de generación (${generationResponse.status}): ${errorText.slice(0, 200)}`
+        );
+      }
+
+      // Safe JSON parse — guard against unexpected format even on 2xx responses
+      let generatedData: GenerateChildrenLessonResponse;
+      try {
+        generatedData = (await generationResponse.json()) as GenerateChildrenLessonResponse;
+      } catch {
+        throw new Error(
+          'El servicio de actividades retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
+        );
       }
 
       if (!generatedData.success) {
