@@ -146,12 +146,11 @@ export async function publishChildrenActivities(
         body: JSON.stringify(generationRequest),
       });
 
-      if (!generationResponse.ok) {
-        const errorData = await generationResponse.json();
-        throw new Error(errorData.error || `Edge Function error: ${generationResponse.status}`);
-      }
-
       const generatedData = (await generationResponse.json()) as GenerateChildrenLessonResponse;
+
+      if (!generationResponse.ok) {
+        throw new Error(generatedData.error || `Edge Function error: ${generationResponse.status}`);
+      }
 
       if (!generatedData.success) {
         throw new Error(generatedData.error || 'Generation failed');
