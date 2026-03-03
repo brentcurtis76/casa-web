@@ -8,6 +8,8 @@ import { ProfileAvatar } from '@/components/profile/ProfileAvatar';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { useUserProfile } from '@/components/profile/useUserProfile';
 import { Separator } from '@/components/ui/separator';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const ProfilePage = () => {
   const navigate = useNavigate();
@@ -100,6 +102,22 @@ const ProfilePage = () => {
                         month: 'long',
                         day: 'numeric'
                       })
+                    : 'No disponible'}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Último acceso
+                </label>
+                <p className="text-sm mt-1">
+                  {user.last_sign_in_at
+                    ? (() => {
+                        try {
+                          return formatDistanceToNow(new Date(user.last_sign_in_at), { addSuffix: true, locale: es });
+                        } catch {
+                          return 'No disponible';
+                        }
+                      })()
                     : 'No disponible'}
                 </p>
               </div>
