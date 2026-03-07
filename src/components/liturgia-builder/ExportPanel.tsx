@@ -25,6 +25,8 @@ import type { ServiceType, PublishMode, MusicPublicationStateRow } from '@/types
 import type { ChildrenPublicationStateRow } from '@/types/childrenPublicationState';
 import { exportLiturgy } from '@/lib/liturgia/exportService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
+import { exportChildrenLessonToPDF, type ChildrenLessonPdfData } from '@/lib/children-ministry/childrenLessonPdfExporter';
+import { getLesson } from '@/lib/children-ministry/lessonService';
 import { publishCuentacuento } from '@/lib/publishedResourcesService';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -115,6 +117,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const [sendingChildrenPacket, setSendingChildrenPacket] = useState(false);
   const [childrenPublications, setChildrenPublications] = useState<ChildrenPublicationStateRow[]>([]);
   const [existingChildrenPublication, setExistingChildrenPublication] = useState<ChildrenPublicationStateRow | null>(null);
+
+  // Children activity PDF export state
+  const [exportingChildrenPDF, setExportingChildrenPDF] = useState(false);
+  const [childrenPDFCompleted, setChildrenPDFCompleted] = useState(false);
 
   // RBAC: Can this user publish music?
   const canPublishMusic = hasRole(ROLE_NAMES.LITURGIST) ||
@@ -393,6 +399,110 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       setError(err instanceof Error ? err.message : 'Error al enviar paquete a voluntarios');
     } finally {
       setSendingChildrenPacket(false);
+    }
+  };
+
+  // Handle children activity PDF download
+  const handleExportChildrenPDF = async () => {
+    if (childrenPublications.length === 0) return;
+
+    setExportingChildrenPDF(true);
+    setError(null);
+
+    try {
+      // Fetch full lesson data for each publication
+      const lessonDataList: ChildrenLessonPdfData[] = [];
+
+      for (const pub of childrenPublications) {
+        if (!pub.lesson_id) continue;
+
+        const lesson = await getLesson(pub.lesson_id);
+        if (!lesson) continue;
+
+        // Parse the stored JSON content (3-phase sequence)
+        let sequence = [];
+        let adaptations;
+        let volunteerPlan;
+
+        try {
+          if (lesson.content) {
+            const parsed = JSON.parse(lesson.content);
+            // content may be just the sequence array, or a full object
+            if (Array.isArray(parsed)) {
+              sequence = parsed;
+            } else if (parsed.sequence) {
+              sequence = parsed.sequence;
+              adaptations = parsed.adaptations;
+              volunteerPlan = parsed.volunteerPlan;
+            }
+          }
+        } catch {
+          console.warn('[ExportPanel] Could not parse lesson content JSON:', lesson.id);
+        }
+
+        // Parse materials from comma-separated string
+        const materials = lesson.materials_needed
+          ? lesson.materials_needed.split(',').map((m: string) => m.trim()).filter(Boolean)
+          : [];
+
+        const ageGroupLabel = lesson.age_group?.name || 'Grupo';
+
+        // Build liturgy date label
+        let liturgyDateLabel = '';
+        if (liturgyContext?.date) {
+          const d = liturgyContext.date instanceof Date
+            ? liturgyContext.date
+            : new Date(liturgyContext.date);
+          liturgyDateLabel = d.toLocaleDateString('es-CL', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          });
+        }
+
+        // Get story title from cuentacuentos element
+        const cuentacuentosEl = elements.get('cuentacuentos');
+        const storyTitle = (cuentacuentosEl?.config as { storyData?: { title?: string } })?.storyData?.title;
+
+        lessonDataList.push({
+          activityName: lesson.title,
+          ageGroupLabel,
+          materials,
+          sequence,
+          adaptations,
+          volunteerPlan,
+          estimatedTotalMinutes: lesson.duration_minutes,
+          liturgyTitle: liturgyContext?.title,
+          liturgyDate: liturgyDateLabel,
+          storyTitle,
+        });
+      }
+
+      if (lessonDataList.length === 0) {
+        setError('No se encontraron actividades para descargar');
+        return;
+      }
+
+      const blob = await exportChildrenLessonToPDF(lessonDataList);
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeTitle = (liturgyContext?.title || 'Actividad').replace(/\s+/g, '_');
+      a.download = `${safeTitle}_Actividad_Ninos.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setChildrenPDFCompleted(true);
+      onExportComplete?.('children-pdf');
+    } catch (err) {
+      console.error('Children PDF export error:', err);
+      setError(err instanceof Error ? err.message : 'Error al exportar actividad infantil');
+    } finally {
+      setExportingChildrenPDF(false);
     }
   };
 
@@ -780,20 +890,54 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
                   </button>
 
                   {canPublishChildrenActivities && existingChildrenPublication && (
-                    <button
-                      onClick={() => setChildrenSendDialogOpen(true)}
-                      disabled={sendingChildrenPacket}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                      style={{
-                        backgroundColor: CASA_BRAND.colors.primary.black,
-                        color: CASA_BRAND.colors.primary.white,
-                        fontFamily: CASA_BRAND.fonts.body,
-                        fontSize: '13px',
-                      }}
-                    >
-                      <Send size={16} />
-                      Enviar a Voluntarios
-                    </button>
+                    <>
+                      <button
+                        onClick={handleExportChildrenPDF}
+                        disabled={exportingChildrenPDF}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        style={{
+                          backgroundColor: childrenPDFCompleted
+                            ? CASA_BRAND.colors.secondary.grayLight
+                            : CASA_BRAND.colors.primary.amber,
+                          color: childrenPDFCompleted
+                            ? CASA_BRAND.colors.primary.black
+                            : CASA_BRAND.colors.primary.white,
+                          fontFamily: CASA_BRAND.fonts.body,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {exportingChildrenPDF ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Generando PDF...
+                          </>
+                        ) : childrenPDFCompleted ? (
+                          <>
+                            <Check size={16} />
+                            PDF Descargado
+                          </>
+                        ) : (
+                          <>
+                            <Download size={16} />
+                            Descargar Actividad PDF
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setChildrenSendDialogOpen(true)}
+                        disabled={sendingChildrenPacket}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        style={{
+                          backgroundColor: CASA_BRAND.colors.primary.black,
+                          color: CASA_BRAND.colors.primary.white,
+                          fontFamily: CASA_BRAND.fonts.body,
+                          fontSize: '13px',
+                        }}
+                      >
+                        <Send size={16} />
+                        Enviar a Voluntarios
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

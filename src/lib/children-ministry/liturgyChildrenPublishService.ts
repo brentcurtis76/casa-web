@@ -173,13 +173,21 @@ export async function publishChildrenActivities(
       // 3. Create or update lesson
       let lessonId: string;
 
+      // Store full generated data (sequence + adaptations + volunteerPlan) so the
+      // PDF exporter and UI can access all fields without losing information.
+      const fullContent = JSON.stringify({
+        sequence: generatedData.sequence,
+        adaptations: generatedData.adaptations,
+        volunteerPlan: generatedData.volunteerPlan,
+      });
+
       if (existingLesson) {
         // Update existing lesson
         const updated = await updateLesson(existingLesson.id, {
           title: generatedData.activityName,
           description: `Generado automáticamente para ${ageGroup.name}`,
           duration_minutes: generatedData.estimatedTotalMinutes,
-          content: JSON.stringify(generatedData.sequence),
+          content: fullContent,
           materials_needed: generatedData.materials.join(', '),
           status: 'ready',
         });
@@ -192,7 +200,7 @@ export async function publishChildrenActivities(
           age_group_id: ageGroupId,
           liturgy_id: liturgyId,
           duration_minutes: generatedData.estimatedTotalMinutes || 30,
-          content: JSON.stringify(generatedData.sequence),
+          content: fullContent,
           materials_needed: generatedData.materials.join(', '),
           status: 'ready',
           created_by: userId,
