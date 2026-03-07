@@ -310,22 +310,22 @@ describe('childrenLessonPdfExporter', () => {
 
     const fillCalls = mockPdfInstance.setFillColor.mock.calls;
 
-    // Blue for movimiento: hex #2563EB → rgb(37, 99, 235)
-    const hasBlue = fillCalls.some(
-      (call: unknown[]) => call[0] === 37 && call[1] === 99 && call[2] === 235,
+    // Amber for movimiento: hex #D4A853 → rgb(212, 168, 83)
+    const hasAmber = fillCalls.some(
+      (call: unknown[]) => call[0] === 212 && call[1] === 168 && call[2] === 83,
     );
-    // Emerald for expresion: hex #059669 → rgb(5, 150, 105)
-    const hasEmerald = fillCalls.some(
-      (call: unknown[]) => call[0] === 5 && call[1] === 150 && call[2] === 105,
+    // Amber dark for expresion: hex #B8923D → rgb(184, 146, 61)
+    const hasAmberDark = fillCalls.some(
+      (call: unknown[]) => call[0] === 184 && call[1] === 146 && call[2] === 61,
     );
-    // Violet for reflexion: hex #7C3AED → rgb(124, 58, 237)
-    const hasViolet = fillCalls.some(
-      (call: unknown[]) => call[0] === 124 && call[1] === 58 && call[2] === 237,
+    // Carbon for reflexion: hex #333333 → rgb(51, 51, 51)
+    const hasCarbon = fillCalls.some(
+      (call: unknown[]) => call[0] === 51 && call[1] === 51 && call[2] === 51,
     );
 
-    expect(hasBlue).toBe(true);
-    expect(hasEmerald).toBe(true);
-    expect(hasViolet).toBe(true);
+    expect(hasAmber).toBe(true);
+    expect(hasAmberDark).toBe(true);
+    expect(hasCarbon).toBe(true);
   });
 
   it('should handle empty sequence without crashing', async () => {

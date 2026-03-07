@@ -58,21 +58,21 @@ const GRAY_DARK = CASA_BRAND.colors.secondary.grayDark; // #555555
 const GRAY_MED = CASA_BRAND.colors.secondary.grayMedium; // #8A8A8A
 const GRAY_LIGHT = CASA_BRAND.colors.secondary.grayLight; // #E5E5E5
 
-// Phase accent colors — softer palette that pairs with amber brand
+// Phase accent colors — derived from CASA brand palette only
 const PHASE_ACCENT: Record<string, { bg: string; fg: string; label: string }> = {
   movimiento: {
-    bg: '#E8F4FD',
-    fg: '#2563EB',
+    bg: '#FBF5E8',       // warm amber tint
+    fg: AMBER,           // #D4A853
     label: 'Movimiento',
   },
   expresion_conversacion: {
-    bg: '#ECFDF5',
-    fg: '#059669',
+    bg: '#F5EFE0',       // deeper amber tint
+    fg: AMBER_DARK,      // #B8923D
     label: 'Expresión y Conversación',
   },
   reflexion_metaprendizaje: {
-    bg: '#F3F0FF',
-    fg: '#7C3AED',
+    bg: '#F0F0F0',       // neutral gray tint
+    fg: CARBON,          // #333333
     label: 'Reflexión y Meta-aprendizaje',
   },
 };
