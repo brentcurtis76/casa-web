@@ -19,7 +19,7 @@ export async function getCalendarSessions(filters?: CalendarFilters): Promise<Ch
   let query = supabase
     .from('church_children_calendar')
     .select(
-      '*, church_children_age_groups(*), church_children_lessons(*), church_children_session_assignments(*, church_children_volunteers(*))',
+      '*, age_group:church_children_age_groups(*), lesson:church_children_lessons(*), assignments:church_children_session_assignments(*, volunteer:church_children_volunteers(*))',
     );
 
   if (filters?.from) {
@@ -51,7 +51,7 @@ export async function getSession(id: string): Promise<ChildrenCalendarFull> {
   const { data, error } = await supabase
     .from('church_children_calendar')
     .select(
-      '*, church_children_age_groups(*), church_children_lessons(*), church_children_session_assignments(*, church_children_volunteers(*))',
+      '*, age_group:church_children_age_groups(*), lesson:church_children_lessons(*), assignments:church_children_session_assignments(*, volunteer:church_children_volunteers(*))',
     )
     .eq('id', id)
     .single();
@@ -115,7 +115,7 @@ export async function getUpcomingSessions(limit?: number): Promise<ChildrenCalen
   let query = supabase
     .from('church_children_calendar')
     .select(
-      '*, church_children_age_groups(*), church_children_lessons(*), church_children_session_assignments(*, church_children_volunteers(*))',
+      '*, age_group:church_children_age_groups(*), lesson:church_children_lessons(*), assignments:church_children_session_assignments(*, volunteer:church_children_volunteers(*))',
     )
     .gte('date', today)
     .order('date', { ascending: true });

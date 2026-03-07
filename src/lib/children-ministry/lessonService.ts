@@ -48,7 +48,7 @@ export async function getLessons(filters?: LessonFilters): Promise<ChildrenLesso
 export async function getLesson(id: string): Promise<ChildrenLessonFull> {
   const { data, error } = await supabase
     .from('church_children_lessons')
-    .select('*, church_children_age_groups(*), church_children_lesson_materials(*)')
+    .select('*, age_group:church_children_age_groups(*), materials:church_children_lesson_materials(*)')
     .eq('id', id)
     .single();
 
