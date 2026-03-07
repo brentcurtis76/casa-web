@@ -119,17 +119,19 @@ export async function exportChildrenLessonToPDF(
     pdf.addPage();
     let y = MARGIN;
 
-    const checkNewPage = (needed: number): void => {
-      if (y + needed > PAGE_HEIGHT - MARGIN - 10) {
+    const checkNewPage = (currentY: number, needed: number): number => {
+      if (currentY + needed > PAGE_HEIGHT - MARGIN - 10) {
         renderPageFooter(pdf, lesson.ageGroupLabel);
         pdf.addPage();
-        y = MARGIN;
+        let newY = MARGIN;
         // Thin amber rule at top of continuation pages
         pdf.setDrawColor(AMBER);
         pdf.setLineWidth(0.5);
-        pdf.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
-        y += 6;
+        pdf.line(MARGIN, newY, PAGE_WIDTH - MARGIN, newY);
+        newY += 6;
+        return newY;
       }
+      return currentY;
     };
 
     // ── Materials ────────────────────────────────────────────────────────
@@ -137,20 +139,20 @@ export async function exportChildrenLessonToPDF(
 
     // ── Phases ───────────────────────────────────────────────────────────
     y += 6;
-    checkNewPage(25);
+    y = checkNewPage(y, 25);
     y = renderPhasesSection(pdf, lesson.sequence, y, checkNewPage);
 
     // ── Adaptations ─────────────────────────────────────────────────────
     if (lesson.adaptations) {
       y += 4;
-      checkNewPage(30);
+      y = checkNewPage(y, 30);
       y = renderAdaptationsSection(pdf, lesson.adaptations, y, checkNewPage);
     }
 
     // ── Volunteer Plan ──────────────────────────────────────────────────
     if (lesson.volunteerPlan) {
       y += 4;
-      checkNewPage(30);
+      y = checkNewPage(y, 30);
       y = renderVolunteerPlanSection(pdf, lesson.volunteerPlan, y, checkNewPage);
     }
 
@@ -349,7 +351,7 @@ function renderMaterialsSection(
   pdf: jsPDF,
   materials: string[],
   startY: number,
-  checkNewPage: (n: number) => void,
+  checkNewPage: (currentY: number, n: number) => number,
 ): number {
   let y = renderSectionHeader(pdf, 'Materiales', startY);
 
@@ -365,7 +367,7 @@ function renderMaterialsSection(
   const rowHeight = 6;
   const rows = Math.ceil(materials.length / 2);
   const boxHeight = rows * rowHeight + 8;
-  checkNewPage(boxHeight + 4);
+  y = checkNewPage(y, boxHeight + 4);
 
   pdf.setFillColor('#FAFAFA');
   pdf.setDrawColor(GRAY_LIGHT);
@@ -406,13 +408,13 @@ function renderPhasesSection(
   pdf: jsPDF,
   sequence: LessonPhase[],
   startY: number,
-  checkNewPage: (n: number) => void,
+  checkNewPage: (currentY: number, n: number) => number,
 ): number {
   let y = renderSectionHeader(pdf, 'Secuencia de Actividades', startY);
 
   for (let i = 0; i < sequence.length; i++) {
     const phase = sequence[i];
-    checkNewPage(40);
+    y = checkNewPage(y, 40);
 
     const accent = PHASE_ACCENT[phase.phase] || {
       bg: '#F5F5F5',
@@ -466,7 +468,7 @@ function renderPhasesSection(
     const descLines = pdf.splitTextToSize(phase.description, CONTENT_WIDTH - 10);
 
     for (const line of descLines) {
-      checkNewPage(5);
+      y = checkNewPage(y, 5);
       pdf.text(line, MARGIN + 4, y);
       y += 4.5;
     }
@@ -483,7 +485,7 @@ function renderAdaptationsSection(
   pdf: jsPDF,
   adaptations: { small: string; medium: string; large: string; mixed: string },
   startY: number,
-  checkNewPage: (n: number) => void,
+  checkNewPage: (currentY: number, n: number) => number,
 ): number {
   let y = renderSectionHeader(pdf, 'Adaptaciones por Grupo', startY);
 
@@ -496,7 +498,7 @@ function renderAdaptationsSection(
 
   for (const entry of entries) {
     if (!entry.text) continue;
-    checkNewPage(18);
+    y = checkNewPage(y, 18);
 
     // Bold label with gray count
     pdf.setFont('helvetica', 'bold');
@@ -517,7 +519,7 @@ function renderAdaptationsSection(
     pdf.setTextColor(GRAY_DARK);
     const lines = pdf.splitTextToSize(entry.text, CONTENT_WIDTH - 8);
     for (const line of lines) {
-      checkNewPage(5);
+      y = checkNewPage(y, 5);
       pdf.text(line, MARGIN + 4, y);
       y += 4.5;
     }
@@ -533,7 +535,7 @@ function renderVolunteerPlanSection(
   pdf: jsPDF,
   plan: { leader: string; support: string },
   startY: number,
-  checkNewPage: (n: number) => void,
+  checkNewPage: (currentY: number, n: number) => number,
 ): number {
   let y = renderSectionHeader(pdf, 'Plan de Voluntarios', startY);
 
@@ -543,7 +545,7 @@ function renderVolunteerPlanSection(
   ].filter(Boolean) as { role: string; text: string }[];
 
   for (const item of roles) {
-    checkNewPage(18);
+    y = checkNewPage(y, 18);
 
     // Amber-dark role label
     pdf.setFont('helvetica', 'bold');
@@ -558,7 +560,7 @@ function renderVolunteerPlanSection(
     pdf.setTextColor(CARBON);
     const lines = pdf.splitTextToSize(item.text, CONTENT_WIDTH - 8);
     for (const line of lines) {
-      checkNewPage(5);
+      y = checkNewPage(y, 5);
       pdf.text(line, MARGIN + 4, y);
       y += 4.5;
     }
