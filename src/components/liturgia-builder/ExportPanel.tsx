@@ -421,6 +421,14 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     return isValid ? story : null;
   }, [elements]);
 
+  // Children activities only need story text, not images
+  const storyDataForChildren = useMemo(() => {
+    const el = elements.get('cuentacuentos');
+    const story = el?.config?.storyData as Story | undefined;
+    const isValid = !!(story?.title && story?.summary && story?.scenes?.length > 0);
+    return isValid ? story : null;
+  }, [elements]);
+
   // Count slides
   const totalSlides = elementOrder.reduce((count, type) => {
     const element = elements.get(type);
@@ -706,7 +714,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       )}
 
       {/* Children Activities Section */}
-      {canPublishChildrenActivities && storyData && (
+      {canPublishChildrenActivities && storyDataForChildren && (
         <div className="space-y-3">
           <h3
             className="text-center"
@@ -795,7 +803,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       )}
 
       {/* Children Activity Dialog */}
-      {storyData && liturgyContext && (
+      {storyDataForChildren && liturgyContext && (
         <ChildrenActivityDialog
           isOpen={childrenActivityDialogOpen}
           onClose={() => setChildrenActivityDialogOpen(false)}
@@ -813,7 +821,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
               : new Date(liturgyContext.date);
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           })()}
-          storyData={storyData}
+          storyData={storyDataForChildren}
         />
       )}
 
