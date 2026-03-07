@@ -115,7 +115,7 @@ export async function publishChildrenActivities(
       const existingLesson = await getLessonByLiturgyAndAgeGroup(liturgyId, ageGroupId);
 
       // 2. Generate lesson via Edge Function
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
       const edgeFunctionUrl = `${supabaseUrl}/functions/v1/generate-children-lesson`;
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;

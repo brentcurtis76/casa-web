@@ -109,7 +109,7 @@ Por favor, escribe una ${PRAYER_TYPE_NAMES[prayerType]} para este culto.
 
   try {
     // Intentar usar Supabase Edge Function si está configurada
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
     if (supabaseUrl && supabaseAnonKey) {
