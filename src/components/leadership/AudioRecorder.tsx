@@ -74,6 +74,17 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
   }, []);
 
   const startRecording = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast({
+        title: 'Error',
+        description: window.isSecureContext
+          ? 'Tu navegador no soporta grabación de audio.'
+          : 'Se requiere HTTPS para grabar audio. Accede al sitio con https://.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -115,9 +126,27 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
 
       toast({ title: 'Grabación iniciada', description: 'Haz clic en "Detener" cuando termines' });
     } catch (error) {
+      let description = 'No se pudo acceder al micrófono';
+      if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+            description = 'Permiso de micrófono denegado. Revisa los permisos del navegador para este sitio.';
+            break;
+          case 'NotFoundError':
+            description = 'No se encontró ningún micrófono. Conecta un micrófono e intenta de nuevo.';
+            break;
+          case 'NotReadableError':
+            description = 'El micrófono está en uso por otra aplicación. Ciérrala e intenta de nuevo.';
+            break;
+          case 'SecurityError':
+            description = 'Se requiere HTTPS para acceder al micrófono.';
+            break;
+        }
+      }
+      console.error('Error al acceder al micrófono:', error);
       toast({
         title: 'Error',
-        description: 'No se pudo acceder al micrófono',
+        description,
         variant: 'destructive',
       });
     }

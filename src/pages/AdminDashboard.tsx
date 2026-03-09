@@ -16,7 +16,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Church,
   Music,
-  BookOpen,
   Calendar,
   Loader2,
   ChevronRight,
@@ -204,16 +203,7 @@ const AdminDashboard: React.FC = () => {
       category: 'liturgia',
       status: 'available',
     },
-    {
-      id: 'oraciones',
-      title: 'Oraciones Antifonales',
-      description: 'Genera oraciones antifonales (invocación, arrepentimiento, gratitud) usando IA.',
-      icon: <BookOpen className="h-8 w-8" />,
-      route: '/admin/liturgia/oraciones',
-      category: 'liturgia',
-      status: 'available',
-    },
-    {
+{
       id: 'canciones',
       title: 'Canciones',
       description: 'Repositorio de canciones para la liturgia. Busca, visualiza y agrega nuevas canciones.',
@@ -410,6 +400,63 @@ const AdminDashboard: React.FC = () => {
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
+          {/* Liturgia Modules */}
+          {liturgiaModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Church className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Sistema de Liturgias
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {liturgiaModules.map(renderModuleCard)}
+              </div>
+            </div>
+          )}
+
+          {/* General Modules */}
+          {generalModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Sparkles className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Módulos Generales
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {generalModules.map(renderModuleCard)}
+              </div>
+            </div>
+          )}
+
+          {/* Gestión y Finanzas Modules */}
+          {adminFinModules.length > 0 && (
+            <div className="mb-10">
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <DollarSign className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
+                Gestión y Finanzas
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {adminFinModules.map(renderModuleCard)}
+              </div>
+            </div>
+          )}
+
           {/* Admin-only: User Management Card */}
           {isAdmin && (
             <div className="mb-10">
@@ -504,63 +551,6 @@ const AdminDashboard: React.FC = () => {
                     </CardDescription>
                   </CardContent>
                 </Card>
-              </div>
-            </div>
-          )}
-
-          {/* General Modules */}
-          {generalModules.length > 0 && (
-            <div className="mb-10">
-              <h2
-                className="text-lg font-semibold mb-4 flex items-center gap-2"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                <Sparkles className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
-                Módulos Generales
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {generalModules.map(renderModuleCard)}
-              </div>
-            </div>
-          )}
-
-          {/* Liturgia Modules */}
-          {liturgiaModules.length > 0 && (
-            <div className="mb-10">
-              <h2
-                className="text-lg font-semibold mb-4 flex items-center gap-2"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                <Church className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
-                Sistema de Liturgias
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {liturgiaModules.map(renderModuleCard)}
-              </div>
-            </div>
-          )}
-
-          {/* Administracion y Finanzas Modules */}
-          {adminFinModules.length > 0 && (
-            <div className="mb-10">
-              <h2
-                className="text-lg font-semibold mb-4 flex items-center gap-2"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  color: CASA_BRAND.colors.primary.black,
-                }}
-              >
-                <DollarSign className="h-5 w-5" style={{ color: CASA_BRAND.colors.primary.amber }} />
-                Administración y Finanzas
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {adminFinModules.map(renderModuleCard)}
               </div>
             </div>
           )}
