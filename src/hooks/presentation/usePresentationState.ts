@@ -462,18 +462,54 @@ export function usePresentationState(): UsePresentationStateReturn {
   }, [state.styleState]);
 
   // Cargar liturgia - both preview and live start at 0
+  // When switching to a DIFFERENT liturgy, reset all presentation-specific state
+  // (overlays, styles, temp edits) so content from previous liturgies doesn't leak.
+  // When reloading the SAME liturgy (e.g., session merge), preserve overlays.
   const loadLiturgy = useCallback((data: PresentationData) => {
-    setState((prev) => ({
-      ...prev,
-      data,
-      previewSlideIndex: 0,
-      previewElementIndex: 0,
-      liveSlideIndex: 0,
-      liveElementIndex: 0,
-      isLive: false,
-      isBlack: false,
-      hasUnpublishedChanges: false,
-    }));
+    setState((prev) => {
+      const isSameLiturgy = prev.data?.liturgyId === data.liturgyId;
+
+      if (isSameLiturgy) {
+        return {
+          ...prev,
+          data,
+          previewSlideIndex: 0,
+          previewElementIndex: 0,
+          liveSlideIndex: 0,
+          liveElementIndex: 0,
+          isLive: false,
+          isBlack: false,
+          hasUnpublishedChanges: false,
+        };
+      }
+
+      // Different liturgy — reset all presentation-specific state
+      return {
+        ...prev,
+        data,
+        previewSlideIndex: 0,
+        previewElementIndex: 0,
+        liveSlideIndex: 0,
+        liveElementIndex: 0,
+        isLive: false,
+        isBlack: false,
+        hasUnpublishedChanges: false,
+        // Reset overlays
+        imageOverlayState: { ...DEFAULT_IMAGE_OVERLAY_STATE },
+        liveImageOverlayState: { ...DEFAULT_IMAGE_OVERLAY_STATE },
+        textOverlayState: { ...DEFAULT_TEXT_OVERLAY_STATE },
+        liveTextOverlayState: { ...DEFAULT_TEXT_OVERLAY_STATE },
+        videoBackgroundState: { ...DEFAULT_VIDEO_BACKGROUND_STATE },
+        liveVideoBackgroundState: { ...DEFAULT_VIDEO_BACKGROUND_STATE },
+        // Reset styles
+        styleState: { ...DEFAULT_STYLE_STATE },
+        liveStyleState: { ...DEFAULT_STYLE_STATE },
+        // Reset temp edits
+        tempEdits: {},
+        liveTempEdits: {},
+        // NOTE: logoState intentionally preserved — church logo is consistent across services
+      };
+    });
   }, []);
 
   // Ir a slide especifico - updates preview only

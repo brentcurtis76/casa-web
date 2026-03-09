@@ -219,6 +219,7 @@ export const PresenterView: React.FC = () => {
         loadLiturgy(data);
         send({ type: 'LITURGY_LOADED', data });
         setCurrentSessionId(null);
+        clearSavedPresentationState(); // Clear stale recovery state from previous liturgy
       }
     } catch {
       // Error already thrown from loadLiturgyForPresentation
