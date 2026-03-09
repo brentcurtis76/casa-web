@@ -41,7 +41,7 @@ const ParticipantManager = ({ meetingId, canWrite, onUpdated }: ParticipantManag
         const userIds = data.map((p) => p.user_id);
         if (userIds.length > 0) {
           const { data: profiles } = await supabase
-            .from('church_profiles')
+            .from('profiles')
             .select('id, full_name')
             .in('id', userIds);
 

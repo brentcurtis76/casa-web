@@ -76,7 +76,7 @@ const CommitmentEditDialog = ({
     const loadUsers = async () => {
       try {
         const { data } = await supabase
-          .from('church_profiles')
+          .from('profiles')
           .select('id, full_name')
           .order('full_name', { ascending: true });
 

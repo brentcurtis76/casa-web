@@ -39,7 +39,7 @@ const MeetingNotes = ({ meetingId, canWrite, onUpdated }: MeetingNotesProps) => 
       const authorIds = data.map((n) => n.author_id).filter(Boolean) as string[];
       if (authorIds.length > 0) {
         const { data: profiles } = await supabase
-          .from('church_profiles')
+          .from('profiles')
           .select('id, full_name')
           .in('id', authorIds);
 

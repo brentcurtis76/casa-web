@@ -20,7 +20,6 @@ interface ParticipantPickerProps {
 interface UserOption {
   id: string;
   full_name: string | null;
-  email: string;
 }
 
 const ParticipantPicker = ({
@@ -41,8 +40,8 @@ const ParticipantPicker = ({
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('church_profiles')
-        .select('id, full_name, email')
+        .from('profiles')
+        .select('id, full_name')
         .order('full_name', { ascending: true });
 
       if (error) throw error;
@@ -64,8 +63,7 @@ const ParticipantPicker = ({
 
   const filteredUsers = users.filter(
     (user) =>
-      user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchTerm.toLowerCase()),
+      user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const handleToggleUser = (userId: string) => {
@@ -114,8 +112,7 @@ const ParticipantPicker = ({
                 htmlFor={`user-${user.id}`}
                 className="flex-1 cursor-pointer"
               >
-                <div className="text-sm font-medium">{user.full_name}</div>
-                <div className="text-xs text-muted-foreground">{user.email}</div>
+                <div className="text-sm font-medium">{user.full_name ?? 'Sin Nombre'}</div>
               </Label>
             </div>
           ))}

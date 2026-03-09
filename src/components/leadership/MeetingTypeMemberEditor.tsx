@@ -30,7 +30,6 @@ interface MeetingTypeMemberEditorProps {
 interface UserOption {
   id: string;
   full_name: string | null;
-  email: string;
 }
 
 const ROLE_LABELS: Record<MeetingTypeMemberRole, string> = {
@@ -66,8 +65,8 @@ const MeetingTypeMemberEditor = ({ meetingTypeId }: MeetingTypeMemberEditorProps
 
   const loadUsers = useCallback(async () => {
     const { data, error } = await supabase
-      .from('church_profiles')
-      .select('id, full_name, email')
+      .from('profiles')
+      .select('id, full_name')
       .order('full_name', { ascending: true });
 
     if (!error && data) {
@@ -125,7 +124,7 @@ const MeetingTypeMemberEditor = ({ meetingTypeId }: MeetingTypeMemberEditorProps
 
   const getUserName = (userId: string) => {
     const user = users.find((u) => u.id === userId);
-    return user?.full_name ?? user?.email ?? userId;
+    return user?.full_name ?? userId;
   };
 
   return (
@@ -178,7 +177,7 @@ const MeetingTypeMemberEditor = ({ meetingTypeId }: MeetingTypeMemberEditorProps
             <SelectContent>
               {availableUsers.map((user) => (
                 <SelectItem key={user.id} value={user.id}>
-                  {user.full_name ?? user.email}
+                  {user.full_name ?? 'Sin Nombre'}
                 </SelectItem>
               ))}
             </SelectContent>
