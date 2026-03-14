@@ -174,14 +174,18 @@ const ConstructorLiturgiasPage: React.FC = () => {
   // Save handler
   const handleSave = useCallback(async (liturgy: Liturgy, portadaImage?: string | null, portadasConfig?: PortadasConfig) => {
     try {
-      // Save to localStorage as backup (without image to save space)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(liturgy));
-
-      // Save to Supabase with image and config
+      // Save to Supabase with image and config (primary save target)
       const result = await saveLiturgy(liturgy, portadaImage, portadasConfig);
 
       if (!result.success) {
         throw new Error(result.error || 'Error desconocido guardando liturgia');
+      }
+
+      // localStorage backup is best-effort — large liturgies (e.g. 17 cuentacuento scenes) can exceed the ~5MB quota
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(liturgy));
+      } catch {
+        console.warn('[ConstructorLiturgias] localStorage backup skipped — data too large');
       }
 
       toast({
@@ -200,8 +204,8 @@ const ConstructorLiturgiasPage: React.FC = () => {
       console.error('Error saving liturgy:', err);
       const message = err instanceof Error ? err.message : 'Error desconocido';
       toast({
-        title: 'Guardado incompleto',
-        description: `No se pudo guardar en la nube. Respaldo local disponible. ${message}`,
+        title: 'Error al guardar',
+        description: `No se pudo guardar en la nube. ${message}`,
         variant: 'destructive',
       });
       throw err;
