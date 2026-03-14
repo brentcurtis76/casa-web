@@ -11,6 +11,7 @@ import {
   Sparkles,
   Edit3,
   RefreshCw,
+  RotateCcw,
   Eye,
   EyeOff,
   ChevronDown,
@@ -521,6 +522,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [sceneExcludedCharacters, setSceneExcludedCharacters] = useState<Record<number, string[]>>({});
   const [sceneIncludedCharacters, setSceneIncludedCharacters] = useState<Record<number, string[]>>({}); // Personajes agregados manualmente
   const [editingScenePrompt, setEditingScenePrompt] = useState<Record<number, string>>({});
+  const [editingCharacterPrompt, setEditingCharacterPrompt] = useState<Record<string, string>>({});
   const [showCharacterPicker, setShowCharacterPicker] = useState<number | null>(null); // Número de escena para picker
   const [sceneReferenceImages, setSceneReferenceImages] = useState<Record<number, string>>({}); // Imagen de referencia manual por escena
 
@@ -1308,8 +1310,11 @@ Instrucciones críticas:
   }, [deleteStoryImages, onStoryDeleted]);
 
   // Generar character sheet para un personaje
-  const handleGenerateCharacterSheet = useCallback(async (character: StoryCharacter, index: number) => {
+  const handleGenerateCharacterSheet = useCallback(async (character: StoryCharacter, index: number, customPrompt?: string) => {
     if (!story) return;
+
+    const effectivePrompt = customPrompt ?? character.visualDescription;
+    if (!effectivePrompt.trim()) return;
 
     setGeneratingCharacterIndex(index);
     setError(null);
@@ -1322,7 +1327,7 @@ Instrucciones críticas:
           character: {
             name: character.name,
             description: character.description,
-            visualDescription: character.visualDescription,
+            visualDescription: effectivePrompt,
           },
           count: 4,
         },
@@ -2773,8 +2778,8 @@ Instrucciones críticas:
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleGenerateCharacterSheet(character, index)}
-                  disabled={generatingCharacterIndex !== null}
+                  onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
+                  disabled={generatingCharacterIndex !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -2794,9 +2799,41 @@ Instrucciones críticas:
               </div>
             </div>
 
-            <p className="text-xs mb-3" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
-              {character.visualDescription}
-            </p>
+            {/* Prompt editable para descripción visual */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                  <Edit3 size={12} />
+                  Prompt de generación
+                </h6>
+                {editingCharacterPrompt[character.id] && editingCharacterPrompt[character.id] !== character.visualDescription && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingCharacterPrompt(prev => ({ ...prev, [character.id]: character.visualDescription }))}
+                    className="flex items-center gap-1 text-xs hover:underline"
+                    style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                  >
+                    <RotateCcw size={12} />
+                    Restaurar original
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={editingCharacterPrompt[character.id] ?? character.visualDescription}
+                onChange={(e) => setEditingCharacterPrompt(prev => ({ ...prev, [character.id]: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2"
+                style={{
+                  borderColor: editingCharacterPrompt[character.id] && editingCharacterPrompt[character.id] !== character.visualDescription
+                    ? CASA_BRAND.colors.primary.amber
+                    : CASA_BRAND.colors.secondary.grayLight,
+                  fontFamily: 'monospace',
+                  fontSize: '12px',
+                  lineHeight: 1.5,
+                }}
+                placeholder="Descripción visual del personaje..."
+              />
+            </div>
 
             {characterSheetOptions[character.id]?.length > 0 && (
               <ImageSelector
@@ -2804,7 +2841,7 @@ Instrucciones críticas:
                 selectedIndex={selectedCharacterSheets[character.id] ?? null}
                 onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
                 onSave={() => handleSaveCharacterImage(character.id)}
-                onRegenerate={() => handleGenerateCharacterSheet(character, index)}
+                onRegenerate={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
                 isGenerating={generatingCharacterIndex === index}
                 isSaving={savingCharacter === character.id}
                 savedMessage={savedCharacterMessage[character.id]}
