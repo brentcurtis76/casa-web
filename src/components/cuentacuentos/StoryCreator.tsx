@@ -13,6 +13,7 @@ import {
   CheckCircle,
   ChevronRight,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   Story,
@@ -24,6 +25,7 @@ import type {
   StoryStatus,
   GeneratedStoryContent,
 } from '@/types/shared/story';
+import { supabase } from '@/integrations/supabase/client';
 import StoryConfigForm from './StoryConfigForm';
 import ImageSelector from './ImageSelector';
 import StoryPreview from './StoryPreview';
@@ -65,6 +67,10 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
   const [config, setConfig] = useState<StoryConfigInput | null>(null);
   const [generatedContent, setGeneratedContent] = useState<GeneratedStoryContent | null>(null);
   const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
+
+  // Regeneration loading state
+  const [regeneratingCharacterId, setRegeneratingCharacterId] = useState<string | null>(null);
+  const [regeneratingSceneNumber, setRegeneratingSceneNumber] = useState<number | null>(null);
 
   // Obtener índice del paso actual
   const currentStepIndex = STEPS.findIndex((s) => s.id === currentStep);
@@ -210,6 +216,105 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
     });
   };
 
+  // Regenerar character sheet con prompt editado
+  const handleRegenerateCharacterSheet = async (character: StoryCharacter) => {
+    if (!story) return;
+
+    const description = character.editedVisualDescription ?? character.visualDescription;
+    if (!description?.trim()) {
+      setError('La descripción del personaje no puede estar vacía');
+      return;
+    }
+
+    setRegeneratingCharacterId(character.id);
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
+        body: {
+          type: 'character',
+          styleId: story.illustrationStyle,
+          character: {
+            name: character.name,
+            description: character.description,
+            visualDescription: description,
+          },
+          count: 4,
+        },
+      });
+
+      if (fnError) throw fnError;
+      if (!data?.success || !data.images?.length) {
+        throw new Error(data?.error || 'No se pudieron generar imágenes');
+      }
+
+      setStory(prev => prev ? {
+        ...prev,
+        characters: prev.characters.map(c =>
+          c.id === character.id
+            ? { ...c, characterSheetOptions: data.images }
+            : c
+        ),
+        metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+      } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error regenerando character sheet');
+    } finally {
+      setRegeneratingCharacterId(null);
+    }
+  };
+
+  // Regenerar imagen de escena
+  const handleRegenerateSceneImage = async (scene: StoryScene) => {
+    if (!story) return;
+
+    if (!scene.visualDescription?.trim()) {
+      setError('La descripción visual de la escena no puede estar vacía');
+      return;
+    }
+
+    setRegeneratingSceneNumber(scene.number);
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
+        body: {
+          type: 'scene',
+          styleId: story.illustrationStyle,
+          scene: { text: scene.text, visualDescription: scene.visualDescription },
+          characters: story.characters
+            .filter(c => c.characterSheetUrl)
+            .map(c => ({
+              name: c.name,
+              visualDescription: c.editedVisualDescription ?? c.visualDescription,
+              referenceImage: c.characterSheetUrl,
+            })),
+          location: story.location,
+          count: 4,
+        },
+      });
+
+      if (fnError) throw fnError;
+      if (!data?.success || !data.images?.length) {
+        throw new Error(data?.error || 'No se pudieron generar imágenes');
+      }
+
+      setStory(prev => prev ? {
+        ...prev,
+        scenes: prev.scenes.map(s =>
+          s.number === scene.number
+            ? { ...s, imageOptions: data.images }
+            : s
+        ),
+        metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+      } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error regenerando imagen de escena');
+    } finally {
+      setRegeneratingSceneNumber(null);
+    }
+  };
+
   // Verificar si todas las escenas tienen imagen
   const allScenesComplete = story?.scenes.every((s) => s.selectedImageUrl);
 
@@ -225,10 +330,18 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
     }
   };
 
-  // Manejar guardar cuento
+  // Manejar guardar cuento — merge edited prompts into visualDescription
   const handleSaveStory = () => {
     if (story && onSaveStory) {
-      onSaveStory(story);
+      const storyWithEdits = {
+        ...story,
+        characters: story.characters.map(c => ({
+          ...c,
+          visualDescription: c.editedVisualDescription ?? c.visualDescription,
+          editedVisualDescription: undefined,
+        })),
+      };
+      onSaveStory(storyWithEdits);
     }
   };
 
@@ -517,19 +630,108 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
           </div>
 
           <div className="space-y-6">
-            {story.characters.map((character) => (
-              <ImageSelector
-                key={character.id}
-                title={character.name}
-                subtitle={`${character.role === 'protagonist' ? 'Protagonista' : 'Personaje secundario'} - ${character.description}`}
-                imageOptions={character.characterSheetOptions || []}
-                selectedImageUrl={character.characterSheetUrl || null}
-                onSelect={(url) => handleSelectCharacterSheet(character.id, url)}
-                onRegenerate={() => {
-                  console.log('Regenerar character sheet para:', character.id);
-                }}
-              />
-            ))}
+            {story.characters.map((character) => {
+              const currentPrompt = character.editedVisualDescription ?? character.visualDescription;
+              const isModified = character.editedVisualDescription !== undefined && character.editedVisualDescription !== character.visualDescription;
+
+              return (
+                <div key={character.id} className="space-y-3">
+                  {/* Character header with role badge */}
+                  <div className="flex items-center gap-2">
+                    <h4
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.body,
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: CASA_BRAND.colors.primary.black,
+                      }}
+                    >
+                      {character.name}
+                    </h4>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-xs"
+                      style={{
+                        backgroundColor: character.role === 'protagonist'
+                          ? `${CASA_BRAND.colors.primary.amber}20`
+                          : `${CASA_BRAND.colors.secondary.grayLight}`,
+                        color: character.role === 'protagonist'
+                          ? CASA_BRAND.colors.primary.amber
+                          : CASA_BRAND.colors.secondary.grayDark,
+                        fontFamily: CASA_BRAND.fonts.body,
+                      }}
+                    >
+                      {character.role === 'protagonist' ? 'Protagonista' : 'Secundario'}
+                    </span>
+                  </div>
+
+                  {/* Editable description textarea */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label
+                        className="text-xs"
+                        style={{
+                          color: CASA_BRAND.colors.secondary.grayMedium,
+                          fontFamily: CASA_BRAND.fonts.body,
+                        }}
+                      >
+                        Descripción visual (prompt para generación)
+                      </label>
+                      {isModified && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStory(prev => prev ? {
+                              ...prev,
+                              characters: prev.characters.map(c =>
+                                c.id === character.id ? { ...c, editedVisualDescription: undefined } : c
+                              ),
+                            } : prev)
+                          }
+                          className="flex items-center gap-1 text-xs hover:underline"
+                          style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                        >
+                          <RotateCcw size={12} />
+                          Restaurar original
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={currentPrompt}
+                      onChange={(e) =>
+                        setStory(prev => prev ? {
+                          ...prev,
+                          characters: prev.characters.map(c =>
+                            c.id === character.id ? { ...c, editedVisualDescription: e.target.value } : c
+                          ),
+                        } : prev)
+                      }
+                      rows={3}
+                      className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2"
+                      style={{
+                        borderColor: isModified
+                          ? CASA_BRAND.colors.primary.amber
+                          : CASA_BRAND.colors.secondary.grayLight,
+                        fontFamily: CASA_BRAND.fonts.body,
+                        fontSize: '13px',
+                        lineHeight: 1.5,
+                        ringColor: CASA_BRAND.colors.primary.amber,
+                      }}
+                      placeholder="Descripción visual del personaje..."
+                    />
+                  </div>
+
+                  {/* Image selector */}
+                  <ImageSelector
+                    title={character.name}
+                    imageOptions={character.characterSheetOptions || []}
+                    selectedImageUrl={character.characterSheetUrl || null}
+                    onSelect={(url) => handleSelectCharacterSheet(character.id, url)}
+                    onRegenerate={currentPrompt?.trim() ? () => handleRegenerateCharacterSheet(character) : undefined}
+                    isRegenerating={regeneratingCharacterId === character.id}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex justify-end gap-3">
@@ -595,9 +797,8 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
                 imageOptions={scene.imageOptions || []}
                 selectedImageUrl={scene.selectedImageUrl || null}
                 onSelect={(url) => handleSelectSceneImage(scene.number, url)}
-                onRegenerate={() => {
-                  console.log('Regenerar escena:', scene.number);
-                }}
+                onRegenerate={() => handleRegenerateSceneImage(scene)}
+                isRegenerating={regeneratingSceneNumber === scene.number}
               />
             ))}
           </div>

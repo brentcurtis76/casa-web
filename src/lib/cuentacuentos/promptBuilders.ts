@@ -203,7 +203,7 @@ export function buildScenePrompt(
   );
 
   const characterDescriptions = charactersInScene
-    .map((c) => `${c.name}: ${c.visualDescription || c.description}`)
+    .map((c) => `${c.name}: ${c.editedVisualDescription ?? c.visualDescription ?? c.description}`)
     .join('\n\n');
 
   // Determine if landmark should appear in this scene

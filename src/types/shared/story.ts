@@ -36,6 +36,7 @@ export interface StoryCharacter {
   role: CharacterRole;
   description: string;          // Descripción narrativa
   visualDescription: string;    // Descripción visual detallada para prompts
+  editedVisualDescription?: string;  // User-edited prompt override
   characterSheetOptions?: string[];  // URLs de las opciones de character sheet
   characterSheetUrl?: string;   // URL de la imagen aprobada
 }
