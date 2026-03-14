@@ -60,6 +60,92 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
   }
 }
 
+/**
+ * Analiza fotos de referencia de un landmark usando Gemini Vision
+ * para generar una descripción visual detallada
+ */
+async function analyzeLandmarkImages(
+  landmarkName: string,
+  narrativeRole: string,
+  referenceImages: string[]
+): Promise<string> {
+  if (!GOOGLE_AI_API_KEY || referenceImages.length === 0) {
+    console.log('[generate-story] No API key or no landmark images, skipping analysis');
+    return '';
+  }
+
+  const analysisPrompt = `Analiza las fotos de referencia de "${landmarkName}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
+
+Contexto narrativo: ${narrativeRole}
+
+Describe con el máximo detalle posible:
+1. Forma y estructura: Forma general del edificio/landmark, número de pisos, torres, techos, cúpulas
+2. Materiales y texturas: Tipo de construcción (piedra, madera, adobe, concreto), texturas visibles
+3. Colores específicos: Colores exactos de paredes, techos, puertas, ventanas, detalles
+4. Elementos arquitectónicos: Puertas, ventanas, columnas, arcos, campanarios, escaleras, balcones
+5. Elementos decorativos: Cruces, vitrales, molduras, inscripciones, ornamentos
+6. Proporciones: Relación de tamaño con personas, árboles u otros elementos de escala
+7. Entorno inmediato: Tipo de suelo, vegetación, elementos que rodean el landmark
+
+Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo información visual útil para que un modelo de IA pueda recrear fielmente este landmark en ilustraciones infantiles. NO incluyas historia ni datos culturales — solo lo visual.`;
+
+  try {
+    // Build multimodal request with images
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+    parts.push({ text: analysisPrompt });
+
+    for (const img of referenceImages.slice(0, 4)) {
+      let base64Data = img;
+      let mimeType = 'image/jpeg';
+
+      // Handle data URLs
+      if (img.startsWith('data:')) {
+        const match = img.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        } else {
+          continue;
+        }
+      }
+
+      parts.push({
+        inlineData: {
+          mimeType,
+          data: base64Data,
+        },
+      });
+    }
+
+    console.log(`[generate-story] Analyzing ${referenceImages.length} landmark images for "${landmarkName}"`);
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { maxOutputTokens: 400 },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error('[generate-story] Error analyzing landmark:', response.status);
+      return '';
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log(`[generate-story] Landmark analysis for "${landmarkName}":`, text.slice(0, 200) + '...');
+    return text;
+  } catch (err) {
+    console.error('[generate-story] Error in landmark analysis:', err);
+    return '';
+  }
+}
+
 // Nombres prohibidos - niños de la comunidad CASA
 const FORBIDDEN_NAMES = [
   'Matías', 'Emilia', 'Tomás', 'Amanda', 'Matilde',
@@ -135,7 +221,7 @@ Cada personaje DEBE tener una visualDescription muy detallada y consistente que 
 CRÍTICO: Tu respuesta debe ser ÚNICAMENTE un objeto JSON válido. No incluyas ningún texto antes o después del JSON. No uses bloques de código markdown. Solo el JSON puro.
 
 El JSON debe tener esta estructura exacta:
-{"title":"string","summary":"string","characters":[{"name":"string","role":"protagonist|secondary|minor","description":"string","visualDescription":"string","appearsInScenes":[1,2,3]}],"scenes":[{"number":1,"text":"string","visualDescription":"string","charactersInScene":["name1","name2"]}],"spiritualConnection":"string"}
+{"title":"string","summary":"string","characters":[{"name":"string","role":"protagonist|secondary|minor","description":"string","visualDescription":"string","appearsInScenes":[1,2,3]}],"scenes":[{"number":1,"text":"string","visualDescription":"string","charactersInScene":["name1","name2"],"landmarkVisible":true}],"spiritualConnection":"string"}
 
 Donde:
 - title: Título del cuento
@@ -147,6 +233,7 @@ Donde:
   - text: 2-4 oraciones para leer en voz alta
   - visualDescription: descripción visual detallada, bien iluminada
   - charactersInScene: nombres de personajes en la escena
+  - landmarkVisible: boolean, true si el landmark/edificio debe aparecer visible en la ilustración de esta escena
 - spiritualConnection: conexión con el Evangelio`;
 
 /**
@@ -162,10 +249,11 @@ function buildUserPrompt(data: {
   location: string;
   locationResearch: string;
   characters: string[];
+  landmarks?: Array<{ name: string; narrativeRole: string; visualDescription: string; role: string }>;
   style: string;
   additionalNotes: string;
 }): string {
-  const { context, location, locationResearch, characters, style, additionalNotes } = data;
+  const { context, location, locationResearch, characters, landmarks, style, additionalNotes } = data;
 
   // Safely handle readings array - ensure it exists and is an array
   const readings = Array.isArray(context?.readings) ? context.readings : [];
@@ -223,7 +311,16 @@ ${styleDescriptions[style] || style}
 
 ### Notas Adicionales del Usuario
 ${additionalNotes || 'Ninguna'}
+${landmarks && landmarks.length > 0 ? `
+### Landmark / Edificio como "Personaje" Visual
+${landmarks.map(lm => `
+**${lm.name}**
+- Rol narrativo: ${lm.narrativeRole}
+- Prominencia: ${lm.role === 'primary' ? 'PRINCIPAL — debe aparecer en muchas escenas (al menos la mitad)' : 'SECUNDARIO — aparece en algunas escenas (3-4)'}
+${lm.visualDescription ? `- Descripción visual (analizada de fotos reales): ${lm.visualDescription}` : ''}
 
+IMPORTANTE: Trata "${lm.name}" casi como un personaje más. Cuando aparezca en una escena, incluye detalles visuales específicos del landmark en la visualDescription de esa escena. Marca "landmarkVisible": true en cada escena donde el landmark debe verse en la ilustración.
+`).join('\n')}` : ''}
 ---
 
 Por favor, crea un cuento original basándote en esta información. El cuento debe:
@@ -280,7 +377,7 @@ serve(async (req) => {
 
     const requestData = await req.json();
 
-    const { context, location, characters, style, additionalNotes, previewPromptOnly } = requestData;
+    const { context, location, characters, landmarks, style, additionalNotes, previewPromptOnly } = requestData;
 
     if (!context || !location) {
       throw new Error('Se requiere contexto de la liturgia y ubicación');
@@ -288,11 +385,31 @@ serve(async (req) => {
 
     console.log(`[generate-story] Generando cuento para: "${context.title}"`);
     console.log(`[generate-story] Ubicación: ${location}, Estilo: ${style}`);
+    console.log(`[generate-story] Landmarks: ${landmarks?.length || 0}`);
     console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
     // Investigar la ubicación real usando Gemini
     console.log(`[generate-story] Investigando ubicación: ${location}...`);
     const locationResearch = await researchLocation(location);
+
+    // Analyze landmark reference images if provided
+    const landmarkAnalyses: Array<{ name: string; narrativeRole: string; visualDescription: string; role: string }> = [];
+    if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
+      for (const lm of landmarks) {
+        console.log(`[generate-story] Analyzing landmark: "${lm.name}" with ${lm.referenceImages?.length || 0} images`);
+        const visualDescription = await analyzeLandmarkImages(
+          lm.name,
+          lm.narrativeRole,
+          lm.referenceImages || []
+        );
+        landmarkAnalyses.push({
+          name: lm.name,
+          narrativeRole: lm.narrativeRole,
+          visualDescription,
+          role: lm.role || 'primary',
+        });
+      }
+    }
 
     // Si solo quieren ver el prompt, devolverlo sin generar
     if (previewPromptOnly) {
@@ -301,6 +418,7 @@ serve(async (req) => {
         location,
         locationResearch,
         characters: characters || [],
+        landmarks: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
         style: style || 'reflexivo',
         additionalNotes: additionalNotes || ''
       });
@@ -324,6 +442,7 @@ serve(async (req) => {
       location,
       locationResearch,
       characters: characters || [],
+      landmarks: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
       style: style || 'reflexivo',
       additionalNotes: additionalNotes || ''
     });
@@ -462,6 +581,8 @@ serve(async (req) => {
         characters: story.characters,
         scenes: story.scenes,
         spiritualConnection: story.spiritualConnection,
+        // Landmark analysis results (visual descriptions from Gemini)
+        landmarkAnalyses: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
         // Compatibilidad con formato anterior
         content: contentText,
         story: contentText,

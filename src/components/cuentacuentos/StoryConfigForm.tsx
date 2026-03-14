@@ -11,6 +11,7 @@ import { isNameForbidden } from '@/lib/cuentacuentos/promptBuilders';
 import StyleSelector from './StyleSelector';
 import CharacterInput from './CharacterInput';
 import LocationInput from './LocationInput';
+import LandmarkInput, { type LandmarkConfig } from './LandmarkInput';
 
 interface StoryConfigFormProps {
   onSubmit: (config: StoryConfigInput) => void;
@@ -26,6 +27,7 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
   const [characters, setCharacters] = useState<{ description: string; name?: string }[]>([
     { description: '', name: '' },
   ]);
+  const [landmark, setLandmark] = useState<LandmarkConfig | null>(null);
   const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -45,6 +47,19 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
     // Validar estilo
     if (!selectedStyleId) {
       newErrors.push('Debes seleccionar un estilo de ilustración');
+    }
+
+    // Validar landmark si está habilitado
+    if (landmark) {
+      if (!landmark.name.trim()) {
+        newErrors.push('Debes ingresar el nombre del landmark');
+      }
+      if (!landmark.narrativeRole.trim()) {
+        newErrors.push('Debes describir el rol narrativo del landmark');
+      }
+      if (landmark.referenceImages.length === 0) {
+        newErrors.push('Debes subir al menos una foto de referencia del landmark');
+      }
     }
 
     // Validar nombres prohibidos
@@ -72,6 +87,12 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
       liturgySummary: liturgySummary.trim() || undefined,
       locationName: locationName.trim(),
       characters: characters.filter((c) => c.description.trim()),
+      landmarks: landmark ? [{
+        name: landmark.name.trim(),
+        narrativeRole: landmark.narrativeRole.trim(),
+        referenceImages: landmark.referenceImages,
+        role: landmark.role,
+      }] : [],
       illustrationStyleId: selectedStyleId!,
     };
 
@@ -280,6 +301,9 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
 
           {/* Personajes */}
           <CharacterInput characters={characters} onChange={setCharacters} />
+
+          {/* Landmark como personaje */}
+          <LandmarkInput landmark={landmark} onChange={setLandmark} />
 
           {/* Estilo de ilustración */}
           <StyleSelector selectedStyleId={selectedStyleId} onSelectStyle={setSelectedStyleId} />

@@ -9,6 +9,25 @@
 export type CharacterRole = 'protagonist' | 'secondary';
 
 /**
+ * Rol del landmark en el cuento
+ */
+export type LandmarkRole = 'primary' | 'secondary';
+
+/**
+ * Landmark o edificio que actúa como "personaje" visual en el cuento
+ * Permite subir fotos de referencia para que el landmark se represente fielmente
+ */
+export interface StoryLandmark {
+  id: string;
+  name: string;                    // Nombre del landmark (ej: "Iglesia de San Marcos")
+  narrativeRole: string;           // Rol narrativo (ej: "Es el corazón de la comunidad")
+  visualDescription: string;       // Descripción visual generada por Gemini tras analizar las fotos
+  referenceImages: string[];       // URLs/base64 de fotos subidas por el usuario (múltiples ángulos)
+  selectedReferenceUrl?: string;   // URL de la imagen de referencia procesada/seleccionada
+  role: LandmarkRole;              // Qué tan prominente es en el cuento
+}
+
+/**
  * Personaje del cuento
  */
 export interface StoryCharacter {
@@ -28,6 +47,7 @@ export interface StoryScene {
   number: number;
   text: string;                 // Texto que se lee en voz alta
   visualDescription: string;    // Descripción para generar la imagen
+  landmarkVisible?: boolean;    // Si el landmark debe aparecer en esta escena
   imageOptions?: string[];      // URLs de las 3-4 imágenes generadas
   selectedImageUrl?: string;    // URL de la imagen seleccionada
 }
@@ -81,6 +101,7 @@ export interface Story {
   location: LocationInfo;
   illustrationStyle: string;    // ID del estilo seleccionado
   characters: StoryCharacter[];
+  landmarks?: StoryLandmark[];  // Landmarks que actúan como "personajes" visuales
   scenes: StoryScene[];
   coverImageOptions?: string[];
   coverImageUrl?: string;
@@ -108,6 +129,12 @@ export interface StoryConfigInput {
     description: string;
     name?: string;
   }[];
+  landmarks: {
+    name: string;
+    narrativeRole: string;
+    referenceImages: string[];   // base64 data URLs from uploaded photos
+    role: LandmarkRole;
+  }[];
   illustrationStyleId: string;
 }
 
@@ -126,6 +153,7 @@ export interface GeneratedStoryContent {
     number: number;
     text: string;
     visualDescription: string;
+    landmarkVisible?: boolean;    // Si el landmark debe aparecer en esta escena
   }[];
   spiritualConnection: string;
 }

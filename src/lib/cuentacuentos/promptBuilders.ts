@@ -5,9 +5,11 @@
 
 import type {
   StoryCharacter,
+  StoryLandmark,
   StoryScene,
   LocationInfo,
   IllustrationStyle,
+  LandmarkRole,
 } from '@/types/shared/story';
 import forbiddenNames from '@/data/cuentacuentos/forbidden-names.json';
 
@@ -69,7 +71,8 @@ Responde SOLO con JSON válido (sin markdown, sin comentarios) con esta estructu
     {
       "number": 1,
       "text": "Texto que se leerá en voz alta para esta escena. Debe ser 2-4 oraciones.",
-      "visualDescription": "Descripción visual de la escena para generar la imagen. Incluye: ambiente, personajes presentes, acciones, expresiones, iluminación."
+      "visualDescription": "Descripción visual de la escena para generar la imagen. Incluye: ambiente, personajes presentes, acciones, expresiones, iluminación.",
+      "landmarkVisible": true
     }
   ],
   "spiritualConnection": "Breve explicación de cómo el cuento conecta con el tema de la liturgia o el Evangelio"
@@ -82,6 +85,7 @@ Responde SOLO con JSON válido (sin markdown, sin comentarios) con esta estructu
 export function buildStoryUserPrompt(
   location: LocationInfo,
   characters: { description: string; name?: string }[],
+  landmarks?: { name: string; narrativeRole: string; visualDescription?: string; role: LandmarkRole }[],
   liturgyTitle?: string,
   liturgyReadings?: string,
   liturgySummary?: string
@@ -100,6 +104,25 @@ Iluminación típica: ${location.lighting}
 ## Personajes
 ${charactersText}
 `;
+
+  // Include landmark info if provided
+  if (landmarks && landmarks.length > 0) {
+    prompt += `\n## Landmark / Edificio como "Personaje" Visual\n`;
+    for (const lm of landmarks) {
+      prompt += `\n### ${lm.name}
+- Rol narrativo: ${lm.narrativeRole}
+- Prominencia: ${lm.role === 'primary' ? 'PRINCIPAL — debe aparecer en muchas escenas como elemento central' : 'SECUNDARIO — aparece en algunas escenas como telón de fondo'}
+${lm.visualDescription ? `- Descripción visual detallada: ${lm.visualDescription}` : ''}
+
+IMPORTANTE sobre el landmark:
+- El landmark "${lm.name}" debe ser tratado casi como un personaje más de la historia
+- Debe aparecer de forma reconocible y consistente en las escenas donde sea visible
+- En cada escena, indica "landmarkVisible": true si el landmark debe aparecer en la ilustración
+- La descripción visual de las escenas donde aparece DEBE incluir detalles específicos del landmark
+- ${lm.role === 'primary' ? 'Como landmark principal, debe aparecer en al menos la mitad de las escenas' : 'Como landmark secundario, debe aparecer en al menos 3-4 escenas'}
+`;
+    }
+  }
 
   if (liturgyTitle || liturgyReadings || liturgySummary) {
     prompt += `
@@ -171,7 +194,8 @@ export function buildScenePrompt(
   scene: StoryScene,
   characters: StoryCharacter[],
   location: LocationInfo,
-  style: IllustrationStyle
+  style: IllustrationStyle,
+  landmarks?: StoryLandmark[]
 ): string {
   // Identificar qué personajes aparecen en la escena
   const charactersInScene = characters.filter((c) =>
@@ -181,6 +205,17 @@ export function buildScenePrompt(
   const characterDescriptions = charactersInScene
     .map((c) => `${c.name}: ${c.visualDescription || c.description}`)
     .join('\n\n');
+
+  // Determine if landmark should appear in this scene
+  const visibleLandmarks = (landmarks || []).filter(
+    (lm) => scene.landmarkVisible && lm.visualDescription
+  );
+
+  const landmarkSection = visibleLandmarks.length > 0
+    ? `\nLANDMARK visible in this scene (use reference images to render faithfully):
+${visibleLandmarks.map((lm) => `- ${lm.name}: ${lm.visualDescription}`).join('\n')}
+IMPORTANT: The landmark must be rendered with EXACT architectural details matching the reference photos provided. It should be recognizable and consistent across all scenes.`
+    : '';
 
   return `${style.prompt}
 
@@ -192,6 +227,7 @@ Lighting: ${location.lighting}
 
 ${charactersInScene.length > 0 ? `Characters in this scene:
 ${characterDescriptions}` : ''}
+${landmarkSection}
 
 Important instructions:
 - Bright, well-lit scene (this will be projected in a room with natural light)
@@ -199,7 +235,7 @@ Important instructions:
 - No text or words in the image
 - Cinematic composition
 - Warm, inviting atmosphere
-- Colors: ${location.colors.join(', ')}`;
+- Colors: ${location.colors.join(', ')}${visibleLandmarks.length > 0 ? '\n- The landmark MUST match the provided reference photos exactly' : ''}`;
 }
 
 /**
@@ -252,6 +288,30 @@ Important:
 - Centered composition
 - Soft, warm colors
 - Simple and elegant design`;
+}
+
+/**
+ * Genera prompt para que Gemini analice fotos de referencia de un landmark
+ * y produzca una descripción visual detallada para usar en prompts de generación de imágenes
+ *
+ * NOTE: This is the frontend version for preview/testing. The canonical version used at runtime
+ * is in supabase/functions/generate-story/index.ts analyzeLandmarkImages()
+ */
+export function buildLandmarkAnalysisPrompt(landmarkName: string, narrativeRole: string): string {
+  return `Analiza las fotos de referencia de "${landmarkName}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
+
+Contexto narrativo: ${narrativeRole}
+
+Describe con el máximo detalle posible:
+1. **Forma y estructura**: Forma general del edificio/landmark, número de pisos, torres, techos, cúpulas
+2. **Materiales y texturas**: Tipo de construcción (piedra, madera, adobe, concreto), texturas visibles
+3. **Colores específicos**: Colores exactos de paredes, techos, puertas, ventanas, detalles
+4. **Elementos arquitectónicos**: Puertas, ventanas, columnas, arcos, campanarios, escaleras, balcones
+5. **Elementos decorativos**: Cruces, vitrales, molduras, inscripciones, ornamentos
+6. **Proporciones**: Relación de tamaño con personas, árboles u otros elementos de escala
+7. **Entorno inmediato**: Tipo de suelo, vegetación, elementos que rodean el landmark
+
+Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo información visual útil para que un modelo de IA pueda recrear fielmente este landmark en ilustraciones infantiles. NO incluyas historia ni datos culturales — solo lo visual.`;
 }
 
 /**

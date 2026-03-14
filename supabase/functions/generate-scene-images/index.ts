@@ -33,9 +33,16 @@ interface Character {
   referenceImage?: string;
 }
 
+interface Landmark {
+  name: string;
+  visualDescription: string;
+  referenceImages: string[];  // base64 data URLs or URLs
+}
+
 interface Scene {
   text: string;
   visualDescription: string;
+  landmarkVisible?: boolean;
 }
 
 interface Location {
@@ -71,7 +78,8 @@ function buildScenePrompt(
   styleId: string,
   scene: Scene,
   charactersInScene: Character[],
-  location: Location
+  location: Location,
+  landmarks?: Landmark[]
 ): string {
   const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
@@ -81,6 +89,15 @@ function buildScenePrompt(
 
   const referenceInstruction = charactersInScene.some(c => c.referenceImage)
     ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
+    : '';
+
+  // Include landmark info if visible in this scene
+  const visibleLandmarks = (landmarks || []).filter((lm) => scene.landmarkVisible && lm.visualDescription);
+  const landmarkSection = visibleLandmarks.length > 0
+    ? `\n\nLANDMARK/BUILDING visible in this scene (reference photos provided - render FAITHFULLY):
+${visibleLandmarks.map(lm => `- ${lm.name}: ${lm.visualDescription}`).join('\n')}
+
+CRITICAL: The landmark/building MUST be rendered with EXACT architectural details matching the reference photos. Copy the shape, colors, materials, windows, doors, and all distinctive features precisely. The landmark should be immediately recognizable to someone who knows the real building.`
     : '';
 
   return `${stylePrompt}
@@ -94,6 +111,7 @@ Location: ${location.name}, Chile. ${location.description}
 Characters that appear in THIS scene (ONLY these characters should be shown):
 ${characterDescriptions}
 ${referenceInstruction}
+${landmarkSection}
 
 CRITICAL instructions:
 - ONLY show the characters listed above - no other characters should appear
@@ -103,7 +121,7 @@ CRITICAL instructions:
 - Cinematic composition with good framing
 - Warm, inviting atmosphere
 - Focus on the emotional moment described in the scene
-- If reference images are provided, the characters MUST look exactly like their references
+- If reference images are provided, the characters MUST look exactly like their references${visibleLandmarks.length > 0 ? '\n- The landmark/building MUST match the provided reference photos exactly' : ''}
 - Do not include any signs, labels, captions, titles, or any form of written text
 `.trim();
 }
@@ -179,7 +197,7 @@ No characters, just the text and decorative elements.
 
 function isValidImageBase64(base64: string): boolean {
   if (!base64 || typeof base64 !== 'string') return false;
-  return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/');
+  return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/') || base64.startsWith('UklGR');
 }
 
 function isUrl(str: string): boolean {
@@ -291,6 +309,7 @@ async function generateImage(
 
     let imagesAdded = 0;
     const hasSceneRef = characterDescriptions[0]?.includes('SCENE STYLE REFERENCE');
+    const hasLandmarkRef = characterDescriptions.some(d => d?.includes('LANDMARK REFERENCE'));
 
     if (referenceImages.length > 0) {
 
@@ -298,7 +317,7 @@ async function generateImage(
       if (hasSceneRef) {
         refInstruction = `CRITICAL REFERENCE IMAGES:
 The FIRST image is a SCENE STYLE REFERENCE - use it to guide the visual style, composition, lighting, colors, and atmosphere of the generated scene.
-${referenceImages.length > 1 ? `The remaining ${referenceImages.length - 1} image(s) show the EXACT appearance of characters.` : ''}
+${referenceImages.length > 1 ? `The remaining ${referenceImages.length - 1} image(s) show the EXACT appearance of characters${hasLandmarkRef ? ' and/or landmarks/buildings' : ''}.` : ''}
 
 For character references, you MUST copy these visual details EXACTLY:
 - Face shape, features, and expression style
@@ -306,19 +325,36 @@ For character references, you MUST copy these visual details EXACTLY:
 - Skin tone and body proportions
 - Clothing colors, patterns, and style
 - Any distinctive accessories or features
+${hasLandmarkRef ? `
+For LANDMARK/BUILDING references, you MUST copy these architectural details EXACTLY:
+- Overall shape, proportions, and structure
+- Colors of walls, roof, doors, windows
+- Distinctive architectural features (towers, arches, columns, etc.)
+- Materials and textures
+- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building` : ''}
 
 Study each reference carefully before generating.`;
       } else {
-        refInstruction = `CRITICAL CHARACTER REFERENCE IMAGES:
-The following ${referenceImages.length} image(s) show the EXACT appearance of characters that must appear in the generated scene.
-You MUST copy these visual details EXACTLY:
+        const charCount = characterDescriptions.filter(d => !d?.includes('LANDMARK REFERENCE')).length;
+        const landmarkCount = characterDescriptions.filter(d => d?.includes('LANDMARK REFERENCE')).length;
+        refInstruction = `CRITICAL REFERENCE IMAGES:
+The following ${referenceImages.length} image(s) show the EXACT appearance of ${charCount > 0 ? `characters` : ''}${charCount > 0 && landmarkCount > 0 ? ' and ' : ''}${landmarkCount > 0 ? 'landmarks/buildings' : ''} that must appear in the generated scene.
+
+For CHARACTER references, you MUST copy these visual details EXACTLY:
 - Face shape, features, and expression style
 - Hair color, style, and length
 - Skin tone and body proportions
 - Clothing colors, patterns, and style
 - Any distinctive accessories or features
+${hasLandmarkRef ? `
+For LANDMARK/BUILDING references, you MUST copy these architectural details EXACTLY:
+- Overall shape, proportions, and structure
+- Colors of walls, roof, doors, windows
+- Distinctive architectural features (towers, arches, columns, etc.)
+- Materials and textures
+- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building` : ''}
 
-Study each reference carefully before generating. The characters in your output MUST be visually identical to these references.`;
+Study each reference carefully before generating. All subjects in your output MUST be visually identical to their references.`;
       }
 
       parts.push({ text: refInstruction });
@@ -330,11 +366,14 @@ Study each reference carefully before generating. The characters in your output 
         console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, prefix="${imgPrefix}", isSceneRef=${isSceneRef}`);
 
         if (isValidImageBase64(imgData)) {
-          const mimeType = imgData.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+          const mimeType = imgData.startsWith('/9j/') ? 'image/jpeg' : imgData.startsWith('UklGR') ? 'image/webp' : 'image/png';
 
           if (characterDescriptions[i]) {
+            const isLandmarkRef = characterDescriptions[i]?.includes('LANDMARK REFERENCE');
             if (isSceneRef) {
               parts.push({ text: `STYLE REFERENCE IMAGE - Copy the visual style, colors, lighting, and atmosphere from this image:` });
+            } else if (isLandmarkRef) {
+              parts.push({ text: `LANDMARK/BUILDING REFERENCE IMAGE - Render this building EXACTLY as shown, copying all architectural details: ${characterDescriptions[i]}` });
             } else {
               parts.push({ text: `Character reference ${i + 1} - ${characterDescriptions[i]}:` });
             }
@@ -491,15 +530,18 @@ serve(async (req) => {
 
     switch (type) {
       case 'scene': {
-        const { scene, characters, location, sceneReferenceImage } = requestData;
+        const { scene, characters, location, sceneReferenceImage, landmarks } = requestData;
         if (!scene || !location) {
           throw new Error('Se requiere scene y location para generar escena');
         }
 
         const charactersInScene: Character[] = characters || [];
+        const landmarksInScene: Landmark[] = landmarks || [];
 
         console.log(`[generate-scene-images] Scene text: "${scene.text.slice(0, 100)}..."`);
         console.log(`[generate-scene-images] Characters for this scene (from frontend): ${charactersInScene.map(c => c.name).join(', ') || 'none'}`);
+        console.log(`[generate-scene-images] Landmarks for this scene: ${landmarksInScene.map(l => l.name).join(', ') || 'none'}`);
+        console.log(`[generate-scene-images] Landmark visible in scene: ${scene.landmarkVisible || false}`);
 
         const charactersWithImages = charactersInScene.filter(c => c.referenceImage);
         console.log(`[generate-scene-images] Characters with reference images: ${charactersWithImages.map(c => `${c.name} (${isUrl(c.referenceImage!) ? 'URL' : 'base64'})`).join(', ') || 'none'}`);
@@ -533,6 +575,28 @@ serve(async (req) => {
         console.log(`[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
         console.log(`[generate-scene-images] Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
 
+        // Process landmark reference images if landmark is visible in this scene
+        if (scene.landmarkVisible && landmarksInScene.length > 0) {
+          for (const lm of landmarksInScene) {
+            if (lm.referenceImages && lm.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for "${lm.name}"`);
+              // Use up to 2 landmark reference images to leave room for character refs (max 14 total)
+              for (const refImg of lm.referenceImages.slice(0, 2)) {
+                const processedLandmarkRef = await processReferenceImage(refImg);
+                if (processedLandmarkRef) {
+                  referenceImages.push(processedLandmarkRef);
+                  characterDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Landmark ref image for "${lm.name}" added. Total refs: ${referenceImages.length}`);
+                }
+              }
+            }
+          }
+        }
+
+        if (referenceImages.length > 12) {
+          console.warn(`[generate-scene-images] WARNING: ${referenceImages.length} reference images - approaching 14 limit. Landmark images may be truncated.`);
+        }
+
         if (sceneReferenceImage) {
           console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
           const processedSceneRef = await processReferenceImage(sceneReferenceImage);
@@ -547,7 +611,7 @@ serve(async (req) => {
           console.log(`[generate-scene-images] No scene reference image provided`);
         }
 
-        prompt = buildScenePrompt(styleId, scene, charactersInScene, location);
+        prompt = buildScenePrompt(styleId, scene, charactersInScene, location, landmarksInScene);
         break;
       }
 

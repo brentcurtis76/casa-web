@@ -18,6 +18,7 @@ import type {
   Story,
   StoryConfigInput,
   StoryCharacter,
+  StoryLandmark,
   StoryScene,
   LocationInfo,
   StoryStatus,
@@ -132,10 +133,20 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
           visualDescription: c.description,
           characterSheetOptions: [],
         })),
+        landmarks: (configData.landmarks || []).map((lm, i) => ({
+          id: `landmark-${i}`,
+          name: lm.name,
+          narrativeRole: lm.narrativeRole,
+          // TODO: When wired to real API, populate from response.landmarkAnalyses[i].visualDescription
+          visualDescription: '',
+          referenceImages: lm.referenceImages,
+          role: lm.role,
+        })),
         scenes: mockGeneratedContent.scenes.map((s) => ({
           number: s.number,
           text: s.text,
           visualDescription: s.visualDescription,
+          landmarkVisible: s.landmarkVisible,
           imageOptions: [],
         })),
         spiritualConnection: mockGeneratedContent.spiritualConnection,
