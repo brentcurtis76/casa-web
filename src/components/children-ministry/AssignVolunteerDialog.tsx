@@ -219,7 +219,6 @@ const AssignVolunteerDialog = ({
   };
 
   const allVolunteers = [...availableVolunteers, ...unavailableVolunteers];
-  const unavailableIds = new Set(unavailableVolunteers.map((v) => v.id));
 
   const renderVolunteerRow = (volunteer: ChildrenVolunteerRow, isUnavailable: boolean) => {
     const assignment = assignments.find((a) => a.volunteerId === volunteer.id);
