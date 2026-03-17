@@ -12,6 +12,7 @@ import type {
   ChildrenSessionAssignmentRow,
   ChildrenSessionAssignmentInsert,
   AssignmentStatus,
+  AssignmentRole,
   VolunteerFilters,
 } from '@/types/childrenMinistry';
 
@@ -103,19 +104,39 @@ export async function deleteVolunteer(id: string): Promise<void> {
 // =====================================================
 
 /**
- * Get recurring availability for a volunteer.
+ * Get currently-effective recurring availability for a volunteer.
+ * Filters by effective date range and deduplicates per day_of_week,
+ * keeping the most recent effective_from record.
  */
 export async function getRecurringAvailability(
   volunteerId: string,
 ): Promise<ChildrenRecurringAvailabilityRow[]> {
+  const today = new Date().toISOString().split('T')[0];
+
   const { data, error } = await supabase
     .from('church_children_recurring_availability')
     .select('*')
     .eq('volunteer_id', volunteerId)
-    .order('day_of_week', { ascending: true });
+    .lte('effective_from', today)
+    .order('effective_from', { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as ChildrenRecurringAvailabilityRow[];
+
+  // Client-side filter for effective_until (null = indefinite, or >= today)
+  const withinRange = (data ?? []).filter((record) => {
+    const until = record.effective_until as string | null;
+    return until === null || until >= today;
+  });
+
+  // Deduplicate per day_of_week: first-wins = most recent effective_from
+  const byDay = new Map<number, ChildrenRecurringAvailabilityRow>();
+  for (const record of withinRange) {
+    if (!byDay.has(record.day_of_week)) {
+      byDay.set(record.day_of_week, record as ChildrenRecurringAvailabilityRow);
+    }
+  }
+
+  return Array.from(byDay.values());
 }
 
 /**
@@ -227,11 +248,73 @@ export async function getAvailableVolunteers(
     return until === null || until >= date;
   });
 
-  const volunteers = withinRange
-    .map((record) => record.church_children_volunteers as unknown as ChildrenVolunteerRow)
-    .filter((v): v is ChildrenVolunteerRow => v != null && v.is_active);
+  // Deduplicate by volunteer_id to prevent returning the same volunteer multiple times
+  const seen = new Set<string>();
+  const volunteers: ChildrenVolunteerRow[] = [];
+  for (const record of withinRange) {
+    const v = record.church_children_volunteers as unknown as ChildrenVolunteerRow;
+    if (v != null && v.is_active && !seen.has(v.id)) {
+      seen.add(v.id);
+      volunteers.push(v);
+    }
+  }
 
   return volunteers;
+}
+
+/**
+ * Get existing assignments for a set of volunteers on a specific date.
+ * Used for conflict detection when assigning volunteers to sessions.
+ */
+export async function getVolunteerAssignmentsByDate(
+  volunteerIds: string[],
+  date: string,
+): Promise<Array<{
+  volunteer_id: string;
+  calendar_id: string;
+  session_date: string;
+  session_start_time: string;
+  session_end_time: string;
+  role: AssignmentRole;
+}>> {
+  if (volunteerIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('church_children_session_assignments')
+    .select('volunteer_id, role, calendar_id, church_children_calendar(date, start_time, end_time)')
+    .in('volunteer_id', volunteerIds);
+
+  if (error) throw new Error(error.message);
+
+  // Client-side filter by date (the join doesn't support .eq on nested fields reliably)
+  const results: Array<{
+    volunteer_id: string;
+    calendar_id: string;
+    session_date: string;
+    session_start_time: string;
+    session_end_time: string;
+    role: AssignmentRole;
+  }> = [];
+
+  for (const row of data ?? []) {
+    const cal = row.church_children_calendar as unknown as {
+      date: string;
+      start_time: string;
+      end_time: string;
+    } | null;
+    if (cal && cal.date === date) {
+      results.push({
+        volunteer_id: row.volunteer_id,
+        calendar_id: row.calendar_id,
+        session_date: cal.date,
+        session_start_time: cal.start_time,
+        session_end_time: cal.end_time,
+        role: row.role as AssignmentRole,
+      });
+    }
+  }
+
+  return results;
 }
 
 /**
