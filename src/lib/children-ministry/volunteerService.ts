@@ -161,6 +161,8 @@ export async function setRecurringAvailability(
 
 /**
  * Get session assignments for a calendar event, with volunteer details.
+ * Supabase returns the join under key `church_children_volunteers`.
+ * We remap it to `volunteer` to match the ChildrenCalendarFull composite type.
  */
 export async function getSessionAssignments(
   calendarId: string,
@@ -171,7 +173,13 @@ export async function getSessionAssignments(
     .eq('calendar_id', calendarId);
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as (ChildrenSessionAssignmentRow & { volunteer: ChildrenVolunteerRow })[];
+
+  return (data ?? []).map((row) => {
+    const { church_children_volunteers, ...assignment } = row as ChildrenSessionAssignmentRow & {
+      church_children_volunteers: ChildrenVolunteerRow;
+    };
+    return { ...assignment, volunteer: church_children_volunteers };
+  });
 }
 
 /**
@@ -226,35 +234,45 @@ export async function removeAssignment(id: string): Promise<void> {
 
 /**
  * Get available volunteers for a specific date and day of week.
- * Cross-references recurring_availability with effective date range.
+ * Fetches ALL availability records for the day, deduplicates per volunteer
+ * by most-recent effective_from (same pattern as getRecurringAvailability),
+ * then returns only volunteers whose most-recent record is is_available=true.
  */
 export async function getAvailableVolunteers(
   date: string,
   dayOfWeek: number,
 ): Promise<ChildrenVolunteerRow[]> {
-  const { data: available, error } = await supabase
+  // Fetch ALL records for this day_of_week (not just is_available=true)
+  // so superseding is_available=false records are considered
+  const { data, error } = await supabase
     .from('church_children_recurring_availability')
-    .select('volunteer_id, church_children_volunteers(*)')
+    .select('volunteer_id, is_available, effective_from, effective_until, church_children_volunteers(*)')
     .eq('day_of_week', dayOfWeek)
-    .eq('is_available', true)
-    .lte('effective_from', date);
+    .lte('effective_from', date)
+    .order('effective_from', { ascending: false });
 
   if (error) throw new Error(error.message);
 
   // Client-side filter for effective_until (null = indefinite, or >= date)
-  // This avoids string interpolation in .or() filter
-  const withinRange = (available ?? []).filter((record) => {
+  const withinRange = (data ?? []).filter((record) => {
     const until = record.effective_until as string | null;
     return until === null || until >= date;
   });
 
-  // Deduplicate by volunteer_id to prevent returning the same volunteer multiple times
-  const seen = new Set<string>();
-  const volunteers: ChildrenVolunteerRow[] = [];
+  // Deduplicate per volunteer_id: first-wins = most recent effective_from
+  // Then only keep volunteers whose most-recent record says is_available=true
+  const byVolunteer = new Map<string, typeof withinRange[number]>();
   for (const record of withinRange) {
-    const v = record.church_children_volunteers as unknown as ChildrenVolunteerRow;
-    if (v != null && v.is_active && !seen.has(v.id)) {
-      seen.add(v.id);
+    if (!byVolunteer.has(record.volunteer_id)) {
+      byVolunteer.set(record.volunteer_id, record);
+    }
+  }
+
+  const volunteers: ChildrenVolunteerRow[] = [];
+  for (const record of byVolunteer.values()) {
+    if (!record.is_available) continue;
+    const v = record.church_children_volunteers as ChildrenVolunteerRow | null;
+    if (v != null && v.is_active) {
       volunteers.push(v);
     }
   }
@@ -265,6 +283,7 @@ export async function getAvailableVolunteers(
 /**
  * Get existing assignments for a set of volunteers on a specific date.
  * Used for conflict detection when assigning volunteers to sessions.
+ * Filters by date server-side via inner join on church_children_calendar.
  */
 export async function getVolunteerAssignmentsByDate(
   volunteerIds: string[],
@@ -279,42 +298,27 @@ export async function getVolunteerAssignmentsByDate(
 }>> {
   if (volunteerIds.length === 0) return [];
 
+  // Use !inner join to filter assignments to only those whose calendar date matches.
+  // This avoids fetching all historical assignments and filtering client-side.
   const { data, error } = await supabase
     .from('church_children_session_assignments')
-    .select('volunteer_id, role, calendar_id, church_children_calendar(date, start_time, end_time)')
-    .in('volunteer_id', volunteerIds);
+    .select('volunteer_id, role, calendar_id, church_children_calendar!inner(date, start_time, end_time)')
+    .in('volunteer_id', volunteerIds)
+    .eq('church_children_calendar.date', date);
 
   if (error) throw new Error(error.message);
 
-  // Client-side filter by date (the join doesn't support .eq on nested fields reliably)
-  const results: Array<{
-    volunteer_id: string;
-    calendar_id: string;
-    session_date: string;
-    session_start_time: string;
-    session_end_time: string;
-    role: AssignmentRole;
-  }> = [];
-
-  for (const row of data ?? []) {
-    const cal = row.church_children_calendar as unknown as {
-      date: string;
-      start_time: string;
-      end_time: string;
-    } | null;
-    if (cal && cal.date === date) {
-      results.push({
-        volunteer_id: row.volunteer_id,
-        calendar_id: row.calendar_id,
-        session_date: cal.date,
-        session_start_time: cal.start_time,
-        session_end_time: cal.end_time,
-        role: row.role as AssignmentRole,
-      });
-    }
-  }
-
-  return results;
+  return (data ?? []).map((row) => {
+    const cal = row.church_children_calendar as { date: string; start_time: string; end_time: string };
+    return {
+      volunteer_id: row.volunteer_id,
+      calendar_id: row.calendar_id,
+      session_date: cal.date,
+      session_start_time: cal.start_time,
+      session_end_time: cal.end_time,
+      role: row.role as AssignmentRole,
+    };
+  });
 }
 
 /**

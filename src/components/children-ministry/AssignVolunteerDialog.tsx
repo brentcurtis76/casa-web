@@ -37,8 +37,10 @@ import {
   getVolunteers,
   getAvailableVolunteers,
   getVolunteerAssignmentsByDate,
+  getSessionAssignments,
   assignVolunteer,
 } from '@/lib/children-ministry/volunteerService';
+import { useAuth } from '@/components/auth/AuthContext';
 import type { ChildrenVolunteerRow, AssignmentRole } from '@/types/childrenMinistry';
 
 interface VolunteerAssignment {
@@ -72,12 +74,14 @@ const AssignVolunteerDialog = ({
   onSuccess,
 }: AssignVolunteerDialogProps) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [availableVolunteers, setAvailableVolunteers] = useState<ChildrenVolunteerRow[]>([]);
   const [unavailableVolunteers, setUnavailableVolunteers] = useState<ChildrenVolunteerRow[]>([]);
   const [assignments, setAssignments] = useState<VolunteerAssignment[]>([]);
   const [conflicts, setConflicts] = useState<Map<string, ConflictInfo[]>>(new Map());
+  const [alreadyAssignedIds, setAlreadyAssignedIds] = useState<Set<string>>(new Set());
   const [showConflictDialog, setShowConflictDialog] = useState(false);
 
   // Load available + all active volunteers and batch-load conflicts
@@ -86,10 +90,15 @@ const AssignVolunteerDialog = ({
       const loadData = async () => {
         setLoading(true);
         try {
-          const [available, allActive] = await Promise.all([
+          const [available, allActive, currentAssignments] = await Promise.all([
             getAvailableVolunteers(sessionDate, dayOfWeek),
             getVolunteers({ is_active: true }),
+            getSessionAssignments(calendarId),
           ]);
+
+          // Exclude volunteers already assigned to THIS session
+          const assignedIds = new Set(currentAssignments.map((a) => a.volunteer_id));
+          setAlreadyAssignedIds(assignedIds);
 
           const availableIds = new Set(available.map((v) => v.id));
           const unavailable = allActive.filter((v) => !availableIds.has(v.id));
@@ -143,7 +152,7 @@ const AssignVolunteerDialog = ({
   const handleUpdateAssignment = (
     volunteerId: string,
     field: keyof VolunteerAssignment,
-    value: unknown
+    value: boolean | AssignmentRole
   ) => {
     setAssignments(
       assignments.map((a) =>
@@ -153,13 +162,18 @@ const AssignVolunteerDialog = ({
   };
 
   const getSelectedWithConflicts = () => {
-    return assignments.filter((a) => a.selected && conflicts.has(a.volunteerId));
+    return assignments.filter(
+      (a) => a.selected && !alreadyAssignedIds.has(a.volunteerId) && conflicts.has(a.volunteerId)
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const selectedAssignments = assignments.filter((a) => a.selected);
+    // Only submit newly selected volunteers (exclude already-assigned)
+    const selectedAssignments = assignments.filter(
+      (a) => a.selected && !alreadyAssignedIds.has(a.volunteerId)
+    );
     if (selectedAssignments.length === 0) {
       toast({
         title: 'Error',
@@ -182,15 +196,13 @@ const AssignVolunteerDialog = ({
   const doSubmit = async (selectedAssignments: VolunteerAssignment[]) => {
     setSubmitting(true);
     try {
-      const assignedBy = null;
-
       for (const assignment of selectedAssignments) {
         await assignVolunteer({
           calendar_id: calendarId,
           volunteer_id: assignment.volunteerId,
           role: assignment.role,
           status: 'assigned',
-          assigned_by: assignedBy,
+          assigned_by: user?.id ?? null,
         });
       }
 
@@ -214,7 +226,9 @@ const AssignVolunteerDialog = ({
 
   const handleConfirmConflicts = async () => {
     setShowConflictDialog(false);
-    const selectedAssignments = assignments.filter((a) => a.selected);
+    const selectedAssignments = assignments.filter(
+      (a) => a.selected && !alreadyAssignedIds.has(a.volunteerId)
+    );
     await doSubmit(selectedAssignments);
   };
 
@@ -224,6 +238,7 @@ const AssignVolunteerDialog = ({
     const assignment = assignments.find((a) => a.volunteerId === volunteer.id);
     if (!assignment) return null;
 
+    const isAlreadyAssigned = alreadyAssignedIds.has(volunteer.id);
     const volunteerConflicts = conflicts.get(volunteer.id);
 
     return (
@@ -231,25 +246,31 @@ const AssignVolunteerDialog = ({
         <div
           className={`flex items-center gap-3 p-3 border rounded ${
             isUnavailable ? 'opacity-60 bg-gray-50' : ''
-          }`}
+          } ${isAlreadyAssigned ? 'opacity-50 bg-green-50' : ''}`}
         >
           <Checkbox
             id={`volunteer-${volunteer.id}`}
-            checked={assignment.selected}
+            checked={isAlreadyAssigned || assignment.selected}
+            disabled={isAlreadyAssigned}
             onCheckedChange={(checked) =>
-              handleUpdateAssignment(volunteer.id, 'selected', checked)
+              handleUpdateAssignment(volunteer.id, 'selected', !!checked)
             }
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-sm">{volunteer.display_name}</p>
-              {isUnavailable && (
+              {isAlreadyAssigned && (
+                <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                  Ya asignado/a
+                </span>
+              )}
+              {isUnavailable && !isAlreadyAssigned && (
                 <span className="inline-flex items-center gap-1 text-xs text-amber-600">
                   <AlertTriangle className="h-3 w-3" />
                   No disponible
                 </span>
               )}
-              {volunteerConflicts && (
+              {volunteerConflicts && !isAlreadyAssigned && (
                 <span className="inline-flex items-center gap-1 text-xs text-red-600">
                   <AlertTriangle className="h-3 w-3" />
                   Conflicto
@@ -257,7 +278,7 @@ const AssignVolunteerDialog = ({
               )}
             </div>
           </div>
-          {assignment.selected && (
+          {assignment.selected && !isAlreadyAssigned && (
             <Select
               value={assignment.role}
               onValueChange={(value) =>
@@ -275,7 +296,7 @@ const AssignVolunteerDialog = ({
             </Select>
           )}
         </div>
-        {assignment.selected && volunteerConflicts && (
+        {assignment.selected && !isAlreadyAssigned && volunteerConflicts && (
           <Alert variant="destructive" className="mt-1 py-2">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
