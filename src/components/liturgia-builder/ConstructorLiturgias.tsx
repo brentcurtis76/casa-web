@@ -927,6 +927,11 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     setIsSaving(true);
     try {
       const liturgy = buildLiturgy();
+      // Sync liturgyContext with what was actually saved (including pending changes)
+      if (liturgy.context && liturgy.context !== liturgyContext) {
+        setLiturgyContext(liturgy.context);
+        setPendingContextChanges(null);
+      }
       // Await the onSave callback to ensure the save completes before marking as not dirty
       await onSave?.(liturgy, sharedIllustration, portadasConfig);
       setIsDirty(false);
@@ -1305,6 +1310,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             elements={elements}
             elementOrder={elementOrder}
             liturgyContext={liturgyContext}
+            pendingContextChanges={pendingContextChanges}
             onExportComplete={(format) => {
               console.log(`Exportación completada: ${format}`);
             }}

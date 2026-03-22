@@ -71,6 +71,7 @@ interface ExportPanelProps {
   elements: Map<LiturgyElementType, LiturgyElement>;
   elementOrder: LiturgyElementType[];
   liturgyContext: LiturgyContext | null;
+  pendingContextChanges?: { celebrant?: string; preacher?: string } | null;
   onExportComplete?: (format: string) => void;
 }
 
@@ -78,6 +79,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   elements,
   elementOrder,
   liturgyContext,
+  pendingContextChanges,
   onExportComplete,
 }) => {
   const { toast } = useToast();
@@ -554,11 +556,20 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     console.log('[ExportPanel] Exporting celebrant PDF:', elementOrder.length, 'in order,', elements.size, 'in map');
 
     try {
+      // Merge pending context changes (e.g. celebrant/preacher edits not yet "Continuar"-ed)
+      const effectiveContext = pendingContextChanges && liturgyContext
+        ? {
+            ...liturgyContext,
+            celebrant: pendingContextChanges.celebrant ?? liturgyContext.celebrant,
+            preacher: pendingContextChanges.preacher ?? liturgyContext.preacher,
+          }
+        : liturgyContext;
+
       await exportLiturgy({
         format: 'pdf-celebrant',
         elements,
         elementOrder,
-        liturgyContext,
+        liturgyContext: effectiveContext,
       });
 
       setCelebrantCompleted(true);
