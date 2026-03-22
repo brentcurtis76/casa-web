@@ -806,8 +806,8 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     // no haya hecho clic en "Continuar"
     let contextToUse = liturgyContext;
 
-    if (currentStep === 'contexto' && pendingContextChanges) {
-      console.log('[buildLiturgy] Using pending context changes from form');
+    if (pendingContextChanges) {
+      console.log('[buildLiturgy] Using pending context changes (celebrant:', pendingContextChanges.celebrant, ')');
       contextToUse = {
         id: liturgyContext?.id || uuidv4(),
         date: pendingContextChanges.date,
@@ -821,6 +821,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
         })),
         celebrant: pendingContextChanges.celebrant,
         preacher: pendingContextChanges.preacher,
+        reflexionText: pendingContextChanges.reflexionText,
         createdAt: liturgyContext?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -927,8 +928,13 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     setIsSaving(true);
     try {
       const liturgy = buildLiturgy();
-      // Sync liturgyContext with what was actually saved (including pending changes)
-      if (liturgy.context && liturgy.context !== liturgyContext) {
+      // Always sync liturgyContext with what was actually saved
+      // This ensures pending changes (e.g. celebrant edits) are reflected in memory
+      if (liturgy.context) {
+        console.log('[handleSave] Syncing liturgyContext with saved data:', {
+          celebrant: liturgy.context.celebrant,
+          preacher: liturgy.context.preacher,
+        });
         setLiturgyContext(liturgy.context);
         setPendingContextChanges(null);
       }
