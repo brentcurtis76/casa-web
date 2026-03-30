@@ -35,6 +35,10 @@ import {
   Baby,
   Church,
   Monitor,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type {
@@ -48,7 +52,11 @@ import type {
   PortadasConfig,
   LITURGY_ORDER,
   LiturgyOrderElement,
+  CustomElementSubtype,
+  CustomElementConfig,
 } from '@/types/shared/liturgy';
+import { isCustomElement } from '@/types/shared/liturgy';
+import { customElementToSlides } from '@/lib/customElementToSlides';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { Song } from '@/types/shared/song';
 import type { Story } from '@/types/shared/story';
@@ -61,6 +69,8 @@ import {
   LecturaBiblicaEditor,
   CuentacuentoEditor,
   ElementoFijoEditor,
+  CustomElementEditor,
+  CustomElementPicker,
 } from './editors';
 import { fixedElementToSlides } from '@/lib/fixedElementToSlides';
 import type { FixedElement } from '@/types/shared/fixed-elements';
@@ -322,9 +332,10 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     initialLiturgy?.context || null
   );
 
-  // Elements state - usando Map para acceso rápido
+  // Elements state - usando Map para acceso rápido (only non-custom elements)
   const [elements, setElements] = useState<Map<LiturgyElementType, LiturgyElement>>(() => {
-    const elMap = new Map(initialLiturgy?.elements.map((e) => [e.type, e]) || []);
+    const nonCustom = initialLiturgy?.elements.filter((e) => e.type !== 'custom') || [];
+    const elMap = new Map(nonCustom.map((e) => [e.type, e]));
     console.log('[Constructor] INIT elements Map:', elMap.size, 'entries from', initialLiturgy?.elements?.length || 0, 'DB elements');
     for (const [type, el] of elMap) {
       const hasSlides = !!(el.slides?.slides?.length);
@@ -333,6 +344,15 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     return elMap;
   });
   const [selectedElement, setSelectedElement] = useState<LiturgyElementType | null>(null);
+
+  // Custom elements state — separate from the Map since multiple share type 'custom'
+  const [customElements, setCustomElements] = useState<LiturgyElement[]>(() => {
+    if (!initialLiturgy?.elements) return [];
+    return initialLiturgy.elements.filter((e) => e.type === 'custom');
+  });
+  const [selectedCustomElementId, setSelectedCustomElementId] = useState<string | null>(null);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+
   // Initialize announcements from loaded liturgy if available
   const initialAnnouncements = React.useMemo(() => {
     const anunciosElement = initialLiturgy?.elements.find(e => e.type === 'anuncios');
@@ -433,9 +453,10 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     if (!initialLiturgy?.elements || initialLiturgy.elements.length === 0) {
       return defaultOrder;
     }
-    // Construir orden a partir de los elementos guardados
-    const savedTypes = new Set(initialLiturgy.elements.map((e) => e.type));
-    const savedOrder = initialLiturgy.elements
+    // Construir orden a partir de los elementos guardados (excluding custom)
+    const nonCustom = initialLiturgy.elements.filter((e) => e.type !== 'custom');
+    const savedTypes = new Set(nonCustom.map((e) => e.type));
+    const savedOrder = nonCustom
       .sort((a, b) => a.order - b.order)
       .map((e) => e.type);
 
@@ -494,12 +515,15 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     }
     if (initialLiturgy?.elements && initialLiturgyId) {
       console.log('[ConstructorLiturgias] Syncing elements for liturgy:', initialLiturgyId);
-      setElements(new Map(initialLiturgy.elements.map((e) => [e.type, e])));
+      const nonCustom = initialLiturgy.elements.filter((e) => e.type !== 'custom');
+      setElements(new Map(nonCustom.map((e) => [e.type, e])));
+      setCustomElements(initialLiturgy.elements.filter((e) => e.type === 'custom'));
 
-      // Sync element order - merge saved order with full default order
+      // Sync element order - merge saved order with full default order (excluding custom)
       const defaultOrder = LITURGY_ELEMENTS.map((e) => e.type);
-      const savedTypes = new Set(initialLiturgy.elements.map((e) => e.type));
-      const savedOrder = initialLiturgy.elements
+      const nonCustomSaved = initialLiturgy.elements.filter((e) => e.type !== 'custom');
+      const savedTypes = new Set(nonCustomSaved.map((e) => e.type));
+      const savedOrder = nonCustomSaved
         .sort((a, b) => a.order - b.order)
         .map((e) => e.type);
 
@@ -743,6 +767,66 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     console.log(`[ConstructorLiturgias] Cleared element: ${elementType}`);
   }, []);
 
+  // === Custom element handlers ===
+  const handleAddCustomElement = useCallback((subtype: CustomElementSubtype) => {
+    const defaultLabels: Record<CustomElementSubtype, string> = {
+      'image-slide': 'Slide de Imagen',
+      'title-slide': 'Slide de Título',
+      'call-response': 'Llamado y Respuesta',
+      'text-slide': 'Slide de Texto',
+      'blank-slide': 'Slide en Blanco',
+    };
+    const newConfig: CustomElementConfig = {
+      customType: subtype,
+      label: defaultLabels[subtype],
+    };
+    const newElement: LiturgyElement = {
+      id: uuidv4(),
+      type: 'custom',
+      order: LITURGY_ELEMENTS.length + customElements.length,
+      title: newConfig.label,
+      status: 'pending',
+      config: newConfig as unknown as Record<string, unknown>,
+    };
+    setCustomElements((prev) => [...prev, newElement]);
+    // Select the new element and clear fixed selection
+    setSelectedCustomElementId(newElement.id);
+    setSelectedElement(null);
+    setIsDirty(true);
+  }, [customElements.length]);
+
+  const handleUpdateCustomElement = useCallback((id: string, config: CustomElementConfig, slides: SlideGroup) => {
+    setCustomElements((prev) =>
+      prev.map((el) =>
+        el.id === id
+          ? { ...el, title: config.label, status: 'completed', slides, config: config as unknown as Record<string, unknown> }
+          : el
+      )
+    );
+    setIsDirty(true);
+  }, []);
+
+  const handleDeleteCustomElement = useCallback((id: string) => {
+    setCustomElements((prev) => prev.filter((el) => el.id !== id));
+    if (selectedCustomElementId === id) {
+      setSelectedCustomElementId(null);
+    }
+    setIsDirty(true);
+  }, [selectedCustomElementId]);
+
+  const handleMoveCustomElement = useCallback((id: string, direction: 'up' | 'down') => {
+    setCustomElements((prev) => {
+      const idx = prev.findIndex((el) => el.id === id);
+      if (idx === -1) return prev;
+      const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+      return arr;
+    });
+    setIsDirty(true);
+  }, []);
+
   // Confirmar elemento fijo automáticamente (sin abrir editor)
   const handleConfirmFixedElement = useCallback(async (elementType: LiturgyElementType) => {
     const elementDef = LITURGY_ELEMENTS.find((e) => e.type === elementType);
@@ -908,10 +992,17 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       });
     }
 
+    // Append custom elements after fixed elements
+    const baseOrder = sortedElements.length;
+    const customWithOrder = customElements.map((el, idx) => ({
+      ...el,
+      order: baseOrder + idx,
+    }));
+
     return {
       id: initialLiturgy?.id || uuidv4(),
       context: contextToUse,
-      elements: sortedElements,
+      elements: [...sortedElements, ...customWithOrder],
       status: completionStats.percentage === 100 ? 'ready' : 'in-progress',
       metadata: {
         createdAt: initialLiturgy?.metadata.createdAt || new Date().toISOString(),
@@ -950,6 +1041,21 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
 
   // Render element editor based on type
   const renderElementEditor = () => {
+    // Custom element editor (takes priority if a custom element is selected)
+    if (selectedCustomElementId) {
+      const customEl = customElements.find((el) => el.id === selectedCustomElementId);
+      if (customEl) {
+        return (
+          <CustomElementEditor
+            key={customEl.id}
+            element={customEl}
+            onUpdate={(config, slides) => handleUpdateCustomElement(customEl.id, config, slides)}
+            onDelete={() => handleDeleteCustomElement(customEl.id)}
+          />
+        );
+      }
+    }
+
     if (!selectedElement || !liturgyContext) return null;
 
     const elementDef = LITURGY_ELEMENTS.find((e) => e.type === selectedElement);
@@ -1208,7 +1314,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
                         {/* Icon and Label - clickeable para abrir editor */}
                         <button
                           type="button"
-                          onClick={() => setSelectedElement(element.type)}
+                          onClick={() => { setSelectedElement(element.type); setSelectedCustomElementId(null); }}
                           className="flex-1 min-w-0 text-left"
                         >
                           <div className="flex items-center gap-2">
@@ -1260,12 +1366,145 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
                     </div>
                   );
                 })}
+
+                {/* Custom Elements */}
+                {customElements.length > 0 && (
+                  <div
+                    className="mt-3 pt-3 border-t space-y-1"
+                    style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                  >
+                    <span
+                      className="text-xs font-medium uppercase tracking-wide px-1"
+                      style={{
+                        fontFamily: CASA_BRAND.fonts.body,
+                        color: CASA_BRAND.colors.secondary.grayMedium,
+                      }}
+                    >
+                      Elementos Personalizados
+                    </span>
+                    {customElements.map((el, idx) => {
+                      const isSelected = selectedCustomElementId === el.id;
+                      const hasSlides = !!(el.slides?.slides?.length);
+                      return (
+                        <div key={el.id} className="flex items-center gap-1">
+                          <div
+                            className={`flex-1 p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
+                              isSelected ? 'ring-2 ring-offset-1' : ''
+                            }`}
+                            style={{
+                              backgroundColor: isSelected
+                                ? `${CASA_BRAND.colors.amber.light}20`
+                                : hasSlides
+                                  ? `${CASA_BRAND.colors.amber.light}10`
+                                  : CASA_BRAND.colors.primary.white,
+                              borderWidth: 1,
+                              borderColor: isSelected
+                                ? CASA_BRAND.colors.primary.amber
+                                : CASA_BRAND.colors.secondary.grayLight,
+                              ringColor: CASA_BRAND.colors.primary.amber,
+                            }}
+                          >
+                            <ElementStatusIndicator status={hasSlides ? 'completed' : 'pending'} />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCustomElementId(el.id);
+                                setSelectedElement(null);
+                              }}
+                              className="flex-1 min-w-0 text-left"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span style={{ color: hasSlides ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium }}>
+                                  <FileText size={18} />
+                                </span>
+                                <span
+                                  className="truncate"
+                                  style={{
+                                    fontFamily: CASA_BRAND.fonts.body,
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    color: CASA_BRAND.colors.primary.black,
+                                  }}
+                                >
+                                  {el.title}
+                                </span>
+                              </div>
+                            </button>
+                          </div>
+                          {/* Move up/down + delete buttons */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveCustomElement(el.id, 'up')}
+                              disabled={idx === 0}
+                              className="p-1 rounded transition-colors hover:bg-gray-100 disabled:opacity-30"
+                              style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                              title="Mover arriba"
+                            >
+                              <ArrowUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveCustomElement(el.id, 'down')}
+                              disabled={idx === customElements.length - 1}
+                              className="p-1 rounded transition-colors hover:bg-gray-100 disabled:opacity-30"
+                              style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                              title="Mover abajo"
+                            >
+                              <ArrowDown size={12} />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomElement(el.id)}
+                            className="p-1 rounded transition-colors hover:bg-red-50"
+                            style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                            title="Eliminar"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add Custom Element button */}
+                <button
+                  type="button"
+                  onClick={() => setShowCustomPicker(true)}
+                  className="w-full mt-3 p-3 rounded-lg border-2 border-dashed flex items-center justify-center gap-2 transition-colors hover:border-solid"
+                  style={{
+                    borderColor: CASA_BRAND.colors.secondary.grayLight,
+                    color: CASA_BRAND.colors.secondary.grayMedium,
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = CASA_BRAND.colors.primary.amber;
+                    e.currentTarget.style.color = CASA_BRAND.colors.primary.amber;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = CASA_BRAND.colors.secondary.grayLight;
+                    e.currentTarget.style.color = CASA_BRAND.colors.secondary.grayMedium;
+                  }}
+                >
+                  <Plus size={16} />
+                  Agregar Elemento Personalizado
+                </button>
+
+                {/* Custom Element Picker Dialog */}
+                <CustomElementPicker
+                  open={showCustomPicker}
+                  onOpenChange={setShowCustomPicker}
+                  onSelect={handleAddCustomElement}
+                />
               </div>
             </div>
 
             {/* Element Editor - Right Panel */}
             <div className="col-span-8">
-              {selectedElement && liturgyContext ? (
+              {(selectedElement || selectedCustomElementId) && liturgyContext ? (
                 <div
                   className="p-6 rounded-xl border min-h-[400px]"
                   style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
@@ -1307,6 +1546,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             onOrderChange={handleOrderChange}
             liturgyTitle={liturgyContext?.title}
             liturgyDate={liturgyContext?.date}
+            customElements={customElements}
           />
         );
 
@@ -1320,6 +1560,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             onExportComplete={(format) => {
               console.log(`Exportación completada: ${format}`);
             }}
+            customElements={customElements}
           />
         );
     }

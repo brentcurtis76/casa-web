@@ -73,6 +73,7 @@ interface ExportPanelProps {
   liturgyContext: LiturgyContext | null;
   pendingContextChanges?: { celebrant?: string; preacher?: string } | null;
   onExportComplete?: (format: string) => void;
+  customElements?: LiturgyElement[];
 }
 
 const ExportPanel: React.FC<ExportPanelProps> = ({
@@ -81,6 +82,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   liturgyContext,
   pendingContextChanges,
   onExportComplete,
+  customElements = [],
 }) => {
   const { toast } = useToast();
   const { hasRole } = useAuth();

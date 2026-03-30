@@ -8,3 +8,5 @@ export { default as CancionSelector } from './CancionSelector';
 export { default as LecturaBiblicaEditor } from './LecturaBiblicaEditor';
 export { default as CuentacuentoEditor } from './CuentacuentoEditor';
 export { default as ElementoFijoEditor } from './ElementoFijoEditor';
+export { default as CustomElementEditor } from './CustomElementEditor';
+export { default as CustomElementPicker } from './CustomElementPicker';

@@ -78,6 +78,7 @@ const ELEMENT_ICONS: Record<LiturgyElementType, React.ReactNode> = {
   'ofrenda': <Gift size={16} />,
   'anuncios': <Megaphone size={16} />,
   'bendicion': <Church size={16} />,
+  'custom': <FileText size={16} />,
 };
 
 /**
@@ -102,6 +103,7 @@ const ELEMENT_LABELS: Record<LiturgyElementType, string> = {
   'ofrenda': 'Ofrenda',
   'anuncios': 'Anuncios',
   'bendicion': 'Bendición Final',
+  'custom': 'Elemento Personalizado',
 };
 
 /**
@@ -365,6 +367,7 @@ interface VistaPreviaProps {
   onOrderChange: (newOrder: LiturgyElementType[]) => void;
   liturgyTitle?: string;
   liturgyDate?: Date;
+  customElements?: LiturgyElement[];
 }
 
 /**
@@ -376,6 +379,7 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
   onOrderChange,
   liturgyTitle,
   liturgyDate,
+  customElements = [],
 }) => {
   // Estado para controlar qué elementos están expandidos
   const [expandedElements, setExpandedElements] = useState<Set<LiturgyElementType>>(new Set());
@@ -433,7 +437,7 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
 
   // Preparar elementos para mostrar
   const sortedElements = useMemo(() => {
-    return elementOrder.map((type) => {
+    const fixed = elementOrder.map((type) => {
       const element = elements.get(type);
       const defaultLabel = ELEMENT_LABELS[type];
       const slides = element?.slides || element?.editedSlides;
@@ -451,7 +455,18 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
         slides,
       };
     });
-  }, [elementOrder, elements, getElementStatus]);
+
+    // Append custom elements after fixed elements
+    const custom = customElements.map((el) => ({
+      type: 'custom' as LiturgyElementType,
+      status: (el.slides ? 'completed' : 'pending') as LiturgyElementStatus,
+      title: el.title,
+      sourceInfo: undefined,
+      slides: el.slides,
+    }));
+
+    return [...fixed, ...custom];
+  }, [elementOrder, elements, getElementStatus, customElements]);
 
   // Estadísticas de completitud
   const stats = useMemo(() => {
