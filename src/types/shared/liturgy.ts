@@ -6,6 +6,9 @@
 import type { SlideGroup } from './slide';
 import type { PresentationTheme } from '@/lib/presentation/themes';
 
+/** Prefix used to encode custom element IDs in the `tipo` DB column (e.g. `custom-abc123`). */
+export const CUSTOM_TIPO_PREFIX = 'custom-';
+
 /**
  * Contexto Transversal - Información compartida por todos los componentes de la liturgia
  */

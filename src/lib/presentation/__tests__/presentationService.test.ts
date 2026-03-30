@@ -160,6 +160,7 @@ describe('presentationService custom element decoding', () => {
     expect(data).not.toBeNull();
     expect(data?.elements).toHaveLength(1);
     expect(data?.elements[0].type).toBe('custom');
+    expect(data?.elements[0].id).toBe('abc123');
     expect(data?.elements[0].title).toBe('Mi Elemento');
     expect(data?.slides).toHaveLength(1);
   });
@@ -227,12 +228,15 @@ describe('presentationService custom element decoding', () => {
 
     expect(data).not.toBeNull();
     expect(data?.elements).toHaveLength(3);
-    // Verify order and types
+    // Verify order, types, and IDs
     expect(data?.elements[0].type).toBe('portada-principal');
+    expect(data?.elements[0].id).toBe('el-1');
     expect(data?.elements[0].startSlideIndex).toBe(0);
     expect(data?.elements[1].type).toBe('custom');
+    expect(data?.elements[1].id).toBe('abc123');
     expect(data?.elements[1].startSlideIndex).toBe(1);
     expect(data?.elements[2].type).toBe('lectura-biblica');
+    expect(data?.elements[2].id).toBe('el-3');
     expect(data?.elements[2].startSlideIndex).toBe(2);
     // Verify slides
     expect(data?.slides).toHaveLength(3);
