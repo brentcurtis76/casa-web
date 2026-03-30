@@ -54,6 +54,7 @@ export type LiturgyElementType =
   | 'ofrenda'                  // 16. Ofrenda (fijo)
   | 'anuncios'                 // 17. Anuncios (opcional)
   | 'bendicion'                // 18. Bendición final (fijo)
+  | 'custom'                   // Elemento personalizado (dinámico)
 
 /**
  * Un elemento individual dentro de la liturgia
@@ -171,7 +172,34 @@ export type LiturgyElementStatus = 'pending' | 'in_progress' | 'completed' | 'sk
 /**
  * Categoría de elemento litúrgico
  */
-export type LiturgyElementCategory = 'portada' | 'oracion' | 'cancion' | 'lectura' | 'fijo' | 'otro';
+export type LiturgyElementCategory = 'portada' | 'oracion' | 'cancion' | 'lectura' | 'fijo' | 'otro' | 'custom';
+
+/**
+ * Subtipo de elemento personalizado
+ */
+export type CustomElementSubtype =
+  | 'image-slide'
+  | 'title-slide'
+  | 'call-response'
+  | 'text-slide'
+  | 'blank-slide';
+
+/**
+ * Configuración de un elemento personalizado
+ */
+export interface CustomElementConfig {
+  customType: CustomElementSubtype;
+  label: string;
+  title?: string;
+  subtitle?: string;
+  imageUrl?: string;
+  imageConfig?: IllustrationConfig;
+  tiempos?: { lider: string; congregacion: string }[];
+  titleText?: string;
+  subtitleText?: string;
+  bodyText?: string;
+  backgroundColor?: string;
+}
 
 /**
  * Definición extendida de elemento del orden litúrgico
@@ -336,6 +364,14 @@ export const SYSTEM_TEMPLATES: LiturgyTemplate[] = [
       { type: 'santa-cena', label: 'Santa Cena', required: false, category: 'fijo', fixedElementFile: 'santa-cena.json', order: 4 },
       { type: 'bendicion', label: 'Bendición', required: true, category: 'fijo', fixedElementFile: 'bendicion-final.json', order: 5 },
     ],
+  },
+  {
+    id: 'en-blanco',
+    name: 'En Blanco',
+    description: 'Plantilla vacía para construir una liturgia desde cero',
+    defaultTheme: 'light',
+    isSystem: true,
+    elements: [],
   },
 ];
 
