@@ -543,10 +543,13 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     return isValid ? story : null;
   }, [elements]);
 
-  // Count slides
+  // Count slides (including custom elements)
   const totalSlides = elementOrder.reduce((count, type) => {
     const element = elements.get(type);
     const slides = element?.slides?.slides || element?.editedSlides?.slides || [];
+    return count + slides.length;
+  }, 0) + customElements.reduce((count, el) => {
+    const slides = el.editedSlides?.slides || el.slides?.slides || [];
     return count + slides.length;
   }, 0);
 
@@ -572,6 +575,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         elements,
         elementOrder,
         liturgyContext: effectiveContext,
+        customElements,
       });
 
       setCelebrantCompleted(true);

@@ -521,6 +521,10 @@ export const PresenterView: React.FC = () => {
           return { type: 'anuncio', title: 'Video' };
         case 'blank':
           return { type: 'anuncio', title: 'Diapositiva en Blanco' };
+        case 'custom-text':
+          return { type: 'texto personalizado', title: title + (title.length >= 30 ? '...' : '') };
+        case 'custom-image':
+          return { type: 'imagen personalizada', title: 'Imagen' };
         default:
           return { type: 'anuncio', title: title + (title.length >= 30 ? '...' : '') };
       }
