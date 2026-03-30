@@ -296,10 +296,11 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
         slides.push(...slideArray);
 
         // Crear elemento aplanado para navegación
+        const decodedType = (elemento.tipo.startsWith('custom-') ? 'custom' : elemento.tipo) as LiturgyElementType;
         elements.push({
           id: elemento.id,
-          type: elemento.tipo as LiturgyElementType,
-          title: elemento.titulo || getElementLabel(elemento.tipo as LiturgyElementType),
+          type: decodedType,
+          title: elemento.titulo || getElementLabel(decodedType),
           startSlideIndex: startIndex,
           endSlideIndex: slides.length - 1,
           slideCount: slideArray.length,
@@ -359,6 +360,7 @@ function getElementLabel(type: LiturgyElementType): string {
     'ofrenda': 'Ofrenda',
     'anuncios': 'Anuncios',
     'bendicion': 'Bendicion',
+    'custom': 'Elemento personalizado',
   };
   return labels[type] || type;
 }

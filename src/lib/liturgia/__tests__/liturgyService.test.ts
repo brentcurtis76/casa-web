@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Liturgy } from '@/types/shared/liturgy';
-import { saveLiturgy } from '@/lib/liturgia/liturgyService';
+import { saveLiturgy, loadLiturgy } from '@/lib/liturgia/liturgyService';
 import { supabase } from '@/integrations/supabase/client';
 
 type SupabaseMock = {
@@ -136,6 +136,169 @@ describe('saveLiturgy failure paths', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('cleanup failed');
+  });
+});
+
+describe('saveLiturgy custom element encoding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('encodes custom element tipo as custom-{elementId}', async () => {
+    const upsertSpy = vi.fn(async () => ({ error: null }));
+
+    supabaseMock.auth.getUser = vi.fn(async () => ({
+      data: { user: { id: 'user-1' } },
+      error: null,
+    }));
+
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'liturgias') {
+        return {
+          upsert: () => ({
+            select: () => ({
+              single: async () => ({
+                data: { id: 'lit-1', fecha: '2026-02-01' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'liturgia_elementos') {
+        return {
+          upsert: upsertSpy,
+          delete: () => ({ eq: () => ({ not: async () => ({ error: null }) }) }),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const liturgy = createTestLiturgy();
+    liturgy.elements.push({
+      id: 'abc123',
+      type: 'custom',
+      order: 1,
+      title: 'Mi Elemento',
+      status: 'completed',
+      slides: null,
+    });
+
+    await saveLiturgy(liturgy);
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    const upsertedRows = upsertSpy.mock.calls[0][0] as Array<{ tipo: string }>;
+    const customRow = upsertedRows.find((r) => r.tipo.startsWith('custom-'));
+    expect(customRow).toBeDefined();
+    expect(customRow!.tipo).toBe('custom-abc123');
+
+    // Non-custom element should pass through unchanged
+    const portadaRow = upsertedRows.find((r) => r.tipo === 'portada-principal');
+    expect(portadaRow).toBeDefined();
+  });
+});
+
+describe('loadLiturgy custom element decoding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('restores type to custom and extracts element ID from custom-{id} tipo', async () => {
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'liturgias') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'lit-1',
+                  titulo: 'Test',
+                  fecha: '2026-02-01',
+                  estado: 'en-progreso',
+                  celebrante: null,
+                  predicador: null,
+                  reflexion_texto: null,
+                  resumen: null,
+                  created_at: '2026-01-31T00:00:00Z',
+                  updated_at: '2026-01-31T00:00:00Z',
+                  portadas_config: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'liturgia_lecturas') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => ({
+                data: [],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'liturgia_elementos') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => ({
+                data: [
+                  {
+                    id: 'db-row-1',
+                    tipo: 'custom-abc123',
+                    orden: 0,
+                    titulo: 'My Custom',
+                    status: 'completed',
+                    slides: null,
+                    source_id: null,
+                    config: null,
+                    custom_content: null,
+                    edited_slides: null,
+                  },
+                  {
+                    id: 'db-row-2',
+                    tipo: 'portada-principal',
+                    orden: 1,
+                    titulo: 'Portada',
+                    status: 'completed',
+                    slides: null,
+                    source_id: null,
+                    config: null,
+                    custom_content: null,
+                    edited_slides: null,
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const result = await loadLiturgy('lit-1');
+
+    expect(result).not.toBeNull();
+    const elements = result!.liturgy.elements;
+    const customEl = elements.find((e) => e.type === 'custom');
+    expect(customEl).toBeDefined();
+    expect(customEl!.id).toBe('abc123');
+    expect(customEl!.type).toBe('custom');
+
+    // Non-custom element passes through
+    const portadaEl = elements.find((e) => e.type === 'portada-principal');
+    expect(portadaEl).toBeDefined();
+    expect(portadaEl!.id).toBe('db-row-2');
   });
 });
 
