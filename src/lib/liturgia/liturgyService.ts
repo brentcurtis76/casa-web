@@ -521,7 +521,7 @@ export async function saveLiturgy(
       // caused by delete+insert and to keep save resilient against partial failures.
       const elementos = processedElements.map((e) => ({
         liturgia_id: liturgiaId,
-        tipo: e.type,
+        tipo: e.type === 'custom' ? `custom-${e.id}` : e.type,
         orden: e.order,
         titulo: e.title || null,
         slides: e.slides || null,
@@ -669,8 +669,8 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
         updatedAt: liturgiaData.updated_at,
       },
       elements: (elementosData || []).map((e: DBLiturgiaElemento) => ({
-        id: e.id,
-        type: e.tipo as LiturgyElement['type'],
+        id: e.tipo.startsWith('custom-') ? e.tipo.slice(7) : e.id,
+        type: (e.tipo.startsWith('custom-') ? 'custom' : e.tipo) as LiturgyElement['type'],
         order: e.orden,
         title: e.titulo || undefined,
         slides: e.slides as LiturgyElement['slides'],
