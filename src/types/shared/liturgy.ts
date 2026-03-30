@@ -170,7 +170,12 @@ export interface LiturgyContextInput {
 export type LiturgyElementStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
 
 /**
- * Categoría de elemento litúrgico
+ * Categoría de elemento litúrgico.
+ *
+ * - `'otro'` — System-defined non-liturgical elements (e.g., cuentacuentos, anuncios)
+ *   that have a fixed type in `LiturgyElementType`.
+ * - `'custom'` — User-created dynamic elements added via the custom element picker.
+ *   These use `type: 'custom'` in `LiturgyElement` with a `CustomElementConfig` in `config`.
  */
 export type LiturgyElementCategory = 'portada' | 'oracion' | 'cancion' | 'lectura' | 'fijo' | 'otro' | 'custom';
 
@@ -185,20 +190,53 @@ export type CustomElementSubtype =
   | 'blank-slide';
 
 /**
- * Configuración de un elemento personalizado
+ * Configuración de un elemento personalizado.
+ *
+ * Each optional field is associated with a specific `CustomElementSubtype`:
+ * - **`image-slide`**: uses `title`, `subtitle`, `imageUrl`, `imageConfig`
+ *   (cover-style slides with a background image)
+ * - **`title-slide`**: uses `titleText`, `subtitleText`
+ *   (text-only title cards without a background image)
+ * - **`text-slide`**: uses `bodyText`
+ *   (body copy paragraph slide)
+ * - **`call-response`**: uses `tiempos`
+ *   (leader/congregation antiphonal exchanges)
+ * - **`blank-slide`**: uses `backgroundColor`
+ *   (empty transition slide with optional background color)
  */
 export interface CustomElementConfig {
+  /** Discriminator — which subtype this element represents. */
   customType: CustomElementSubtype;
+  /** Human-readable label shown in the liturgy builder sidebar. */
   label: string;
+  /** Cover title — used by `image-slide` subtype. */
   title?: string;
+  /** Cover subtitle — used by `image-slide` subtype. */
   subtitle?: string;
+  /** Background image URL — used by `image-slide` subtype. */
   imageUrl?: string;
+  /** Image position/scale/opacity — used by `image-slide` subtype. */
   imageConfig?: IllustrationConfig;
+  /** Leader/congregation exchanges — used by `call-response` subtype. */
   tiempos?: { lider: string; congregacion: string }[];
+  /** Title card heading — used by `title-slide` subtype. */
   titleText?: string;
+  /** Title card sub-heading — used by `title-slide` subtype. */
   subtitleText?: string;
+  /** Paragraph text — used by `text-slide` subtype. */
   bodyText?: string;
+  /** Background color hex — used by `blank-slide` subtype. */
   backgroundColor?: string;
+}
+
+/**
+ * Type guard that narrows a `LiturgyElement` to one whose `config` is a
+ * `CustomElementConfig`. Use this instead of casting from `Record<string, unknown>`.
+ */
+export function isCustomElement(
+  el: LiturgyElement
+): el is LiturgyElement & { config: CustomElementConfig } {
+  return el.type === 'custom' && el.config != null && 'customType' in el.config;
 }
 
 /**
