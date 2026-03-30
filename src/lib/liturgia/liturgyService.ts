@@ -4,6 +4,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import type { Liturgy, LiturgyElement, PortadasConfig } from '@/types/shared/liturgy';
+import { CUSTOM_TIPO_PREFIX } from '@/types/shared/liturgy';
 import { format } from 'date-fns';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 
@@ -521,7 +522,7 @@ export async function saveLiturgy(
       // caused by delete+insert and to keep save resilient against partial failures.
       const elementos = processedElements.map((e) => ({
         liturgia_id: liturgiaId,
-        tipo: e.type,
+        tipo: e.type === 'custom' ? `${CUSTOM_TIPO_PREFIX}${e.id}` : e.type,
         orden: e.order,
         titulo: e.title || null,
         slides: e.slides || null,
@@ -669,8 +670,8 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
         updatedAt: liturgiaData.updated_at,
       },
       elements: (elementosData || []).map((e: DBLiturgiaElemento) => ({
-        id: e.id,
-        type: e.tipo as LiturgyElement['type'],
+        id: e.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? e.tipo.slice(CUSTOM_TIPO_PREFIX.length) : e.id,
+        type: (e.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? 'custom' : e.tipo) as LiturgyElement['type'],
         order: e.orden,
         title: e.titulo || undefined,
         slides: e.slides as LiturgyElement['slides'],

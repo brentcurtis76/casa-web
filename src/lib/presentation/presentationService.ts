@@ -5,6 +5,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { LiturgyElement, LiturgyElementType, PortadasConfig, IllustrationConfig } from '@/types/shared/liturgy';
+import { CUSTOM_TIPO_PREFIX } from '@/types/shared/liturgy';
 import type { PresentationData, FlattenedElement } from './types';
 import { migrateAllSlideImageUrls } from '@/lib/cuentacuentos/imageUtils';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -296,10 +297,11 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
         slides.push(...slideArray);
 
         // Crear elemento aplanado para navegación
+        const decodedType = (elemento.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? 'custom' : elemento.tipo) as LiturgyElementType;
         elements.push({
-          id: elemento.id,
-          type: elemento.tipo as LiturgyElementType,
-          title: elemento.titulo || getElementLabel(elemento.tipo as LiturgyElementType),
+          id: elemento.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? elemento.tipo.slice(CUSTOM_TIPO_PREFIX.length) : elemento.id,
+          type: decodedType,
+          title: elemento.titulo || getElementLabel(decodedType),
           startSlideIndex: startIndex,
           endSlideIndex: slides.length - 1,
           slideCount: slideArray.length,
@@ -359,6 +361,7 @@ function getElementLabel(type: LiturgyElementType): string {
     'ofrenda': 'Ofrenda',
     'anuncios': 'Anuncios',
     'bendicion': 'Bendicion',
+    'custom': 'Elemento personalizado',
   };
   return labels[type] || type;
 }
