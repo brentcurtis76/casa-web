@@ -19,7 +19,9 @@ export type SlideType =
   | 'blessing'             // Bendición
   | 'title'                // Título de sección
   | 'blank'                // Slide en blanco / transición
-  | 'video';               // Video slide
+  | 'video'                // Video slide
+  | 'custom-text'          // Elemento personalizado (texto)
+  | 'custom-image';        // Elemento personalizado (imagen)
 
 /**
  * Configuración de reproducción de video
@@ -72,7 +74,7 @@ export interface Slide {
 /**
  * Tipo de grupo de slides
  */
-export type SlideGroupType = 'song' | 'prayer' | 'reading' | 'creed' | 'announcement' | 'blessing';
+export type SlideGroupType = 'song' | 'prayer' | 'reading' | 'creed' | 'announcement' | 'blessing' | 'custom';
 
 /**
  * Grupo de slides (ej: una canción completa, una oración completa)
