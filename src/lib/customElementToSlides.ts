@@ -40,7 +40,7 @@ export function customImageSlideToSlides(
       id: generateId(),
       type: 'custom-image',
       content: {
-        primary: config.title || '',
+        primary: config.title || config.label,
         subtitle: config.subtitle,
         imageUrl: config.imageUrl,
       },
@@ -89,7 +89,7 @@ export function customTitleSlideToSlides(
       id: generateId(),
       type: 'title',
       content: {
-        primary: config.titleText || '',
+        primary: config.titleText || config.label,
         subtitle: config.subtitleText,
       },
       style: {
