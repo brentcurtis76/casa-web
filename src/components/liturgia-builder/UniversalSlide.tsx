@@ -942,6 +942,87 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
       );
     }
 
+    // Slides de texto personalizado
+    if (type === 'custom-text') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center" style={{ padding: `0 ${48 * scale}px` }}>
+          {slide.content.subtitle && (
+            <h2
+              style={{
+                fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
+                fontWeight: 500,
+                fontSize: `${40 * scale}px`,
+                color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
+                marginBottom: `${24 * scale}px`,
+              }}
+            >
+              {slide.content.subtitle}
+            </h2>
+          )}
+          <p
+            className="whitespace-pre-line"
+            style={{
+              fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
+              fontWeight: 400,
+              fontSize: `${28 * scale}px`,
+              lineHeight: 1.7,
+              color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
+            }}
+          >
+            {slide.content.primary}
+          </p>
+        </div>
+      );
+    }
+
+    // Slides de imagen personalizado
+    if (type === 'custom-image') {
+      return (
+        <div
+          className="relative flex flex-col items-center justify-center h-full text-center"
+          style={{ overflow: 'hidden' }}
+        >
+          {slide.content.imageUrl && (
+            <img
+              src={slide.content.imageUrl}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ opacity: 0.7 }}
+            />
+          )}
+          <div className="relative z-10" style={{ padding: `0 ${48 * scale}px` }}>
+            {slide.content.primary && (
+              <h2
+                style={{
+                  fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
+                  fontWeight: 600,
+                  fontSize: `${48 * scale}px`,
+                  color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.white,
+                  textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+                  marginBottom: `${12 * scale}px`,
+                }}
+              >
+                {slide.content.primary}
+              </h2>
+            )}
+            {slide.content.subtitle && (
+              <p
+                style={{
+                  fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
+                  fontWeight: 400,
+                  fontSize: `${32 * scale}px`,
+                  color: textColorOverride || CASA_BRAND.colors.primary.white,
+                  textShadow: '0 1px 4px rgba(0,0,0,0.6)',
+                }}
+              >
+                {slide.content.subtitle}
+              </p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     // Slides en blanco / transición
     if (type === 'blank') {
       return <div className="h-full" />;
