@@ -1,134 +1,103 @@
-# CASA — Project Rules
+# CASA — Project Instructions
 
-> Church community platform for Iglesia Anglicana del Redentor.
-> Vite + React + TypeScript + Tailwind/shadcn + Supabase.
+## MANDATORY: No Direct Code Edits
 
----
+**STOP. Do NOT use Edit, Write, or any file-modification tool on source files (.ts, .tsx, .js, .jsx, .css, .sql).**
 
-## Who Are You?
+When the user describes a bug, feature, or refactoring task, you MUST:
 
-If you are **Cowork**: you diagnose, plan, and delegate. You do NOT edit files. Read the Cowork section below.
-
-If you are **Claude Code**: you execute tasks. Read the Claude Code section below.
-
-Both: read Hard Rules and Project Context regardless.
-
----
-
-## Cowork Rules
-
-**You do NOT edit files in this project. EVER.**
-
-All code changes, bug fixes, refactors — including one-line fixes — go through `bridge_post_task` with `project='casa'`.
-
-Your job:
-1. Investigate the issue (read files, check logs, trace the bug)
-2. Describe the root cause and the fix clearly
-3. Post it via `bridge_post_task` with enough context for Claude Code to execute
-4. Follow up with `bridge_wait_for_task` and report the result
-
-You may READ any file for diagnosis. You may NOT write, edit, or create files.
-
-### Bridge Task Format
-
-```json
-{
-  "project": "casa",
-  "task": "<what to do>",
-  "context": "<relevant files, root cause, suggested fix>"
-}
+```bash
+jb post "descriptive title" --project casa --type code --prompt "full description of the problem and what needs to change"
 ```
 
+Then IMMEDIATELY:
+
+```bash
+jb wait <task_id> --timeout 300
+```
+
+This is not optional. This is not a suggestion. Do not explore the code first. Do not diagnose first. Do not create branches. Take the user's description, formulate a clear prompt, and post it to the pipeline. The pipeline agents (PM, Architect, Dev, Codex code review, QA) will handle the rest.
+
+**The ONLY exceptions where you may edit files directly:**
+- Brent explicitly says "skip the pipeline" or "just edit it directly"
+- Typos in comments or markdown docs
+- Config-only changes (env files, package.json version bumps)
+
+If `jb` is not found, run: `export PATH="$HOME/.local/bin:$PATH"` and retry.
+
 ---
 
-## Claude Code Rules
+> Church community platform for Iglesia Redentor.
+> Full project context: `~/SecondBrain/projects/casa.md`
 
-When executing a task:
-1. Create a feature branch (≤20 chars, e.g. `fix/child-url`)
-2. Make the changes
-3. Run ALL quality gates before reporting complete:
-   - `npx tsc --noEmit`
-   - `npm run lint`
-   - `npm run build`
-4. Commit with a clear message
-5. Report result back through the bridge
+## Project Identity
 
-If any quality gate fails, fix the issue before reporting complete. Never skip gates.
+- **Framework**: Vite SPA, React Router 6, TypeScript strict
+- **Database**: Supabase (shared instance with Life OS)
+- **Auth**: Supabase Auth with 11 RBAC roles
+- **Hosting**: Vercel (auto-deploy on push to `main`)
+- **Repo path**: `/Users/brentcurtis/Documents/casa-web`
 
----
+## Multi-Agent Pipeline
+
+This project uses the **Jake Pipeline** — a multi-agent workflow with multi-vendor LLM routing.
+
+**Infrastructure lives in SecondBrain (single source of truth):**
+- Agent skill files: `~/SecondBrain/pipeline/agents/` (pm, architect, db, dev, refactor, security, ux, qa)
+- Router config: `~/SecondBrain/claude-code-router.yaml`
+- Router implementation: `~/SecondBrain/claude_code_router.py`
+- LLM clients: `~/SecondBrain/llm_clients.py`
+
+**Do NOT** copy pipeline agents or router config into this repo. Edit them in SecondBrain — changes propagate automatically on next task run.
+
+## Skills
+
+On any user message, check if it matches a skill trigger. If it does, read `~/SecondBrain/SKILL-TRIGGERS.md` to find the correct SKILL.md path, then read and follow that SKILL.md.
+
+Quick trigger keywords: daily briefing, receipt, expense, meeting confirmation, itinerary, financial report, genera, casa, youtube intel, file cleanup, pipeline status, code review, recommendations, implement finding, orchestrate.
+
+Full trigger table: `~/SecondBrain/SKILL-TRIGGERS.md`
+
+## Deployment
+
+Vercel auto-deploys on push to `main`. Pushing to `main` is permitted after all quality gates pass.
+
+## Quality Gates
+
+ALL must pass before any task is reported complete:
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `npx playwright test` (E2E)
 
 ## Hard Rules
 
-### NO DEPLOYMENTS
-Deployments are RED-tier. Do not run `vercel`, `vercel --prod`, or trigger Vercel CI. Refuse clearly. The user deploys manually or through a controlled process.
+- **Database is shared with Life OS** — only touch `church_*` prefixed tables. Verify table ownership before any schema change.
+- **Only additive migrations** — no DROP, TRUNCATE, or destructive ALTER.
+- **Member PII is protected** — never in AI prompts, never in Open Brain. Use initials or role references.
+- **Synthetic data only** for dev/testing.
+- **Branch names ≤20 characters** for Vercel DNS limits.
+- **Spanish is default language** for all CASA communication and output.
 
-### Database Safety
-- Supabase instance is SHARED with Life OS — destructive changes affect both
-- NEVER run `DROP`, `TRUNCATE`, or destructive `ALTER`
-- Schema changes must be additive only
-- DB agent owns all migrations — do not write migration SQL directly
+## RBAC Roles
 
-### Privacy
-- Member PII never goes in AI prompts, commits, or logs
-- Synthetic data only for dev/testing
-- AI Edge Functions must NOT receive real member PII
+Admin, Liturgist, AV Volunteer, Worship Coordinator, Musician, Small Group Leader, Member, Prayer Team, Finance Admin, Content Editor, Guest
 
-### Branch Naming
-- MUST be ≤20 characters (e.g., `feat/lic-p6`, `fix/auth-bug`)
-- Vercel preview URLs include the branch name — long names cause DNS failures
+## Key Features
+
+- Presentation System (PresenterView + OutputDisplay, BroadcastChannel API)
+- Liturgy Management
+- Song Repository
+- Mesa Abierta
+- Community Directory
+
+## Memory & Context
+
+- Source of truth: Open Brain (Supabase pgvector `memories` table)
+- Query with tags: `['casa']` | Write back with tags: `['casa', 'project-context']`
+- Member PII is NEVER stored in Open Brain
 
 ---
 
-## Project Context
-
-### Architecture
-- **Framework**: Vite SPA, React Router 6.28 (`createBrowserRouter`)
-- **Language**: TypeScript strict mode
-- **Database**: Supabase (shared instance, ref: `mulsqxfhxxdsadxsljss`)
-- **Auth**: Supabase Auth, 11 RBAC roles via AuthContext
-- **Hosting**: Vercel (auto-deploys on push to `main`)
-- **UI**: Tailwind 3, shadcn/ui (55 components — check before creating new ones)
-- **Fonts**: Montserrat (sans), Merriweather (serif)
-
-### Data Fetching Pattern (FOLLOW THIS)
-```typescript
-const [data, setData] = useState<Type[]>([]);
-const [loading, setLoading] = useState(true);
-
-useEffect(() => {
-  const fetchData = async () => {
-    const { data, error } = await supabase.from('table').select('*');
-    if (error) console.error(error);
-    else setData(data);
-    setLoading(false);
-  };
-  fetchData();
-}, []);
-
-// WRONG — do NOT use TanStack Query even though it's installed
-```
-
-### RBAC Roles (11)
-General Admin, Liturgist, AV Volunteer, Worship Coordinator, Comms Volunteer, Mesa Abierta Coordinator, Financial Admin, Concilio Member, Equipo Pastoral, Children Ministry Coordinator, Children Ministry Volunteer. Every protected feature MUST check the user's role via AuthContext.
-
-### Component Structure
-- Layout: `src/components/layout/`
-- Features: `src/components/` (by feature)
-- Pages: `src/pages/`
-- Hooks: `src/hooks/`
-- Shared types: `src/types/shared/`
-
-### Core Features
-1. **Presentation System** — Multi-window PresenterView + OutputDisplay, BroadcastChannel API, projector support (1920x1080+)
-2. **Liturgy Management** — Anglican calendar, service planning, AI content generation via Gemini (Edge Functions)
-3. **Song Repository** — Hymn/song database, chord charts, transpose
-4. **Mesa Abierta** — Community dinner management, RSVPs (has existing tests)
-5. **Community Directory** — Member profiles, pastoral care
-
-### Edge Functions (supabase/functions/)
-AI generation: generate-oraciones, generate-story, generate-illustration, generate-scene-images, generate-children-lesson, refine-story
-Bible: fetch-bible-passage
-Liturgy: prayer-request, process-reflexion-pdf
-Media: spotify-sermones, instagram-feed
-Mesa Abierta: create-mesa-matches, match-participants, admin-add-participant
-Notifications: send-mesa-notifications, send-mesa-whatsapp, whatsapp-signup, send-signup-confirmation
+*Canonical project context: ~/SecondBrain/projects/casa.md*
