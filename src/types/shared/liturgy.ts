@@ -200,8 +200,8 @@ export type CustomElementSubtype =
  *   (cover-style slides with a background image)
  * - **`title-slide`**: uses `titleText`, `subtitleText`
  *   (text-only title cards without a background image)
- * - **`text-slide`**: uses `bodyText`
- *   (body copy paragraph slide)
+ * - **`text-slide`**: uses `bodyText`, `titleText`
+ *   (body copy paragraph slide with optional heading)
  * - **`call-response`**: uses `tiempos`
  *   (leader/congregation antiphonal exchanges)
  * - **`blank-slide`**: uses `backgroundColor`

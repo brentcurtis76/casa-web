@@ -363,10 +363,21 @@ const CallResponseForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => {
 };
 
 /**
- * text-slide: bodyText textarea
+ * text-slide: titleText, bodyText
  */
 const TextSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => (
   <div className="space-y-4">
+    <div className="space-y-2">
+      <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
+        Título del slide
+      </Label>
+      <Input
+        value={config.titleText || ''}
+        onChange={(e) => onChange({ titleText: e.target.value })}
+        placeholder="Título o encabezado (opcional)"
+        style={{ fontFamily: CASA_BRAND.fonts.body }}
+      />
+    </div>
     <div className="space-y-2">
       <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
         Texto del slide
