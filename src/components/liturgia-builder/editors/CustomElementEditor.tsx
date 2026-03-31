@@ -61,9 +61,9 @@ const CustomElementEditor: React.FC<CustomElementEditorProps> = ({
   const [config, setConfig] = useState<CustomElementConfig>(getInitialConfig(element));
 
   const handleSave = useCallback(() => {
-    const slides = customElementToSlides(config, { theme });
+    const slides = customElementToSlides(config, { theme, existingSlideGroup: element.slides });
     onUpdate(config, slides);
-  }, [config, theme, onUpdate]);
+  }, [config, theme, onUpdate, element.slides]);
 
   const updateConfig = useCallback((partial: Partial<CustomElementConfig>) => {
     setConfig((prev) => ({ ...prev, ...partial }));

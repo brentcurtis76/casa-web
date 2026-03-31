@@ -19,6 +19,7 @@ function generateId(): string {
  */
 export interface CustomElementToSlidesOptions {
   theme?: PresentationTheme;
+  existingSlideGroup?: SlideGroup;
 }
 
 /**
@@ -33,11 +34,14 @@ export function customImageSlideToSlides(
 ): SlideGroup {
   const theme = options?.theme || DEFAULT_THEME;
   const themedStyles = getThemedSlideStyles(theme);
-  const sourceId = `custom-${generateId()}`;
+  const existing = options?.existingSlideGroup;
+  const sourceId = existing?.slides[0]?.metadata.sourceId ?? `custom-${generateId()}`;
+  const groupId = existing?.id ?? generateId();
+  const createdAt = existing?.metadata.createdAt ?? new Date().toISOString();
 
   const slides: Slide[] = [
     {
-      id: generateId(),
+      id: existing?.slides[0]?.id ?? generateId(),
       type: 'custom-image',
       content: {
         primary: config.title || '',
@@ -59,13 +63,13 @@ export function customImageSlideToSlides(
   ];
 
   return {
-    id: generateId(),
+    id: groupId,
     type: 'custom',
     title: config.label,
     slides,
     metadata: {
       sourceComponent: 'custom-element',
-      createdAt: new Date().toISOString(),
+      createdAt,
     },
   };
 }
@@ -82,11 +86,14 @@ export function customTitleSlideToSlides(
 ): SlideGroup {
   const theme = options?.theme || DEFAULT_THEME;
   const themedStyles = getThemedSlideStyles(theme);
-  const sourceId = `custom-${generateId()}`;
+  const existing = options?.existingSlideGroup;
+  const sourceId = existing?.slides[0]?.metadata.sourceId ?? `custom-${generateId()}`;
+  const groupId = existing?.id ?? generateId();
+  const createdAt = existing?.metadata.createdAt ?? new Date().toISOString();
 
   const slides: Slide[] = [
     {
-      id: generateId(),
+      id: existing?.slides[0]?.id ?? generateId(),
       type: 'title',
       content: {
         primary: config.titleText || '',
@@ -107,13 +114,13 @@ export function customTitleSlideToSlides(
   ];
 
   return {
-    id: generateId(),
+    id: groupId,
     type: 'custom',
     title: config.label,
     slides,
     metadata: {
       sourceComponent: 'custom-element',
-      createdAt: new Date().toISOString(),
+      createdAt,
     },
   };
 }
@@ -130,7 +137,10 @@ export function customCallResponseToSlides(
 ): SlideGroup {
   const theme = options?.theme || DEFAULT_THEME;
   const themedStyles = getThemedSlideStyles(theme);
-  const sourceId = `custom-${generateId()}`;
+  const existing = options?.existingSlideGroup;
+  const sourceId = existing?.slides[0]?.metadata.sourceId ?? `custom-${generateId()}`;
+  const groupId = existing?.id ?? generateId();
+  const createdAt = existing?.metadata.createdAt ?? new Date().toISOString();
   const tiempos = config.tiempos || [];
   const totalSlides = 1 + tiempos.length;
 
@@ -138,7 +148,7 @@ export function customCallResponseToSlides(
 
   // Slide de titulo
   slides.push({
-    id: generateId(),
+    id: existing?.slides[0]?.id ?? generateId(),
     type: 'title',
     content: {
       primary: config.label,
@@ -158,8 +168,9 @@ export function customCallResponseToSlides(
 
   // Slides de tiempos (lider + congregacion)
   tiempos.forEach((tiempo, index) => {
+    const slideIndex = index + 1; // title is at 0, tiempos start at 1
     slides.push({
-      id: generateId(),
+      id: existing?.slides[slideIndex]?.id ?? generateId(),
       type: 'prayer-full',
       content: {
         primary: tiempo.lider,
@@ -182,13 +193,13 @@ export function customCallResponseToSlides(
   });
 
   return {
-    id: generateId(),
+    id: groupId,
     type: 'custom',
     title: config.label,
     slides,
     metadata: {
       sourceComponent: 'custom-element',
-      createdAt: new Date().toISOString(),
+      createdAt,
     },
   };
 }
@@ -205,11 +216,14 @@ export function customTextSlideToSlides(
 ): SlideGroup {
   const theme = options?.theme || DEFAULT_THEME;
   const themedStyles = getThemedSlideStyles(theme);
-  const sourceId = `custom-${generateId()}`;
+  const existing = options?.existingSlideGroup;
+  const sourceId = existing?.slides[0]?.metadata.sourceId ?? `custom-${generateId()}`;
+  const groupId = existing?.id ?? generateId();
+  const createdAt = existing?.metadata.createdAt ?? new Date().toISOString();
 
   const slides: Slide[] = [
     {
-      id: generateId(),
+      id: existing?.slides[0]?.id ?? generateId(),
       type: 'custom-text',
       content: {
         primary: config.bodyText || '',
@@ -230,13 +244,13 @@ export function customTextSlideToSlides(
   ];
 
   return {
-    id: generateId(),
+    id: groupId,
     type: 'custom',
     title: config.label,
     slides,
     metadata: {
       sourceComponent: 'custom-element',
-      createdAt: new Date().toISOString(),
+      createdAt,
     },
   };
 }
@@ -253,11 +267,14 @@ export function customBlankSlideToSlides(
 ): SlideGroup {
   const theme = options?.theme || DEFAULT_THEME;
   const themedStyles = getThemedSlideStyles(theme);
-  const sourceId = `custom-${generateId()}`;
+  const existing = options?.existingSlideGroup;
+  const sourceId = existing?.slides[0]?.metadata.sourceId ?? `custom-${generateId()}`;
+  const groupId = existing?.id ?? generateId();
+  const createdAt = existing?.metadata.createdAt ?? new Date().toISOString();
 
   const slides: Slide[] = [
     {
-      id: generateId(),
+      id: existing?.slides[0]?.id ?? generateId(),
       type: 'blank',
       content: {
         primary: '',
@@ -275,13 +292,13 @@ export function customBlankSlideToSlides(
   ];
 
   return {
-    id: generateId(),
+    id: groupId,
     type: 'custom',
     title: config.label,
     slides,
     metadata: {
       sourceComponent: 'custom-element',
-      createdAt: new Date().toISOString(),
+      createdAt,
     },
   };
 }
