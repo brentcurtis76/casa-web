@@ -14,30 +14,29 @@ type ExportFormat = 'pptx' | 'google-slides' | 'keynote' | 'pdf-projection' | 'p
 
 interface ExportOptions {
   format: ExportFormat;
-  elements: Map<LiturgyElementType, LiturgyElement>;
-  elementOrder: LiturgyElementType[];
+  elements: Map<string, LiturgyElement>;
+  elementOrder: string[];
   liturgyContext: LiturgyContext | null;
   onProgress?: (current: number, total: number, message: string) => void;
-  customElements?: LiturgyElement[];
 }
 
 /**
  * Exporta la liturgia al formato especificado
  */
 export async function exportLiturgy(options: ExportOptions): Promise<void> {
-  const { format, elements, elementOrder, liturgyContext, onProgress, customElements } = options;
+  const { format, elements, elementOrder, liturgyContext, onProgress } = options;
 
   switch (format) {
     case 'pptx':
     case 'google-slides':
     case 'keynote':
-      await exportToPPTX(elements, elementOrder, liturgyContext, onProgress, customElements);
+      await exportToPPTX(elements, elementOrder, liturgyContext, onProgress);
       break;
     case 'pdf-projection':
-      await exportToPDFProjection(elements, elementOrder, liturgyContext, onProgress, customElements);
+      await exportToPDFProjection(elements, elementOrder, liturgyContext, onProgress);
       break;
     case 'pdf-celebrant':
-      await exportToCelebrantPDF(elements, elementOrder, liturgyContext, customElements);
+      await exportToCelebrantPDF(elements, elementOrder, liturgyContext);
       break;
     default:
       throw new Error(`Formato de exportación no soportado: ${format}`);
@@ -61,29 +60,18 @@ function generateFileName(liturgyContext: LiturgyContext | null, extension: stri
  * Recolecta todos los slides de los elementos
  */
 function collectAllSlides(
-  elements: Map<LiturgyElementType, LiturgyElement>,
-  elementOrder: LiturgyElementType[],
-  customElements?: LiturgyElement[]
+  elements: Map<string, LiturgyElement>,
+  elementOrder: string[]
 ): Slide[] {
   const allSlides: Slide[] = [];
 
-  for (const elementType of elementOrder) {
-    const element = elements.get(elementType);
+  for (const elementId of elementOrder) {
+    const element = elements.get(elementId);
     if (!element || element.status === 'skipped') continue;
 
     const slideGroup = element.editedSlides || element.slides;
     if (slideGroup?.slides) {
       allSlides.push(...slideGroup.slides);
-    }
-  }
-
-  if (customElements) {
-    for (const customEl of customElements) {
-      if (customEl.status === 'skipped') continue;
-      const slideGroup = customEl.editedSlides || customEl.slides;
-      if (slideGroup?.slides) {
-        allSlides.push(...slideGroup.slides);
-      }
     }
   }
 
@@ -94,11 +82,10 @@ function collectAllSlides(
  * Exporta a PowerPoint (PPTX) - Cada slide como imagen
  */
 async function exportToPPTX(
-  elements: Map<LiturgyElementType, LiturgyElement>,
-  elementOrder: LiturgyElementType[],
+  elements: Map<string, LiturgyElement>,
+  elementOrder: string[],
   liturgyContext: LiturgyContext | null,
-  onProgress?: (current: number, total: number, message: string) => void,
-  customElements?: LiturgyElement[]
+  onProgress?: (current: number, total: number, message: string) => void
 ): Promise<void> {
   const pptx = new pptxgen();
 
@@ -110,7 +97,7 @@ async function exportToPPTX(
   pptx.subject = 'Liturgia dominical';
 
   // Recolectar todos los slides
-  const allSlides = collectAllSlides(elements, elementOrder, customElements);
+  const allSlides = collectAllSlides(elements, elementOrder);
 
   if (allSlides.length === 0) {
     throw new Error('No hay slides para exportar');
@@ -148,11 +135,10 @@ async function exportToPPTX(
  * Exporta a PDF para proyección - Cada slide como imagen
  */
 async function exportToPDFProjection(
-  elements: Map<LiturgyElementType, LiturgyElement>,
-  elementOrder: LiturgyElementType[],
+  elements: Map<string, LiturgyElement>,
+  elementOrder: string[],
   liturgyContext: LiturgyContext | null,
-  onProgress?: (current: number, total: number, message: string) => void,
-  customElements?: LiturgyElement[]
+  onProgress?: (current: number, total: number, message: string) => void
 ): Promise<void> {
   // PDF landscape 4:3
   const pdf = new jsPDF({
@@ -162,7 +148,7 @@ async function exportToPDFProjection(
   });
 
   // Recolectar todos los slides
-  const allSlides = collectAllSlides(elements, elementOrder, customElements);
+  const allSlides = collectAllSlides(elements, elementOrder);
 
   if (allSlides.length === 0) {
     throw new Error('No hay slides para exportar');
@@ -196,8 +182,8 @@ async function exportToPDFProjection(
 /**
  * Obtiene el label de un elemento de la liturgia
  */
-function getElementLabel(type: LiturgyElementType): string {
-  const labels: Record<LiturgyElementType, string> = {
+function getElementLabel(type: string): string {
+  const labels: Record<string, string> = {
     'portada-principal': 'Portada Principal',
     'oracion-invocacion': 'Oración de Invocación',
     'cancion-invocacion': 'Primera Canción - Invocación',
@@ -224,8 +210,8 @@ function getElementLabel(type: LiturgyElementType): string {
 /**
  * Determina la categoría de un elemento de liturgia
  */
-function getElementCategory(type: LiturgyElementType): string {
-  const categories: Record<LiturgyElementType, string> = {
+function getElementCategory(type: string): string {
+  const categories: Record<string, string> = {
     'portada-principal': 'portada',
     'portada-reflexion': 'portada',
     'oracion-invocacion': 'oracion',
@@ -254,10 +240,9 @@ function getElementCategory(type: LiturgyElementType): string {
  * Tamaño carta (letter), diseño elegante con Brand Kit
  */
 async function exportToCelebrantPDF(
-  elements: Map<LiturgyElementType, LiturgyElement>,
-  elementOrder: LiturgyElementType[],
-  liturgyContext: LiturgyContext | null,
-  customElements?: LiturgyElement[]
+  elements: Map<string, LiturgyElement>,
+  elementOrder: string[],
+  liturgyContext: LiturgyContext | null
 ): Promise<void> {
   // Tamaño carta (letter): 215.9mm x 279.4mm
   const pdf = new jsPDF({
@@ -340,7 +325,9 @@ async function exportToCelebrantPDF(
       pdf.text(`${elementNumber}.`, margin, currentY);
 
       pdf.setTextColor(CASA_BRAND.colors.primary.black);
-      const elementLabel = getElementLabel(elementType);
+      const elementLabel = element.type === 'custom'
+        ? (element.title || 'Elemento Personalizado')
+        : getElementLabel(elementType);
       const elementTitle = String(slideGroup?.title || element.title || elementLabel);
       pdf.text(elementTitle.toUpperCase(), margin + 8, currentY);
 
@@ -351,7 +338,7 @@ async function exportToCelebrantPDF(
       pdf.line(margin, currentY, pageWidth - margin, currentY);
       currentY += 6;
 
-      const category = getElementCategory(elementType);
+      const category = element.type === 'custom' ? 'custom' : getElementCategory(elementType);
 
     if (category === 'cancion') {
       checkNewPage(15);
@@ -557,12 +544,116 @@ async function exportToCelebrantPDF(
       pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
       pdf.text('[Slide de portada - ver proyección]', margin, currentY);
       currentY += 12;
+    } else if (category === 'custom') {
+      const customConfig = element.config as CustomElementConfig | undefined;
+
+      // Branch on customType for content rendering
+      switch (customConfig?.customType) {
+        case 'text-slide': {
+          const bodyText = customConfig.bodyText || '';
+          if (bodyText) {
+            checkNewPage(20);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(11);
+            pdf.setTextColor(CASA_BRAND.colors.primary.black);
+            const lines = pdf.splitTextToSize(bodyText, contentWidth);
+            for (const line of lines) {
+              checkNewPage(6);
+              pdf.text(line, margin, currentY);
+              currentY += 5;
+            }
+            currentY += 4;
+          }
+          break;
+        }
+        case 'image-slide': {
+          checkNewPage(15);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(10);
+          pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
+          const imgTitle = customConfig.title || customConfig.label || 'sin título';
+          pdf.text(`[Imagen personalizada: ${imgTitle}]`, margin, currentY);
+          currentY += 12;
+          break;
+        }
+        case 'call-response': {
+          if (slideGroup?.slides) {
+            let lastSpeaker: 'celebrante' | 'congregacion' | null = null;
+            for (const slide of slideGroup.slides) {
+              if (!slide.content?.primary && !slide.content?.secondary) continue;
+              if (slide.type === 'title') continue;
+
+              checkNewPage(30);
+
+              const primaryIsAmber = slide.style?.primaryColor === CASA_BRAND.colors.primary.amber;
+
+              if (slide.content?.primary) {
+                const speaker = primaryIsAmber ? 'congregacion' : 'celebrante';
+                if (speaker !== lastSpeaker) {
+                  pdf.setFont('helvetica', 'bold');
+                  pdf.setFontSize(9);
+                  if (speaker === 'congregacion') {
+                    pdf.setTextColor(CASA_BRAND.colors.primary.amber);
+                    pdf.text('CONGREGACIÓN:', margin, currentY);
+                  } else {
+                    pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
+                    pdf.text('CELEBRANTE:', margin, currentY);
+                  }
+                  currentY += 5;
+                  lastSpeaker = speaker;
+                }
+
+                pdf.setFont('helvetica', speaker === 'congregacion' ? 'bold' : 'normal');
+                pdf.setFontSize(11);
+                pdf.setTextColor(CASA_BRAND.colors.primary.black);
+                const primaryText = String(slide.content.primary || '');
+                const lines = pdf.splitTextToSize(primaryText, contentWidth);
+                pdf.text(lines, margin, currentY);
+                currentY += lines.length * 5 + 4;
+              }
+
+              if (slide.content?.secondary) {
+                checkNewPage(20);
+                if (lastSpeaker !== 'congregacion') {
+                  pdf.setFont('helvetica', 'bold');
+                  pdf.setFontSize(9);
+                  pdf.setTextColor(CASA_BRAND.colors.primary.amber);
+                  pdf.text('CONGREGACIÓN:', margin, currentY);
+                  currentY += 5;
+                  lastSpeaker = 'congregacion';
+                }
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(11);
+                pdf.setTextColor(CASA_BRAND.colors.primary.black);
+                const secondaryText = String(slide.content.secondary || '');
+                const lines = pdf.splitTextToSize(secondaryText, contentWidth);
+                pdf.text(lines, margin, currentY);
+                currentY += lines.length * 5 + 4;
+              }
+            }
+          }
+          currentY += 4;
+          break;
+        }
+        case 'title-slide':
+        case 'blank-slide':
+        default: {
+          checkNewPage(15);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(10);
+          pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
+          pdf.text(`[${slideCount} slide${slideCount !== 1 ? 's' : ''} - ver proyección]`, margin, currentY);
+          currentY += 12;
+          break;
+        }
+      }
     }
 
     currentY += 8;
     elementNumber++;
-    } catch (err: any) {
-      console.error(`[celebrant-pdf] Error processing ${elementType}:`, err?.message || err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[celebrant-pdf] Error processing ${elementType}:`, errMsg);
       // Continue with next element even if this one fails
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(10);
@@ -570,152 +661,6 @@ async function exportToCelebrantPDF(
       pdf.text(`[Error al procesar ${elementType}]`, margin, currentY);
       currentY += 12;
       elementNumber++;
-    }
-  }
-
-  // Render custom elements after fixed liturgy elements
-  if (customElements) {
-    for (const customEl of customElements) {
-      try {
-        if (customEl.status === 'skipped') continue;
-        const slideGroup = customEl.editedSlides || customEl.slides;
-        const slideCount = slideGroup?.slides?.length || 0;
-        if (customEl.status === 'pending' && !customEl.slides && !customEl.editedSlides) continue;
-
-        const customConfig = customEl.config as CustomElementConfig | undefined;
-
-        // Element header (same pattern as main loop)
-        checkNewPage(25);
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12);
-        pdf.setTextColor(CASA_BRAND.colors.primary.amber);
-        pdf.text(`${elementNumber}.`, margin, currentY);
-
-        pdf.setTextColor(CASA_BRAND.colors.primary.black);
-        const elementTitle = String(customConfig?.label || customEl.title || 'Elemento Personalizado');
-        pdf.text(elementTitle.toUpperCase(), margin + 8, currentY);
-
-        currentY += 8;
-
-        pdf.setDrawColor(CASA_BRAND.colors.secondary.grayLight);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 6;
-
-        // Branch on customType for content rendering
-        switch (customConfig?.customType) {
-          case 'text-slide': {
-            const bodyText = customConfig.bodyText || '';
-            if (bodyText) {
-              checkNewPage(20);
-              pdf.setFont('helvetica', 'normal');
-              pdf.setFontSize(11);
-              pdf.setTextColor(CASA_BRAND.colors.primary.black);
-              const lines = pdf.splitTextToSize(bodyText, contentWidth);
-              for (const line of lines) {
-                checkNewPage(6);
-                pdf.text(line, margin, currentY);
-                currentY += 5;
-              }
-              currentY += 4;
-            }
-            break;
-          }
-          case 'image-slide': {
-            checkNewPage(15);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(10);
-            pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
-            const imgTitle = customConfig.title || customConfig.label || 'sin título';
-            pdf.text(`[Imagen personalizada: ${imgTitle}]`, margin, currentY);
-            currentY += 12;
-            break;
-          }
-          case 'call-response': {
-            if (slideGroup?.slides) {
-              let lastSpeaker: 'celebrante' | 'congregacion' | null = null;
-              for (const slide of slideGroup.slides) {
-                if (!slide.content?.primary && !slide.content?.secondary) continue;
-                if (slide.type === 'title') continue;
-
-                checkNewPage(30);
-
-                const primaryIsAmber = slide.style?.primaryColor === CASA_BRAND.colors.primary.amber;
-
-                if (slide.content?.primary) {
-                  const speaker = primaryIsAmber ? 'congregacion' : 'celebrante';
-                  if (speaker !== lastSpeaker) {
-                    pdf.setFont('helvetica', 'bold');
-                    pdf.setFontSize(9);
-                    if (speaker === 'congregacion') {
-                      pdf.setTextColor(CASA_BRAND.colors.primary.amber);
-                      pdf.text('CONGREGACIÓN:', margin, currentY);
-                    } else {
-                      pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
-                      pdf.text('CELEBRANTE:', margin, currentY);
-                    }
-                    currentY += 5;
-                    lastSpeaker = speaker;
-                  }
-
-                  pdf.setFont('helvetica', speaker === 'congregacion' ? 'bold' : 'normal');
-                  pdf.setFontSize(11);
-                  pdf.setTextColor(CASA_BRAND.colors.primary.black);
-                  const primaryText = String(slide.content.primary || '');
-                  const lines = pdf.splitTextToSize(primaryText, contentWidth);
-                  pdf.text(lines, margin, currentY);
-                  currentY += lines.length * 5 + 4;
-                }
-
-                if (slide.content?.secondary) {
-                  checkNewPage(20);
-                  if (lastSpeaker !== 'congregacion') {
-                    pdf.setFont('helvetica', 'bold');
-                    pdf.setFontSize(9);
-                    pdf.setTextColor(CASA_BRAND.colors.primary.amber);
-                    pdf.text('CONGREGACIÓN:', margin, currentY);
-                    currentY += 5;
-                    lastSpeaker = 'congregacion';
-                  }
-                  pdf.setFont('helvetica', 'bold');
-                  pdf.setFontSize(11);
-                  pdf.setTextColor(CASA_BRAND.colors.primary.black);
-                  const secondaryText = String(slide.content.secondary || '');
-                  const lines = pdf.splitTextToSize(secondaryText, contentWidth);
-                  pdf.text(lines, margin, currentY);
-                  currentY += lines.length * 5 + 4;
-                }
-              }
-            }
-            currentY += 4;
-            break;
-          }
-          case 'title-slide':
-          case 'blank-slide':
-          default: {
-            checkNewPage(15);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(10);
-            pdf.setTextColor(CASA_BRAND.colors.secondary.grayMedium);
-            pdf.text(`[${slideCount} slide${slideCount !== 1 ? 's' : ''} - ver proyección]`, margin, currentY);
-            currentY += 12;
-            break;
-          }
-        }
-
-        currentY += 8;
-        elementNumber++;
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[celebrant-pdf] Error processing custom element:`, errMsg);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
-        pdf.setTextColor('#DC2626');
-        pdf.text(`[Error al procesar elemento personalizado]`, margin, currentY);
-        currentY += 12;
-        elementNumber++;
-      }
     }
   }
 

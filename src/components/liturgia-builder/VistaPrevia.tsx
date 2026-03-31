@@ -164,6 +164,7 @@ const SlidePreviewItem: React.FC<SlidePreviewProps> = ({ slide, index, total }) 
  * Componente de elemento sorteable
  */
 interface SortableElementProps {
+  id: string;
   element: {
     type: LiturgyElementType;
     status: LiturgyElementStatus;
@@ -176,7 +177,7 @@ interface SortableElementProps {
   onToggleExpand: () => void;
 }
 
-const SortableElement: React.FC<SortableElementProps> = ({ element, index, isExpanded, onToggleExpand }) => {
+const SortableElement: React.FC<SortableElementProps> = ({ id, element, index, isExpanded, onToggleExpand }) => {
   const {
     attributes,
     listeners,
@@ -184,7 +185,7 @@ const SortableElement: React.FC<SortableElementProps> = ({ element, index, isExp
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: element.type });
+  } = useSortable({ id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -362,12 +363,11 @@ const SortableElement: React.FC<SortableElementProps> = ({ element, index, isExp
  * Props del componente VistaPrevia
  */
 interface VistaPreviaProps {
-  elements: Map<LiturgyElementType, LiturgyElement>;
-  elementOrder: LiturgyElementType[];
-  onOrderChange: (newOrder: LiturgyElementType[]) => void;
+  elements: Map<string, LiturgyElement>;
+  elementOrder: string[];
+  onOrderChange: (newOrder: string[]) => void;
   liturgyTitle?: string;
   liturgyDate?: Date;
-  customElements?: LiturgyElement[];
 }
 
 /**
@@ -379,10 +379,9 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
   onOrderChange,
   liturgyTitle,
   liturgyDate,
-  customElements = [],
 }) => {
   // Estado para controlar qué elementos están expandidos
-  const [expandedElements, setExpandedElements] = useState<Set<LiturgyElementType>>(new Set());
+  const [expandedElements, setExpandedElements] = useState<Set<string>>(new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -396,20 +395,20 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
   );
 
   // Toggle expansión de un elemento
-  const toggleExpand = useCallback((type: LiturgyElementType) => {
+  const toggleExpand = useCallback((id: string) => {
     setExpandedElements((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(type)) {
-        newSet.delete(type);
+      if (newSet.has(id)) {
+        newSet.delete(id);
       } else {
-        newSet.add(type);
+        newSet.add(id);
       }
       return newSet;
     });
   }, []);
 
   // Calcular el status real de un elemento (misma lógica que ConstructorLiturgias)
-  const getElementStatus = useCallback((type: LiturgyElementType, element: LiturgyElement | undefined): LiturgyElementStatus => {
+  const getElementStatus = useCallback((type: string, element: LiturgyElement | undefined): LiturgyElementStatus => {
     if (!element) return 'pending';
     if (element.status === 'skipped') return 'skipped';
 
@@ -437,36 +436,29 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
 
   // Preparar elementos para mostrar
   const sortedElements = useMemo(() => {
-    const fixed = elementOrder.map((type) => {
-      const element = elements.get(type);
-      const defaultLabel = ELEMENT_LABELS[type];
+    return elementOrder.map((id) => {
+      const element = elements.get(id);
+      const isCustom = element?.type === 'custom';
+      const defaultLabel = isCustom
+        ? (element?.title || 'Elemento Personalizado')
+        : (ELEMENT_LABELS[id as LiturgyElementType] || id);
       const slides = element?.slides || element?.editedSlides;
 
       // Para canciones, usar el título del SlideGroup que contiene el nombre real de la canción
-      const isSong = type.startsWith('cancion-');
+      const isSong = id.startsWith('cancion-');
       const songTitle = isSong && slides?.title ? slides.title : null;
 
       return {
-        type,
-        status: getElementStatus(type, element),
+        id,
+        type: (element?.type || 'custom') as LiturgyElementType,
+        status: getElementStatus(id, element),
         title: songTitle || element?.title || defaultLabel,
         // Si es canción con título, mostrar el tipo como subtítulo
         sourceInfo: songTitle ? defaultLabel : undefined,
         slides,
       };
     });
-
-    // Append custom elements after fixed elements
-    const custom = customElements.map((el) => ({
-      type: 'custom' as LiturgyElementType,
-      status: (el.slides ? 'completed' : 'pending') as LiturgyElementStatus,
-      title: el.title,
-      sourceInfo: undefined,
-      slides: el.slides,
-    }));
-
-    return [...fixed, ...custom];
-  }, [elementOrder, elements, getElementStatus, customElements]);
+  }, [elementOrder, elements, getElementStatus]);
 
   // Estadísticas de completitud
   const stats = useMemo(() => {
@@ -481,8 +473,8 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const oldIndex = elementOrder.indexOf(active.id as LiturgyElementType);
-      const newIndex = elementOrder.indexOf(over.id as LiturgyElementType);
+      const oldIndex = elementOrder.indexOf(active.id as string);
+      const newIndex = elementOrder.indexOf(over.id as string);
       const newOrder = arrayMove(elementOrder, oldIndex, newIndex);
       onOrderChange(newOrder);
     }
@@ -595,11 +587,12 @@ const VistaPrevia: React.FC<VistaPreviaProps> = ({
           <div className="space-y-2">
             {sortedElements.map((element, index) => (
               <SortableElement
-                key={element.type}
+                key={element.id}
+                id={element.id}
                 element={element}
                 index={index}
-                isExpanded={expandedElements.has(element.type)}
-                onToggleExpand={() => toggleExpand(element.type)}
+                isExpanded={expandedElements.has(element.id)}
+                onToggleExpand={() => toggleExpand(element.id)}
               />
             ))}
           </div>

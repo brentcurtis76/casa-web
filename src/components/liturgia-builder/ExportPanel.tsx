@@ -68,12 +68,11 @@ import { SERVICE_TYPE_LABELS } from '@/lib/music-planning/musicianLabels';
 import { ChildrenActivityDialog } from './ChildrenActivityDialog';
 
 interface ExportPanelProps {
-  elements: Map<LiturgyElementType, LiturgyElement>;
-  elementOrder: LiturgyElementType[];
+  elements: Map<string, LiturgyElement>;
+  elementOrder: string[];
   liturgyContext: LiturgyContext | null;
   pendingContextChanges?: { celebrant?: string; preacher?: string } | null;
   onExportComplete?: (format: string) => void;
-  customElements?: LiturgyElement[];
 }
 
 const ExportPanel: React.FC<ExportPanelProps> = ({
@@ -82,7 +81,6 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   liturgyContext,
   pendingContextChanges,
   onExportComplete,
-  customElements = [],
 }) => {
   const { toast } = useToast();
   const { hasRole } = useAuth();
@@ -195,13 +193,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       }
 
       // Build preflight warnings
-      const elementsMap = new Map<LiturgyElementType, LiturgyElement>();
-      for (const type of elementOrder) {
-        const el = elements.get(type);
-        if (el) elementsMap.set(type, el);
-      }
-
-      const warnings = await buildPreflightWarnings(elementsMap, elementOrder);
+      const warnings = await buildPreflightWarnings(
+        elements as Map<LiturgyElementType, LiturgyElement>,
+        elementOrder as LiturgyElementType[]
+      );
       const warningMessages: string[] = [];
 
       for (const msg of warnings.missingSongs) {
@@ -253,16 +248,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     setError(null);
 
     try {
-      const elementsMap = new Map<LiturgyElementType, LiturgyElement>();
-      for (const type of elementOrder) {
-        const el = elements.get(type);
-        if (el) elementsMap.set(type, el);
-      }
-
       const result = await publishLiturgyMusic({
         liturgyId: liturgyContext.id,
-        elements: elementsMap,
-        elementOrder,
+        elements: elements as Map<LiturgyElementType, LiturgyElement>,
+        elementOrder: elementOrder as LiturgyElementType[],
         serviceDate: publishServiceDate,
         serviceType: publishServiceType,
         mode: publishMode,
@@ -543,13 +532,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     return isValid ? story : null;
   }, [elements]);
 
-  // Count slides (including custom elements)
-  const totalSlides = elementOrder.reduce((count, type) => {
-    const element = elements.get(type);
+  // Count slides (unified — includes custom elements in elementOrder)
+  const totalSlides = elementOrder.reduce((count, id) => {
+    const element = elements.get(id);
     const slides = element?.slides?.slides || element?.editedSlides?.slides || [];
-    return count + slides.length;
-  }, 0) + customElements.reduce((count, el) => {
-    const slides = el.editedSlides?.slides || el.slides?.slides || [];
     return count + slides.length;
   }, 0);
 
@@ -575,7 +561,6 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         elements,
         elementOrder,
         liturgyContext: effectiveContext,
-        customElements,
       });
 
       setCelebrantCompleted(true);
