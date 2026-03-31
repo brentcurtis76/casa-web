@@ -137,7 +137,7 @@ describe('customTextSlideToSlides', () => {
     const config = makeConfig({
       customType: 'text-slide',
       bodyText: 'Paragraph content here',
-      title: 'Section Header',
+      titleText: 'Section Header',
     });
 
     const group = customTextSlideToSlides(config);

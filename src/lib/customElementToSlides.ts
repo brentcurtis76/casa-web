@@ -227,7 +227,7 @@ export function customTextSlideToSlides(
       type: 'custom-text',
       content: {
         primary: config.bodyText || '',
-        subtitle: config.title,
+        subtitle: config.titleText,
       },
       style: {
         primaryColor: themedStyles.announcement.primaryColor,
