@@ -47,6 +47,7 @@ export function customImageSlideToSlides(
         primary: config.title || '',
         subtitle: config.subtitle,
         imageUrl: config.imageUrl,
+        imageConfig: config.imageConfig,
       },
       style: {
         primaryColor: themedStyles.title.primaryColor,

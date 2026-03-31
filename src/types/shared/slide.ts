@@ -53,6 +53,12 @@ export interface Slide {
     imageUrl?: string;           // URL de imagen (para slides de tipo imagen)
     videoUrl?: string;           // URL de video (para slides de tipo video)
     videoSettings?: VideoSettings; // Configuración de reproducción de video
+    imageConfig?: {
+      opacity: number;    // 0-100
+      scale: number;      // 50-200 (percentage)
+      positionX: number;  // -50 to 50
+      positionY: number;  // -50 to 50
+    };
   };
   style: {
     primaryColor?: string;       // Color del texto principal

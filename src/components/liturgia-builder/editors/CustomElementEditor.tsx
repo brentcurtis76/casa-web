@@ -277,6 +277,25 @@ const ImageSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  const deleteStorageImage = async (imageUrl: string) => {
+    try {
+      const url = new URL(imageUrl);
+      const pathParts = url.pathname.split('/cuentacuentos-drafts/');
+      if (pathParts.length < 2) return;
+      const filePath = decodeURIComponent(pathParts[1]);
+      await supabase.storage.from('cuentacuentos-drafts').remove([filePath]);
+    } catch (err) {
+      console.error('Failed to delete old image:', err);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    if (config.imageUrl) {
+      deleteStorageImage(config.imageUrl);
+    }
+    onChange({ imageUrl: '' });
+  };
+
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast({ variant: 'destructive', title: 'Error', description: 'Solo se permiten archivos de imagen.' });
@@ -289,6 +308,10 @@ const ImageSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => {
 
     try {
       setUploading(true);
+      // Delete old image before uploading new one (fire-and-forget)
+      if (config.imageUrl) {
+        deleteStorageImage(config.imageUrl);
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No se pudo obtener el usuario');
 
@@ -383,7 +406,7 @@ const ImageSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => {
               </button>
               <button
                 type="button"
-                onClick={() => onChange({ imageUrl: '' })}
+                onClick={handleRemoveImage}
                 className="p-1.5 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
                 title="Eliminar imagen"
               >
