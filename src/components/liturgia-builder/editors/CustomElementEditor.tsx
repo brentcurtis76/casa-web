@@ -3,11 +3,12 @@
  * Despacha el formulario correcto según el customType del elemento
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { Save, Trash2, Plus, Minus, Upload, Loader2, X, RefreshCw } from 'lucide-react';
+import { Save, Trash2, Plus, Minus, Upload, Loader2, X, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import useDebounce from '@/hooks/useDebounce';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -22,6 +23,7 @@ import { isCustomElement } from '@/types/shared/liturgy';
 import type { SlideGroup } from '@/types/shared/slide';
 import type { PresentationTheme } from '@/lib/presentation/themes';
 import { customElementToSlides } from '@/lib/customElementToSlides';
+import { UniversalSlide } from '@/components/liturgia-builder/UniversalSlide';
 
 interface CustomElementEditorProps {
   element: LiturgyElement;
@@ -61,11 +63,35 @@ const CustomElementEditor: React.FC<CustomElementEditorProps> = ({
   theme,
 }) => {
   const [config, setConfig] = useState<CustomElementConfig>(getInitialConfig(element));
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const { toast } = useToast();
+
+  const debouncedConfig = useDebounce(config, 300);
+
+  const previewSlides = useMemo(() => {
+    try {
+      const slideGroup = customElementToSlides(debouncedConfig, { theme });
+      return slideGroup.slides;
+    } catch {
+      return null;
+    }
+  }, [debouncedConfig, theme]);
+
+  // Clamp previewIndex when slide count changes
+  const clampedPreviewIndex = previewSlides
+    ? Math.min(previewIndex, previewSlides.length - 1)
+    : 0;
 
   const handleSave = useCallback(() => {
-    const slides = customElementToSlides(config, { theme, existingSlideGroup: element.slides });
-    onUpdate(config, slides);
-  }, [config, theme, onUpdate, element.slides]);
+    try {
+      const slides = customElementToSlides(config, { theme, existingSlideGroup: element.slides });
+      onUpdate(config, slides);
+      toast({ title: 'Elemento guardado' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error desconocido';
+      toast({ variant: 'destructive', title: 'Error al guardar', description: message });
+    }
+  }, [config, theme, onUpdate, element.slides, toast]);
 
   const updateConfig = useCallback((partial: Partial<CustomElementConfig>) => {
     setConfig((prev) => ({ ...prev, ...partial }));
@@ -137,6 +163,83 @@ const CustomElementEditor: React.FC<CustomElementEditorProps> = ({
 
       {/* Subtype-specific form */}
       {renderSubtypeEditor()}
+
+      {/* Live preview */}
+      <div className="space-y-2 pt-2">
+        <span
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            fontSize: '13px',
+            fontWeight: 500,
+            color: CASA_BRAND.colors.secondary.grayDark,
+          }}
+        >
+          Vista previa
+        </span>
+        <div
+          className="flex flex-col items-center rounded-lg border overflow-hidden"
+          style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+        >
+          {previewSlides && previewSlides.length > 0 ? (
+            <>
+              <div style={{ width: '100%', aspectRatio: '16 / 9', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ transform: 'scale(0.45)', transformOrigin: 'top left', width: `${100 / 0.45}%`, height: `${100 / 0.45}%` }}>
+                  <UniversalSlide slide={previewSlides[clampedPreviewIndex]} scale={1} />
+                </div>
+              </div>
+              {previewSlides.length > 1 && (
+                <div
+                  className="flex items-center justify-center gap-3 py-2 w-full border-t"
+                  style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={clampedPreviewIndex === 0}
+                    onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <span
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.body,
+                      fontSize: '12px',
+                      color: CASA_BRAND.colors.secondary.grayMedium,
+                    }}
+                  >
+                    {clampedPreviewIndex + 1} / {previewSlides.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={clampedPreviewIndex === previewSlides.length - 1}
+                    onClick={() => setPreviewIndex((i) => Math.min(previewSlides.length - 1, i + 1))}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div
+              className="flex items-center justify-center w-full py-8"
+              style={{ aspectRatio: '16 / 9' }}
+            >
+              <span
+                style={{
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '13px',
+                  color: CASA_BRAND.colors.secondary.grayMedium,
+                }}
+              >
+                Completa los campos para ver la vista previa
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Save button */}
       <div className="flex justify-end pt-4 border-t" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
