@@ -1026,6 +1026,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           element={selectedEl}
           onUpdate={(config, slides) => handleUpdateCustomElement(selectedEl.id, config, slides)}
           onDelete={() => handleDeleteCustomElement(selectedEl.id)}
+          theme={initialLiturgy?.theme}
         />
       );
     }

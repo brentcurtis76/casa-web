@@ -977,6 +977,9 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
 
     // Slides de imagen personalizado
     if (type === 'custom-image') {
+      const imgConfig = slide.content.imageConfig;
+      const imgOpacity = (imgConfig?.opacity ?? 100) / 100;
+      const imgScale = (imgConfig?.scale ?? 100) / 100;
       return (
         <div
           className="relative flex flex-col items-center justify-center h-full text-center"
@@ -987,7 +990,11 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               src={slide.content.imageUrl}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: 0.7 }}
+              style={{
+                opacity: imgOpacity,
+                transform: `scale(${imgScale})`,
+                transformOrigin: 'center center',
+              }}
             />
           )}
           <div className="relative z-10" style={{ padding: `0 ${48 * scale}px` }}>
