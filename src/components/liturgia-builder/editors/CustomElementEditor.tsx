@@ -3,9 +3,11 @@
  * Despacha el formulario correcto según el customType del elemento
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { Save, Trash2, Plus, Minus } from 'lucide-react';
+import { Save, Trash2, Plus, Minus, Upload, Loader2, X, RefreshCw } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -164,81 +166,200 @@ interface SubtypeFormProps {
 }
 
 /**
- * image-slide: title, subtitle, imageUrl, imageConfig sliders
+ * image-slide: title, subtitle, imageUrl (upload zone), imageConfig sliders
  */
-const ImageSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => (
-  <div className="space-y-4">
-    <div className="space-y-2">
-      <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
-        Título
-      </Label>
-      <Input
-        value={config.title || ''}
-        onChange={(e) => onChange({ title: e.target.value })}
-        placeholder="Título sobre la imagen"
-        style={{ fontFamily: CASA_BRAND.fonts.body }}
-      />
-    </div>
-    <div className="space-y-2">
-      <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
-        Subtítulo
-      </Label>
-      <Input
-        value={config.subtitle || ''}
-        onChange={(e) => onChange({ subtitle: e.target.value })}
-        placeholder="Subtítulo (opcional)"
-        style={{ fontFamily: CASA_BRAND.fonts.body }}
-      />
-    </div>
-    <div className="space-y-2">
-      <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
-        URL de imagen
-      </Label>
-      <Input
-        value={config.imageUrl || ''}
-        onChange={(e) => onChange({ imageUrl: e.target.value })}
-        placeholder="https://ejemplo.com/imagen.jpg"
-        type="url"
-        style={{ fontFamily: CASA_BRAND.fonts.body }}
-      />
-    </div>
-    {/* Image config sliders */}
-    <div className="space-y-4 pt-2">
+const ImageSlideForm: React.FC<SubtypeFormProps> = ({ config, onChange }) => {
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Solo se permiten archivos de imagen.' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ variant: 'destructive', title: 'Error', description: 'La imagen no puede superar los 10MB.' });
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No se pudo obtener el usuario');
+
+      const ext = file.name.split('.').pop() || 'png';
+      const filePath = `${user.id}/custom-elements/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cuentacuentos-drafts')
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('cuentacuentos-drafts').getPublicUrl(filePath);
+      onChange({ imageUrl: data.publicUrl });
+
+      toast({ title: 'Imagen subida', description: 'La imagen se ha subido correctamente.' });
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo subir la imagen. Por favor, intenta de nuevo.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+    // Reset input so re-selecting the same file triggers onChange
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleUpload(file);
+  };
+
+  return (
+    <div className="space-y-4">
       <div className="space-y-2">
         <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
-          Opacidad: {config.imageConfig?.opacity ?? 100}%
+          Título
         </Label>
-        <Slider
-          value={[config.imageConfig?.opacity ?? 100]}
-          min={0}
-          max={100}
-          step={5}
-          onValueChange={([val]) =>
-            onChange({
-              imageConfig: { ...(config.imageConfig || { opacity: 100, scale: 100, positionX: 0, positionY: 0 }), opacity: val },
-            })
-          }
+        <Input
+          value={config.title || ''}
+          onChange={(e) => onChange({ title: e.target.value })}
+          placeholder="Título sobre la imagen"
+          style={{ fontFamily: CASA_BRAND.fonts.body }}
         />
       </div>
       <div className="space-y-2">
         <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
-          Escala: {config.imageConfig?.scale ?? 100}%
+          Subtítulo
         </Label>
-        <Slider
-          value={[config.imageConfig?.scale ?? 100]}
-          min={50}
-          max={200}
-          step={5}
-          onValueChange={([val]) =>
-            onChange({
-              imageConfig: { ...(config.imageConfig || { opacity: 100, scale: 100, positionX: 0, positionY: 0 }), scale: val },
-            })
-          }
+        <Input
+          value={config.subtitle || ''}
+          onChange={(e) => onChange({ subtitle: e.target.value })}
+          placeholder="Subtítulo (opcional)"
+          style={{ fontFamily: CASA_BRAND.fonts.body }}
         />
       </div>
+
+      {/* Image upload zone */}
+      <div className="space-y-2">
+        <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
+          Imagen
+        </Label>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileSelect}
+          disabled={uploading}
+        />
+        {config.imageUrl ? (
+          <div className="relative rounded-lg overflow-hidden border" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+            <img
+              src={config.imageUrl}
+              alt="Vista previa"
+              className="w-full h-40 object-cover"
+            />
+            <div className="absolute top-2 right-2 flex gap-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+                title="Cambiar imagen"
+              >
+                <RefreshCw size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ imageUrl: '' })}
+                className="p-1.5 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+                title="Eliminar imagen"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => !uploading && fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className="flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed transition-colors cursor-pointer"
+            style={{
+              borderColor: dragOver ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+              backgroundColor: dragOver ? `${CASA_BRAND.colors.amber.light}15` : 'transparent',
+              pointerEvents: uploading ? 'none' : 'auto',
+              opacity: uploading ? 0.6 : 1,
+            }}
+          >
+            {uploading ? (
+              <Loader2 size={24} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} />
+            ) : (
+              <Upload size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+            )}
+            <span
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '13px',
+                color: CASA_BRAND.colors.secondary.grayMedium,
+              }}
+            >
+              {uploading ? 'Subiendo imagen...' : 'Arrastra una imagen o haz clic para seleccionar'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Image config sliders — only visible when an image is set */}
+      {config.imageUrl && (
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
+              Opacidad: {config.imageConfig?.opacity ?? 100}%
+            </Label>
+            <Slider
+              value={[config.imageConfig?.opacity ?? 100]}
+              min={0}
+              max={100}
+              step={5}
+              onValueChange={([val]) =>
+                onChange({
+                  imageConfig: { ...(config.imageConfig || { opacity: 100, scale: 100, positionX: 0, positionY: 0 }), opacity: val },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label style={{ fontFamily: CASA_BRAND.fonts.body, fontSize: '13px', color: CASA_BRAND.colors.secondary.grayDark }}>
+              Escala: {config.imageConfig?.scale ?? 100}%
+            </Label>
+            <Slider
+              value={[config.imageConfig?.scale ?? 100]}
+              min={50}
+              max={200}
+              step={5}
+              onValueChange={([val]) =>
+                onChange({
+                  imageConfig: { ...(config.imageConfig || { opacity: 100, scale: 100, positionX: 0, positionY: 0 }), scale: val },
+                })
+              }
+            />
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * title-slide: titleText, subtitleText
