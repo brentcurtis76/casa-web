@@ -182,7 +182,7 @@ const CustomElementEditor: React.FC<CustomElementEditorProps> = ({
         >
           {previewSlides && previewSlides.length > 0 ? (
             <>
-              <div style={{ width: '100%', aspectRatio: '16 / 9', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ width: '100%', aspectRatio: '4 / 3', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ transform: 'scale(0.45)', transformOrigin: 'top left', width: `${100 / 0.45}%`, height: `${100 / 0.45}%` }}>
                   <UniversalSlide slide={previewSlides[clampedPreviewIndex]} scale={1} />
                 </div>
@@ -225,7 +225,7 @@ const CustomElementEditor: React.FC<CustomElementEditorProps> = ({
           ) : (
             <div
               className="flex items-center justify-center w-full py-8"
-              style={{ aspectRatio: '16 / 9' }}
+              style={{ aspectRatio: '4 / 3' }}
             >
               <span
                 style={{
