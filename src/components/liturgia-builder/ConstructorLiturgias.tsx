@@ -1061,6 +1061,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     if (elementDef.category === 'oracion') {
       return (
         <OracionEditor
+          key={selectedElement}
           context={liturgyContext}
           elementType={selectedElement as 'oracion-invocacion' | 'oracion-arrepentimiento' | 'oracion-gratitud'}
           initialContent={existingElement?.customContent}
