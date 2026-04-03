@@ -30,7 +30,7 @@ interface OracionEditorProps {
   elementType: PrayerType;
   initialContent?: string;
   initialSlides?: SlideGroup;
-  onSlidesGenerated: (slides: SlideGroup) => void;
+  onSlidesGenerated: (slides: SlideGroup, content: string) => void;
   onContentChange?: (content: string) => void;
 }
 
@@ -408,7 +408,7 @@ const OracionEditor: React.FC<OracionEditorProps> = ({
       },
     };
 
-    onSlidesGenerated(slideGroup);
+    onSlidesGenerated(slideGroup, content);
 
     // Limpiar error si había y mostrar feedback de guardado
     setError(null);

@@ -1065,8 +1065,8 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           elementType={selectedElement as 'oracion-invocacion' | 'oracion-arrepentimiento' | 'oracion-gratitud'}
           initialContent={existingElement?.customContent}
           initialSlides={existingElement?.slides}
-          onSlidesGenerated={(slides) => {
-            handleElementSlides(selectedElement, slides);
+          onSlidesGenerated={(slides, content) => {
+            handleElementSlides(selectedElement, slides, { customContent: content });
           }}
           onContentChange={(content) => {
             // Guardar contenido para regenerar después si es necesario
