@@ -42,6 +42,7 @@ export const RESOURCE_NAMES = {
   FINANCIAL: 'financial',
   LEADERSHIP: 'leadership',
   CHILDREN_MINISTRY: 'children_ministry',
+  SIGNUPS: 'signups',
 } as const;
 
 export type ResourceName = (typeof RESOURCE_NAMES)[keyof typeof RESOURCE_NAMES];
@@ -66,6 +67,7 @@ export const MODULE_RESOURCE_MAP: Record<string, ResourceName> = {
   'finanzas': RESOURCE_NAMES.FINANCIAL,
   'children-ministry': RESOURCE_NAMES.CHILDREN_MINISTRY,
   'liderazgo': RESOURCE_NAMES.LEADERSHIP,
+  'inscripciones': RESOURCE_NAMES.SIGNUPS,
 };
 
 // ─── Role Display Info ────────────────────────────────────────────────────────
@@ -135,6 +137,7 @@ export const RESOURCE_DISPLAY_NAMES: Record<ResourceName, string> = {
   financial: 'Finanzas',
   leadership: 'Liderazgo',
   children_ministry: 'Ministerio Infantil',
+  signups: 'Inscripciones',
 };
 
 // ─── Database Row Types ───────────────────────────────────────────────────────

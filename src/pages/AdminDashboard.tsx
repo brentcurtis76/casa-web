@@ -34,6 +34,7 @@ import {
   Headphones,
   Baby,
   Crown,
+  ClipboardList,
 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
@@ -180,6 +181,15 @@ const AdminDashboard: React.FC = () => {
       description: 'Editar y publicar grabaciones de reflexiones para Spotify.',
       icon: <Mic2 className="h-8 w-8" />,
       route: '/admin/sermon-editor',
+      category: 'general',
+      status: 'available',
+    },
+    {
+      id: 'inscripciones',
+      title: 'Inscripciones',
+      description: 'Gestiona las inscripciones a grupos y actividades de la comunidad.',
+      icon: <ClipboardList className="h-8 w-8" />,
+      route: '/admin/inscripciones',
       category: 'general',
       status: 'available',
     },
