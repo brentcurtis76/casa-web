@@ -13,6 +13,7 @@ import { Sermones } from '@/components/sections/Sermones';
 import { Hero } from '@/components/ui/hero-with-group-of-images-text-and-two-buttons';
 import { MesaAbiertaSection } from '@/components/mesa-abierta/MesaAbiertaSection';
 import { RecursosParaFamilias } from '@/components/sections/RecursosParaFamilias';
+import { InscripcionesSection } from '@/components/home/InscripcionesSection';
 
 const Index = () => {
   return (
@@ -28,6 +29,7 @@ const Index = () => {
           <RecursosParaFamilias />
           <Sermones />
           <Participar />
+          <InscripcionesSection />
           <Eventos />
           <Oracion />
           <InstagramFeed />
