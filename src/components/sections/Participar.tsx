@@ -117,7 +117,7 @@ export function Participar() {
   const activities = [
     {
       title: "Grupos en CASA",
-      description: "Únete a nuestros grupos de comunidad en distintas comunas de Santiago. Un espacio para crecer juntos en fe y amistad, reuniéndonos quincenalmente en hogares de Las Condes y La Reina.",
+      description: "En abril comenzamos un nuevo ciclo de grupos comunitarios. Un espacio para crecer juntos en fe y amistad, reuniéndonos quincenalmente en hogares de Las Condes y La Reina. ¡Es un excelente momento para sumarte!",
       icon: <Users size={26} />,
       signupType: 'grupos' as DialogType,
     },
@@ -135,7 +135,7 @@ export function Participar() {
     },
     {
       title: "Grupo de Apoyo Psicoemocional",
-      description: "Cada jueves a las 19:00 hrs, ofrecemos un espacio seguro para quienes sienten que la vida pesa demasiado. Aquí puedes hablar, ser escuchado y sentirte acompañado. No estás solo/a en tu camino.",
+      description: "Ofrecemos dos grupos semanales moderados por la psicóloga Paz Costagliola: jueves de 19:00 a 21:00 hrs y martes de 10:00 a 12:00 hrs. Un espacio seguro para hablar, ser escuchado y sentirte acompañado. No estás solo/a.",
       icon: <Heart size={26} />,
       signupType: 'apoyo' as DialogType,
     },
@@ -153,7 +153,7 @@ export function Participar() {
     },
     {
       title: "Club de Lectura",
-      description: "Cada semestre leemos un libro que nos desafía en nuestro caminar con Cristo. Es un espacio online para incluir a aquellos de nuestra comunidad que están fuera de Santiago. Actualmente estamos leyendo La Danza Divina de Richard Rohr.",
+      description: "Cada dos meses leemos un libro que nos desafía en nuestro caminar con Cristo. Es un espacio online para incluir a quienes están fuera de Santiago. En abril comenzamos El Cristo Universal de Richard Rohr.",
       icon: <BookIcon size={26} />,
       signupType: 'lectura' as DialogType,
     }
