@@ -21,10 +21,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Save, AlertTriangle, Loader2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Save, AlertTriangle, Loader2, Star } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { PresentationData, StyleState, LogoState, TextOverlayState, ImageOverlayState, TempSlideEdit } from '@/lib/presentation/types';
-import { saveSession, createSessionState } from '@/lib/presentation/sessionService';
+import type { PresentationData, StyleState, LogoState, TextOverlayState, ImageOverlayState, VideoBackgroundState, TempSlideEdit } from '@/lib/presentation/types';
+import { saveSession, createSessionState, setPrimarySession } from '@/lib/presentation/sessionService';
 
 interface SaveSessionDialogProps {
   open: boolean;
@@ -36,9 +37,13 @@ interface SaveSessionDialogProps {
   logoState: LogoState;
   textOverlayState: TextOverlayState;
   imageOverlayState: ImageOverlayState;
+  videoBackgroundState?: VideoBackgroundState;
   previewSlideIndex: number;
   liveSlideIndex: number;
+  canManagePrepared?: boolean;
+  defaultMarkAsPrepared?: boolean;
   onSaved?: (sessionId: string) => void;
+  onPrimarySessionChanged?: (sessionId: string | null) => void;
 }
 
 export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
@@ -51,15 +56,20 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
   logoState,
   textOverlayState,
   imageOverlayState,
+  videoBackgroundState,
   previewSlideIndex,
   liveSlideIndex,
+  canManagePrepared = false,
+  defaultMarkAsPrepared = false,
   onSaved,
+  onPrimarySessionChanged,
 }) => {
   const [sessionName, setSessionName] = useState('');
   const [sessionDescription, setSessionDescription] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [markAsPrepared, setMarkAsPrepared] = useState(false);
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -100,7 +110,7 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
     setSaveError(null);
 
     try {
-      const state = createSessionState(
+      const sessionState = createSessionState(
         slides,
         styleState,
         logoState,
@@ -108,7 +118,8 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
         imageOverlayState,
         tempEdits,
         previewSlideIndex,
-        liveSlideIndex
+        liveSlideIndex,
+        videoBackgroundState
       );
 
       const session = await saveSession({
@@ -116,8 +127,14 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
         name: sessionName.trim(),
         description: sessionDescription.trim() || undefined,
         serviceDate: sessionDate || undefined,
-        state,
+        state: sessionState,
       });
+
+      // Marcar como sesión preparada si el switch está activado
+      if (markAsPrepared && canManagePrepared) {
+        await setPrimarySession(data.liturgyId, session.id);
+        onPrimarySessionChanged?.(session.id);
+      }
 
       onSaved?.(session.id);
       onOpenChange(false);
@@ -136,8 +153,9 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
       setSessionName(defaultName);
       setSessionDescription('');
       setSaveError(null);
+      setMarkAsPrepared(canManagePrepared && defaultMarkAsPrepared);
     }
-  }, [open, defaultName]);
+  }, [open, defaultName, canManagePrepared, defaultMarkAsPrepared]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -259,6 +277,43 @@ export const SaveSessionDialog: React.FC<SaveSessionDialogProps> = ({
               </li>
             </ul>
           </div>
+
+          {/* Marcar como preparada (solo para liturgistas/admins) */}
+          {canManagePrepared && (
+            <div
+              className="flex items-center justify-between rounded-lg p-3"
+              style={{
+                backgroundColor: markAsPrepared
+                  ? `${CASA_BRAND.colors.primary.amber}15`
+                  : CASA_BRAND.colors.primary.black,
+                border: `1px solid ${markAsPrepared ? CASA_BRAND.colors.primary.amber + '50' : CASA_BRAND.colors.secondary.grayDark}`,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Star
+                  size={16}
+                  style={{
+                    color: markAsPrepared
+                      ? CASA_BRAND.colors.primary.amber
+                      : CASA_BRAND.colors.secondary.grayMedium,
+                    fill: markAsPrepared ? CASA_BRAND.colors.primary.amber : 'transparent',
+                  }}
+                />
+                <Label
+                  htmlFor="mark-prepared"
+                  className="cursor-pointer"
+                  style={{ color: CASA_BRAND.colors.primary.white, fontSize: '13px' }}
+                >
+                  Marcar como presentación preparada
+                </Label>
+              </div>
+              <Switch
+                id="mark-prepared"
+                checked={markAsPrepared}
+                onCheckedChange={setMarkAsPrepared}
+              />
+            </div>
+          )}
 
           {saveError && (
             <Alert variant="destructive">

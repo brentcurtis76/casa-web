@@ -23,6 +23,8 @@ import {
   ImagePlus,
   Loader2,
   RefreshCw,
+  Star,
+  StarOff,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -46,8 +48,10 @@ interface PresenterControlsProps {
   liturgyDate?: Date;
   // Session state
   currentSessionId: string | null;
+  primarySessionId?: string | null;
   isUpdatingSession: boolean;
   loading: boolean;
+  canManagePrepared?: boolean;
   // Handlers - Presentation
   onGoLive: () => void;
   onToggleBlack: () => void;
@@ -62,6 +66,8 @@ interface PresenterControlsProps {
   onLoadSession: () => void;
   onUpdateSession: () => void;
   onSaveToLiturgy: () => void;
+  onMarkAsPrepared?: () => void;
+  onUnmarkAsPrepared?: () => void;
 }
 
 export const PresenterControls: React.FC<PresenterControlsProps> = ({
@@ -72,8 +78,10 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
   liturgyTitle,
   liturgyDate,
   currentSessionId,
+  primarySessionId,
   isUpdatingSession,
   loading,
+  canManagePrepared = false,
   onGoLive,
   onToggleBlack,
   onOpenOutput,
@@ -85,6 +93,8 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
   onLoadSession,
   onUpdateSession,
   onSaveToLiturgy,
+  onMarkAsPrepared,
+  onUnmarkAsPrepared,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -273,6 +283,29 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
                             )}
                             Actualizar sesión actual
                           </DropdownMenuItem>
+
+                          {/* Marcar/quitar como preparada (solo liturgistas/admins) */}
+                          {canManagePrepared && (
+                            <>
+                              {currentSessionId !== primarySessionId ? (
+                                <DropdownMenuItem
+                                  onClick={onMarkAsPrepared}
+                                  style={{ color: CASA_BRAND.colors.primary.white }}
+                                >
+                                  <Star size={16} className="mr-2" />
+                                  Marcar sesión actual como preparada
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={onUnmarkAsPrepared}
+                                  style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                                >
+                                  <StarOff size={16} className="mr-2" />
+                                  Quitar como preparada
+                                </DropdownMenuItem>
+                              )}
+                            </>
+                          )}
                         </>
                       )}
                     </DropdownMenuSubContent>

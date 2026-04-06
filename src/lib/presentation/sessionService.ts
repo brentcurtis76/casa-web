@@ -17,8 +17,10 @@ import {
   type LogoState,
   type TextOverlayState,
   type ImageOverlayState,
+  type VideoBackgroundState,
   type TempSlideEdit,
 } from './types';
+import { extractAndUploadSessionImages } from './imageStorageService';
 
 /**
  * Guarda una nueva sesión de presentación
@@ -27,13 +29,16 @@ export async function saveSession(data: CreateSessionData): Promise<Presentation
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Usuario no autenticado');
 
+  // Optimizar imágenes base64 → Storage antes de escribir en DB
+  const optimizedState = await extractAndUploadSessionImages(data.state);
+
   const { data: session, error } = await supabase
     .from('presentation_sessions')
     .insert({
       liturgy_id: data.liturgyId,
       name: data.name,
       description: data.description,
-      state: data.state as unknown as Record<string, unknown>,
+      state: optimizedState as unknown as Record<string, unknown>,
       created_by: user.id,
       service_date: data.serviceDate,
     })
@@ -57,10 +62,13 @@ export async function updateSession(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Usuario no autenticado');
 
+  // Optimizar imágenes base64 → Storage antes de escribir en DB
+  const optimizedState = await extractAndUploadSessionImages(state);
+
   const { data: session, error } = await supabase
     .from('presentation_sessions')
     .update({
-      state: state as unknown as Record<string, unknown>,
+      state: optimizedState as unknown as Record<string, unknown>,
       // updated_at is handled by database trigger
     })
     .eq('id', sessionId)
@@ -220,7 +228,8 @@ export function createSessionState(
   imageOverlayState: ImageOverlayState,
   tempEdits: Record<string, TempSlideEdit>,
   previewSlideIndex: number,
-  liveSlideIndex: number
+  liveSlideIndex: number,
+  videoBackgroundState?: VideoBackgroundState
 ): PresentationSessionState {
   // Filter to only include temp slides (those with 'temp-' or 'imported-' prefix in ID)
   const tempSlides = slides.filter(
@@ -234,10 +243,53 @@ export function createSessionState(
     logoState,
     textOverlayState,
     imageOverlayState,
+    videoBackgroundState,
     tempEdits,
     previewSlideIndex,
     liveSlideIndex,
   };
+}
+
+/**
+ * Establece la sesión primaria de una liturgia
+ * Solo liturgistas y general_admin pueden hacer esto (RLS en DB lo refuerza)
+ */
+export async function setPrimarySession(
+  liturgyId: string,
+  sessionId: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('liturgias')
+    .update({ primary_session_id: sessionId })
+    .eq('id', liturgyId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * Obtiene la sesión primaria de una liturgia
+ * Retorna null si no hay sesión primaria configurada
+ */
+export async function getPrimarySession(
+  liturgyId: string
+): Promise<PresentationSession | null> {
+  const { data, error } = await supabase
+    .from('liturgias')
+    .select('primary_session_id')
+    .eq('id', liturgyId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
+  }
+
+  const primarySessionId = (data as { primary_session_id: string | null })?.primary_session_id;
+  if (!primarySessionId) return null;
+
+  return loadSession(primarySessionId);
 }
 
 /**

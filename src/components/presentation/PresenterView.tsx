@@ -43,9 +43,12 @@ import { CASA_BRAND } from '@/lib/brand-kit';
 import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, ImageOverlay, ImageOverlayState, VideoBackground, VideoBackgroundState, OverlayScope, LogoState, PublishPayload, SlideStyles, StyleScope, StyleState, VideoPlaybackState } from '@/lib/presentation/types';
 import { shouldShowLogo, getAllOverlaysForSlide, getAllImageOverlaysForSlide, getActiveVideoBackground, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, getResolvedStyles, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
 import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { ImportValidationResult } from '@/lib/presentation/types';
 import { applyImport } from '@/lib/presentation/exportImport';
-import { loadSession, updateSession, createSessionState, mergeTempSlides } from '@/lib/presentation/sessionService';
+import { loadSession, updateSession, createSessionState, mergeTempSlides, getPrimarySession, setPrimarySession } from '@/lib/presentation/sessionService';
+import { useAuth } from '@/components/auth/AuthContext';
+import { ROLE_NAMES } from '@/types/rbac';
 import { toast } from 'sonner';
 
 /**
@@ -70,6 +73,9 @@ function hasActiveStyles(styleState: StyleState | undefined): boolean {
 }
 
 export const PresenterView: React.FC = () => {
+  const { hasRole } = useAuth();
+  const canManagePrepared = hasRole(ROLE_NAMES.LITURGIST) || hasRole(ROLE_NAMES.GENERAL_ADMIN);
+
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [liveStartTime, setLiveStartTime] = useState<Date | null>(null);
@@ -84,9 +90,12 @@ export const PresenterView: React.FC = () => {
   const [loadSessionDialogOpen, setLoadSessionDialogOpen] = useState(false);
   const [saveToLiturgyDialogOpen, setSaveToLiturgyDialogOpen] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [primarySessionId, setPrimarySessionId] = useState<string | null>(null);
   // null = individual control, 'collapsed' = all closed, 'expanded' = all open
   const [panelMode, setPanelMode] = useState<null | 'collapsed' | 'expanded'>(null);
   const [isUpdatingSession, setIsUpdatingSession] = useState(false);
+  // Prep mode (URL param ?prepMode=true)
+  const [isPrepMode, setIsPrepMode] = useState(false);
   const [videoPlaybackState, setVideoPlaybackState] = useState<{ slideId: string; state: VideoPlaybackState } | null>(null);
   const outputWindowRef = useRef<Window | null>(null);
   const syncStateRef = useRef<((state: import('@/lib/presentation/types').PresentationState) => void) | null>(null);
@@ -175,6 +184,15 @@ export const PresenterView: React.FC = () => {
     }
   }, []);
 
+  // Prep mode URL param — read on mount, stored so we can trigger load after declarations
+  const [prepModeLiturgyId, setPrepModeLiturgyId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('prepMode') === 'true' && params.get('liturgyId')) {
+      return params.get('liturgyId');
+    }
+    return null;
+  });
+
   // Handle incoming sync messages from output
   const handleMessage = useCallback((message: SyncMessage) => {
     switch (message.type) {
@@ -210,8 +228,59 @@ export const PresenterView: React.FC = () => {
     }
   }, [state.followMode, state.isLive, state.previewSlideIndex, state.liveSlideIndex, publish, send]);
 
-  // Load a liturgy
-  const handleSelectLiturgy = async (liturgyId: string) => {
+  /**
+   * Aplica el estado de una sesión sobre la liturgia cargada actualmente.
+   * Extrae la lógica de handleLoadSession para reutilizarla en auto-carga.
+   * IMPORTANTE: Preserva los setTimeout originales — su timing es necesario para estabilidad.
+   */
+  const applySessionState = useCallback((
+    sessionState: import('@/lib/presentation/types').PresentationSessionState,
+    sessionId: string
+  ) => {
+    setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        const mergedSlides = mergeTempSlides(currentState.data.slides, sessionState.tempSlides);
+        const updatedData = {
+          ...currentState.data,
+          slides: mergedSlides,
+        };
+        loadLiturgy(updatedData);
+
+        setTimeout(() => {
+          setLogoState(sessionState.logoState);
+          setTextOverlayState(sessionState.textOverlayState);
+          if (sessionState.imageOverlayState) {
+            setImageOverlayState(sessionState.imageOverlayState);
+          }
+          if (sessionState.videoBackgroundState) {
+            setVideoBackgroundState(sessionState.videoBackgroundState);
+          }
+          setStyleState(sessionState.styleState);
+          goToSlide(sessionState.previewSlideIndex);
+
+          const latestState = stateRef.current;
+          if (latestState?.data) {
+            send({ type: 'LITURGY_LOADED', data: latestState.data });
+            send({ type: 'LOGO_UPDATE', logoState: sessionState.logoState });
+            send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: sessionState.textOverlayState });
+            if (sessionState.imageOverlayState) {
+              send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: sessionState.imageOverlayState });
+            }
+            send({ type: 'STYLES_UPDATE', styleState: sessionState.styleState });
+          }
+        }, 100);
+      }
+    }, 100);
+
+    setCurrentSessionId(sessionId);
+  }, [loadLiturgy, setLogoState, setTextOverlayState, setImageOverlayState, setVideoBackgroundState, setStyleState, goToSlide, send, setCurrentSessionId]);
+
+  /**
+   * Carga una liturgia por ID (sin auto-carga de sesión primaria)
+   * Usado internamente por handleSelectLiturgy y el modo prep URL
+   */
+  const handleSelectLiturgyById = async (liturgyId: string) => {
     setLoading(true);
     try {
       const data = await loadLiturgyForPresentation(liturgyId);
@@ -219,7 +288,20 @@ export const PresenterView: React.FC = () => {
         loadLiturgy(data);
         send({ type: 'LITURGY_LOADED', data });
         setCurrentSessionId(null);
-        clearSavedPresentationState(); // Clear stale recovery state from previous liturgy
+        setPrimarySessionId(null);
+        clearSavedPresentationState();
+
+        // Auto-cargar sesión primaria si existe
+        try {
+          const primarySession = await getPrimarySession(liturgyId);
+          if (primarySession) {
+            setPrimarySessionId(primarySession.id);
+            applySessionState(primarySession.state, primarySession.id);
+            toast.success('Presentación preparada cargada automáticamente');
+          }
+        } catch {
+          // Fallo silencioso — no impide cargar la liturgia
+        }
       }
     } catch {
       // Error already thrown from loadLiturgyForPresentation
@@ -227,6 +309,21 @@ export const PresenterView: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Load a liturgy (called from selector modal)
+  const handleSelectLiturgy = async (liturgyId: string) => {
+    await handleSelectLiturgyById(liturgyId);
+  };
+
+  // Auto-load liturgy if prep mode URL param was present on mount
+  useEffect(() => {
+    if (prepModeLiturgyId) {
+      setIsPrepMode(true);
+      handleSelectLiturgyById(prepModeLiturgyId);
+      setPrepModeLiturgyId(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepModeLiturgyId]);
 
   // Handle recovery from saved state
   const handleRecover = useCallback(async () => {
@@ -633,49 +730,14 @@ export const PresenterView: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      const sessionState = session.state;
-
-      setTimeout(() => {
-        const currentState = stateRef.current;
-        if (currentState?.data) {
-          const mergedSlides = mergeTempSlides(currentState.data.slides, sessionState.tempSlides);
-          const updatedData = {
-            ...currentState.data,
-            slides: mergedSlides,
-          };
-          loadLiturgy(updatedData);
-
-          setTimeout(() => {
-            setLogoState(sessionState.logoState);
-            setTextOverlayState(sessionState.textOverlayState);
-            if (sessionState.imageOverlayState) {
-              setImageOverlayState(sessionState.imageOverlayState);
-            }
-            setStyleState(sessionState.styleState);
-            goToSlide(sessionState.previewSlideIndex);
-
-            const latestState = stateRef.current;
-            if (latestState?.data) {
-              send({ type: 'LITURGY_LOADED', data: latestState.data });
-              send({ type: 'LOGO_UPDATE', logoState: sessionState.logoState });
-              send({ type: 'TEXT_OVERLAYS_UPDATE', textOverlayState: sessionState.textOverlayState });
-              if (sessionState.imageOverlayState) {
-                send({ type: 'IMAGE_OVERLAYS_UPDATE', imageOverlayState: sessionState.imageOverlayState });
-              }
-              send({ type: 'STYLES_UPDATE', styleState: sessionState.styleState });
-            }
-          }, 100);
-        }
-      }, 100);
-
-      setCurrentSessionId(sessionId);
+      applySessionState(session.state, sessionId);
       toast.success(`Sesión "${session.name}" cargada`);
     } catch {
       toast.error('Error al cargar la sesión');
     } finally {
       setLoading(false);
     }
-  }, [state.data, loadLiturgy, setLogoState, setTextOverlayState, setStyleState, goToSlide, send]);
+  }, [state.data, loadLiturgy, applySessionState]);
 
   const handleUpdateCurrentSession = useCallback(async () => {
     if (!currentSessionId || !state.data) {
@@ -693,7 +755,8 @@ export const PresenterView: React.FC = () => {
         state.imageOverlayState,
         state.tempEdits,
         state.previewSlideIndex,
-        state.liveSlideIndex
+        state.liveSlideIndex,
+        state.videoBackgroundState
       );
 
       await updateSession(currentSessionId, sessionState);
@@ -704,6 +767,30 @@ export const PresenterView: React.FC = () => {
       setIsUpdatingSession(false);
     }
   }, [currentSessionId, state]);
+
+  // ============ PREPARED SESSION HANDLERS ============
+
+  const handleMarkAsPrepared = useCallback(async () => {
+    if (!currentSessionId || !state.data) return;
+    try {
+      await setPrimarySession(state.data.liturgyId, currentSessionId);
+      setPrimarySessionId(currentSessionId);
+      toast.success('Sesión marcada como presentación preparada');
+    } catch {
+      toast.error('Error al marcar la sesión como preparada');
+    }
+  }, [currentSessionId, state.data]);
+
+  const handleUnmarkAsPrepared = useCallback(async () => {
+    if (!state.data) return;
+    try {
+      await setPrimarySession(state.data.liturgyId, null);
+      setPrimarySessionId(null);
+      toast.success('Sesión ya no es la presentación preparada');
+    } catch {
+      toast.error('Error al quitar la sesión preparada');
+    }
+  }, [state.data]);
 
   // ============ TEXT OVERLAY HANDLERS ============
 
@@ -844,6 +931,37 @@ export const PresenterView: React.FC = () => {
         backgroundColor: CASA_BRAND.colors.primary.black,
       }}
     >
+      {/* Prep mode banner */}
+      {isPrepMode && (
+        <div
+          className="flex items-center justify-between px-4 py-2"
+          style={{
+            backgroundColor: `${CASA_BRAND.colors.primary.amber}20`,
+            borderBottom: `1px solid ${CASA_BRAND.colors.primary.amber}40`,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              fontSize: '14px',
+              color: CASA_BRAND.colors.primary.amber,
+            }}
+          >
+            Modo preparación — los cambios se guardarán como presentación preparada
+          </span>
+          <Button
+            onClick={() => setSaveSessionDialogOpen(true)}
+            size="sm"
+            style={{
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.black,
+            }}
+          >
+            Guardar y marcar como preparada
+          </Button>
+        </div>
+      )}
+
       {/* Unified Header with 4 zones */}
       <PresenterControls
         isLive={state.isLive}
@@ -853,8 +971,10 @@ export const PresenterView: React.FC = () => {
         liturgyTitle={state.data?.liturgyTitle}
         liturgyDate={state.data?.liturgyDate}
         currentSessionId={currentSessionId}
+        primarySessionId={primarySessionId}
         isUpdatingSession={isUpdatingSession}
         loading={loading}
+        canManagePrepared={canManagePrepared}
         onGoLive={handleGoLive}
         onToggleBlack={handleToggleBlack}
         onOpenOutput={handleOpenOutput}
@@ -866,6 +986,8 @@ export const PresenterView: React.FC = () => {
         onLoadSession={() => setLoadSessionDialogOpen(true)}
         onUpdateSession={handleUpdateCurrentSession}
         onSaveToLiturgy={() => setSaveToLiturgyDialogOpen(true)}
+        onMarkAsPrepared={handleMarkAsPrepared}
+        onUnmarkAsPrepared={handleUnmarkAsPrepared}
       />
 
       {/* Main content */}
@@ -1291,9 +1413,13 @@ export const PresenterView: React.FC = () => {
         logoState={state.logoState}
         textOverlayState={state.textOverlayState}
         imageOverlayState={state.imageOverlayState}
+        videoBackgroundState={state.videoBackgroundState}
         previewSlideIndex={state.previewSlideIndex}
         liveSlideIndex={state.liveSlideIndex}
+        canManagePrepared={canManagePrepared}
+        defaultMarkAsPrepared={isPrepMode}
         onSaved={handleSessionSaved}
+        onPrimarySessionChanged={setPrimarySessionId}
       />
 
       {/* Load session dialog */}
@@ -1301,6 +1427,7 @@ export const PresenterView: React.FC = () => {
         open={loadSessionDialogOpen}
         onOpenChange={setLoadSessionDialogOpen}
         currentLiturgyId={state.data?.liturgyId}
+        primarySessionId={primarySessionId}
         onLoadSession={handleLoadSession}
       />
 
