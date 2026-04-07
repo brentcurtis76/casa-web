@@ -14,9 +14,14 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import {
-  Users, Clock, CheckCircle2, XCircle, Download, Loader2,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Users, Clock, CheckCircle2, XCircle, Download, Loader2, Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { ChurchSignup, SignupFormType, SignupStatus } from '@/types/signups';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -98,6 +103,8 @@ const AdminSignupsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SignupFormType>('grupos_casa');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; label: string } | null>(null);
+  const { canManage } = usePermissions('signups');
 
   // ── Data Fetching ──────────────────────────────────────────────────────
 
@@ -168,6 +175,32 @@ const AdminSignupsPage: React.FC = () => {
       await fetchSignups();
     }
     setMutating(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setMutating(true);
+    try {
+      const { error } = await supabase
+        .from('church_signups')
+        .delete()
+        .in('id', deleteTarget.ids);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Eliminado',
+        description: `${deleteTarget.ids.length} inscripción(es) eliminada(s) permanentemente.`,
+      });
+      setSelectedIds(new Set());
+      await fetchSignups();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Error al eliminar la inscripción.';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setMutating(false);
+      setDeleteTarget(null);
+    }
   };
 
   // ── Selection Helpers ──────────────────────────────────────────────────
@@ -259,6 +292,23 @@ const AdminSignupsPage: React.FC = () => {
           <XCircle className="h-4 w-4 mr-1" />
           Cancelar seleccionados
         </Button>
+        {canManage && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={mutating}
+            onClick={() =>
+              setDeleteTarget({
+                ids: [...selectedIds],
+                label: `${selectedIds.size} inscripción(es)`,
+              })
+            }
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Eliminar seleccionados
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
@@ -355,6 +405,23 @@ const AdminSignupsPage: React.FC = () => {
                         <XCircle className="h-4 w-4 text-red-600" />
                       </Button>
                     )}
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={mutating}
+                        onClick={() =>
+                          setDeleteTarget({
+                            ids: [signup.id],
+                            label: signup.full_name,
+                          })
+                        }
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Eliminar permanentemente"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -426,6 +493,30 @@ const AdminSignupsPage: React.FC = () => {
           </Tabs>
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar inscripción?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && deleteTarget.ids.length > 1
+                ? `Se eliminarán permanentemente ${deleteTarget.ids.length} inscripción(es). Esta acción no se puede deshacer.`
+                : `Se eliminará permanentemente la inscripción de "${deleteTarget?.label}". Esta acción no se puede deshacer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={mutating}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {mutating ? 'Eliminando...' : 'Eliminar permanentemente'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
