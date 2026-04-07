@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { FolderOpen, AlertTriangle, Loader2, Calendar, User, Trash2 } from 'lucide-react';
+import { FolderOpen, AlertTriangle, Loader2, Calendar, User, Trash2, Star } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { PresentationSessionSummary } from '@/lib/presentation/types';
 import { listSessions, deleteSession } from '@/lib/presentation/sessionService';
@@ -27,6 +27,7 @@ interface LoadSessionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentLiturgyId?: string;
+  primarySessionId?: string | null;
   onLoadSession: (sessionId: string) => void;
 }
 
@@ -34,6 +35,7 @@ export const LoadSessionDialog: React.FC<LoadSessionDialogProps> = ({
   open,
   onOpenChange,
   currentLiturgyId,
+  primarySessionId,
   onLoadSession,
 }) => {
   const [sessions, setSessions] = useState<PresentationSessionSummary[]>([]);
@@ -223,12 +225,27 @@ export const LoadSessionDialog: React.FC<LoadSessionDialogProps> = ({
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
-                      <h4
-                        className="font-medium truncate"
-                        style={{ color: CASA_BRAND.colors.primary.white }}
-                      >
-                        {session.name}
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4
+                          className="font-medium truncate"
+                          style={{ color: CASA_BRAND.colors.primary.white }}
+                        >
+                          {session.name}
+                        </h4>
+                        {session.id === primarySessionId && (
+                          <span
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+                            style={{
+                              backgroundColor: `${CASA_BRAND.colors.primary.amber}25`,
+                              color: CASA_BRAND.colors.primary.amber,
+                              border: `1px solid ${CASA_BRAND.colors.primary.amber}40`,
+                            }}
+                          >
+                            <Star size={10} style={{ fill: CASA_BRAND.colors.primary.amber }} aria-hidden="true" />
+                            Preparada
+                          </span>
+                        )}
+                      </div>
                       <p
                         className="text-sm truncate mt-0.5"
                         style={{ color: CASA_BRAND.colors.secondary.grayMedium }}

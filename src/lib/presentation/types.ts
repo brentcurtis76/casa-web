@@ -932,7 +932,7 @@ export function isVersionCompatible(version: string): boolean {
  * Current version of the session state schema.
  * Increment when making breaking changes to PresentationSessionState.
  */
-export const SESSION_STATE_VERSION = '1.0';
+export const SESSION_STATE_VERSION = '1.1';
 
 /**
  * Estado snapshot de una sesión de presentación
@@ -945,6 +945,7 @@ export interface PresentationSessionState {
   logoState: LogoState;
   textOverlayState: TextOverlayState;
   imageOverlayState: ImageOverlayState;
+  videoBackgroundState?: VideoBackgroundState;
   tempEdits: Record<string, TempSlideEdit>;
   previewSlideIndex: number;
   liveSlideIndex: number;

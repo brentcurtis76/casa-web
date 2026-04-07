@@ -18,6 +18,8 @@ import {
   Music,
   Send,
   AlertTriangle,
+  Star,
+  StarOff,
 } from 'lucide-react';
 import type { LiturgyElement, LiturgyElementType, LiturgyContext } from '@/types/shared/liturgy';
 import type { Story } from '@/types/shared/story';
@@ -124,6 +126,16 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const [exportingChildrenPDF, setExportingChildrenPDF] = useState(false);
   const [childrenPDFCompleted, setChildrenPDFCompleted] = useState(false);
 
+  // Preparation status state
+  const [primarySessionId, setPrimarySessionId] = useState<string | null | undefined>(undefined);
+  const [primarySessionName, setPrimarySessionName] = useState<string | null>(null);
+  const [primarySessionCreator, setPrimarySessionCreator] = useState<string | null>(null);
+  const [loadingPrepStatus, setLoadingPrepStatus] = useState(false);
+  const [removingPrepared, setRemovingPrepared] = useState(false);
+
+  // RBAC: Can this user manage preparation?
+  const canManagePrepared = hasRole(ROLE_NAMES.LITURGIST) || hasRole(ROLE_NAMES.GENERAL_ADMIN);
+
   // RBAC: Can this user publish music?
   const canPublishMusic = hasRole(ROLE_NAMES.LITURGIST) ||
     hasRole(ROLE_NAMES.WORSHIP_COORDINATOR) ||
@@ -137,6 +149,77 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   const canPublishChildrenActivities = hasRole(ROLE_NAMES.LITURGIST) ||
     hasRole(ROLE_NAMES.CHILDREN_MINISTRY_COORDINATOR) ||
     hasRole(ROLE_NAMES.GENERAL_ADMIN);
+
+  // Cargar estado de preparacion de la presentacion
+  const loadPrepStatus = useCallback(async () => {
+    if (!liturgyContext?.id) return;
+    setLoadingPrepStatus(true);
+    try {
+      // Paso 1: obtener primary_session_id de la liturgia
+      const { data: liturgiaData, error: liturgiaError } = await supabase
+        .from('liturgias')
+        .select('primary_session_id')
+        .eq('id', liturgyContext.id)
+        .single();
+
+      if (liturgiaError || !liturgiaData) {
+        setPrimarySessionId(null);
+        return;
+      }
+
+      const psid = (liturgiaData as { primary_session_id: string | null }).primary_session_id ?? null;
+      setPrimarySessionId(psid);
+
+      if (!psid) {
+        setPrimarySessionName(null);
+        setPrimarySessionCreator(null);
+        return;
+      }
+
+      // Paso 2: obtener nombre y creador de la sesión primaria
+      const { data: sessionData } = await supabase
+        .from('presentation_sessions')
+        .select('id, name, profiles:created_by(full_name)')
+        .eq('id', psid)
+        .single();
+
+      if (sessionData) {
+        const session = sessionData as { id: string; name: string; profiles: { full_name: string } | null };
+        setPrimarySessionName(session.name);
+        setPrimarySessionCreator(session.profiles?.full_name ?? null);
+      }
+    } catch {
+      setPrimarySessionId(null);
+    } finally {
+      setLoadingPrepStatus(false);
+    }
+  }, [liturgyContext?.id]);
+
+  useEffect(() => {
+    loadPrepStatus();
+  }, [loadPrepStatus]);
+
+  const handleRemovePrepared = async () => {
+    if (!canManagePrepared || !liturgyContext?.id) return;
+    setRemovingPrepared(true);
+    try {
+      const { error } = await supabase
+        .from('liturgias')
+        .update({ primary_session_id: null })
+        .eq('id', liturgyContext.id);
+      if (!error) {
+        setPrimarySessionId(null);
+        setPrimarySessionName(null);
+        setPrimarySessionCreator(null);
+      } else {
+        toast({ title: 'Error al quitar la preparación', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error al quitar la preparación', variant: 'destructive' });
+    } finally {
+      setRemovingPrepared(false);
+    }
+  };
 
   // Load existing publication state for this liturgy (both music and children)
   const loadPublicationState = useCallback(async () => {
@@ -726,6 +809,103 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         >
           Se abrirá en una nueva pestaña
         </p>
+
+        {/* Estado de preparacion */}
+        {loadingPrepStatus ? (
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Loader2 size={14} className="animate-spin" style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+            <span style={{ color: CASA_BRAND.colors.secondary.grayMedium, fontSize: '12px', fontFamily: CASA_BRAND.fonts.body }}>
+              Verificando preparación...
+            </span>
+          </div>
+        ) : primarySessionId ? (
+          <div
+            className="mt-4 rounded-lg p-4 text-left"
+            style={{
+              backgroundColor: `${CASA_BRAND.colors.primary.amber}10`,
+              border: `1px solid ${CASA_BRAND.colors.primary.amber}30`,
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Star size={14} style={{ color: CASA_BRAND.colors.primary.amber, fill: CASA_BRAND.colors.primary.amber }} aria-hidden="true" />
+              <span
+                className="font-semibold text-sm"
+                style={{ color: CASA_BRAND.colors.primary.amber, fontFamily: CASA_BRAND.fonts.body }}
+              >
+                Presentación preparada
+              </span>
+            </div>
+            {primarySessionName && (
+              <p style={{ color: CASA_BRAND.colors.primary.white, fontSize: '13px', fontFamily: CASA_BRAND.fonts.body }}>
+                {primarySessionName}
+              </p>
+            )}
+            {primarySessionCreator && (
+              <p style={{ color: CASA_BRAND.colors.secondary.grayMedium, fontSize: '12px', fontFamily: CASA_BRAND.fonts.body }} className="mt-0.5">
+                Por {primarySessionCreator}
+              </p>
+            )}
+            {canManagePrepared && (
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (liturgyContext?.id) {
+                      window.open(`/presenter?liturgyId=${liturgyContext.id}&prepMode=true`, '_blank');
+                    }
+                  }}
+                  style={{
+                    backgroundColor: `${CASA_BRAND.colors.primary.amber}20`,
+                    color: CASA_BRAND.colors.primary.amber,
+                    border: `1px solid ${CASA_BRAND.colors.primary.amber}40`,
+                  }}
+                >
+                  <ExternalLink size={12} />
+                  Abrir para editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRemovePrepared}
+                  disabled={removingPrepared}
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: CASA_BRAND.colors.secondary.grayMedium,
+                    border: `1px solid ${CASA_BRAND.colors.secondary.grayDark}`,
+                  }}
+                >
+                  {removingPrepared ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <StarOff size={12} />
+                  )}
+                  Quitar preparación
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          canManagePrepared && primarySessionId !== undefined && (
+            <div className="mt-4">
+              <Button
+                onClick={() => {
+                  if (liturgyContext?.id) {
+                    window.open(`/presenter?liturgyId=${liturgyContext.id}&prepMode=true`, '_blank');
+                  }
+                }}
+                className="transition-all hover:scale-105"
+                style={{
+                  backgroundColor: CASA_BRAND.colors.primary.amber,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                <Star size={14} />
+                Preparar presentación
+                <ExternalLink size={12} />
+              </Button>
+            </div>
+          )
+        )}
       </div>
 
       {/* Music Publishing Section */}
