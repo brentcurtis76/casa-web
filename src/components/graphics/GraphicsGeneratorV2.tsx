@@ -67,6 +67,7 @@ import {
   type FieldPositionAdjustments,
   type AllFieldPositionAdjustments,
 } from './templateCompositor';
+import { buildJsonPromptString } from './jsonPromptBuilder';
 import {
   type ElementPositions,
   type AllElementPositions,
@@ -314,6 +315,9 @@ export const GraphicsGeneratorV2 = () => {
   const [includeTime, setIncludeTime] = useState(true);
   const [includeLocation, setIncludeLocation] = useState(true);
 
+  // Text baked into image toggle — when ON, Nano Banana Pro renders text directly
+  const [textBakedIn, setTextBakedIn] = useState(true);
+
   // Prompt state (editable)
   const [customPrompt, setCustomPrompt] = useState('');
   // User's illustration theme description (in Spanish)
@@ -511,7 +515,7 @@ export const GraphicsGeneratorV2 = () => {
     return `${BASE_STYLE_PROMPT} Subject: ${subjectPrompt}`;
   };
 
-  // Show prompt editor before generating
+  // Show prompt editor before generating (or skip to generation in baked-in mode)
   const handleShowPromptEditor = () => {
     // Check if at least one format has a title
     const hasAnyTitle = Object.values(titles).some(t => t.trim());
@@ -524,9 +528,15 @@ export const GraphicsGeneratorV2 = () => {
       return;
     }
 
-    // Set default prompt based on event type and user's theme
-    setCustomPrompt(buildDefaultPrompt(eventType, illustrationTheme));
-    setPhase('prompt');
+    if (textBakedIn) {
+      // In baked-in mode, skip the prompt editor — JSON prompt is auto-built
+      // Go directly to illustration generation
+      handleGenerateIllustrations();
+    } else {
+      // Legacy mode: show editable prompt
+      setCustomPrompt(buildDefaultPrompt(eventType, illustrationTheme));
+      setPhase('prompt');
+    }
   };
 
   // Generate 4 illustrations with custom prompt
@@ -537,29 +547,62 @@ export const GraphicsGeneratorV2 = () => {
     setIllustrations([]);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-illustration', {
-        body: {
+      // Build request body depending on mode
+      let requestBody: Record<string, unknown>;
+
+      if (textBakedIn) {
+        // JSON prompt mode: build structured prompt with text baked in
+        // Use instagram_post as the default format for illustration selection
+        const eventData: EventData = {
+          title: titles.instagram_post || titles.ppt_4_3 || 'Título del Evento',
+          subtitle: includeSubtitle ? subtitle : undefined,
+          date: includeDate ? (formatDateRange(dateRange) || '') : '',
+          time: includeTime ? (time || '') : '',
+          location: includeLocation ? (location || '') : '',
+        };
+        const jsonPromptStr = buildJsonPromptString(eventData, eventType, 'instagram_post', {
+          includeSubtitle,
+        });
+        requestBody = {
           eventType,
           count: 4,
-          customPrompt: customPrompt, // Enviar prompt personalizado
-          backgroundMode: backgroundSettings.mode, // Pass background mode to edge function
-        },
+          jsonPrompt: jsonPromptStr,
+        };
+      } else {
+        // Legacy mode: illustration-only with canvas overlay
+        requestBody = {
+          eventType,
+          count: 4,
+          customPrompt: customPrompt,
+          backgroundMode: backgroundSettings.mode,
+        };
+      }
+
+      const { data, error } = await supabase.functions.invoke('generate-illustration', {
+        body: requestBody,
       });
 
       if (error) throw error;
 
       if (data?.illustrations && data.illustrations.length > 0) {
-        // Post-process each illustration to ensure background matches slide color or is transparent
         const validIllustrations = data.illustrations.filter((i: string) => i && i.length > 0);
-        const processedIllustrations = await Promise.all(
-          validIllustrations.map((base64: string) =>
-            processIllustrationBackground(
-              base64,
-              backgroundSettings.color || CASA_BRAND.colors.primary.white,
-              backgroundSettings.mode
+
+        let processedIllustrations: string[];
+        if (textBakedIn) {
+          // In baked-in mode, the image is a complete graphic — no background replacement
+          processedIllustrations = validIllustrations;
+        } else {
+          // Legacy mode: post-process to ensure background matches slide color or is transparent
+          processedIllustrations = await Promise.all(
+            validIllustrations.map((base64: string) =>
+              processIllustrationBackground(
+                base64,
+                backgroundSettings.color || CASA_BRAND.colors.primary.white,
+                backgroundSettings.mode
+              )
             )
-          )
-        );
+          );
+        }
         setIllustrations(processedIllustrations);
 
         const validCount = processedIllustrations.length;
@@ -599,7 +642,7 @@ export const GraphicsGeneratorV2 = () => {
     handleGenerateIllustrations();
   };
 
-  // Select illustration and go to adjustment phase
+  // Select illustration and go to adjustment phase (or skip to final generation in baked-in mode)
   const handleSelectIllustration = (index: number) => {
     setSelectedIllustration(index);
 
@@ -614,6 +657,16 @@ export const GraphicsGeneratorV2 = () => {
     };
     img.src = `data:image/png;base64,${illustrations[index]}`;
 
+    if (textBakedIn) {
+      // In baked-in mode, the selected image IS the final graphic for instagram_post.
+      // Go directly to generating per-format versions.
+      // We need to set selectedIllustration first (done above), then trigger generation.
+      // Use a brief timeout to let state settle before generating
+      setTimeout(() => handleGenerateWithAdjustments(), 100);
+      return;
+    }
+
+    // Legacy mode: go to adjustment phase
     // Reset adjustments to defaults
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
@@ -711,20 +764,57 @@ export const GraphicsGeneratorV2 = () => {
     const selectedBase64 = illustrations[selectedIllustration];
 
     try {
-      // Generate each format with its own title and positions
       const formats: FormatType[] = ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'];
-      const graphics = await Promise.all(
-        formats.map(format => {
+      let graphics: GeneratedGraphic[];
+
+      if (textBakedIn) {
+        // Text-baked-in mode: generate a complete graphic per format via Nano Banana Pro
+        // Each format gets its own JSON prompt with the correct aspect ratio
+        const generateForFormat = async (format: FormatType): Promise<GeneratedGraphic> => {
           const eventData: EventData = {
-            title: titles[format].replace(/\n/g, '\\n'),
+            title: titles[format].replace(/\n/g, '\\n') || 'Título del Evento',
             subtitle: includeSubtitle ? subtitle : undefined,
             date: includeDate ? formatDateRange(dateRange) : '',
             time: includeTime ? time : '',
             location: includeLocation ? location : '',
           };
-          return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format], backgroundSettings);
-        })
-      );
+          const jsonPromptStr = buildJsonPromptString(eventData, eventType, format, {
+            includeSubtitle,
+          });
+
+          const { data, error } = await supabase.functions.invoke('generate-illustration', {
+            body: {
+              eventType,
+              count: 1,
+              jsonPrompt: jsonPromptStr,
+            },
+          });
+
+          if (error) throw error;
+
+          const base64 = data?.illustrations?.[0] || selectedBase64;
+          const dims = { ppt_4_3: { w: 2048, h: 1536 }, instagram_post: { w: 2160, h: 2160 }, instagram_story: { w: 2160, h: 3840 }, facebook_post: { w: 2400, h: 1260 } };
+          const d = dims[format];
+
+          return { format, base64, width: d.w, height: d.h };
+        };
+
+        graphics = await Promise.all(formats.map(generateForFormat));
+      } else {
+        // Legacy mode: generate each format with canvas text overlay
+        graphics = await Promise.all(
+          formats.map(format => {
+            const eventData: EventData = {
+              title: titles[format].replace(/\n/g, '\\n'),
+              subtitle: includeSubtitle ? subtitle : undefined,
+              date: includeDate ? formatDateRange(dateRange) : '',
+              time: includeTime ? time : '',
+              location: includeLocation ? location : '',
+            };
+            return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format], backgroundSettings);
+          })
+        );
+      }
 
       setGeneratedGraphics(graphics);
       setPhase('done');
@@ -979,6 +1069,23 @@ export const GraphicsGeneratorV2 = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Texto integrado en imagen */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="text-baked-in"
+                    checked={textBakedIn}
+                    onCheckedChange={(checked) => setTextBakedIn(checked === true)}
+                  />
+                  <Label htmlFor="text-baked-in" className="cursor-pointer">Texto integrado en imagen</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {textBakedIn
+                    ? 'Nano Banana Pro renderiza el texto directamente en la imagen con tipografía profesional (recomendado).'
+                    : 'Modo clásico: la ilustración se genera sin texto y se superpone después con Canvas.'}
+                </p>
               </div>
 
               {/* Fecha y Hora */}

@@ -2056,12 +2056,44 @@ export async function generateGraphicWithPositions(
   illustrationBase64: string | null,
   logoBase64: string | null,
   positions: ElementPositions,
-  backgroundSettings?: { mode: 'solid' | 'transparent'; color?: string }
+  backgroundSettings?: { mode: 'solid' | 'transparent'; color?: string },
+  options?: { textBakedIn?: boolean }
 ): Promise<GeneratedGraphic> {
   const config = FORMATS[format];
   const width = config.width * config.scale;
   const height = config.height * config.scale;
 
+  if (options?.textBakedIn && illustrationBase64) {
+    // Text-baked-in mode: the AI-generated image already contains all text.
+    // Only handle logo overlay and format-specific resizing.
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No se pudo crear contexto de canvas');
+
+    // Draw the AI-generated graphic scaled to fill the canvas
+    const img = await loadImageFromBase64(illustrationBase64);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    // Optionally overlay logo
+    const s = width / config.width;
+    if (logoBase64 && positions.logo.size > 0) {
+      try {
+        const logo = await loadImageFromBase64(logoBase64);
+        const logoSize = Math.round(positions.logo.size * s);
+        ctx.drawImage(logo, Math.round(positions.logo.x * s), Math.round(positions.logo.y * s), logoSize, logoSize);
+      } catch (e) {
+        console.warn('No se pudo cargar logo:', e);
+      }
+    }
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    return { format, base64, width, height };
+  }
+
+  // Legacy mode: full canvas compositor with text overlay
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

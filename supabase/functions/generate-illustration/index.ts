@@ -79,25 +79,33 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt } = await req.json();
 
-    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType}`);
+    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType}${jsonPrompt ? ' (JSON prompt mode)' : ''}`);
 
     // Validate backgroundMode
     if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
       throw new Error('Invalid backgroundMode. Must be "solid", "transparent", or undefined.');
     }
 
-    // Build prompt: always append style guardrails, even when customPrompt is provided
+    // Build prompt based on mode
     let prompt: string;
-    if (customPrompt) {
+
+    if (jsonPrompt && typeof jsonPrompt === 'string') {
+      // JSON prompt mode: the frontend sends a pre-built structured prompt string
+      // that includes text rendering instructions, brand kit, and editorial style.
+      // The model will render text directly into the image.
+      prompt = jsonPrompt;
+    } else if (customPrompt) {
+      // Legacy: custom prompt with style guardrails
       prompt = `${buildStylePrompt()}\n\nSubject: ${customPrompt}`;
     } else {
+      // Legacy: event type prompt
       prompt = buildPrompt(eventType);
     }
 
-    // Add transparency extraction hint if backgroundMode === 'transparent'
-    if (backgroundMode === 'transparent') {
+    // Add transparency extraction hint if backgroundMode === 'transparent' (legacy mode only)
+    if (backgroundMode === 'transparent' && !jsonPrompt) {
       prompt += '\n\nIMPORTANT: The background MUST be PURE WHITE (#FFFFFF) with absolutely no texture, gradients, or patterns. This allows easy background extraction.';
     }
 
