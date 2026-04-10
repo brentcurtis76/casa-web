@@ -180,7 +180,7 @@ export function buildJsonPrompt(
   return {
     core: {
       subject: illustrationSubject,
-      purpose: 'church event announcement graphic for social media and presentations',
+      purpose: 'community event announcement graphic for social media and presentations',
     },
     text: textSection,
     illustration: {
@@ -192,9 +192,9 @@ export function buildJsonPrompt(
       placement: 'The illustration occupies one area of the composition (typically right side or background), leaving clear space for text. The illustration and text coexist as an integrated editorial layout.',
     },
     logo: {
-      description: 'The official CASA logo is provided as an attached image. Use that EXACT image — do NOT invent, redraw, or generate any logo text or monogram.',
-      placement: 'Bottom-right corner or bottom-center, small and unobtrusive — like a publisher\'s mark on a fine art print. Should not compete with the main design.',
-      style: 'Place the provided logo image as-is, scaled small. No modifications, no redrawing.',
+      description: 'DO NOT generate any logo, watermark, monogram, emblem, seal, crest, or text mark. The logo will be added separately after generation. Leave the bottom-right corner clean and empty for logo placement.',
+      placement: 'Leave bottom-right corner empty (no content in that area).',
+      style: 'No logo whatsoever in the generated image.',
     },
     composition: {
       layout: 'Editorial magazine layout with intentional negative space. The Matisse-style line art illustration and the typography coexist as a unified design — like a high-end gallery invitation or Kinfolk magazine spread.',
@@ -224,7 +224,9 @@ export function buildJsonPrompt(
         'busy compositions or competing focal points',
         'generic church graphic templates',
         'digital or geometric illustration style — must feel hand-drawn',
-        'literal or heavy-handed religious imagery',
+        'ANY religious figures (Jesus, saints, angels, biblical characters) — illustrate the EVENT ACTIVITY described in the title, not religious symbolism',
+        'crosses, halos, altars, or other religious symbols unless explicitly requested in the title',
+        'ANY logo, watermark, monogram, emblem, seal, or text mark — the logo is added separately',
       ],
       quality: 'Museum/magazine quality. The line art must feel like an original Matisse drawing. The typography must feel like a master typographer set it by hand. Meticulous craftsmanship throughout.',
       textRendering: 'ALL text must be rendered clearly and legibly as an integral part of the image composition. Text is part of the design, not overlaid. Render with professional typographic quality — proper kerning, leading, and alignment.',

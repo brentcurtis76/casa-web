@@ -79,7 +79,7 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, logoImage } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt } = await req.json();
 
     const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
     console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode)`);
@@ -123,50 +123,23 @@ serve(async (req) => {
     // Generar cada ilustración individualmente (Gemini genera una por request)
     const generateOne = async (index: number): Promise<string> => {
       try {
-        // Build parts array — text-only, text+image, or text+image+logo depending on mode
+        // Build parts array — text-only or text+image depending on mode
         const parts: Array<Record<string, unknown>> = [];
 
         if (referenceImage && typeof referenceImage === 'string') {
-          // Image-to-image: send reference image first, then logo, then text instruction
+          // Image-to-image: send reference image + recomposition instructions
           parts.push({
             inlineData: {
               mimeType: 'image/png',
               data: referenceImage,
             }
           });
-          if (logoImage && typeof logoImage === 'string') {
-            parts.push({
-              inlineData: {
-                mimeType: 'image/png',
-                data: logoImage,
-              }
-            });
-            parts.push({
-              text: `${prompt}\n\nIMPORTANT: The second image provided is the official CASA logo. Include this EXACT logo in the design (bottom-right or bottom-center, small and unobtrusive, like a publisher's mark). Do NOT invent or redraw the logo — use the provided image as-is.`,
-            });
-          } else {
-            parts.push({
-              text: prompt,
-            });
-          }
+          parts.push({ text: prompt });
         } else {
-          // Text-based generation (initial 4 options)
-          if (logoImage && typeof logoImage === 'string') {
-            // Send logo image so the model can incorporate it into the design
-            parts.push({
-              inlineData: {
-                mimeType: 'image/png',
-                data: logoImage,
-              }
-            });
-            parts.push({
-              text: `${prompt}\n\nGenerate variation ${index + 1} of this illustration with slightly different composition.\n\nIMPORTANT: The image provided above is the official CASA logo. Include this EXACT logo in the design (bottom-right or bottom-center, small and unobtrusive, like a publisher's mark on a fine art print). Do NOT invent or redraw the logo — use the provided image as-is.`
-            });
-          } else {
-            parts.push({
-              text: `${prompt}\n\nGenerate variation ${index + 1} of this illustration with slightly different composition.`
-            });
-          }
+          // Text-only generation (initial 4 options)
+          parts.push({
+            text: `${prompt}\n\nGenerate variation ${index + 1} of this illustration with slightly different composition.`
+          });
         }
 
         const response = await fetch(apiUrl, {

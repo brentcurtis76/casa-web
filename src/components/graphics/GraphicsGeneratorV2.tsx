@@ -570,12 +570,10 @@ export const GraphicsGeneratorV2 = () => {
 
       if (textBakedIn) {
         // JSON prompt mode: use the (possibly user-edited) prompt from prompt-preview phase
-        // Send logo base64 so the edge function can include it as an inlineData image
         requestBody = {
           eventType,
           count: 4,
           jsonPrompt: editablePrompt,
-          ...(logoBase64 ? { logoImage: logoBase64 } : {}),
         };
       } else {
         // Legacy mode: illustration-only with canvas overlay
@@ -803,7 +801,8 @@ export const GraphicsGeneratorV2 = () => {
             '3. Maintain the Matisse/Picasso continuous line art style exactly as shown.',
             `4. The final image must be ${dims.width}x${dims.height} pixels.`,
             '5. All text must remain fully legible and correctly spelled.',
-            '6. Keep the CASA logo mark in the same relative position (bottom area).',
+            '6. Do NOT include any logo, watermark, monogram, or emblem — leave the bottom-right corner clean and empty.',
+            '7. Do NOT add any religious figures, crosses, halos, or religious symbols unless the title explicitly references them.',
             '',
             `Text that must appear exactly:`,
             eventData.title ? `- Title: "${eventData.title.replace(/\\n/g, ' ')}"` : '',
@@ -820,14 +819,28 @@ export const GraphicsGeneratorV2 = () => {
               count: 1,
               referenceImage: selectedBase64,
               referencePrompt,
-              ...(logoBase64 ? { logoImage: logoBase64 } : {}),
             },
           });
 
           if (error) throw error;
 
-          const base64 = data?.illustrations?.[0] || selectedBase64;
-          return { format, base64, width: dims.width * 2, height: dims.height * 2 };
+          const base64Raw = data?.illustrations?.[0] || selectedBase64;
+
+          // Overlay the actual CASA logo via canvas
+          if (logoBase64) {
+            const graphic = await generateGraphicWithPositions(
+              format,
+              eventData,
+              base64Raw,
+              logoBase64,
+              elementPositions[format],
+              backgroundSettings,
+              { textBakedIn: true }
+            );
+            return graphic;
+          }
+
+          return { format, base64: base64Raw, width: dims.width * 2, height: dims.height * 2 };
         };
 
         graphics = await Promise.all(formatsToGenerate.map(generateForFormat));
