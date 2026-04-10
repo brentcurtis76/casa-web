@@ -104,7 +104,7 @@ const FORMAT_LABELS: Record<FormatType, string> = {
   facebook_post: 'Facebook Post',
 };
 
-type Phase = 'form' | 'prompt' | 'prompt-preview' | 'selecting' | 'adjusting' | 'format-select' | 'generating' | 'done';
+type Phase = 'form' | 'prompt' | 'prompt-preview' | 'selecting' | 'adjusting' | 'format-select' | 'generating' | 'logo-adjust' | 'done';
 
 /**
  * Resolve auto-positioned elements (y = -1) to concrete Y values for ALL formats.
@@ -317,6 +317,9 @@ export const GraphicsGeneratorV2 = () => {
   const [includeTime, setIncludeTime] = useState(true);
   const [includeLocation, setIncludeLocation] = useState(true);
   const [includeExtraInfo, setIncludeExtraInfo] = useState(false);
+  // Logo overlay toggle and size
+  const [includeLogo, setIncludeLogo] = useState(true);
+  const [logoSize, setLogoSize] = useState(80); // base size in px
 
   // Text baked into image toggle — when ON, Nano Banana Pro renders text directly
   const [textBakedIn, setTextBakedIn] = useState(true);
@@ -338,6 +341,8 @@ export const GraphicsGeneratorV2 = () => {
 
   // Generated graphics state
   const [generatedGraphics, setGeneratedGraphics] = useState<GeneratedGraphic[]>([]);
+  // Raw AI-generated images (before logo overlay) — kept so we can re-composite
+  const [rawGeneratedImages, setRawGeneratedImages] = useState<GeneratedGraphic[]>([]);
   const [generatingFormats, setGeneratingFormats] = useState(false);
 
   // Logo base64 (fetched once)
@@ -825,25 +830,20 @@ export const GraphicsGeneratorV2 = () => {
           if (error) throw error;
 
           const base64Raw = data?.illustrations?.[0] || selectedBase64;
-
-          // Overlay the actual CASA logo via canvas
-          if (logoBase64) {
-            const graphic = await generateGraphicWithPositions(
-              format,
-              eventData,
-              base64Raw,
-              logoBase64,
-              elementPositions[format],
-              backgroundSettings,
-              { textBakedIn: true }
-            );
-            return graphic;
-          }
-
           return { format, base64: base64Raw, width: dims.width * 2, height: dims.height * 2 };
         };
 
         graphics = await Promise.all(formatsToGenerate.map(generateForFormat));
+
+        // Store raw images for re-compositing during logo adjustment
+        setRawGeneratedImages(graphics);
+        setGeneratedGraphics(graphics);
+        setPhase('logo-adjust');
+
+        toast({
+          title: 'Gráficos generados',
+          description: 'Ajusta el logo antes de finalizar.',
+        });
       } else {
         // Legacy mode: generate each format with canvas text overlay
         graphics = await Promise.all(
@@ -858,15 +858,15 @@ export const GraphicsGeneratorV2 = () => {
             return generateGraphicWithPositions(format, eventData, selectedBase64, logoBase64, elementPositions[format], backgroundSettings);
           })
         );
+
+        setGeneratedGraphics(graphics);
+        setPhase('done');
+
+        toast({
+          title: 'Gráficos generados',
+          description: `Se han creado ${graphics.length} formatos listos para descargar.`,
+        });
       }
-
-      setGeneratedGraphics(graphics);
-      setPhase('done');
-
-      toast({
-        title: 'Gráficos generados',
-        description: `Se han creado ${graphics.length} formatos listos para descargar.`,
-      });
     } catch (err: any) {
       console.error('Error generando formatos:', err);
       toast({
@@ -878,6 +878,54 @@ export const GraphicsGeneratorV2 = () => {
     } finally {
       setGeneratingFormats(false);
     }
+  };
+
+  // Apply logo to raw images and go to done phase
+  const handleApplyLogo = async () => {
+    if (rawGeneratedImages.length === 0) return;
+
+    if (!includeLogo || !logoBase64) {
+      // No logo — use raw images directly
+      setGeneratedGraphics(rawGeneratedImages);
+      setPhase('done');
+      return;
+    }
+
+    setGeneratingFormats(true);
+    try {
+      const withLogo = await Promise.all(
+        rawGeneratedImages.map(async (raw) => {
+          // Build custom positions with user-adjusted logo size
+          const pos = { ...elementPositions[raw.format] };
+          pos.logo = { ...pos.logo, size: logoSize };
+
+          const eventData: EventData = {
+            title: titles[raw.format]?.replace(/\n/g, '\\n') || '',
+            subtitle: includeSubtitle ? subtitle : undefined,
+            date: includeDate ? formatDateRange(dateRange) : '',
+            time: includeTime ? time : '',
+            location: includeLocation ? location : '',
+          };
+
+          return generateGraphicWithPositions(
+            raw.format,
+            eventData,
+            raw.base64,
+            logoBase64,
+            pos,
+            backgroundSettings,
+            { textBakedIn: true }
+          );
+        })
+      );
+      setGeneratedGraphics(withLogo);
+    } catch (err) {
+      console.error('Error applying logo:', err);
+      setGeneratedGraphics(rawGeneratedImages);
+    } finally {
+      setGeneratingFormats(false);
+    }
+    setPhase('done');
   };
 
   // Download single - use PPT title as base filename
@@ -1709,10 +1757,85 @@ export const GraphicsGeneratorV2 = () => {
           <CardContent className="py-12">
             <div className="flex flex-col items-center justify-center">
               <Loader2 className="h-12 w-12 animate-spin text-amber-500 mb-4" />
-              <p className="text-lg font-medium">Generando 4 formatos...</p>
+              <p className="text-lg font-medium">Generando {selectedFormats.length || 4} formato{(selectedFormats.length || 4) !== 1 ? 's' : ''}...</p>
               <p className="text-muted-foreground">
-                PPT, Instagram Post, Instagram Story, Facebook
+                {(selectedFormats.length > 0 ? selectedFormats : ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).map(f => FORMAT_LABELS[f]).join(', ')}
               </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Phase: Logo Adjustment (textBakedIn mode) */}
+      {phase === 'logo-adjust' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Logo CASA</CardTitle>
+            <CardDescription>
+              Activa o desactiva el logo y ajusta su tamaño. Se coloca sobre los gráficos generados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Preview of first generated image */}
+            {rawGeneratedImages.length > 0 && (
+              <div className="border rounded-lg overflow-hidden max-w-md mx-auto">
+                <img
+                  src={`data:image/png;base64,${rawGeneratedImages[0].base64}`}
+                  alt="Vista previa"
+                  className="w-full"
+                />
+              </div>
+            )}
+
+            {/* Logo toggle */}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="include-logo"
+                checked={includeLogo}
+                onCheckedChange={(checked) => setIncludeLogo(checked === true)}
+              />
+              <Label htmlFor="include-logo" className="cursor-pointer text-base">
+                Incluir logo CASA
+              </Label>
+            </div>
+
+            {/* Logo size slider */}
+            {includeLogo && (
+              <div className="space-y-2">
+                <Label>Tamaño del logo: {logoSize}px</Label>
+                <Slider
+                  min={40}
+                  max={160}
+                  step={5}
+                  value={[logoSize]}
+                  onValueChange={([val]) => setLogoSize(val)}
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Pequeño</span>
+                  <span>Grande</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setPhase('format-select')}
+              >
+                Volver
+              </Button>
+              <Button
+                className="flex-1 bg-amber-500 hover:bg-amber-600"
+                onClick={handleApplyLogo}
+                disabled={generatingFormats}
+              >
+                {generatingFormats ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                )}
+                {includeLogo ? 'Aplicar Logo y Finalizar' : 'Finalizar sin Logo'}
+              </Button>
             </div>
           </CardContent>
         </Card>
