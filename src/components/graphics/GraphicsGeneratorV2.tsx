@@ -41,6 +41,7 @@ import {
   Type,
   Heading,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -51,7 +52,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  generateGraphic,
   generateGraphicWithPositions,
   downloadGraphic,
   downloadAllGraphics,
@@ -310,6 +310,8 @@ export const GraphicsGeneratorV2 = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [subtitle, setSubtitle] = useState('');
   const [extraInfo, setExtraInfo] = useState('');
+  // Context hint for AI prompt only — NOT rendered as text on the image
+  const [contextHint, setContextHint] = useState('');
 
   // Toggle states for optional fields
   const [includeSubtitle, setIncludeSubtitle] = useState(false);
@@ -317,16 +319,14 @@ export const GraphicsGeneratorV2 = () => {
   const [includeTime, setIncludeTime] = useState(true);
   const [includeLocation, setIncludeLocation] = useState(true);
   const [includeExtraInfo, setIncludeExtraInfo] = useState(false);
-  // Logo overlay per-format toggle and size
-  const [logoPerFormat, setLogoPerFormat] = useState<Record<FormatType, boolean>>({
-    ppt_4_3: true,
-    instagram_post: true,
-    instagram_story: true,
-    facebook_post: true,
+  // Per-format logo settings (enabled, size, position)
+  interface LogoSettings { enabled: boolean; size: number; x: number; y: number }
+  const [logoSettings, setLogoSettings] = useState<Record<FormatType, LogoSettings>>({
+    ppt_4_3: { enabled: true, size: 80, x: 457, y: 34 },
+    instagram_post: { enabled: true, size: 70, x: 497, y: 901 },
+    instagram_story: { enabled: true, size: 70, x: 497, y: 1750 },
+    facebook_post: { enabled: true, size: 70, x: 560, y: 20 },
   });
-  const [logoSize, setLogoSize] = useState(80); // base size in px
-  // Live previews for logo-adjust phase (composited images with logo)
-  const [logoPreviewImages, setLogoPreviewImages] = useState<Record<string, string | null>>({});
 
   // Text baked into image toggle — when ON, Nano Banana Pro renders text directly
   const [textBakedIn, setTextBakedIn] = useState(true);
@@ -358,24 +358,6 @@ export const GraphicsGeneratorV2 = () => {
   // Fonts loaded
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
-  // Live preview state - now supports all 4 formats
-  const [previewFormat, setPreviewFormat] = useState<FormatType>('ppt_4_3');
-  const [previews, setPreviews] = useState<Record<FormatType, string | null>>({
-    ppt_4_3: null,
-    instagram_post: null,
-    instagram_story: null,
-    facebook_post: null,
-  });
-  const [previewLoading, setPreviewLoading] = useState(false);
-
-  // Version counter for staleness detection (refs to avoid dependency loops)
-  const previewVersionRef = useRef(0);
-  const previewVersionsRef = useRef<Record<FormatType, number>>({
-    ppt_4_3: 0,
-    instagram_post: 0,
-    instagram_story: 0,
-    facebook_post: 0,
-  });
 
   // Save batch state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -474,56 +456,6 @@ export const GraphicsGeneratorV2 = () => {
     fetchLogo();
   }, []);
 
-  // Generate live preview for active format only (lazy tab rendering)
-  useEffect(() => {
-    if (!fontsLoaded || !logoBase64) return;
-    if (phase !== 'form') return;
-
-    // Increment version counter at effect entry for staleness detection
-    previewVersionRef.current += 1;
-    const capturedVersion = previewVersionRef.current;
-
-    // Debounce preview generation
-    const timeoutId = setTimeout(async () => {
-      try {
-        // Check if cache is current for active format
-        if (previewVersionsRef.current[previewFormat] === capturedVersion) {
-          // Cache is current, no need to regenerate
-          setPreviewLoading(false);
-          return;
-        }
-
-        setPreviewLoading(true);
-
-        // Generate ONLY the active preview format
-        const eventData: EventData = {
-          title: titles[previewFormat] || 'Título del Evento',
-          subtitle: includeSubtitle ? subtitle : undefined,
-          date: includeDate ? (formatDateRange(dateRange) || 'Fecha del evento') : '',
-          time: includeTime ? (time || '19:00 hrs') : '',
-          location: includeLocation ? (location || 'Ubicación del evento') : '',
-        };
-        const result = await generateGraphic(previewFormat, eventData, null, logoBase64);
-
-        // Stale-on-arrival check: compare version after await
-        if (capturedVersion !== previewVersionRef.current) {
-          // A newer version was triggered, discard this result
-          return;
-        }
-
-        // Update only the active format, preserve others
-        setPreviews(prev => ({ ...prev, [previewFormat]: result.base64 }));
-        previewVersionsRef.current[previewFormat] = capturedVersion;
-      } catch (e) {
-        console.warn('Error generando preview:', e);
-      } finally {
-        setPreviewLoading(false);
-      }
-    }, 400); // 400ms debounce
-
-    return () => clearTimeout(timeoutId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, fontsLoaded, logoBase64, phase, previewFormat]);
 
   // Build default prompt based on event type or user's custom theme
   const buildDefaultPrompt = (type: string, userTheme?: string): string => {
@@ -559,6 +491,7 @@ export const GraphicsGeneratorV2 = () => {
       const promptStr = buildJsonPromptString(eventData, eventType, 'instagram_post', {
         includeSubtitle,
         extraInfo: includeExtraInfo ? extraInfo : undefined,
+        contextHint: contextHint.trim() || undefined,
       });
       setEditablePrompt(promptStr);
       setPhase('prompt-preview');
@@ -771,57 +704,6 @@ export const GraphicsGeneratorV2 = () => {
     return () => clearTimeout(timeoutId);
   }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations, backgroundSettings]);
 
-  // Live logo preview compositing for logo-adjust phase
-  useEffect(() => {
-    if (phase !== 'logo-adjust' || rawGeneratedImages.length === 0) return;
-    if (!fontsLoaded || !logoBase64) return;
-
-    const timeoutId = setTimeout(async () => {
-      const previews: Record<string, string | null> = {};
-
-      await Promise.all(
-        rawGeneratedImages.map(async (raw) => {
-          if (!logoPerFormat[raw.format]) {
-            // Logo disabled for this format — use raw image
-            previews[raw.format] = raw.base64;
-            return;
-          }
-
-          try {
-            const pos = { ...elementPositions[raw.format] };
-            pos.logo = { ...pos.logo, size: logoSize };
-
-            const eventData: EventData = {
-              title: titles[raw.format]?.replace(/\n/g, '\\n') || '',
-              subtitle: includeSubtitle ? subtitle : undefined,
-              date: includeDate ? formatDateRange(dateRange) : '',
-              time: includeTime ? time : '',
-              location: includeLocation ? location : '',
-            };
-
-            const graphic = await generateGraphicWithPositions(
-              raw.format,
-              eventData,
-              raw.base64,
-              logoBase64,
-              pos,
-              backgroundSettings,
-              { textBakedIn: true }
-            );
-            previews[raw.format] = graphic.base64;
-          } catch (e) {
-            console.warn('Logo preview error:', e);
-            previews[raw.format] = raw.base64;
-          }
-        })
-      );
-
-      setLogoPreviewImages(previews);
-    }, 150);
-
-    return () => clearTimeout(timeoutId);
-  }, [phase, rawGeneratedImages, logoPerFormat, logoSize, fontsLoaded, logoBase64, elementPositions, backgroundSettings, titles, subtitle, includeSubtitle, dateRange, time, location, includeDate, includeTime, includeLocation]);
-
   // Generate selected formats with current adjustments
   const handleGenerateWithAdjustments = async () => {
     if (selectedIllustration === null) return;
@@ -946,13 +828,14 @@ export const GraphicsGeneratorV2 = () => {
     try {
       const final = await Promise.all(
         rawGeneratedImages.map(async (raw) => {
-          if (!logoPerFormat[raw.format] || !logoBase64) {
-            // Logo disabled for this format — use raw image
+          const ls = logoSettings[raw.format];
+          if (!ls.enabled || !logoBase64) {
             return raw;
           }
 
+          // Build positions with user-adjusted logo x/y/size
           const pos = { ...elementPositions[raw.format] };
-          pos.logo = { ...pos.logo, size: logoSize };
+          pos.logo = { x: ls.x, y: ls.y, size: ls.size };
 
           const eventData: EventData = {
             title: titles[raw.format]?.replace(/\n/g, '\\n') || '',
@@ -1148,7 +1031,7 @@ export const GraphicsGeneratorV2 = () => {
 
       {/* Phase: Form */}
       {phase === 'form' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="max-w-xl mx-auto">
           {/* Formulario */}
           <Card>
             <CardHeader>
@@ -1160,17 +1043,12 @@ export const GraphicsGeneratorV2 = () => {
             <CardContent className="space-y-4">
               {/* Título - per format with sync option */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="title">
-                    Título del Evento <span className="text-red-500">*</span>
-                  </Label>
-                  <span className="text-xs text-amber-600 font-medium">
-                    {FORMAT_LABELS[previewFormat]}
-                  </span>
-                </div>
+                <Label htmlFor="title">
+                  Título del Evento <span className="text-red-500">*</span>
+                </Label>
                 <textarea
                   id="title"
-                  value={titles[previewFormat]}
+                  value={titles.ppt_4_3}
                   onChange={(e) => updateAllTitles(e.target.value)}
                   placeholder="Ej: La Mesa&#10;Abierta"
                   className="w-full min-h-[80px] p-3 border rounded-md text-lg resize-none"
@@ -1338,6 +1216,20 @@ export const GraphicsGeneratorV2 = () => {
                 />
               </div>
 
+              {/* Context hint — feeds AI prompt only, not rendered on image */}
+              <div className="space-y-2">
+                <Label htmlFor="context-hint">Contexto para la IA (opcional)</Label>
+                <Input
+                  id="context-hint"
+                  value={contextHint}
+                  onChange={(e) => setContextHint(e.target.value)}
+                  placeholder="Ej: Serie de sermones sobre gratitud y contentamiento"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ayuda al modelo a entender el tema. No aparece como texto en la imagen.
+                </p>
+              </div>
+
               {/* Generate Button */}
               <Button
                 className="w-full bg-amber-500 hover:bg-amber-600"
@@ -1351,67 +1243,6 @@ export const GraphicsGeneratorV2 = () => {
             </CardContent>
           </Card>
 
-          {/* Preview en tiempo real con selector de formato */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Vista Previa</CardTitle>
-              <CardDescription>
-                Revisa cómo se ve el texto en cada formato
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Format selector tabs */}
-              <div className="flex flex-wrap gap-1">
-                {(['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).map((format) => (
-                  <button
-                    key={format}
-                    onClick={() => setPreviewFormat(format)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      previewFormat === format
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {format === 'ppt_4_3' && 'PPT 4:3'}
-                    {format === 'instagram_post' && 'IG Post'}
-                    {format === 'instagram_story' && 'IG Story'}
-                    {format === 'facebook_post' && 'Facebook'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Preview container with dynamic aspect ratio */}
-              <div
-                className={`relative bg-gray-100 rounded-lg overflow-hidden border ${
-                  previewFormat === 'ppt_4_3' ? 'aspect-[4/3]' :
-                  previewFormat === 'instagram_post' ? 'aspect-square' :
-                  previewFormat === 'instagram_story' ? 'aspect-[9/16] max-h-[400px]' :
-                  'aspect-[1200/630]'
-                }`}
-              >
-                {previews[previewFormat] ? (
-                  <img
-                    src={`data:image/png;base64,${previews[previewFormat]}`}
-                    alt={`Preview ${FORMAT_LABELS[previewFormat]}`}
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
-                  </div>
-                )}
-                {previewLoading && previews[previewFormat] && (
-                  <div className="absolute top-2 right-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
-                  </div>
-                )}
-              </div>
-
-              <p className="text-xs text-muted-foreground text-center">
-                {FORMAT_LABELS[previewFormat]} • El preview se actualiza mientras escribes
-              </p>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -1494,12 +1325,15 @@ export const GraphicsGeneratorV2 = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <textarea
-              value={editablePrompt}
-              onChange={(e) => setEditablePrompt(e.target.value)}
-              className="w-full min-h-[300px] p-3 border rounded-md font-mono text-xs resize-y bg-gray-50 leading-relaxed"
-              spellCheck={false}
-            />
+            <div className="space-y-2">
+              <Label>Prompt para Nano Banana Pro</Label>
+              <Textarea
+                value={editablePrompt}
+                onChange={(e) => setEditablePrompt(e.target.value)}
+                className="min-h-[300px] font-mono text-xs resize-y bg-gray-50 leading-relaxed"
+                spellCheck={false}
+              />
+            </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -1821,65 +1655,135 @@ export const GraphicsGeneratorV2 = () => {
         </Card>
       )}
 
-      {/* Phase: Logo Adjustment (textBakedIn mode) — all formats with live preview */}
+      {/* Phase: Logo Adjustment (textBakedIn mode) — draggable logo per format */}
       {phase === 'logo-adjust' && (
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Logo CASA</CardTitle>
+              <CardTitle>Ajustar Logo por Formato</CardTitle>
               <CardDescription>
-                Activa o desactiva el logo por formato y ajusta su tamaño. La vista previa se actualiza en tiempo real.
+                Arrastra el logo para posicionarlo. Cada formato tiene su propia posición, tamaño y visibilidad.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Global size slider */}
-              <div className="space-y-2">
-                <Label>Tamaño del logo: {logoSize}px</Label>
-                <Slider
-                  min={40}
-                  max={160}
-                  step={5}
-                  value={[logoSize]}
-                  onValueChange={([val]) => setLogoSize(val)}
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Pequeño</span>
-                  <span>Grande</span>
-                </div>
-              </div>
-            </CardContent>
           </Card>
 
-          {/* Per-format previews with logo toggle */}
+          {/* Per-format cards with draggable logo overlay */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {rawGeneratedImages.map((raw) => (
-              <Card key={raw.format} className="overflow-hidden">
-                <div className="relative">
-                  <img
-                    src={`data:image/png;base64,${logoPreviewImages[raw.format] || raw.base64}`}
-                    alt={FORMAT_LABELS[raw.format]}
-                    className="w-full"
-                  />
-                  <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                    {FORMAT_LABELS[raw.format]}
-                  </div>
-                </div>
-                <CardContent className="py-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id={`logo-${raw.format}`}
-                      checked={logoPerFormat[raw.format]}
-                      onCheckedChange={(checked) =>
-                        setLogoPerFormat(prev => ({ ...prev, [raw.format]: checked === true }))
+            {rawGeneratedImages.map((raw) => {
+              const ls = logoSettings[raw.format];
+              const dims = FORMAT_DIMENSIONS[raw.format];
+              return (
+                <Card key={raw.format} className="overflow-hidden">
+                  <CardHeader className="py-3 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">{FORMAT_LABELS[raw.format]}</span>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`logo-toggle-${raw.format}`}
+                          checked={ls.enabled}
+                          onCheckedChange={(checked) =>
+                            setLogoSettings(prev => ({
+                              ...prev,
+                              [raw.format]: { ...prev[raw.format], enabled: checked === true },
+                            }))
+                          }
+                        />
+                        <Label htmlFor={`logo-toggle-${raw.format}`} className="cursor-pointer text-xs">
+                          Logo
+                        </Label>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  {/* Image container with draggable logo overlay */}
+                  <div
+                    className="relative select-none"
+                    style={{ cursor: ls.enabled && logoBase64 ? 'default' : undefined }}
+                    onMouseDown={(e) => {
+                      if (!ls.enabled || !logoBase64) return;
+                      const container = e.currentTarget;
+                      const rect = container.getBoundingClientRect();
+                      const displayWidth = rect.width;
+                      const scale = dims.width / displayWidth;
+                      // Check if click is on the logo area
+                      const displayLogoX = ls.x / scale;
+                      const displayLogoY = ls.y / scale;
+                      const displayLogoSize = ls.size / scale;
+                      const clickX = e.clientX - rect.left;
+                      const clickY = e.clientY - rect.top;
+                      if (
+                        clickX >= displayLogoX &&
+                        clickX <= displayLogoX + displayLogoSize &&
+                        clickY >= displayLogoY &&
+                        clickY <= displayLogoY + displayLogoSize
+                      ) {
+                        const offsetX = clickX - displayLogoX;
+                        const offsetY = clickY - displayLogoY;
+                        const handleMouseMove = (moveEvent: MouseEvent) => {
+                          const newDisplayX = moveEvent.clientX - rect.left - offsetX;
+                          const newDisplayY = moveEvent.clientY - rect.top - offsetY;
+                          const newX = Math.max(0, Math.min(dims.width - ls.size, Math.round(newDisplayX * scale)));
+                          const newY = Math.max(0, Math.min(dims.height - ls.size, Math.round(newDisplayY * scale)));
+                          setLogoSettings(prev => ({
+                            ...prev,
+                            [raw.format]: { ...prev[raw.format], x: newX, y: newY },
+                          }));
+                        };
+                        const handleMouseUp = () => {
+                          window.removeEventListener('mousemove', handleMouseMove);
+                          window.removeEventListener('mouseup', handleMouseUp);
+                        };
+                        window.addEventListener('mousemove', handleMouseMove);
+                        window.addEventListener('mouseup', handleMouseUp);
+                        e.preventDefault();
                       }
+                    }}
+                  >
+                    <img
+                      src={`data:image/png;base64,${raw.base64}`}
+                      alt={FORMAT_LABELS[raw.format]}
+                      className="w-full"
+                      draggable={false}
                     />
-                    <Label htmlFor={`logo-${raw.format}`} className="cursor-pointer text-sm">
-                      Incluir logo
-                    </Label>
+                    {/* Draggable logo overlay */}
+                    {ls.enabled && logoBase64 && (
+                      <img
+                        src={`data:image/png;base64,${logoBase64}`}
+                        alt="Logo CASA"
+                        draggable={false}
+                        className="absolute pointer-events-none"
+                        style={{
+                          left: `${(ls.x / dims.width) * 100}%`,
+                          top: `${(ls.y / dims.height) * 100}%`,
+                          width: `${(ls.size / dims.width) * 100}%`,
+                          height: `${(ls.size / dims.height) * 100}%`,
+                          objectFit: 'contain',
+                        }}
+                      />
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  {/* Per-format size slider */}
+                  {ls.enabled && (
+                    <CardContent className="py-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Tamaño: {ls.size}px</Label>
+                      </div>
+                      <Slider
+                        min={30}
+                        max={200}
+                        step={5}
+                        value={[ls.size]}
+                        onValueChange={([val]) =>
+                          setLogoSettings(prev => ({
+                            ...prev,
+                            [raw.format]: { ...prev[raw.format], size: val },
+                          }))
+                        }
+                      />
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
           </div>
 
           <div className="flex gap-3">

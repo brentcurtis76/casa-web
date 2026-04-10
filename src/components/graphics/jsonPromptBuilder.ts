@@ -135,6 +135,7 @@ export function buildJsonPrompt(
     customStyleApproach?: string;
     includeSubtitle?: boolean;
     extraInfo?: string;
+    contextHint?: string;
   }
 ): GraphicsJsonPrompt {
   const dims = FORMAT_DIMENSIONS[format];
@@ -143,7 +144,13 @@ export function buildJsonPrompt(
   // Priority: custom illustration theme > title + subtitle > event type fallback
   const userSubject = buildSubjectFromUserInput(eventData, options?.customStyleApproach);
   const fallbackHint = EVENT_FALLBACK_HINTS[eventType] || EVENT_FALLBACK_HINTS.generic;
-  const illustrationSubject = userSubject || fallbackHint;
+  let illustrationSubject = userSubject || fallbackHint;
+
+  // If a context hint was provided, append it so the AI understands the theme
+  // but it does NOT appear as text on the image
+  if (options?.contextHint) {
+    illustrationSubject += ` — Context: ${options.contextHint}`;
+  }
 
   // Build text section — only include fields that have content
   const textSection: GraphicsJsonPrompt['text'] = {};
@@ -266,6 +273,7 @@ export function buildJsonPromptString(
     customStyleApproach?: string;
     includeSubtitle?: boolean;
     extraInfo?: string;
+    contextHint?: string;
   }
 ): string {
   const prompt = buildJsonPrompt(eventData, eventType, format, options);
