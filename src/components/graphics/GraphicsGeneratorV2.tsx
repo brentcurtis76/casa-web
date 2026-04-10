@@ -317,9 +317,16 @@ export const GraphicsGeneratorV2 = () => {
   const [includeTime, setIncludeTime] = useState(true);
   const [includeLocation, setIncludeLocation] = useState(true);
   const [includeExtraInfo, setIncludeExtraInfo] = useState(false);
-  // Logo overlay toggle and size
-  const [includeLogo, setIncludeLogo] = useState(true);
+  // Logo overlay per-format toggle and size
+  const [logoPerFormat, setLogoPerFormat] = useState<Record<FormatType, boolean>>({
+    ppt_4_3: true,
+    instagram_post: true,
+    instagram_story: true,
+    facebook_post: true,
+  });
   const [logoSize, setLogoSize] = useState(80); // base size in px
+  // Live previews for logo-adjust phase (composited images with logo)
+  const [logoPreviewImages, setLogoPreviewImages] = useState<Record<string, string | null>>({});
 
   // Text baked into image toggle — when ON, Nano Banana Pro renders text directly
   const [textBakedIn, setTextBakedIn] = useState(true);
@@ -764,6 +771,57 @@ export const GraphicsGeneratorV2 = () => {
     return () => clearTimeout(timeoutId);
   }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations, backgroundSettings]);
 
+  // Live logo preview compositing for logo-adjust phase
+  useEffect(() => {
+    if (phase !== 'logo-adjust' || rawGeneratedImages.length === 0) return;
+    if (!fontsLoaded || !logoBase64) return;
+
+    const timeoutId = setTimeout(async () => {
+      const previews: Record<string, string | null> = {};
+
+      await Promise.all(
+        rawGeneratedImages.map(async (raw) => {
+          if (!logoPerFormat[raw.format]) {
+            // Logo disabled for this format — use raw image
+            previews[raw.format] = raw.base64;
+            return;
+          }
+
+          try {
+            const pos = { ...elementPositions[raw.format] };
+            pos.logo = { ...pos.logo, size: logoSize };
+
+            const eventData: EventData = {
+              title: titles[raw.format]?.replace(/\n/g, '\\n') || '',
+              subtitle: includeSubtitle ? subtitle : undefined,
+              date: includeDate ? formatDateRange(dateRange) : '',
+              time: includeTime ? time : '',
+              location: includeLocation ? location : '',
+            };
+
+            const graphic = await generateGraphicWithPositions(
+              raw.format,
+              eventData,
+              raw.base64,
+              logoBase64,
+              pos,
+              backgroundSettings,
+              { textBakedIn: true }
+            );
+            previews[raw.format] = graphic.base64;
+          } catch (e) {
+            console.warn('Logo preview error:', e);
+            previews[raw.format] = raw.base64;
+          }
+        })
+      );
+
+      setLogoPreviewImages(previews);
+    }, 150);
+
+    return () => clearTimeout(timeoutId);
+  }, [phase, rawGeneratedImages, logoPerFormat, logoSize, fontsLoaded, logoBase64, elementPositions, backgroundSettings, titles, subtitle, includeSubtitle, dateRange, time, location, includeDate, includeTime, includeLocation]);
+
   // Generate selected formats with current adjustments
   const handleGenerateWithAdjustments = async () => {
     if (selectedIllustration === null) return;
@@ -884,18 +942,15 @@ export const GraphicsGeneratorV2 = () => {
   const handleApplyLogo = async () => {
     if (rawGeneratedImages.length === 0) return;
 
-    if (!includeLogo || !logoBase64) {
-      // No logo — use raw images directly
-      setGeneratedGraphics(rawGeneratedImages);
-      setPhase('done');
-      return;
-    }
-
     setGeneratingFormats(true);
     try {
-      const withLogo = await Promise.all(
+      const final = await Promise.all(
         rawGeneratedImages.map(async (raw) => {
-          // Build custom positions with user-adjusted logo size
+          if (!logoPerFormat[raw.format] || !logoBase64) {
+            // Logo disabled for this format — use raw image
+            return raw;
+          }
+
           const pos = { ...elementPositions[raw.format] };
           pos.logo = { ...pos.logo, size: logoSize };
 
@@ -918,7 +973,7 @@ export const GraphicsGeneratorV2 = () => {
           );
         })
       );
-      setGeneratedGraphics(withLogo);
+      setGeneratedGraphics(final);
     } catch (err) {
       console.error('Error applying logo:', err);
       setGeneratedGraphics(rawGeneratedImages);
@@ -1766,41 +1821,18 @@ export const GraphicsGeneratorV2 = () => {
         </Card>
       )}
 
-      {/* Phase: Logo Adjustment (textBakedIn mode) */}
+      {/* Phase: Logo Adjustment (textBakedIn mode) — all formats with live preview */}
       {phase === 'logo-adjust' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Logo CASA</CardTitle>
-            <CardDescription>
-              Activa o desactiva el logo y ajusta su tamaño. Se coloca sobre los gráficos generados.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Preview of first generated image */}
-            {rawGeneratedImages.length > 0 && (
-              <div className="border rounded-lg overflow-hidden max-w-md mx-auto">
-                <img
-                  src={`data:image/png;base64,${rawGeneratedImages[0].base64}`}
-                  alt="Vista previa"
-                  className="w-full"
-                />
-              </div>
-            )}
-
-            {/* Logo toggle */}
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="include-logo"
-                checked={includeLogo}
-                onCheckedChange={(checked) => setIncludeLogo(checked === true)}
-              />
-              <Label htmlFor="include-logo" className="cursor-pointer text-base">
-                Incluir logo CASA
-              </Label>
-            </div>
-
-            {/* Logo size slider */}
-            {includeLogo && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Logo CASA</CardTitle>
+              <CardDescription>
+                Activa o desactiva el logo por formato y ajusta su tamaño. La vista previa se actualiza en tiempo real.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Global size slider */}
               <div className="space-y-2">
                 <Label>Tamaño del logo: {logoSize}px</Label>
                 <Slider
@@ -1815,30 +1847,62 @@ export const GraphicsGeneratorV2 = () => {
                   <span>Grande</span>
                 </div>
               </div>
-            )}
+            </CardContent>
+          </Card>
 
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setPhase('format-select')}
-              >
-                Volver
-              </Button>
-              <Button
-                className="flex-1 bg-amber-500 hover:bg-amber-600"
-                onClick={handleApplyLogo}
-                disabled={generatingFormats}
-              >
-                {generatingFormats ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                )}
-                {includeLogo ? 'Aplicar Logo y Finalizar' : 'Finalizar sin Logo'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Per-format previews with logo toggle */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {rawGeneratedImages.map((raw) => (
+              <Card key={raw.format} className="overflow-hidden">
+                <div className="relative">
+                  <img
+                    src={`data:image/png;base64,${logoPreviewImages[raw.format] || raw.base64}`}
+                    alt={FORMAT_LABELS[raw.format]}
+                    className="w-full"
+                  />
+                  <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                    {FORMAT_LABELS[raw.format]}
+                  </div>
+                </div>
+                <CardContent className="py-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`logo-${raw.format}`}
+                      checked={logoPerFormat[raw.format]}
+                      onCheckedChange={(checked) =>
+                        setLogoPerFormat(prev => ({ ...prev, [raw.format]: checked === true }))
+                      }
+                    />
+                    <Label htmlFor={`logo-${raw.format}`} className="cursor-pointer text-sm">
+                      Incluir logo
+                    </Label>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setPhase('format-select')}
+            >
+              Volver
+            </Button>
+            <Button
+              className="flex-1 bg-amber-500 hover:bg-amber-600"
+              onClick={handleApplyLogo}
+              disabled={generatingFormats}
+            >
+              {generatingFormats ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
+              )}
+              Finalizar
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Phase: Done - Show Results */}
@@ -1897,9 +1961,9 @@ export const GraphicsGeneratorV2 = () => {
               <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
-                  onClick={() => setPhase('adjusting')}
+                  onClick={() => setPhase(textBakedIn ? 'logo-adjust' : 'adjusting')}
                 >
-                  Volver a Ajustar
+                  {textBakedIn ? 'Ajustar Logo' : 'Volver a Ajustar'}
                 </Button>
                 <Button
                   className="flex-1 bg-amber-500 hover:bg-amber-600"
