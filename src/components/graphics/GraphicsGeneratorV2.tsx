@@ -570,10 +570,12 @@ export const GraphicsGeneratorV2 = () => {
 
       if (textBakedIn) {
         // JSON prompt mode: use the (possibly user-edited) prompt from prompt-preview phase
+        // Send logo base64 so the edge function can include it as an inlineData image
         requestBody = {
           eventType,
           count: 4,
           jsonPrompt: editablePrompt,
+          ...(logoBase64 ? { logoImage: logoBase64 } : {}),
         };
       } else {
         // Legacy mode: illustration-only with canvas overlay
@@ -818,6 +820,7 @@ export const GraphicsGeneratorV2 = () => {
               count: 1,
               referenceImage: selectedBase64,
               referencePrompt,
+              ...(logoBase64 ? { logoImage: logoBase64 } : {}),
             },
           });
 

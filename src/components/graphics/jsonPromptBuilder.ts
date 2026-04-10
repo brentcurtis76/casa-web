@@ -192,9 +192,9 @@ export function buildJsonPrompt(
       placement: 'The illustration occupies one area of the composition (typically right side or background), leaving clear space for text. The illustration and text coexist as an integrated editorial layout.',
     },
     logo: {
-      description: 'Small church logo mark — a simple, elegant monogram or crest rendered in the same continuous line art style as the illustration. The letters "CASA" (Comunidad Anglicana San Andrés) should be subtly integrated. Think of a refined editorial watermark.',
-      placement: 'Bottom-right corner or bottom-center, small and unobtrusive. It should feel like a publisher\'s mark on a fine print — present but not competing with the design.',
-      style: `Rendered in warm amber/gold (${CASA_BRAND.colors.primary.amber}) or medium gray (#666666), matching the illustration style. Thin lines, minimal, elegant.`,
+      description: 'The official CASA logo is provided as an attached image. Use that EXACT image — do NOT invent, redraw, or generate any logo text or monogram.',
+      placement: 'Bottom-right corner or bottom-center, small and unobtrusive — like a publisher\'s mark on a fine art print. Should not compete with the main design.',
+      style: 'Place the provided logo image as-is, scaled small. No modifications, no redrawing.',
     },
     composition: {
       layout: 'Editorial magazine layout with intentional negative space. The Matisse-style line art illustration and the typography coexist as a unified design — like a high-end gallery invitation or Kinfolk magazine spread.',
