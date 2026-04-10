@@ -806,7 +806,7 @@ export const GraphicsGeneratorV2 = () => {
             '3. Maintain the Matisse/Picasso continuous line art style exactly as shown.',
             `4. The final image must be ${dims.width}x${dims.height} pixels.`,
             '5. All text must remain fully legible and correctly spelled.',
-            '6. Do NOT include any logo, watermark, monogram, or emblem — leave the bottom-right corner clean and empty.',
+            '6. Do NOT include any logo, watermark, monogram, or emblem. Avoid placing important content in the bottom-right corner but let the background continue naturally — no blank or white rectangle.',
             '7. Do NOT add any religious figures, crosses, halos, or religious symbols unless the title explicitly references them.',
             '',
             `Text that must appear exactly:`,
