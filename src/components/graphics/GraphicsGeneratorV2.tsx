@@ -72,6 +72,7 @@ import {
   type ElementPositions,
   type AllElementPositions,
   DEFAULT_ELEMENT_POSITIONS,
+  FORMAT_DIMENSIONS,
   clonePositions,
   type GraphicsBackgroundSettings,
 } from './graphicsTypes';
@@ -103,7 +104,7 @@ const FORMAT_LABELS: Record<FormatType, string> = {
   facebook_post: 'Facebook Post',
 };
 
-type Phase = 'form' | 'prompt' | 'selecting' | 'adjusting' | 'generating' | 'done';
+type Phase = 'form' | 'prompt' | 'prompt-preview' | 'selecting' | 'adjusting' | 'format-select' | 'generating' | 'done';
 
 /**
  * Resolve auto-positioned elements (y = -1) to concrete Y values for ALL formats.
@@ -308,20 +309,26 @@ export const GraphicsGeneratorV2 = () => {
   const [location, setLocation] = useState('');
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [subtitle, setSubtitle] = useState('');
+  const [extraInfo, setExtraInfo] = useState('');
 
   // Toggle states for optional fields
   const [includeSubtitle, setIncludeSubtitle] = useState(false);
   const [includeDate, setIncludeDate] = useState(true);
   const [includeTime, setIncludeTime] = useState(true);
   const [includeLocation, setIncludeLocation] = useState(true);
+  const [includeExtraInfo, setIncludeExtraInfo] = useState(false);
 
   // Text baked into image toggle — when ON, Nano Banana Pro renders text directly
   const [textBakedIn, setTextBakedIn] = useState(true);
 
   // Prompt state (editable)
   const [customPrompt, setCustomPrompt] = useState('');
+  // Editable prompt for textBakedIn mode (shown in prompt-preview phase)
+  const [editablePrompt, setEditablePrompt] = useState('');
   // User's illustration theme description (in Spanish)
   const [illustrationTheme, setIllustrationTheme] = useState('');
+  // Selected formats for generation (format-select phase)
+  const [selectedFormats, setSelectedFormats] = useState<FormatType[]>([]);
 
   // Illustrations state
   const [illustrations, setIllustrations] = useState<string[]>([]);
@@ -529,9 +536,20 @@ export const GraphicsGeneratorV2 = () => {
     }
 
     if (textBakedIn) {
-      // In baked-in mode, skip the prompt editor — JSON prompt is auto-built
-      // Go directly to illustration generation
-      handleGenerateIllustrations();
+      // In baked-in mode, show the prompt preview so user can review/edit
+      const eventData: EventData = {
+        title: titles.instagram_post || titles.ppt_4_3 || 'Título del Evento',
+        subtitle: includeSubtitle ? subtitle : undefined,
+        date: includeDate ? (formatDateRange(dateRange) || '') : '',
+        time: includeTime ? (time || '') : '',
+        location: includeLocation ? (location || '') : '',
+      };
+      const promptStr = buildJsonPromptString(eventData, eventType, 'instagram_post', {
+        includeSubtitle,
+        extraInfo: includeExtraInfo ? extraInfo : undefined,
+      });
+      setEditablePrompt(promptStr);
+      setPhase('prompt-preview');
     } else {
       // Legacy mode: show editable prompt
       setCustomPrompt(buildDefaultPrompt(eventType, illustrationTheme));
@@ -551,22 +569,11 @@ export const GraphicsGeneratorV2 = () => {
       let requestBody: Record<string, unknown>;
 
       if (textBakedIn) {
-        // JSON prompt mode: build structured prompt with text baked in
-        // Use instagram_post as the default format for illustration selection
-        const eventData: EventData = {
-          title: titles.instagram_post || titles.ppt_4_3 || 'Título del Evento',
-          subtitle: includeSubtitle ? subtitle : undefined,
-          date: includeDate ? (formatDateRange(dateRange) || '') : '',
-          time: includeTime ? (time || '') : '',
-          location: includeLocation ? (location || '') : '',
-        };
-        const jsonPromptStr = buildJsonPromptString(eventData, eventType, 'instagram_post', {
-          includeSubtitle,
-        });
+        // JSON prompt mode: use the (possibly user-edited) prompt from prompt-preview phase
         requestBody = {
           eventType,
           count: 4,
-          jsonPrompt: jsonPromptStr,
+          jsonPrompt: editablePrompt,
         };
       } else {
         // Legacy mode: illustration-only with canvas overlay
@@ -657,16 +664,14 @@ export const GraphicsGeneratorV2 = () => {
     };
     img.src = `data:image/png;base64,${illustrations[index]}`;
 
+    // Both modes go to format selection
+    setSelectedFormats([]);
     if (textBakedIn) {
-      // In baked-in mode, the selected image IS the final graphic for instagram_post.
-      // Go directly to generating per-format versions.
-      // We need to set selectedIllustration first (done above), then trigger generation.
-      // Use a brief timeout to let state settle before generating
-      setTimeout(() => handleGenerateWithAdjustments(), 100);
+      setPhase('format-select');
       return;
     }
 
-    // Legacy mode: go to adjustment phase
+    // Legacy mode: go to adjustment phase (format-select comes after)
     // Reset adjustments to defaults
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
@@ -754,9 +759,14 @@ export const GraphicsGeneratorV2 = () => {
     return () => clearTimeout(timeoutId);
   }, [phase, adjustFormat, elementPositions, selectedIllustration, fontsLoaded, logoBase64, titles, dateRange, time, location, subtitle, includeSubtitle, includeDate, includeTime, includeLocation, illustrations, backgroundSettings]);
 
-  // Generate all formats with current adjustments
+  // Generate selected formats with current adjustments
   const handleGenerateWithAdjustments = async () => {
     if (selectedIllustration === null) return;
+
+    // Use selectedFormats if any, otherwise fall back to all 4
+    const formatsToGenerate: FormatType[] = selectedFormats.length > 0
+      ? selectedFormats
+      : ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'];
 
     setPhase('generating');
     setGeneratingFormats(true);
@@ -764,7 +774,6 @@ export const GraphicsGeneratorV2 = () => {
     const selectedBase64 = illustrations[selectedIllustration];
 
     try {
-      const formats: FormatType[] = ['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'];
       let graphics: GeneratedGraphic[];
 
       if (textBakedIn) {
@@ -780,6 +789,7 @@ export const GraphicsGeneratorV2 = () => {
           };
           const jsonPromptStr = buildJsonPromptString(eventData, eventType, format, {
             includeSubtitle,
+            extraInfo: includeExtraInfo ? extraInfo : undefined,
           });
 
           const { data, error } = await supabase.functions.invoke('generate-illustration', {
@@ -792,18 +802,39 @@ export const GraphicsGeneratorV2 = () => {
 
           if (error) throw error;
 
-          const base64 = data?.illustrations?.[0] || selectedBase64;
-          const dims = { ppt_4_3: { w: 2048, h: 1536 }, instagram_post: { w: 2160, h: 2160 }, instagram_story: { w: 2160, h: 3840 }, facebook_post: { w: 2400, h: 1260 } };
-          const d = dims[format];
+          const base64Raw = data?.illustrations?.[0] || selectedBase64;
+          const dims = FORMAT_DIMENSIONS[format];
+          const w = dims.width * 2;
+          const h = dims.height * 2;
 
-          return { format, base64, width: d.w, height: d.h };
+          // Overlay CASA logo onto the AI-generated graphic
+          if (logoBase64) {
+            const graphic = await generateGraphicWithPositions(
+              format,
+              {
+                title: titles[format].replace(/\n/g, '\\n') || '',
+                subtitle: includeSubtitle ? subtitle : undefined,
+                date: includeDate ? formatDateRange(dateRange) : '',
+                time: includeTime ? time : '',
+                location: includeLocation ? location : '',
+              },
+              base64Raw,
+              logoBase64,
+              elementPositions[format],
+              backgroundSettings,
+              { textBakedIn: true }
+            );
+            return graphic;
+          }
+
+          return { format, base64: base64Raw, width: w, height: h };
         };
 
-        graphics = await Promise.all(formats.map(generateForFormat));
+        graphics = await Promise.all(formatsToGenerate.map(generateForFormat));
       } else {
         // Legacy mode: generate each format with canvas text overlay
         graphics = await Promise.all(
-          formats.map(format => {
+          formatsToGenerate.map(format => {
             const eventData: EventData = {
               title: titles[format].replace(/\n/g, '\\n'),
               subtitle: includeSubtitle ? subtitle : undefined,
@@ -830,7 +861,7 @@ export const GraphicsGeneratorV2 = () => {
         description: 'Hubo un problema generando los formatos.',
         variant: 'destructive',
       });
-      setPhase('adjusting');
+      setPhase(textBakedIn ? 'format-select' : 'adjusting');
     } finally {
       setGeneratingFormats(false);
     }
@@ -1171,6 +1202,26 @@ export const GraphicsGeneratorV2 = () => {
                 </div>
               </div>
 
+              {/* Información adicional */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="include-extra-info"
+                    checked={includeExtraInfo}
+                    onCheckedChange={(checked) => setIncludeExtraInfo(checked === true)}
+                  />
+                  <Label htmlFor="include-extra-info" className="cursor-pointer">Información adicional</Label>
+                </div>
+                <Input
+                  id="extra-info"
+                  value={extraInfo}
+                  onChange={(e) => setExtraInfo(e.target.value)}
+                  placeholder="Ej: Trae un plato para compartir · Cuidado de niños disponible"
+                  disabled={!includeExtraInfo}
+                  className={!includeExtraInfo ? 'opacity-50' : ''}
+                />
+              </div>
+
               {/* Generate Button */}
               <Button
                 className="w-full bg-amber-500 hover:bg-amber-600"
@@ -1308,6 +1359,64 @@ export const GraphicsGeneratorV2 = () => {
                 className="flex-1 bg-amber-500 hover:bg-amber-600"
                 onClick={handleGenerateIllustrations}
                 disabled={!customPrompt.trim()}
+              >
+                <Wand2 className="h-4 w-4 mr-2" />
+                Generar Ilustraciones
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Phase: Prompt Preview (textBakedIn mode) */}
+      {phase === 'prompt-preview' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Revisar Prompt</CardTitle>
+            <CardDescription>
+              Este es el prompt estructurado que se enviará a la API. Puedes editarlo antes de generar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <textarea
+              value={editablePrompt}
+              onChange={(e) => setEditablePrompt(e.target.value)}
+              className="w-full min-h-[300px] p-3 border rounded-md font-mono text-xs resize-y bg-gray-50 leading-relaxed"
+              spellCheck={false}
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setPhase('form')}
+                className="flex-1"
+              >
+                Volver
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Rebuild the prompt from current form data
+                  const eventData: EventData = {
+                    title: titles.instagram_post || titles.ppt_4_3 || 'Título del Evento',
+                    subtitle: includeSubtitle ? subtitle : undefined,
+                    date: includeDate ? (formatDateRange(dateRange) || '') : '',
+                    time: includeTime ? (time || '') : '',
+                    location: includeLocation ? (location || '') : '',
+                  };
+                  const promptStr = buildJsonPromptString(eventData, eventType, 'instagram_post', {
+                    includeSubtitle,
+                    extraInfo: includeExtraInfo ? extraInfo : undefined,
+                  });
+                  setEditablePrompt(promptStr);
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Restaurar
+              </Button>
+              <Button
+                className="flex-1 bg-amber-500 hover:bg-amber-600"
+                onClick={handleGenerateIllustrations}
+                disabled={!editablePrompt.trim()}
               >
                 <Wand2 className="h-4 w-4 mr-2" />
                 Generar Ilustraciones
@@ -1494,10 +1603,87 @@ export const GraphicsGeneratorV2 = () => {
               </Button>
               <Button
                 className="flex-1 bg-amber-500 hover:bg-amber-600"
+                onClick={() => { setSelectedFormats([]); setPhase('format-select'); }}
+              >
+                <Wand2 className="h-4 w-4 mr-2" />
+                Seleccionar Formatos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Phase: Format Selection */}
+      {phase === 'format-select' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Selecciona los formatos</CardTitle>
+            <CardDescription>
+              Elige qué versiones quieres generar. Cada formato consume tokens de la API.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {(['ppt_4_3', 'instagram_post', 'instagram_story', 'facebook_post'] as FormatType[]).map((fmt) => {
+                const dims = FORMAT_DIMENSIONS[fmt];
+                const isSelected = selectedFormats.includes(fmt);
+                return (
+                  <div
+                    key={fmt}
+                    className={`border-2 rounded-lg p-4 cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => {
+                      setSelectedFormats(prev =>
+                        prev.includes(fmt)
+                          ? prev.filter(f => f !== fmt)
+                          : [...prev, fmt]
+                      );
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          setSelectedFormats(prev =>
+                            checked
+                              ? [...prev, fmt]
+                              : prev.filter(f => f !== fmt)
+                          );
+                        }}
+                      />
+                      <div>
+                        <p className="font-medium text-sm">{FORMAT_LABELS[fmt]}</p>
+                        <p className="text-xs text-muted-foreground">{dims.width} × {dims.height}</p>
+                        <div
+                          className="mt-2 border border-gray-300 bg-gray-50"
+                          style={{
+                            width: 60,
+                            height: Math.round(60 * (dims.height / dims.width)),
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setPhase(textBakedIn ? 'selecting' : 'adjusting')}
+              >
+                Volver
+              </Button>
+              <Button
+                className="flex-1 bg-amber-500 hover:bg-amber-600"
+                disabled={selectedFormats.length === 0}
                 onClick={handleGenerateWithAdjustments}
               >
                 <Wand2 className="h-4 w-4 mr-2" />
-                Generar Gráficos
+                Generar {selectedFormats.length} Formato{selectedFormats.length !== 1 ? 's' : ''}
               </Button>
             </div>
           </CardContent>

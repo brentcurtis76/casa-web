@@ -3,48 +3,36 @@
  * Builds structured JSON prompts for Nano Banana Pro (gemini-3-pro-image-preview)
  * that include text rendering instructions, brand kit colors, and editorial style.
  *
- * The model renders ALL text (title, subtitle, date, time, location) directly
- * into the image with professional typography — no Canvas overlay needed.
+ * The model renders ALL text (title, subtitle, date, time, location, extraInfo)
+ * directly into the image with professional typography — no Canvas overlay needed.
+ *
+ * Illustration style: Matisse/Picasso continuous line art — the CASA signature look.
  */
 
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { PROMPT_TEMPLATES, type PromptCategory } from './constants';
 import type { EventData, FormatType } from './graphicsTypes';
 import { FORMAT_DIMENSIONS } from './graphicsTypes';
 
 // ============================================
-// EVENT TYPE → PROMPT CATEGORY MAPPING
+// EVENT TYPE FALLBACK HINTS
 // ============================================
+// These are ONLY used as a last resort when the user provides no title,
+// subtitle, or illustration theme. They suggest a general mood/setting,
+// NOT specific religious symbols. The user's actual input always takes priority.
 
-const EVENT_TO_CATEGORY: Record<string, PromptCategory> = {
-  mesa_abierta: 'general_announcement',
-  culto_dominical: 'worship_service',
-  estudio_biblico: 'book_club',
-  retiro: 'seasonal',
-  navidad: 'seasonal',
-  cuaresma: 'seasonal',
-  pascua: 'seasonal',
-  bautismo: 'worship_service',
-  comunidad: 'assembly',
-  musica: 'worship_service',
-  oracion: 'social_devotional',
-  generic: 'general_announcement',
-};
-
-// Event type subject descriptions (for the core.subject field)
-const EVENT_SUBJECTS: Record<string, string> = {
-  mesa_abierta: 'Community dinner gathering — people sharing a meal together in warmth and fellowship',
-  culto_dominical: 'Sunday worship service — contemplative sacred space with reverent beauty',
-  estudio_biblico: 'Bible study group — intimate intellectual gathering with warmth and depth',
-  retiro: 'Spiritual retreat — mountain landscape, journey, nature, and peaceful reflection',
-  navidad: 'Christmas celebration — warm golden light, gentle nativity, joyful restraint',
-  cuaresma: 'Lenten season — muted earth tones, contemplative shadows, desert simplicity',
-  pascua: 'Easter — soft morning light, resurrection joy, white lily, empty space',
-  bautismo: 'Baptism — water, dove, light rays, new life and sacred beginning',
-  comunidad: 'Community gathering — people united, connection, collaboration, togetherness',
-  musica: 'Worship music — musical notes, instruments, sound and sacred melody',
-  oracion: 'Prayer — candle flame, ascending light, meditation and spiritual depth',
-  generic: 'Church community event — warm, welcoming, inclusive gathering',
+const EVENT_FALLBACK_HINTS: Record<string, string> = {
+  mesa_abierta: 'People gathering around a table, sharing a meal together',
+  culto_dominical: 'Contemplative sacred space, candles, open book',
+  estudio_biblico: 'Reading group, open book with lamp, coffee cup, notebook',
+  retiro: 'Mountain landscape with path, trees, and birds in flight',
+  navidad: 'Winter celebration, warm golden light, gift-giving, togetherness',
+  cuaresma: 'Desert landscape, simplicity, sparse vegetation, contemplation',
+  pascua: 'Sunrise, garden flowers, spring renewal, hope',
+  bautismo: 'Water waves, dove, light rays, new beginnings',
+  comunidad: 'Circle of people, joined hands, togetherness',
+  musica: 'Musical notes, instruments, sound waves',
+  oracion: 'Candle flame, ascending light, meditation',
+  generic: 'Warm community gathering, open doors, welcome',
 };
 
 // ============================================
@@ -64,12 +52,15 @@ export interface GraphicsJsonPrompt {
       time?: string;
       location?: string;
     };
+    extraInfo?: { content: string; style: string };
   };
-  style: {
-    aesthetic: string;
-    mood: string;
-    approach: string;
-    philosophy: string;
+  illustration: {
+    style: string;
+    subject: string;
+    lineColor: string;
+    accentColor: string;
+    background: string;
+    placement: string;
   };
   composition: {
     layout: string;
@@ -101,8 +92,35 @@ export interface GraphicsJsonPrompt {
 // ============================================
 
 /**
+ * Derive the illustration subject from user-provided fields.
+ * The title is the primary signal — it tells the model what the event is about.
+ * Subtitle and custom theme add nuance. Returns empty string if nothing useful.
+ */
+function buildSubjectFromUserInput(
+  eventData: EventData,
+  customTheme?: string
+): string {
+  // Custom illustration theme always wins — user explicitly described what they want
+  if (customTheme?.trim()) {
+    return customTheme.trim();
+  }
+
+  // Otherwise, build from title + subtitle
+  const parts: string[] = [];
+  if (eventData.title?.trim()) {
+    parts.push(eventData.title.replace(/\\n/g, ' ').trim());
+  }
+  if (eventData.subtitle?.trim()) {
+    parts.push(eventData.subtitle.trim());
+  }
+
+  return parts.join(' — ');
+}
+
+/**
  * Build a structured JSON prompt for Nano Banana Pro that includes
- * text rendering instructions using the CASA brand kit.
+ * text rendering instructions using the CASA brand kit, with
+ * Matisse/Picasso continuous line art illustrations.
  */
 export function buildJsonPrompt(
   eventData: EventData,
@@ -111,11 +129,16 @@ export function buildJsonPrompt(
   options?: {
     customStyleApproach?: string;
     includeSubtitle?: boolean;
+    extraInfo?: string;
   }
 ): GraphicsJsonPrompt {
-  const category = EVENT_TO_CATEGORY[eventType] || 'general_announcement';
-  const template = PROMPT_TEMPLATES[category];
   const dims = FORMAT_DIMENSIONS[format];
+
+  // Derive the illustration subject from user input, NOT the event type.
+  // Priority: custom illustration theme > title + subtitle > event type fallback
+  const userSubject = buildSubjectFromUserInput(eventData, options?.customStyleApproach);
+  const fallbackHint = EVENT_FALLBACK_HINTS[eventType] || EVENT_FALLBACK_HINTS.generic;
+  const illustrationSubject = userSubject || fallbackHint;
 
   // Build text section — only include fields that have content
   const textSection: GraphicsJsonPrompt['text'] = {};
@@ -123,7 +146,7 @@ export function buildJsonPrompt(
   if (eventData.title) {
     textSection.title = {
       content: eventData.title.replace(/\\n/g, '\n'),
-      style: `elegant serif typography similar to ${CASA_BRAND.fonts.heading}, light weight (300), generous letter spacing (0.05em), prominent and commanding but not heavy`,
+      style: `elegant serif typography similar to ${CASA_BRAND.fonts.heading}, light weight (300), generous letter spacing (0.05em), prominent and commanding but not heavy, color ${CASA_BRAND.colors.primary.black}`,
     };
   }
 
@@ -142,51 +165,58 @@ export function buildJsonPrompt(
     textSection.info = info;
   }
 
-  // Get editorial approach from the template
-  const editorialApproach = options?.customStyleApproach || template.basePrompt;
+  if (options?.extraInfo?.trim()) {
+    textSection.extraInfo = {
+      content: options.extraInfo.trim(),
+      style: `small clean sans-serif (${CASA_BRAND.fonts.body} style), weight 400, muted gray (${CASA_BRAND.colors.secondary.grayDark}), positioned near the bottom or below event details as a secondary note`,
+    };
+  }
 
   return {
     core: {
-      subject: EVENT_SUBJECTS[eventType] || EVENT_SUBJECTS.generic,
+      subject: illustrationSubject,
       purpose: 'church event announcement graphic for social media and presentations',
     },
     text: textSection,
-    style: {
-      aesthetic: 'Editorial sophistication — Kinfolk magazine meets sacred space. Quiet luxury. Intentional beauty. Every element earns its place.',
-      mood: 'warm, contemplative, inviting, hopeful, serene — the visual equivalent of entering a sacred space where worldly noise fades',
-      approach: editorialApproach,
-      philosophy: 'Silencio Sagrado — contemplative minimalism where negative space is active presence. Elements float with generous breathing room. Amber appears like candlelight: scarce, precious, intentional. Text is sparse, essential, positioned with haiku precision.',
+    illustration: {
+      style: 'Single continuous flowing line art in the style of Henri Matisse or Pablo Picasso one-line drawings. Abstract and contemplative. Elegant, minimalist, with generous negative space. The line art should feel hand-drawn with organic flowing curves — NOT geometric, NOT digital, NOT clipart.',
+      subject: illustrationSubject,
+      lineColor: `Medium gray (#666666) — single continuous line weight`,
+      accentColor: `Warm amber/gold (${CASA_BRAND.colors.primary.amber}) — used as accent on 20-30% of the illustration elements (highlights, key elements, artistic accents)`,
+      background: `Warm cream (${CASA_BRAND.colors.primary.white}) — solid flat background`,
+      placement: 'The illustration occupies one area of the composition (typically right side or background), leaving clear space for text. The illustration and text coexist as an integrated editorial layout.',
     },
     composition: {
-      layout: 'Rule of thirds with intentional negative space. One strong visual anchor balanced by generous empty space.',
-      textPlacement: 'Title prominent in upper or center area with clear hierarchy. Event details (date, time, location) grouped together with small amber icons (calendar, clock, pin) in a secondary position. All text must be rendered as part of the design.',
-      balance: 'Asymmetric with breathing room. 60-75% warm cream/ivory space. Visual weight in one area creating sophisticated tension.',
+      layout: 'Editorial magazine layout with intentional negative space. The Matisse-style line art illustration and the typography coexist as a unified design — like a high-end gallery invitation or Kinfolk magazine spread.',
+      textPlacement: 'Title prominent in upper-left or center area. Event details (date, time, location) grouped together with small amber icons (calendar, clock, pin) in a secondary position. Extra info as a quiet footnote near the bottom. All text rendered as part of the design.',
+      balance: 'Asymmetric with breathing room. 50-65% warm cream/ivory space. Line art illustration anchored to one side, text to the other. Silencio Sagrado — negative space is active presence, not emptiness.',
       aspectRatio: `${dims.width}:${dims.height}`,
       dimensions: `${dims.width}x${dims.height} pixels`,
     },
     colors: {
-      foundation: `Warm cream (${CASA_BRAND.colors.primary.white}) and soft ivory as the dominant background — 60-75% of composition`,
-      structure: `Warm grays from light (${CASA_BRAND.colors.secondary.grayLight}) to charcoal (${CASA_BRAND.colors.secondary.carbon}) for structure and depth`,
-      accent: `Muted amber/gold (${CASA_BRAND.colors.primary.amber}) — used sparingly like a jewel, 5-15% of composition. Variations: light ${CASA_BRAND.colors.amber.light}, main ${CASA_BRAND.colors.amber.main}, dark ${CASA_BRAND.colors.amber.dark}`,
-      text: `${CASA_BRAND.colors.primary.black} for titles, ${CASA_BRAND.colors.secondary.grayDark} for subtitles and body, ${CASA_BRAND.colors.amber.dark} for accent details like date/time/location`,
+      foundation: `Warm cream (${CASA_BRAND.colors.primary.white}) and soft ivory as the dominant background`,
+      structure: `Medium gray (#666666) for line art illustration, warm grays from ${CASA_BRAND.colors.secondary.grayLight} to charcoal ${CASA_BRAND.colors.secondary.carbon} for structure`,
+      accent: `Warm amber/gold (${CASA_BRAND.colors.primary.amber}) — used on 20-30% of the illustration AND sparingly in text accents. Variations: light ${CASA_BRAND.colors.amber.light}, main ${CASA_BRAND.colors.amber.main}, dark ${CASA_BRAND.colors.amber.dark}`,
+      text: `${CASA_BRAND.colors.primary.black} for titles, ${CASA_BRAND.colors.secondary.grayDark} for body text, ${CASA_BRAND.colors.amber.dark} for detail accents (date/time/location)`,
     },
     typography: {
       titleFont: `Elegant serif similar to ${CASA_BRAND.fonts.heading}, light weight (${CASA_BRAND.typography.h1.fontWeight}), generous letter spacing (${CASA_BRAND.typography.h1.letterSpacing}). Large, commanding but refined.`,
-      bodyFont: `Clean modern sans-serif similar to ${CASA_BRAND.fonts.body}, weight ${CASA_BRAND.typography.body.fontWeight}. Used for event details.`,
-      hierarchy: 'Clear but gentle — subtle weight and size differences rather than dramatic contrast. Title is the hero, details recede gracefully.',
+      bodyFont: `Clean modern sans-serif similar to ${CASA_BRAND.fonts.body}, weight ${CASA_BRAND.typography.body.fontWeight}. Used for event details and extra info.`,
+      hierarchy: 'Clear but gentle — subtle weight and size differences rather than dramatic contrast. Title is the hero, details recede gracefully. Extra info is the quietest element.',
     },
     technical: {
       avoidList: [
-        'clip art aesthetic',
-        'stock photo clichés',
+        'photographic or photorealistic imagery — use ONLY line art illustration',
+        'filled shapes or solid color blocks in the illustration — lines only',
+        'clip art aesthetic or stock illustration style',
         'heavy ornate borders or art deco patterns',
         'bright saturated colors or high contrast',
         'busy compositions or competing focal points',
         'generic church graphic templates',
-        'decorative flourishes',
+        'digital or geometric illustration style — must feel hand-drawn',
         'literal or heavy-handed religious imagery',
       ],
-      quality: 'Museum/magazine quality. Meticulous craftsmanship. Every element must feel like the result of hours of refinement by a master designer.',
+      quality: 'Museum/magazine quality. The line art must feel like an original Matisse drawing. The typography must feel like a master typographer set it by hand. Meticulous craftsmanship throughout.',
       textRendering: 'ALL text must be rendered clearly and legibly as an integral part of the image composition. Text is part of the design, not overlaid. Render with professional typographic quality — proper kerning, leading, and alignment.',
     },
   };
@@ -202,12 +232,12 @@ export function jsonPromptToString(prompt: GraphicsJsonPrompt): string {
   return `Generate a complete, finished graphic design based on the following structured specification.
 
 CRITICAL INSTRUCTIONS:
-1. Render ALL text elements directly into the image with professional typography. The text must be part of the design composition, not a separate layer.
-2. Follow the color palette EXACTLY as specified — warm cream backgrounds, charcoal text, amber accents.
-3. Follow the typography direction — serif for titles (like Merriweather), clean for details.
-4. The result should look like a page from Kinfolk magazine or a high-end gallery invitation.
+1. The illustration MUST be in the style of Henri Matisse / Pablo Picasso one-line continuous line art — flowing gray (#666666) lines with warm amber/gold (#D4A853) accents on a warm cream background. This is the signature visual style and is non-negotiable.
+2. Render ALL text elements directly into the image with professional typography. The text must be part of the design composition, not a separate layer.
+3. Follow the color palette EXACTLY — warm cream background, gray line art, amber accents, charcoal text.
+4. Follow the typography direction — serif for titles, clean sans-serif for details.
 5. Leave NO placeholder text. Use ONLY the exact text content provided in the specification.
-6. The image must be a complete, print-ready graphic — not a mockup or template.
+6. The final result must look like an editorial magazine layout where a Matisse-style illustration and elegant typography coexist as a unified design.
 
 DESIGN SPECIFICATION:
 ${jsonStr}`;
@@ -223,6 +253,7 @@ export function buildJsonPromptString(
   options?: {
     customStyleApproach?: string;
     includeSubtitle?: boolean;
+    extraInfo?: string;
   }
 ): string {
   const prompt = buildJsonPrompt(eventData, eventType, format, options);

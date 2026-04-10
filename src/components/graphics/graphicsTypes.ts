@@ -27,6 +27,7 @@ export interface EventData {
   date: string;
   time: string;
   location: string;
+  extraInfo?: string;
 }
 
 export interface GeneratedGraphic {

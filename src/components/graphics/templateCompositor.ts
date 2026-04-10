@@ -67,6 +67,7 @@ export interface EventData {
   date: string;
   time: string;
   location: string;
+  extraInfo?: string;
 }
 
 export type FormatType = 'ppt_4_3' | 'instagram_post' | 'instagram_story' | 'facebook_post';
