@@ -180,7 +180,7 @@ export function buildJsonPrompt(
   return {
     core: {
       subject: illustrationSubject,
-      purpose: 'community event announcement graphic for social media and presentations',
+      purpose: `event announcement graphic for "${illustrationSubject}" — for social media and presentations`,
     },
     text: textSection,
     illustration: {
