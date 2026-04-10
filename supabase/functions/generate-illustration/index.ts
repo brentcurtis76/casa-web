@@ -79,9 +79,10 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt } = await req.json();
 
-    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType}${jsonPrompt ? ' (JSON prompt mode)' : ''}`);
+    const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
+    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode)`);
 
     // Validate backgroundMode
     if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
@@ -91,7 +92,10 @@ serve(async (req) => {
     // Build prompt based on mode
     let prompt: string;
 
-    if (jsonPrompt && typeof jsonPrompt === 'string') {
+    if (referenceImage && referencePrompt) {
+      // Image-to-image mode: recompose a reference image for a new aspect ratio
+      prompt = referencePrompt;
+    } else if (jsonPrompt && typeof jsonPrompt === 'string') {
       // JSON prompt mode: the frontend sends a pre-built structured prompt string
       // that includes text rendering instructions, brand kit, and editorial style.
       // The model will render text directly into the image.
@@ -105,7 +109,7 @@ serve(async (req) => {
     }
 
     // Add transparency extraction hint if backgroundMode === 'transparent' (legacy mode only)
-    if (backgroundMode === 'transparent' && !jsonPrompt) {
+    if (backgroundMode === 'transparent' && !jsonPrompt && !referenceImage) {
       prompt += '\n\nIMPORTANT: The background MUST be PURE WHITE (#FFFFFF) with absolutely no texture, gradients, or patterns. This allows easy background extraction.';
     }
 
@@ -119,6 +123,27 @@ serve(async (req) => {
     // Generar cada ilustración individualmente (Gemini genera una por request)
     const generateOne = async (index: number): Promise<string> => {
       try {
+        // Build parts array — text-only or text+image depending on mode
+        const parts: Array<Record<string, unknown>> = [];
+
+        if (referenceImage && typeof referenceImage === 'string') {
+          // Image-to-image: send reference image first, then text instruction
+          parts.push({
+            inlineData: {
+              mimeType: 'image/png',
+              data: referenceImage,
+            }
+          });
+          parts.push({
+            text: prompt,
+          });
+        } else {
+          // Text-only generation
+          parts.push({
+            text: `${prompt}\n\nGenerate variation ${index + 1} of this illustration with slightly different composition.`
+          });
+        }
+
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -126,10 +151,11 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             contents: [{
-              parts: [{
-                text: `${prompt}\n\nGenerate variation ${index + 1} of this illustration with slightly different composition.`
-              }]
-            }]
+              parts,
+            }],
+            generationConfig: {
+              responseModalities: ['Text', 'Image'],
+            },
           }),
         });
 

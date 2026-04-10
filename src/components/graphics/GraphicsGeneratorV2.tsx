@@ -777,9 +777,12 @@ export const GraphicsGeneratorV2 = () => {
       let graphics: GeneratedGraphic[];
 
       if (textBakedIn) {
-        // Text-baked-in mode: generate a complete graphic per format via Nano Banana Pro
-        // Each format gets its own JSON prompt with the correct aspect ratio
+        // Text-baked-in mode: use image-to-image to recompose the selected
+        // illustration for each requested aspect ratio. The selected image is
+        // sent as a reference so the model preserves its style and composition
+        // while adapting to the new dimensions.
         const generateForFormat = async (format: FormatType): Promise<GeneratedGraphic> => {
+          const dims = FORMAT_DIMENSIONS[format];
           const eventData: EventData = {
             title: titles[format].replace(/\n/g, '\\n') || 'Título del Evento',
             subtitle: includeSubtitle ? subtitle : undefined,
@@ -787,47 +790,41 @@ export const GraphicsGeneratorV2 = () => {
             time: includeTime ? time : '',
             location: includeLocation ? location : '',
           };
-          const jsonPromptStr = buildJsonPromptString(eventData, eventType, format, {
-            includeSubtitle,
-            extraInfo: includeExtraInfo ? extraInfo : undefined,
-          });
+
+          // Build a recomposition prompt that references the selected image
+          const referencePrompt = [
+            `Recompose this exact graphic design for a ${dims.width}x${dims.height} pixel format (${dims.width}:${dims.height} aspect ratio).`,
+            '',
+            'CRITICAL INSTRUCTIONS:',
+            '1. Keep the SAME illustration, SAME text content, SAME typography, SAME color palette, and SAME overall design language.',
+            '2. Adapt the LAYOUT to fit the new aspect ratio — reposition elements, adjust spacing, resize text proportionally.',
+            '3. Maintain the Matisse/Picasso continuous line art style exactly as shown.',
+            `4. The final image must be ${dims.width}x${dims.height} pixels.`,
+            '5. All text must remain fully legible and correctly spelled.',
+            '6. Keep the CASA logo mark in the same relative position (bottom area).',
+            '',
+            `Text that must appear exactly:`,
+            eventData.title ? `- Title: "${eventData.title.replace(/\\n/g, ' ')}"` : '',
+            eventData.subtitle ? `- Subtitle: "${eventData.subtitle}"` : '',
+            eventData.date ? `- Date: "${eventData.date}"` : '',
+            eventData.time ? `- Time: "${eventData.time}"` : '',
+            eventData.location ? `- Location: "${eventData.location}"` : '',
+            (includeExtraInfo && extraInfo) ? `- Extra info: "${extraInfo}"` : '',
+          ].filter(Boolean).join('\n');
 
           const { data, error } = await supabase.functions.invoke('generate-illustration', {
             body: {
               eventType,
               count: 1,
-              jsonPrompt: jsonPromptStr,
+              referenceImage: selectedBase64,
+              referencePrompt,
             },
           });
 
           if (error) throw error;
 
-          const base64Raw = data?.illustrations?.[0] || selectedBase64;
-          const dims = FORMAT_DIMENSIONS[format];
-          const w = dims.width * 2;
-          const h = dims.height * 2;
-
-          // Overlay CASA logo onto the AI-generated graphic
-          if (logoBase64) {
-            const graphic = await generateGraphicWithPositions(
-              format,
-              {
-                title: titles[format].replace(/\n/g, '\\n') || '',
-                subtitle: includeSubtitle ? subtitle : undefined,
-                date: includeDate ? formatDateRange(dateRange) : '',
-                time: includeTime ? time : '',
-                location: includeLocation ? location : '',
-              },
-              base64Raw,
-              logoBase64,
-              elementPositions[format],
-              backgroundSettings,
-              { textBakedIn: true }
-            );
-            return graphic;
-          }
-
-          return { format, base64: base64Raw, width: w, height: h };
+          const base64 = data?.illustrations?.[0] || selectedBase64;
+          return { format, base64, width: dims.width * 2, height: dims.height * 2 };
         };
 
         graphics = await Promise.all(formatsToGenerate.map(generateForFormat));
