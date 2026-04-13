@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/components/auth/AuthContext";
 import ForcePasswordChangeModal from "@/components/auth/ForcePasswordChangeModal";
+import ScrollToTop from "@/components/ui/ScrollToTop";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HeaderDemo from "./pages/HeaderDemo";
@@ -102,6 +103,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <ScrollToTop />
         <ForcePasswordChangeGate>
           <RouterProvider router={router} />
         </ForcePasswordChangeGate>
