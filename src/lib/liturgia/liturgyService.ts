@@ -54,6 +54,39 @@ export async function uploadPortadaImage(
 }
 
 /**
+ * Sube el PDF de la reflexión a Supabase Storage y retorna la URL pública
+ */
+export async function uploadReflexionPdf(
+  liturgyId: string,
+  pdfFile: File
+): Promise<string | null> {
+  try {
+    const filePath = `liturgias/${liturgyId}/reflexion.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('liturgy-published')
+      .upload(filePath, pdfFile, {
+        upsert: true,
+        contentType: 'application/pdf',
+      });
+
+    if (uploadError) {
+      console.error('Error uploading reflexion PDF:', uploadError);
+      return null;
+    }
+
+    const { data } = supabase.storage
+      .from('liturgy-published')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  } catch (err) {
+    console.error('Error in uploadReflexionPdf:', err);
+    return null;
+  }
+}
+
+/**
  * Descarga una imagen de Supabase Storage y la convierte a base64
  */
 export async function downloadPortadaImage(imageUrl: string): Promise<string | null> {
@@ -248,6 +281,7 @@ interface DBLiturgia {
   celebrante: string | null;
   predicador: string | null;
   reflexion_texto: string | null;
+  reflexion_pdf_url: string | null;
   estado: 'borrador' | 'en-progreso' | 'listo' | 'archivado';
   porcentaje_completado: number;
   portada_imagen_url: string | null;
@@ -370,6 +404,7 @@ export async function saveLiturgy(
       celebrante: liturgy.context.celebrant || null,
       predicador: liturgy.context.preacher || null,
       reflexion_texto: liturgy.context.reflexionText || null,
+      reflexion_pdf_url: liturgy.context.reflexionPdfUrl || null,
       estado: liturgy.status === 'ready' ? 'listo' : 'en-progreso',
       porcentaje_completado: porcentaje,
       created_by: user.id,
@@ -666,6 +701,7 @@ export async function loadLiturgy(id: string): Promise<LoadLiturgyResult | null>
         celebrant: liturgiaData.celebrante || undefined,
         preacher: liturgiaData.predicador || undefined,
         reflexionText: liturgiaData.reflexion_texto || undefined,
+        reflexionPdfUrl: liturgiaData.reflexion_pdf_url || undefined,
         createdAt: liturgiaData.created_at,
         updatedAt: liturgiaData.updated_at,
       },

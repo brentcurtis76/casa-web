@@ -21,6 +21,7 @@ export interface LiturgyContext {
   celebrant?: string;               // Nombre del celebrante (opcional)
   preacher?: string;                // Nombre del predicador (opcional)
   reflexionText?: string;           // Texto completo extraído del PDF de reflexión
+  reflexionPdfUrl?: string;         // URL del PDF original en Supabase Storage
   createdAt: string;
   updatedAt: string;
 }

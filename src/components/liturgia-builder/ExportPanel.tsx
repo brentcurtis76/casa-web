@@ -666,12 +666,34 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     }
   };
 
+  // Whether we have a reflexion PDF available (in-memory file or persisted URL)
+  const hasReflexionPdf = !!(reflexionPdfFile || liturgyContext?.reflexionPdfUrl);
+
   // Handle reflexion publish to home page
   const handlePublishReflexion = async () => {
-    if (!reflexionPdfFile || !liturgyContext?.id) {
-      setError('No se puede publicar sin el PDF de reflexion o contexto de liturgia');
+    if (!liturgyContext?.id) {
+      setError('No se puede publicar sin contexto de liturgia');
       return;
     }
+
+    // Get the PDF file: use in-memory file if available, otherwise fetch from stored URL
+    let pdfFile: File | null = reflexionPdfFile || null;
+    if (!pdfFile && liturgyContext.reflexionPdfUrl) {
+      try {
+        const response = await fetch(liturgyContext.reflexionPdfUrl);
+        const blob = await response.blob();
+        pdfFile = new File([blob], 'reflexion.pdf', { type: 'application/pdf' });
+      } catch {
+        setError('Error al descargar el PDF de reflexion');
+        return;
+      }
+    }
+
+    if (!pdfFile) {
+      setError('No se puede publicar sin el PDF de reflexion');
+      return;
+    }
+
     setPublishingReflexion(true);
     setError(null);
     try {
@@ -679,7 +701,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         liturgyId: liturgyContext.id,
         liturgyDate: new Date(liturgyContext.date),
         title: liturgyContext.title,
-        pdfFile: reflexionPdfFile,
+        pdfFile,
       });
       setReflexionPublished(true);
       toast({
@@ -1386,7 +1408,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         )}
 
         {/* Reflexion Pastoral */}
-        {canPublishReflexion && reflexionPdfFile && liturgyContext && (
+        {canPublishReflexion && hasReflexionPdf && liturgyContext && (
           <div
             className="p-5 rounded-xl"
             style={{

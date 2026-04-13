@@ -73,6 +73,7 @@ import { fixedElementToSlides } from '@/lib/fixedElementToSlides';
 import type { FixedElement } from '@/types/shared/fixed-elements';
 import VistaPrevia from './VistaPrevia';
 import ExportPanel from './ExportPanel';
+import { uploadReflexionPdf } from '@/lib/liturgia/liturgyService';
 import { useToast } from '@/hooks/use-toast';
 
 /**
@@ -583,6 +584,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       celebrant: input.celebrant,
       preacher: input.preacher,
       reflexionText: input.reflexionText,
+      reflexionPdfUrl: liturgyContext?.reflexionPdfUrl,
       createdAt: liturgyContext?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -592,15 +594,19 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       contextDateISO: context.date instanceof Date ? context.date.toISOString() : context.date
     });
 
-    setLiturgyContext(context);
-    setPendingContextChanges(null); // Limpiar cambios pendientes ya que se han aplicado
-    setIsDirty(true);
-    setCurrentStep('elementos');
-
-    // Store the PDF file for later publishing in the Export step
+    // Upload reflexion PDF to storage if provided
     if (input.originalPdfFile) {
+      const pdfUrl = await uploadReflexionPdf(contextId, input.originalPdfFile);
+      if (pdfUrl) {
+        context.reflexionPdfUrl = pdfUrl;
+      }
       setReflexionPdfFile(input.originalPdfFile);
     }
+
+    setLiturgyContext(context);
+    setPendingContextChanges(null);
+    setIsDirty(true);
+    setCurrentStep('elementos');
   };
 
   // Handle element slides generated
