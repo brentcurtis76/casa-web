@@ -219,9 +219,12 @@ export function Footer() {
             <p className="text-casa-400 text-sm">
               &copy; {new Date().getFullYear()} CASA. Todos los derechos reservados.
             </p>
-            <div className="flex items-center gap-2 text-casa-500 text-sm">
-              <span className="w-2 h-2 bg-amber-400/60 rounded-full" />
-              <span>Comunidad Anglicana San Andrés</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-casa-500 text-sm">
+                <span className="w-2 h-2 bg-amber-400/60 rounded-full" />
+                <span>Comunidad Anglicana San Andrés</span>
+              </div>
+              <span className="text-xs text-casa-500">v{__APP_VERSION__}</span>
             </div>
           </div>
         </motion.div>
