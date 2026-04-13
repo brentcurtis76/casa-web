@@ -18,6 +18,7 @@ import {
   Music,
   Send,
   AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import type { LiturgyElement, LiturgyElementType, LiturgyContext } from '@/types/shared/liturgy';
 import type { Story } from '@/types/shared/story';
@@ -27,7 +28,7 @@ import { exportLiturgy } from '@/lib/liturgia/exportService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
 import { exportChildrenLessonToPDF, type ChildrenLessonPdfData } from '@/lib/children-ministry/childrenLessonPdfExporter';
 import { getLesson } from '@/lib/children-ministry/lessonService';
-import { publishCuentacuento } from '@/lib/publishedResourcesService';
+import { publishCuentacuento, publishReflexion } from '@/lib/publishedResourcesService';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthContext';
 import { ROLE_NAMES } from '@/types/rbac';
@@ -72,6 +73,7 @@ interface ExportPanelProps {
   elementOrder: string[];
   liturgyContext: LiturgyContext | null;
   pendingContextChanges?: { celebrant?: string; preacher?: string } | null;
+  reflexionPdfFile?: File | null;
   onExportComplete?: (format: string) => void;
 }
 
@@ -80,6 +82,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   elementOrder,
   liturgyContext,
   pendingContextChanges,
+  reflexionPdfFile,
   onExportComplete,
 }) => {
   const { toast } = useToast();
@@ -96,6 +99,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   // Story publish state
   const [publishingStory, setPublishingStory] = useState(false);
   const [storyPublished, setStoryPublished] = useState(false);
+
+  // Reflexion publish state
+  const [publishingReflexion, setPublishingReflexion] = useState(false);
+  const [reflexionPublished, setReflexionPublished] = useState(false);
 
   // Music publish state
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
@@ -138,6 +145,10 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
     hasRole(ROLE_NAMES.CHILDREN_MINISTRY_COORDINATOR) ||
     hasRole(ROLE_NAMES.GENERAL_ADMIN);
 
+  // RBAC: Can this user publish reflexion to homepage?
+  const canPublishReflexion = hasRole(ROLE_NAMES.LITURGIST) ||
+    hasRole(ROLE_NAMES.GENERAL_ADMIN);
+
   // Load existing publication state for this liturgy (both music and children)
   const loadPublicationState = useCallback(async () => {
     if (!liturgyContext?.id) return;
@@ -164,6 +175,11 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   useEffect(() => {
     loadPublicationState();
   }, [loadPublicationState]);
+
+  // Reset reflexion published state when the file changes (e.g. user re-uploads)
+  useEffect(() => {
+    setReflexionPublished(false);
+  }, [reflexionPdfFile]);
 
   // Set default service date from liturgy context
   useEffect(() => {
@@ -647,6 +663,35 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
       setError(err instanceof Error ? err.message : 'Error al publicar el cuento');
     } finally {
       setPublishingStory(false);
+    }
+  };
+
+  // Handle reflexion publish to home page
+  const handlePublishReflexion = async () => {
+    if (!reflexionPdfFile || !liturgyContext?.id) {
+      setError('No se puede publicar sin el PDF de reflexion o contexto de liturgia');
+      return;
+    }
+    setPublishingReflexion(true);
+    setError(null);
+    try {
+      await publishReflexion({
+        liturgyId: liturgyContext.id,
+        liturgyDate: new Date(liturgyContext.date),
+        title: liturgyContext.title,
+        pdfFile: reflexionPdfFile,
+      });
+      setReflexionPublished(true);
+      toast({
+        title: 'Reflexion publicada',
+        description: `"${liturgyContext.title}" ya esta disponible en la pagina principal`,
+      });
+      onExportComplete?.('reflexion-published');
+    } catch (err) {
+      console.error('Publish reflexion error:', err);
+      setError(err instanceof Error ? err.message : 'Error al publicar la reflexion');
+    } finally {
+      setPublishingReflexion(false);
     }
   };
 
@@ -1335,6 +1380,83 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
                     )}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reflexion Pastoral */}
+        {canPublishReflexion && reflexionPdfFile && liturgyContext && (
+          <div
+            className="p-5 rounded-xl"
+            style={{
+              background: `linear-gradient(135deg, ${CASA_BRAND.colors.primary.amber}15 0%, ${CASA_BRAND.colors.primary.amber}05 100%)`,
+              border: `2px solid ${CASA_BRAND.colors.primary.amber}40`,
+            }}
+          >
+            <div className="flex items-start gap-4">
+              {/* Icon */}
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+              >
+                <FileText size={22} style={{ color: CASA_BRAND.colors.primary.white }} />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1">
+                <h4
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.heading,
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: CASA_BRAND.colors.primary.black,
+                  }}
+                >
+                  Reflexion Pastoral
+                </h4>
+                <p
+                  className="mt-1"
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                    color: CASA_BRAND.colors.secondary.grayDark,
+                  }}
+                >
+                  Publica el PDF de la reflexion en la seccion "Recursos para Familias" de la pagina principal
+                </p>
+
+                {/* Publish button */}
+                <button
+                  onClick={handlePublishReflexion}
+                  disabled={publishingReflexion || !liturgyContext?.id}
+                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  style={{
+                    backgroundColor: reflexionPublished
+                      ? '#16a34a'
+                      : CASA_BRAND.colors.primary.black,
+                    color: CASA_BRAND.colors.primary.white,
+                    fontFamily: CASA_BRAND.fonts.body,
+                    fontSize: '13px',
+                  }}
+                >
+                  {publishingReflexion ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Publicando...
+                    </>
+                  ) : reflexionPublished ? (
+                    <>
+                      <Check size={16} />
+                      Publicado
+                    </>
+                  ) : (
+                    <>
+                      <Globe size={16} />
+                      Publicar en Home
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

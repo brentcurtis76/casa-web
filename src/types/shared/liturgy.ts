@@ -164,7 +164,6 @@ export interface LiturgyContextInput {
   preacher?: string;
   reflexionText?: string;           // Texto completo extraído del PDF de reflexión
   originalPdfFile?: File;           // Archivo PDF original para publicación
-  publishReflexion?: boolean;       // Si se debe publicar la reflexión en home
 }
 
 /**

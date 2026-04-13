@@ -73,7 +73,6 @@ import { fixedElementToSlides } from '@/lib/fixedElementToSlides';
 import type { FixedElement } from '@/types/shared/fixed-elements';
 import VistaPrevia from './VistaPrevia';
 import ExportPanel from './ExportPanel';
-import { publishReflexion as publishReflexionService } from '@/lib/publishedResourcesService';
 import { useToast } from '@/hooks/use-toast';
 
 /**
@@ -437,6 +436,16 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   // Pending context changes from the form (not yet saved via "Continuar")
   const [pendingContextChanges, setPendingContextChanges] = useState<LiturgyContextInput | null>(null);
 
+  // PDF file for reflexion publishing — threaded to ExportPanel
+  const [reflexionPdfFile, setReflexionPdfFile] = useState<File | null>(null);
+
+  // Capture reflexion PDF file from pending context changes (handles live updates and removal)
+  useEffect(() => {
+    if (pendingContextChanges) {
+      setReflexionPdfFile(pendingContextChanges.originalPdfFile || null);
+    }
+  }, [pendingContextChanges?.originalPdfFile]);
+
   // Element order state - orden personalizado de la liturgia
   // Siempre incluir los 18 elementos, usando el orden guardado para los que existen
   // e insertando los faltantes en su posición por defecto
@@ -588,28 +597,9 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     setIsDirty(true);
     setCurrentStep('elementos');
 
-    // Handle reflexion publishing if requested
-    if (input.publishReflexion && input.originalPdfFile) {
-      try {
-        await publishReflexionService({
-          liturgyId: contextId,
-          liturgyDate: input.date,
-          title: input.title,
-          pdfFile: input.originalPdfFile,
-        });
-
-        toast({
-          title: 'Reflexion publicada',
-          description: `"${input.title}" ya esta disponible en la pagina principal`,
-        });
-      } catch (err) {
-        console.error('[handleContextSave] Error publishing reflexion:', err);
-        toast({
-          title: 'Error al publicar reflexion',
-          description: err instanceof Error ? err.message : 'Error desconocido',
-          variant: 'destructive',
-        });
-      }
+    // Store the PDF file for later publishing in the Export step
+    if (input.originalPdfFile) {
+      setReflexionPdfFile(input.originalPdfFile);
     }
   };
 
@@ -1511,6 +1501,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             elementOrder={elementOrder}
             liturgyContext={liturgyContext}
             pendingContextChanges={pendingContextChanges}
+            reflexionPdfFile={reflexionPdfFile}
             onExportComplete={(format) => {
               console.log(`Exportación completada: ${format}`);
             }}

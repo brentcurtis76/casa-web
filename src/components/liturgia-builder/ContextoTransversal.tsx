@@ -84,7 +84,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
 
   // Original PDF file for publishing
   const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
-  const [publishReflexion, setPublishReflexion] = useState(false);
 
   // Sincronizar todos los estados cuando cambie el ID del contexto
   // IMPORTANTE: Solo sincronizar cuando cambie el ID, no cuando cambie el contenido
@@ -146,11 +145,10 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       preacher: preacher.trim() || undefined,
       reflexionText: reflexionText.trim() || undefined,
       originalPdfFile: originalPdfFile || undefined,
-      publishReflexion: publishReflexion || undefined,
     };
 
     onFormChange(contextInput);
-  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, publishReflexion, onFormChange]);
+  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, onFormChange]);
 
   // Get next Sunday date
   function getNextSunday(): string {
@@ -351,7 +349,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     setSummary('');
     setShowReflexionPreview(false);
     setOriginalPdfFile(null);
-    setPublishReflexion(false);
   };
 
   // Validate form
@@ -394,7 +391,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       preacher: preacher.trim() || undefined,
       reflexionText: reflexionText.trim() || undefined,
       originalPdfFile: originalPdfFile || undefined,
-      publishReflexion: publishReflexion || undefined,
     };
 
     console.log('[ContextoTransversal] handleSubmit - contextInput.date:', contextInput.date);
@@ -633,33 +629,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
               )}
             </div>
 
-            {/* Publish to Home toggle */}
-            <div
-              className="flex items-center gap-3 mt-3 px-3 py-2.5 rounded-lg"
-              style={{
-                backgroundColor: publishReflexion ? `${CASA_BRAND.colors.primary.amber}15` : `${CASA_BRAND.colors.secondary.grayLight}30`,
-                border: publishReflexion ? `1px solid ${CASA_BRAND.colors.primary.amber}40` : '1px solid transparent',
-              }}
-            >
-              <input
-                type="checkbox"
-                id="publish-reflexion"
-                checked={publishReflexion}
-                onChange={(e) => setPublishReflexion(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
-              />
-              <label
-                htmlFor="publish-reflexion"
-                className="flex-1 cursor-pointer"
-                style={{
-                  fontFamily: CASA_BRAND.fonts.body,
-                  fontSize: '13px',
-                  color: publishReflexion ? CASA_BRAND.colors.primary.black : CASA_BRAND.colors.secondary.grayDark,
-                }}
-              >
-                Publicar esta reflexion en la pagina principal
-              </label>
-            </div>
           </div>
         )}
       </div>
