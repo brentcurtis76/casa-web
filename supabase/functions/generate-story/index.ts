@@ -8,7 +8,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const GOOGLE_AI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
-const MODEL = 'claude-opus-4-5-20251101';
+const MODEL = 'claude-opus-4-6';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 /**
@@ -457,7 +457,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: SYSTEM_PROMPT,
         messages: [
           {
@@ -478,6 +478,11 @@ serve(async (req) => {
 
     if (!data.content || !data.content[0] || !data.content[0].text) {
       throw new Error('La API no retornó contenido');
+    }
+
+    if (data.stop_reason === 'max_tokens') {
+      console.error('[generate-story] Respuesta truncada por max_tokens');
+      throw new Error('La respuesta fue truncada (muy larga). Intente con menos escenas.');
     }
 
     // Extraer el JSON de la respuesta

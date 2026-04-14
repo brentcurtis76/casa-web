@@ -218,6 +218,10 @@ export async function publishReflexion(params: {
   }
 
   if (error) throw new Error(`Error al publicar: ${error.message}`);
+  if (!data) {
+    console.warn('[publishReflexion] WARNING: No error but data is null - RLS may have silently blocked the operation');
+    throw new Error('Error al publicar: la operación no devolvió datos. Verifica tus permisos.');
+  }
   return data as PublishedResource;
 }
 
