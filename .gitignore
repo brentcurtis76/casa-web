@@ -44,3 +44,4 @@ playwright-report/
 # Supabase CLI temp files
 supabase/.temp/
 .mcp.json
+package-lock.json
