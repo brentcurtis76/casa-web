@@ -1,29 +1,51 @@
+> **CRITICAL — READ FIRST:** No bridge MCP exists in this session. Never search for `bridge_post_task` or similar tools. Use `jb post ... --project casa` via the bash tool. See "Bridge Mode" section below.
+
 # CASA — Project Instructions
 
-## MANDATORY: No Direct Code Edits
+## Execution Modes
 
-**STOP. Do NOT use Edit, Write, or any file-modification tool on source files (.ts, .tsx, .js, .jsx, .css, .sql).**
-
-When the user describes a bug, feature, or refactoring task, you MUST:
-
-```bash
-jb post "descriptive title" --project casa --type code --prompt "full description of the problem and what needs to change"
-```
-
-Then IMMEDIATELY:
+### Bridge Mode (DEFAULT — always, for every code task)
+All tasks touching source files go through the bridge:
 
 ```bash
+jb post "descriptive title" --project casa --type code --prompt "full description"
 jb wait <task_id> --timeout 300
 ```
 
-This is not optional. This is not a suggestion. Do not explore the code first. Do not diagnose first. Do not create branches. Take the user's description, formulate a clear prompt, and post it to the pipeline. The pipeline agents (PM, Architect, Dev, Codex code review, QA) will handle the rest.
+This applies to every code task regardless of:
+- Task size or perceived simplicity
+- Number of files involved
+- Whether the task feels "trivial"
+- Whether you think you could do it faster directly
 
-**The ONLY exceptions where you may edit files directly:**
-- Brent explicitly says "skip the pipeline" or "just edit it directly"
-- Typos in comments or markdown docs
-- Config-only changes (env files, package.json version bumps)
+The bridge uses the dynamic orchestrator (`pipeline-orchestrator.md`) with Haiku-generated agent manifests, independent Codex review, and Telegram notifications.
 
-If `jb` is not found, run: `export PATH="$HOME/.local/bin:$PATH"` and retry.
+**Do NOT run `~/SecondBrain/pipeline/pipeline-start.md` inline.** That file is the legacy hardcoded sequence.
+
+### Direct Execution (ONLY when Brent explicitly invokes it)
+Trigger phrases, exact or near-exact:
+- "skip the pipeline"
+- "just edit it directly"
+- "direct edit"
+- "don't post to bridge"
+- "inline only"
+- "edit directly"
+
+Without one of those phrases, DO NOT touch source files directly. Do not restructure the task to fit Direct Execution. Do not inline components to reduce file count. Post to bridge.
+
+When Brent invokes Direct Execution:
+1. Create a feature branch (≤20 chars, e.g. `fix/child-url`, `feat/lic-p6`)
+2. Read `~/SecondBrain/SKILL-TRIGGERS.md` — if the task matches a skill trigger, read and follow that SKILL.md
+3. Make the edits, run ALL quality gates (tsc, lint, build)
+4. Commit with a clear message
+5. Push to feature branch. If Brent approves, merge to `main` for auto-deploy.
+
+### Hard Rule
+If you're about to use the Edit or Write tool on source files and Brent has NOT used a Direct Execution trigger phrase, STOP. Post to bridge instead.
+
+### Notes
+- Documentation-only edits (CLAUDE.md, README.md, comments) do not require Bridge Mode
+- If `jb` is not found: `export PATH="$HOME/.local/bin:$PATH"` and retry
 
 ---
 
@@ -36,7 +58,7 @@ If `jb` is not found, run: `export PATH="$HOME/.local/bin:$PATH"` and retry.
 - **Database**: Supabase (shared instance with Life OS)
 - **Auth**: Supabase Auth with 11 RBAC roles
 - **Hosting**: Vercel (auto-deploy on push to `main`)
-- **Repo path**: `/Users/brentcurtis/Documents/casa-web`
+- **Repo path**: `/Users/brentcurtis/Documents/CASA/casa-web`
 
 ## Multi-Agent Pipeline
 
@@ -60,7 +82,7 @@ Full trigger table: `~/SecondBrain/SKILL-TRIGGERS.md`
 
 ## Deployment
 
-Vercel auto-deploys on push to `main`. Pushing to `main` is permitted after all quality gates pass.
+Vercel auto-deploys on push to `main`. After all quality gates pass, merge the feature branch to `main` — deployment happens automatically. No manual `vercel` CLI commands (use git merge workflow only). Pushing/merging to `main` is permitted and is the standard deploy path.
 
 ## Quality Gates
 
