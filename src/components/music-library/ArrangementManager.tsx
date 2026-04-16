@@ -5,7 +5,8 @@
  * Each arrangement card contains StemUploadGrid + ChordChartUpload.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import {
   useCreateArrangement,
   useUpdateArrangement,
@@ -86,8 +87,16 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
 
   // Expand state
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const hasAutoExpandedRef = useRef(false);
   const chordChartRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  // Fix 2: Reset auto-expand state when the selected song changes
+  useEffect(() => {
+    hasAutoExpandedRef.current = false;
+    setExpandedIds(new Set());
+    setPendingScrollId(null);
+  }, [songId]);
 
   useEffect(() => {
     if (hasAutoExpandedRef.current || arrangements.length === 0) return;
@@ -96,6 +105,39 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
     const target = original ?? arrangements[0];
     setExpandedIds(new Set([target.id]));
   }, [arrangements]);
+
+  // Fix 3: Reconcile chordChartRefs to drop entries for removed arrangements
+  useEffect(() => {
+    const liveIds = new Set(arrangements.map((a) => a.id));
+    for (const key of chordChartRefs.current.keys()) {
+      if (!liveIds.has(key)) chordChartRefs.current.delete(key);
+    }
+  }, [arrangements]);
+
+  // Fix 4: Render-aware scroll — waits for expansion + layout instead of a fixed delay
+  useLayoutEffect(() => {
+    if (!pendingScrollId) return;
+    if (!arrangements.some((a) => a.id === pendingScrollId)) {
+      setPendingScrollId(null);
+      return;
+    }
+    if (!expandedIds.has(pendingScrollId)) return;
+
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = chordChartRefs.current.get(pendingScrollId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        setPendingScrollId(null);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [pendingScrollId, expandedIds, arrangements]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -109,7 +151,8 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
     });
   };
 
-  const handlePartiturasBadgeClick = (e: React.MouseEvent, arrId: string) => {
+  // Fix 1: MouseEvent<HTMLButtonElement> — handler is attached to a real <button> (Fix 5)
+  const handlePartiturasBadgeClick = (e: MouseEvent<HTMLButtonElement>, arrId: string) => {
     e.stopPropagation();
     setExpandedIds((prev) => {
       if (prev.has(arrId)) return prev;
@@ -117,10 +160,7 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
       next.add(arrId);
       return next;
     });
-    window.setTimeout(() => {
-      const el = chordChartRefs.current.get(arrId);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 150);
+    setPendingScrollId(arrId);
   };
 
   const openCreateDialog = () => {
@@ -243,14 +283,20 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
                       <Badge variant="secondary" className="text-xs">
                         {arr.music_stems.length} stems
                       </Badge>
-                      <Badge
-                        variant="secondary"
-                        className="text-xs cursor-pointer hover:bg-gray-300 transition-colors"
+                      <button
+                        type="button"
                         onClick={(e) => handlePartiturasBadgeClick(e, arr.id)}
+                        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        aria-label={`Ver ${arr.music_chord_charts.length} partituras`}
                         title="Ver partituras"
                       >
-                        {arr.music_chord_charts.length} partituras
-                      </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="text-xs cursor-pointer hover:bg-gray-300 transition-colors"
+                        >
+                          {arr.music_chord_charts.length} partituras
+                        </Badge>
+                      </button>
                       {canWrite && (
                         <Button
                           variant="ghost"
