@@ -45,3 +45,6 @@ playwright-report/
 supabase/.temp/
 .mcp.json
 package-lock.json
+
+# Claude Code worktrees (local agent isolation, never committed)
+.claude/worktrees/
