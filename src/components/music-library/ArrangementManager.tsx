@@ -5,7 +5,7 @@
  * Each arrangement card contains StemUploadGrid + ChordChartUpload.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import {
   useCreateArrangement,
   useUpdateArrangement,
@@ -86,8 +86,14 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
 
   // Expand state
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [scrollRequest, setScrollRequest] = useState<{ id: string; nonce: number } | null>(null);
   const hasAutoExpandedRef = useRef(false);
   const chordChartRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  useEffect(() => {
+    hasAutoExpandedRef.current = false;
+    setExpandedIds(new Set());
+  }, [songId]);
 
   useEffect(() => {
     if (hasAutoExpandedRef.current || arrangements.length === 0) return;
@@ -96,6 +102,25 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
     const target = original ?? arrangements[0];
     setExpandedIds(new Set([target.id]));
   }, [arrangements]);
+
+  useEffect(() => {
+    const validIds = new Set(arrangements.map((a) => a.id));
+    for (const key of chordChartRefs.current.keys()) {
+      if (!validIds.has(key)) {
+        chordChartRefs.current.delete(key);
+      }
+    }
+  }, [arrangements]);
+
+  // Scroll to the chord-chart section once the row is actually expanded in the DOM.
+  // useLayoutEffect fires after commit but before paint, so the element exists and its
+  // position is correct — no hardcoded timeout needed. The nonce lets repeated clicks retrigger.
+  useLayoutEffect(() => {
+    if (!scrollRequest) return;
+    if (!expandedIds.has(scrollRequest.id)) return;
+    const el = chordChartRefs.current.get(scrollRequest.id);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [scrollRequest, expandedIds]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -109,18 +134,27 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
     });
   };
 
-  const handlePartiturasBadgeClick = (e: React.MouseEvent, arrId: string) => {
-    e.stopPropagation();
+  const activatePartituras = (arrId: string) => {
     setExpandedIds((prev) => {
       if (prev.has(arrId)) return prev;
       const next = new Set(prev);
       next.add(arrId);
       return next;
     });
-    window.setTimeout(() => {
-      const el = chordChartRefs.current.get(arrId);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 150);
+    setScrollRequest({ id: arrId, nonce: Date.now() });
+  };
+
+  const handlePartiturasBadgeClick = (e: MouseEvent<HTMLElement>, arrId: string) => {
+    e.stopPropagation();
+    activatePartituras(arrId);
+  };
+
+  const handlePartiturasBadgeKeyDown = (e: KeyboardEvent<HTMLElement>, arrId: string) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      activatePartituras(arrId);
+    }
   };
 
   const openCreateDialog = () => {
@@ -245,8 +279,12 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
                       </Badge>
                       <Badge
                         variant="secondary"
-                        className="text-xs cursor-pointer hover:bg-gray-300 transition-colors"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Ver partituras de ${arr.name}`}
+                        className="text-xs cursor-pointer hover:bg-gray-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-amber-500"
                         onClick={(e) => handlePartiturasBadgeClick(e, arr.id)}
+                        onKeyDown={(e) => handlePartiturasBadgeKeyDown(e, arr.id)}
                         title="Ver partituras"
                       >
                         {arr.music_chord_charts.length} partituras
