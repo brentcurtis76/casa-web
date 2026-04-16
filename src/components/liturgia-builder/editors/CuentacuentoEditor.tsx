@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
-import type { Story, StoryCharacter, StoryScene, StoryStatus } from '@/types/shared/story';
+import type { Story, StoryCharacter, StoryProp, StoryScene, StoryStatus } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
 import {
@@ -482,6 +482,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [story, setStory] = useState<Story | null>(initialStory || null);
   const [previewSlides, setPreviewSlides] = useState<SlideGroup | null>(initialSlides || null);
 
+  // Props (lugares/objetos de referencia visual) — se inicializan desde initialStory.props
+  // y se mantienen sincronizados con story.props para las llamadas a generate-scene-images
+  const [storyProps, setStoryProps] = useState<StoryProp[]>(initialStory?.props ?? []);
+
   // Estado del flujo
   const [currentStep, setCurrentStep] = useState<CreationStep>(getInitialStep());
 
@@ -827,6 +831,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       };
       setStory(restoredStory);
 
+      // Restaurar storyProps desde el story del draft para que las llamadas a
+      // generate-scene-images incluyan los props correctos al regenerar imágenes.
+      if (restoredStory.props && restoredStory.props.length > 0) {
+        setStoryProps(restoredStory.props);
+      }
+
       // Regenerar preview slides con las imágenes restauradas
       const slides = createPreviewSlideGroup(restoredStory);
       setPreviewSlides(slides as unknown as SlideGroup);
@@ -1003,6 +1013,46 @@ Instrucciones críticas:
 - Atmósfera cálida y acogedora`;
   }, [story, detectCharactersInScene, characterSheetOptions, selectedCharacterSheets]);
 
+  // Seleccionar los props relevantes para una escena: por sceneNumbers explícitos
+  // o por coincidencia de substring (case-insensitive) del nombre en la visualDescription.
+  // Devuelve la forma que espera el edge function generate-scene-images.
+  const getPropsForScene = useCallback((scene: StoryScene) => {
+    const source = (story?.props && story.props.length > 0) ? story.props : storyProps;
+    if (!source || source.length === 0) return [];
+
+    const visualDesc = (scene.visualDescription || '').toLowerCase();
+
+    return source
+      .filter((p) => {
+        const byScene = Array.isArray(p.sceneNumbers) && p.sceneNumbers.includes(scene.number);
+        const needle = (p.name || '').trim().toLowerCase();
+        const byName = needle.length > 0 && visualDesc.includes(needle);
+        return byScene || byName;
+      })
+      .map((p) => ({
+        name: p.name,
+        visualDescription: p.visualDescription || '',
+        referenceImages: p.selectedReferenceUrl
+          ? [p.selectedReferenceUrl, ...(p.referenceImages || [])]
+          : (p.referenceImages || []),
+      }));
+  }, [story, storyProps]);
+
+  // Props con rol primario, para inclusión en la portada. Misma forma que espera el edge function.
+  const getPrimaryProps = useCallback(() => {
+    const source = (story?.props && story.props.length > 0) ? story.props : storyProps;
+    if (!source || source.length === 0) return [];
+    return source
+      .filter((p) => p.role === 'primary')
+      .map((p) => ({
+        name: p.name,
+        visualDescription: p.visualDescription || '',
+        referenceImages: p.selectedReferenceUrl
+          ? [p.selectedReferenceUrl, ...(p.referenceImages || [])]
+          : (p.referenceImages || []),
+      }));
+  }, [story, storyProps]);
+
   // Obtener personajes con sus referencias para una escena
   // Incluye tanto los detectados automáticamente como los agregados manualmente
   const getCharactersWithReferences = useCallback((scene: StoryScene, excludedIds: string[] = [], includedIds: string[] = []) => {
@@ -1052,7 +1102,18 @@ Instrucciones críticas:
     characters: (characters || '').split(',').map(c => c.trim()).filter(Boolean),
     style: style || 'reflexivo',
     additionalNotes: additionalNotes || '',
-  }), [context, selectedLocation, characters, style, additionalNotes]);
+    // Pasar props configurados (si hay) para que el edge function los analice con Gemini
+    props: storyProps.length > 0
+      ? storyProps.map(p => ({
+          kind: p.kind,
+          name: p.name,
+          narrativeRole: p.narrativeRole,
+          referenceImages: p.referenceImages,
+          role: p.role,
+          sceneNumbers: p.sceneNumbers,
+        }))
+      : undefined,
+  }), [context, selectedLocation, characters, style, additionalNotes, storyProps]);
 
   // Ver el prompt antes de generar
   const handlePreviewPrompt = useCallback(async () => {
@@ -1148,6 +1209,19 @@ Instrucciones críticas:
               text: text.trim(),
               visualDescription: text.trim().slice(0, 100),
             })),
+        // Enriquecer props con la descripción visual analizada por Gemini (si la hay),
+        // mezclando los datos de configuración originales (kind, role, referenceImages, sceneNumbers).
+        props: (() => {
+          const analyses = Array.isArray(data.propAnalyses) ? data.propAnalyses : [];
+          if (storyProps.length === 0 && analyses.length === 0) return undefined;
+          return storyProps.map((p) => {
+            const analysis = analyses.find((a: { name: string }) => a.name === p.name);
+            return {
+              ...p,
+              visualDescription: analysis?.visualDescription || p.visualDescription || '',
+            };
+          });
+        })(),
         spiritualConnection: data.spiritualConnection || data.moral || '',
         metadata: {
           createdAt: new Date().toISOString(),
@@ -1155,6 +1229,11 @@ Instrucciones críticas:
           status: 'story-generated' as const,
         },
       };
+
+      // Mantener storyProps sincronizado con los props enriquecidos del nuevo story
+      if (newStory.props && newStory.props.length > 0) {
+        setStoryProps(newStory.props);
+      }
 
       setStory(newStory);
 
@@ -1169,7 +1248,7 @@ Instrucciones críticas:
     } finally {
       setIsGenerating(false);
     }
-  }, [context, getRequestBody, selectedLocation, characters, illustrationStyle]);
+  }, [context, getRequestBody, selectedLocation, characters, illustrationStyle, storyProps]);
 
   // Refinar cuento con feedback
   const handleRefineStory = useCallback(async () => {
@@ -1284,6 +1363,7 @@ Instrucciones críticas:
       setSelectedCover(null);
       setEndOptions([]);
       setSelectedEnd(null);
+      setStoryProps([]);
       setCurrentStep('config');
       setShowForm(true);
       setConfirmed(false);
@@ -1395,6 +1475,9 @@ Instrucciones críticas:
       // Obtener imagen de referencia manual para esta escena (si existe)
       const sceneRefImage = sceneReferenceImages[scene.number];
 
+      // Seleccionar props relevantes para esta escena
+      const propsForScene = getPropsForScene(scene);
+
       // Log para debug
       console.log(`[CuentacuentoEditor] Generating scene ${scene.number}:`, {
         hasSceneRefImage: !!sceneRefImage,
@@ -1402,6 +1485,8 @@ Instrucciones críticas:
         sceneRefImagePrefix: sceneRefImage?.slice(0, 50) || 'none',
         charactersCount: charactersWithReferences.length,
         charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
+        propsCount: propsForScene.length,
+        propNames: propsForScene.map(p => p.name),
       });
 
       const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
@@ -1412,6 +1497,7 @@ Instrucciones críticas:
           characters: charactersWithReferences,
           location: story.location,
           sceneReferenceImage: sceneRefImage, // Imagen de referencia manual
+          props: propsForScene.length > 0 ? propsForScene : undefined,
           count: 4,
         },
       });
@@ -1456,7 +1542,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
@@ -1532,6 +1618,9 @@ Instrucciones críticas:
 
       const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
 
+      // Para la portada incluimos solo los props con rol "primary"
+      const primaryProps = getPrimaryProps();
+
       // Log para debug (igual que en escenas)
       console.log(`[CuentacuentoEditor] Generating cover:`, {
         hasCoverRefImage: !!coverReferenceImage,
@@ -1539,6 +1628,8 @@ Instrucciones críticas:
         coverRefImagePrefix: coverReferenceImage?.slice(0, 50) || 'none',
         charactersCount: charactersWithReferences.length,
         charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
+        propsCount: primaryProps.length,
+        propNames: primaryProps.map(p => p.name),
       });
 
       // Enviar EXACTAMENTE igual que escenas: characters + sceneReferenceImage
@@ -1555,6 +1646,7 @@ Instrucciones críticas:
           characters: charactersWithReferences,
           // IGUAL QUE ESCENAS: usar "sceneReferenceImage" en lugar de "referenceImage"
           sceneReferenceImage: coverReferenceImage,
+          props: primaryProps.length > 0 ? primaryProps : undefined,
           customPrompt: customPrompt || editingCoverPrompt || undefined,
           count: 4,
         },
@@ -1581,7 +1673,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingCover(false);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps]);
 
   // Construir el prompt de fin para preview
   const buildEndPromptPreview = useCallback((): string => {

@@ -39,6 +39,12 @@ interface Landmark {
   referenceImages: string[];  // base64 data URLs or URLs
 }
 
+interface Prop {
+  name: string;
+  visualDescription: string;
+  referenceImages: string[];  // base64 data URLs or URLs
+}
+
 interface Scene {
   text: string;
   visualDescription: string;
@@ -74,12 +80,21 @@ function detectCharactersInScene(
   });
 }
 
+function buildPropReferenceLines(props: Prop[]): string {
+  if (!props || props.length === 0) return '';
+  const lines = props.map(p =>
+    `PROP REFERENCE — "${p.name}": ${p.visualDescription}. Render EXACTLY as shown in reference photos; architectural / structural / material details must match precisely.`
+  );
+  return `\n\n${lines.join('\n')}`;
+}
+
 function buildScenePrompt(
   styleId: string,
   scene: Scene,
   charactersInScene: Character[],
   location: Location,
-  landmarks?: Landmark[]
+  landmarks?: Landmark[],
+  props?: Prop[]
 ): string {
   const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
@@ -100,6 +115,8 @@ ${visibleLandmarks.map(lm => `- ${lm.name}: ${lm.visualDescription}`).join('\n')
 CRITICAL: The landmark/building MUST be rendered with EXACT architectural details matching the reference photos. Copy the shape, colors, materials, windows, doors, and all distinctive features precisely. The landmark should be immediately recognizable to someone who knows the real building.`
     : '';
 
+  const propSection = buildPropReferenceLines(props || []);
+
   return `${stylePrompt}
 
 Scene description: ${scene.visualDescription}
@@ -111,7 +128,7 @@ Location: ${location.name}, Chile. ${location.description}
 Characters that appear in THIS scene (ONLY these characters should be shown):
 ${characterDescriptions}
 ${referenceInstruction}
-${landmarkSection}
+${landmarkSection}${propSection}
 
 CRITICAL instructions:
 - ONLY show the characters listed above - no other characters should appear
@@ -121,7 +138,7 @@ CRITICAL instructions:
 - Cinematic composition with good framing
 - Warm, inviting atmosphere
 - Focus on the emotional moment described in the scene
-- If reference images are provided, the characters MUST look exactly like their references${visibleLandmarks.length > 0 ? '\n- The landmark/building MUST match the provided reference photos exactly' : ''}
+- If reference images are provided, the characters MUST look exactly like their references${visibleLandmarks.length > 0 ? '\n- The landmark/building MUST match the provided reference photos exactly' : ''}${(props && props.length > 0) ? '\n- Props listed above MUST match their reference photos exactly in shape, colors, materials, and distinctive details' : ''}
 - Do not include any signs, labels, captions, titles, or any form of written text
 `.trim();
 }
@@ -370,10 +387,13 @@ Study each reference carefully before generating. All subjects in your output MU
 
           if (characterDescriptions[i]) {
             const isLandmarkRef = characterDescriptions[i]?.includes('LANDMARK REFERENCE');
+            const isPropRef = characterDescriptions[i]?.includes('PROP REFERENCE');
             if (isSceneRef) {
               parts.push({ text: `STYLE REFERENCE IMAGE - Copy the visual style, colors, lighting, and atmosphere from this image:` });
             } else if (isLandmarkRef) {
               parts.push({ text: `LANDMARK/BUILDING REFERENCE IMAGE - Render this building EXACTLY as shown, copying all architectural details: ${characterDescriptions[i]}` });
+            } else if (isPropRef) {
+              parts.push({ text: `PROP REFERENCE IMAGE - Render this prop EXACTLY as shown, copying all structural and material details: ${characterDescriptions[i]}` });
             } else {
               parts.push({ text: `Character reference ${i + 1} - ${characterDescriptions[i]}:` });
             }
@@ -530,17 +550,19 @@ serve(async (req) => {
 
     switch (type) {
       case 'scene': {
-        const { scene, characters, location, sceneReferenceImage, landmarks } = requestData;
+        const { scene, characters, location, sceneReferenceImage, landmarks, props } = requestData;
         if (!scene || !location) {
           throw new Error('Se requiere scene y location para generar escena');
         }
 
         const charactersInScene: Character[] = characters || [];
         const landmarksInScene: Landmark[] = landmarks || [];
+        const propsInScene: Prop[] = props || [];
 
         console.log(`[generate-scene-images] Scene text: "${scene.text.slice(0, 100)}..."`);
         console.log(`[generate-scene-images] Characters for this scene (from frontend): ${charactersInScene.map(c => c.name).join(', ') || 'none'}`);
         console.log(`[generate-scene-images] Landmarks for this scene: ${landmarksInScene.map(l => l.name).join(', ') || 'none'}`);
+        console.log(`[generate-scene-images] Props for this scene: ${propsInScene.map(p => p.name).join(', ') || 'none'}`);
         console.log(`[generate-scene-images] Landmark visible in scene: ${scene.landmarkVisible || false}`);
 
         const charactersWithImages = charactersInScene.filter(c => c.referenceImage);
@@ -575,27 +597,83 @@ serve(async (req) => {
         console.log(`[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
         console.log(`[generate-scene-images] Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
 
+        const landmarkRefImages: string[] = [];
+        const landmarkRefDescriptions: string[] = [];
+
         // Process landmark reference images if landmark is visible in this scene
         if (scene.landmarkVisible && landmarksInScene.length > 0) {
           for (const lm of landmarksInScene) {
             if (lm.referenceImages && lm.referenceImages.length > 0) {
               console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for "${lm.name}"`);
-              // Use up to 2 landmark reference images to leave room for character refs (max 14 total)
+              // Cap at 2 reference images per landmark
               for (const refImg of lm.referenceImages.slice(0, 2)) {
                 const processedLandmarkRef = await processReferenceImage(refImg);
                 if (processedLandmarkRef) {
-                  referenceImages.push(processedLandmarkRef);
-                  characterDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
-                  console.log(`[generate-scene-images] Landmark ref image for "${lm.name}" added. Total refs: ${referenceImages.length}`);
+                  landmarkRefImages.push(processedLandmarkRef);
+                  landmarkRefDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Landmark ref image for "${lm.name}" added.`);
                 }
               }
             }
           }
         }
 
-        if (referenceImages.length > 12) {
-          console.warn(`[generate-scene-images] WARNING: ${referenceImages.length} reference images - approaching 14 limit. Landmark images may be truncated.`);
+        // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
+        const propRefImages: string[] = [];
+        const propRefDescriptions: string[] = [];
+        if (propsInScene.length > 0) {
+          for (const pr of propsInScene) {
+            if (pr.referenceImages && pr.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for "${pr.name}"`);
+              // Cap at 2 reference images per prop
+              for (const refImg of pr.referenceImages.slice(0, 2)) {
+                const processedPropRef = await processReferenceImage(refImg);
+                if (processedPropRef) {
+                  propRefImages.push(processedPropRef);
+                  propRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Prop ref image for "${pr.name}" added.`);
+                }
+              }
+            }
+          }
         }
+
+        // Enforce scene-wide cap: characters + landmarks + props <= 12 (Gemini 14-image ceiling, leave headroom for scene style ref + system).
+        // Trim order: drop props first, then landmarks. Never drop characters.
+        const MAX_PROCESSED = 12;
+        const initialTotal = referenceImages.length + landmarkRefImages.length + propRefImages.length;
+        let droppedProps = 0;
+        let droppedLandmarks = 0;
+
+        if (initialTotal > MAX_PROCESSED) {
+          let overflow = initialTotal - MAX_PROCESSED;
+
+          const propsToDrop = Math.min(overflow, propRefImages.length);
+          if (propsToDrop > 0) {
+            propRefImages.splice(propRefImages.length - propsToDrop, propsToDrop);
+            propRefDescriptions.splice(propRefDescriptions.length - propsToDrop, propsToDrop);
+            droppedProps = propsToDrop;
+            overflow -= propsToDrop;
+          }
+
+          if (overflow > 0) {
+            const landmarksToDrop = Math.min(overflow, landmarkRefImages.length);
+            if (landmarksToDrop > 0) {
+              landmarkRefImages.splice(landmarkRefImages.length - landmarksToDrop, landmarksToDrop);
+              landmarkRefDescriptions.splice(landmarkRefDescriptions.length - landmarksToDrop, landmarksToDrop);
+              droppedLandmarks = landmarksToDrop;
+            }
+          }
+
+          const finalCount = referenceImages.length + landmarkRefImages.length + propRefImages.length;
+          console.warn(
+            `[generate-scene-images] Trimmed reference images to stay under ${MAX_PROCESSED}-image cap`,
+            { initialTotal, droppedProps, droppedLandmarks, finalCount }
+          );
+        }
+
+        referenceImages.push(...landmarkRefImages, ...propRefImages);
+        characterDescriptions.push(...landmarkRefDescriptions, ...propRefDescriptions);
 
         if (sceneReferenceImage) {
           console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
@@ -611,7 +689,7 @@ serve(async (req) => {
           console.log(`[generate-scene-images] No scene reference image provided`);
         }
 
-        prompt = buildScenePrompt(styleId, scene, charactersInScene, location, landmarksInScene);
+        prompt = buildScenePrompt(styleId, scene, charactersInScene, location, landmarksInScene, propsInScene);
         break;
       }
 
@@ -626,14 +704,19 @@ serve(async (req) => {
 
       case 'cover': {
         // IGUAL QUE SCENE: usar characters y sceneReferenceImage
-        const { title, protagonist, location, characters, sceneReferenceImage, customPrompt } = requestData;
+        const { title, protagonist, location, characters, sceneReferenceImage, customPrompt, props } = requestData;
         if (!title || !protagonist || !location) {
           throw new Error('Se requiere title, protagonist y location para generar portada');
         }
 
+        const propsInCover: Prop[] = props || [];
+
         console.log(`[generate-scene-images] COVER - characters count: ${characters?.length || 0}`);
         console.log(`[generate-scene-images] COVER - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+        console.log(`[generate-scene-images] COVER - props count: ${propsInCover.length}`);
         console.log(`[generate-scene-images] COVER - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
+
+        const propPromptLines = buildPropReferenceLines(propsInCover);
 
         if (customPrompt) {
           const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
@@ -643,7 +726,7 @@ PORTADA DEL CUENTO: "${title}"
 
 Ubicación: ${location.name}. ${location.description || ''}
 
-${customPrompt}
+${customPrompt}${propPromptLines}
 
 Instrucciones críticas:
 - Composición atractiva para portada de libro infantil
@@ -654,7 +737,7 @@ Instrucciones críticas:
 - Atmósfera cálida y acogedora`;
           console.log(`[generate-scene-images] Cover using custom prompt`);
         } else {
-          prompt = buildCoverPrompt(styleId, title, protagonist, location);
+          prompt = buildCoverPrompt(styleId, title, protagonist, location) + propPromptLines;
         }
 
         const charactersInCover: Character[] = characters || [];
@@ -689,6 +772,49 @@ Instrucciones críticas:
         characterDescriptions = validResults.map(r => r.description);
 
         console.log(`[generate-scene-images] Cover reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
+
+        // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
+        const coverPropRefImages: string[] = [];
+        const coverPropRefDescriptions: string[] = [];
+        if (propsInCover.length > 0) {
+          for (const pr of propsInCover) {
+            if (pr.referenceImages && pr.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for "${pr.name}"`);
+              for (const refImg of pr.referenceImages.slice(0, 2)) {
+                const processedPropRef = await processReferenceImage(refImg);
+                if (processedPropRef) {
+                  coverPropRefImages.push(processedPropRef);
+                  coverPropRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Cover prop ref image for "${pr.name}" added.`);
+                }
+              }
+            }
+          }
+        }
+
+        // Enforce cap: characters + props <= 12 (covers have no landmarks today).
+        // Trim order: drop props first. Never drop characters.
+        const COVER_MAX_PROCESSED = 12;
+        const coverInitialTotal = referenceImages.length + coverPropRefImages.length;
+        let coverDroppedProps = 0;
+
+        if (coverInitialTotal > COVER_MAX_PROCESSED) {
+          const overflow = coverInitialTotal - COVER_MAX_PROCESSED;
+          const propsToDrop = Math.min(overflow, coverPropRefImages.length);
+          if (propsToDrop > 0) {
+            coverPropRefImages.splice(coverPropRefImages.length - propsToDrop, propsToDrop);
+            coverPropRefDescriptions.splice(coverPropRefDescriptions.length - propsToDrop, propsToDrop);
+            coverDroppedProps = propsToDrop;
+          }
+          const finalCount = referenceImages.length + coverPropRefImages.length;
+          console.warn(
+            `[generate-scene-images] Trimmed cover reference images to stay under ${COVER_MAX_PROCESSED}-image cap`,
+            { initialTotal: coverInitialTotal, droppedProps: coverDroppedProps, droppedLandmarks: 0, finalCount }
+          );
+        }
+
+        referenceImages.push(...coverPropRefImages);
+        characterDescriptions.push(...coverPropRefDescriptions);
 
         if (sceneReferenceImage) {
           console.log(`[generate-scene-images] Cover style reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);

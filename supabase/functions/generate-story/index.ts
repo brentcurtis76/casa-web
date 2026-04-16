@@ -61,20 +61,48 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
 }
 
 /**
- * Analiza fotos de referencia de un landmark usando Gemini Vision
- * para generar una descripción visual detallada
+ * Construye el prompt de análisis visual según el tipo de elemento
+ * (landmark/edificio, lugar/escenario, u objeto/prop)
  */
-async function analyzeLandmarkImages(
-  landmarkName: string,
+function buildVisualAnalysisPrompt(
+  name: string,
   narrativeRole: string,
-  referenceImages: string[]
-): Promise<string> {
-  if (!GOOGLE_AI_API_KEY || referenceImages.length === 0) {
-    console.log('[generate-story] No API key or no landmark images, skipping analysis');
-    return '';
+  kind: 'landmark' | 'location' | 'prop'
+): string {
+  if (kind === 'prop') {
+    return `Analiza las fotos de referencia del objeto "${name}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
+
+Contexto narrativo: ${narrativeRole}
+
+Describe con el máximo detalle posible:
+1. Forma y estructura general del objeto
+2. Materiales y texturas visibles (madera, metal, tela, cuero, etc.)
+3. Colores específicos de cada parte
+4. Elementos distintivos, ornamentos o decoraciones
+5. Proporciones relativas (tamaño respecto a una mano humana u otro objeto de referencia)
+6. Estado, desgaste visible y detalles únicos que lo hacen reconocible
+
+Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo información visual útil para que un modelo de IA pueda recrear fielmente este objeto en ilustraciones infantiles. NO incluyas historia ni datos culturales — solo lo visual.`;
   }
 
-  const analysisPrompt = `Analiza las fotos de referencia de "${landmarkName}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
+  if (kind === 'location') {
+    return `Analiza las fotos de referencia del lugar "${name}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
+
+Contexto narrativo: ${narrativeRole}
+
+Describe con el máximo detalle posible:
+1. Características geográficas y topografía (costa, montaña, bosque, interior, etc.)
+2. Vegetación y fauna visible
+3. Colores predominantes del entorno
+4. Elementos construidos o naturales distintivos
+5. Iluminación y clima típicos
+6. Proporciones, perspectiva y puntos de referencia visuales
+
+Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo información visual útil para que un modelo de IA pueda recrear fielmente este lugar en ilustraciones infantiles. NO incluyas historia ni datos culturales — solo lo visual.`;
+  }
+
+  // default: landmark (edificio / monumento)
+  return `Analiza las fotos de referencia de "${name}" y proporciona una descripción visual extremadamente detallada para usar en prompts de generación de imágenes de un cuento infantil ilustrado.
 
 Contexto narrativo: ${narrativeRole}
 
@@ -88,6 +116,30 @@ Describe con el máximo detalle posible:
 7. Entorno inmediato: Tipo de suelo, vegetación, elementos que rodean el landmark
 
 Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo información visual útil para que un modelo de IA pueda recrear fielmente este landmark en ilustraciones infantiles. NO incluyas historia ni datos culturales — solo lo visual.`;
+}
+
+/**
+ * Analiza fotos de referencia de un elemento visual (landmark, lugar u objeto)
+ * usando Gemini Vision y devuelve una descripción visual detallada.
+ *
+ * Helper genérico que reemplaza al antiguo `analyzeLandmarkImages` y se usa
+ * tanto para landmarks como para props recurrentes del cuento.
+ */
+async function analyzeImagesForVisualDescription(params: {
+  name: string;
+  narrativeRole: string;
+  referenceImages: string[];
+  kind?: 'landmark' | 'location' | 'prop';
+}): Promise<string> {
+  const { name, narrativeRole, referenceImages } = params;
+  const kind = params.kind ?? 'landmark';
+
+  if (!GOOGLE_AI_API_KEY || !Array.isArray(referenceImages) || referenceImages.length === 0) {
+    console.log(`[generate-story] No API key or no ${kind} images for "${name}", skipping analysis`);
+    return '';
+  }
+
+  const analysisPrompt = buildVisualAnalysisPrompt(name, narrativeRole, kind);
 
   try {
     // Build multimodal request with images
@@ -117,7 +169,7 @@ Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo in
       });
     }
 
-    console.log(`[generate-story] Analyzing ${referenceImages.length} landmark images for "${landmarkName}"`);
+    console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images for "${name}"`);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
@@ -132,16 +184,16 @@ Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo in
     );
 
     if (!response.ok) {
-      console.error('[generate-story] Error analyzing landmark:', response.status);
+      console.error(`[generate-story] Error analyzing ${kind} "${name}":`, response.status);
       return '';
     }
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[generate-story] Landmark analysis for "${landmarkName}":`, text.slice(0, 200) + '...');
+    console.log(`[generate-story] ${kind} analysis for "${name}":`, text.slice(0, 200) + '...');
     return text;
   } catch (err) {
-    console.error('[generate-story] Error in landmark analysis:', err);
+    console.error(`[generate-story] Error in ${kind} analysis for "${name}":`, err);
     return '';
   }
 }
@@ -250,10 +302,11 @@ function buildUserPrompt(data: {
   locationResearch: string;
   characters: string[];
   landmarks?: Array<{ name: string; narrativeRole: string; visualDescription: string; role: string }>;
+  props?: Array<{ name: string; kind: string; narrativeRole: string; visualDescription: string; role: string }>;
   style: string;
   additionalNotes: string;
 }): string {
-  const { context, location, locationResearch, characters, landmarks, style, additionalNotes } = data;
+  const { context, location, locationResearch, characters, landmarks, props, style, additionalNotes } = data;
 
   // Safely handle readings array - ensure it exists and is an array
   const readings = Array.isArray(context?.readings) ? context.readings : [];
@@ -321,6 +374,16 @@ ${lm.visualDescription ? `- Descripción visual (analizada de fotos reales): ${l
 
 IMPORTANTE: Trata "${lm.name}" casi como un personaje más. Cuando aparezca en una escena, incluye detalles visuales específicos del landmark en la visualDescription de esa escena. Marca "landmarkVisible": true en cada escena donde el landmark debe verse en la ilustración.
 `).join('\n')}` : ''}
+${props && props.length > 0 ? `
+### Referencias visuales (elementos recurrentes)
+${props.map(p => `
+**${p.name}**
+- Tipo: ${p.kind === 'location' ? 'Lugar / escenario' : 'Objeto / prop'}
+- Rol narrativo: ${p.narrativeRole}
+${p.visualDescription ? `- Descripción visual (analizada de fotos reales): ${p.visualDescription}` : ''}
+`).join('\n')}
+IMPORTANTE: Estos elementos deben aparecer de manera consistente en cualquier escena cuya descripción visual (visualDescription) los mencione. Cuando incluyas uno de estos elementos en una escena, usa los mismos detalles visuales descritos arriba para mantener coherencia entre ilustraciones.
+` : ''}
 ---
 
 Por favor, crea un cuento original basándote en esta información. El cuento debe:
@@ -377,7 +440,7 @@ serve(async (req) => {
 
     const requestData = await req.json();
 
-    const { context, location, characters, landmarks, style, additionalNotes, previewPromptOnly } = requestData;
+    const { context, location, characters, landmarks, props, style, additionalNotes, previewPromptOnly } = requestData;
 
     if (!context || !location) {
       throw new Error('Se requiere contexto de la liturgia y ubicación');
@@ -385,7 +448,7 @@ serve(async (req) => {
 
     console.log(`[generate-story] Generando cuento para: "${context.title}"`);
     console.log(`[generate-story] Ubicación: ${location}, Estilo: ${style}`);
-    console.log(`[generate-story] Landmarks: ${landmarks?.length || 0}`);
+    console.log(`[generate-story] Landmarks: ${landmarks?.length || 0}, Props: ${props?.length || 0}`);
     console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
     // Investigar la ubicación real usando Gemini
@@ -397,16 +460,39 @@ serve(async (req) => {
     if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
       for (const lm of landmarks) {
         console.log(`[generate-story] Analyzing landmark: "${lm.name}" with ${lm.referenceImages?.length || 0} images`);
-        const visualDescription = await analyzeLandmarkImages(
-          lm.name,
-          lm.narrativeRole,
-          lm.referenceImages || []
-        );
+        const visualDescription = await analyzeImagesForVisualDescription({
+          name: lm.name,
+          narrativeRole: lm.narrativeRole,
+          referenceImages: lm.referenceImages || [],
+          kind: 'landmark',
+        });
         landmarkAnalyses.push({
           name: lm.name,
           narrativeRole: lm.narrativeRole,
           visualDescription,
           role: lm.role || 'primary',
+        });
+      }
+    }
+
+    // Analyze prop reference images if provided (lugares u objetos recurrentes)
+    const propAnalyses: Array<{ name: string; kind: string; narrativeRole: string; visualDescription: string; role: string }> = [];
+    if (props && Array.isArray(props) && props.length > 0) {
+      for (const p of props) {
+        const propKind: 'location' | 'prop' = p.kind === 'location' ? 'location' : 'prop';
+        console.log(`[generate-story] Analyzing ${propKind}: "${p.name}" with ${p.referenceImages?.length || 0} images`);
+        const visualDescription = await analyzeImagesForVisualDescription({
+          name: p.name,
+          narrativeRole: p.narrativeRole || '',
+          referenceImages: p.referenceImages || [],
+          kind: propKind,
+        });
+        propAnalyses.push({
+          name: p.name,
+          kind: propKind,
+          narrativeRole: p.narrativeRole || '',
+          visualDescription,
+          role: p.role || 'secondary',
         });
       }
     }
@@ -419,6 +505,7 @@ serve(async (req) => {
         locationResearch,
         characters: characters || [],
         landmarks: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
+        props: propAnalyses.length > 0 ? propAnalyses : undefined,
         style: style || 'reflexivo',
         additionalNotes: additionalNotes || ''
       });
@@ -443,6 +530,7 @@ serve(async (req) => {
       locationResearch,
       characters: characters || [],
       landmarks: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
+      props: propAnalyses.length > 0 ? propAnalyses : undefined,
       style: style || 'reflexivo',
       additionalNotes: additionalNotes || ''
     });
@@ -583,6 +671,8 @@ serve(async (req) => {
         spiritualConnection: story.spiritualConnection,
         // Landmark analysis results (visual descriptions from Gemini)
         landmarkAnalyses: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
+        // Prop analysis results (visual descriptions from Gemini) for recurring elements
+        propAnalyses,
         // Compatibilidad con formato anterior
         content: contentText,
         story: contentText,
