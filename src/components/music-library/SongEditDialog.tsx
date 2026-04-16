@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSongById, useSongBySlug, useCreateSong, useUpdateSong } from '@/hooks/useMusicLibrary';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   Dialog,
   DialogContent,
@@ -28,12 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { TEMPO_LABELS, THEME_LABELS, MOMENT_LABELS } from '@/lib/canciones/songTagsManager';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { SongTempo, SongTheme, LiturgicalMoment, Verse } from '@/types/shared/song';
+import ChordChartUpload from './ChordChartUpload';
 
 interface SongEditDialogProps {
   songId: string | null;
@@ -55,8 +56,14 @@ function generateSlug(title: string): string {
 const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => {
   const isEditing = songId !== null;
   const { data: existingSong, isLoading } = useSongById(songId);
+  const { canWrite, canManage } = usePermissions('canciones');
   const createSong = useCreateSong();
   const updateSong = useUpdateSong();
+
+  const defaultArrangement =
+    existingSong?.music_arrangements?.find(
+      (a) => a.sort_order === 0 || a.name.trim().toLowerCase() === 'original'
+    ) ?? existingSong?.music_arrangements?.[0];
 
   // Form state
   const [title, setTitle] = useState('');
@@ -220,7 +227,7 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
             <Skeleton className="h-10 w-full" />
           </div>
         ) : (
-          <ScrollArea className="flex-1 px-6">
+          <div className="flex-1 overflow-y-auto px-6 min-h-0">
             <div className="space-y-6 pb-4">
               {/* Basic info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -420,8 +427,38 @@ const SongEditDialog = ({ songId, open, onOpenChange }: SongEditDialogProps) => 
                   ))}
                 </div>
               </div>
+
+              {/* Partituras (Original) */}
+              {isEditing && (
+                <div className="space-y-3">
+                  <h3
+                    className="text-sm font-semibold uppercase tracking-wider"
+                    style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+                  >
+                    Partituras (Original)
+                  </h3>
+                  {defaultArrangement ? (
+                    <ChordChartUpload
+                      arrangementId={defaultArrangement.id}
+                      charts={defaultArrangement.music_chord_charts ?? []}
+                      canWrite={canWrite}
+                      canManage={canManage}
+                    />
+                  ) : (
+                    <p
+                      className="text-sm text-center py-4 px-3 rounded-md border border-dashed"
+                      style={{
+                        color: CASA_BRAND.colors.secondary.grayMedium,
+                        borderColor: CASA_BRAND.colors.secondary.grayLight,
+                      }}
+                    >
+                      Las partituras se gestionan por arreglo. Crea un arreglo primero en el panel de detalle.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          </ScrollArea>
+          </div>
         )}
 
         <DialogFooter className="px-6 py-4 border-t" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>

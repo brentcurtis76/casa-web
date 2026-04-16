@@ -5,7 +5,7 @@
  * Each arrangement card contains StemUploadGrid + ChordChartUpload.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useCreateArrangement,
   useUpdateArrangement,
@@ -86,6 +86,16 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
 
   // Expand state
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const hasAutoExpandedRef = useRef(false);
+  const chordChartRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  useEffect(() => {
+    if (hasAutoExpandedRef.current || arrangements.length === 0) return;
+    hasAutoExpandedRef.current = true;
+    const original = arrangements.find((a) => a.name.trim().toLowerCase() === 'original');
+    const target = original ?? arrangements[0];
+    setExpandedIds(new Set([target.id]));
+  }, [arrangements]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -97,6 +107,20 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
       }
       return next;
     });
+  };
+
+  const handlePartiturasBadgeClick = (e: React.MouseEvent, arrId: string) => {
+    e.stopPropagation();
+    setExpandedIds((prev) => {
+      if (prev.has(arrId)) return prev;
+      const next = new Set(prev);
+      next.add(arrId);
+      return next;
+    });
+    window.setTimeout(() => {
+      const el = chordChartRefs.current.get(arrId);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 150);
   };
 
   const openCreateDialog = () => {
@@ -219,7 +243,12 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
                       <Badge variant="secondary" className="text-xs">
                         {arr.music_stems.length} stems
                       </Badge>
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs cursor-pointer hover:bg-gray-300 transition-colors"
+                        onClick={(e) => handlePartiturasBadgeClick(e, arr.id)}
+                        title="Ver partituras"
+                      >
                         {arr.music_chord_charts.length} partituras
                       </Badge>
                       {canWrite && (
@@ -277,12 +306,18 @@ const ArrangementManager = ({ songId, arrangements, canWrite, canManage }: Arran
                     </div>
 
                     {/* Chord charts */}
-                    <ChordChartUpload
-                      arrangementId={arr.id}
-                      charts={arr.music_chord_charts}
-                      canWrite={canWrite}
-                      canManage={canManage}
-                    />
+                    <div
+                      ref={(el) => {
+                        chordChartRefs.current.set(arr.id, el);
+                      }}
+                    >
+                      <ChordChartUpload
+                        arrangementId={arr.id}
+                        charts={arr.music_chord_charts}
+                        canWrite={canWrite}
+                        canManage={canManage}
+                      />
+                    </div>
                   </div>
                 </CollapsibleContent>
               </div>
