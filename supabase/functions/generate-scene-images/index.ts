@@ -837,7 +837,21 @@ Instrucciones críticas:
       }
 
       case 'end': {
-        const { referenceImage: endReferenceImage, customPrompt: endCustomPrompt } = requestData;
+        const { referenceImage: endReferenceImage, customPrompt: endCustomPrompt, characters: endCharacters } = requestData;
+
+        const charactersInEnd: Character[] = endCharacters || [];
+        const charactersWithImages = charactersInEnd.filter(c => c.referenceImage);
+
+        console.log(`[generate-scene-images] END - characters count: ${charactersInEnd.length}`);
+        console.log(`[generate-scene-images] END - characters with refs: ${charactersWithImages.length}`);
+
+        const characterDescriptionsBlock = charactersInEnd.length > 0
+          ? `\n\nPersonajes en la imagen final:\n${charactersInEnd.map(c => `- ${c.name}: ${c.visualDescription}`).join('\n')}`
+          : '';
+
+        const characterReferenceInstruction = charactersWithImages.length > 0
+          ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
+          : '';
 
         if (endCustomPrompt) {
           const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
@@ -845,7 +859,7 @@ Instrucciones críticas:
 
 IMAGEN FINAL "FIN" PARA CUENTO INFANTIL
 
-${endCustomPrompt}
+${endCustomPrompt}${characterDescriptionsBlock}${characterReferenceInstruction}
 
 Instrucciones críticas:
 - Composición atractiva para página final de libro infantil
@@ -856,7 +870,41 @@ Instrucciones críticas:
 - Puede ser abstracta o con elementos del cuento`;
           console.log(`[generate-scene-images] End using custom prompt`);
         } else {
-          prompt = buildEndPrompt(styleId);
+          prompt = buildEndPrompt(styleId) + characterDescriptionsBlock + characterReferenceInstruction;
+        }
+
+        // Process character reference images for the end (mirrors the scene case pattern)
+        if (charactersWithImages.length > 0) {
+          const processedResults = await Promise.all(
+            charactersWithImages.map(async (c) => {
+              const image = await processReferenceImage(c.referenceImage!);
+              return {
+                image,
+                description: `${c.name}: ${c.visualDescription}`,
+              };
+            })
+          );
+
+          const validResults = processedResults.filter(r => r.image !== '');
+          let endCharRefImages = validResults.map(r => r.image);
+          let endCharRefDescriptions = validResults.map(r => r.description);
+
+          // Enforce 12-image cap for character references on the end image (Gemini 14-image ceiling
+          // leaves headroom for end style ref + system parts). Trim from the end (lowest priority).
+          const END_MAX_PROCESSED = 12;
+          if (endCharRefImages.length > END_MAX_PROCESSED) {
+            const initialTotal = endCharRefImages.length;
+            endCharRefImages = endCharRefImages.slice(0, END_MAX_PROCESSED);
+            endCharRefDescriptions = endCharRefDescriptions.slice(0, END_MAX_PROCESSED);
+            console.warn(
+              `[generate-scene-images] Trimmed end character reference images to stay under ${END_MAX_PROCESSED}-image cap`,
+              { initialTotal, finalCount: endCharRefImages.length, dropped: initialTotal - endCharRefImages.length }
+            );
+          }
+
+          referenceImages.push(...endCharRefImages);
+          characterDescriptions.push(...endCharRefDescriptions);
+          console.log(`[generate-scene-images] End character references added: ${endCharRefImages.length}`);
         }
 
         if (endReferenceImage) {

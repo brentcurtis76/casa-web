@@ -104,6 +104,31 @@ export interface IllustrationStyle {
 }
 
 /**
+ * Posición del texto superpuesto sobre la imagen
+ */
+export type OverlayPosition = 'top' | 'center' | 'bottom';
+
+/**
+ * Color del texto superpuesto
+ */
+export type OverlayColor = 'white' | 'black' | 'amber';
+
+/**
+ * Tamaño del texto superpuesto
+ */
+export type OverlaySize = 'S' | 'M' | 'L';
+
+/**
+ * Configuración del texto superpuesto sobre portada o imagen final
+ */
+export interface TextOverlay {
+  text: string;
+  position: OverlayPosition;
+  color: OverlayColor;
+  size: OverlaySize;
+}
+
+/**
  * Estado del cuento en el proceso de generación
  */
 export type StoryStatus =
@@ -134,8 +159,10 @@ export interface Story {
   scenes: StoryScene[];
   coverImageOptions?: string[];
   coverImageUrl?: string;
+  coverTextOverlay?: TextOverlay;
   endImageOptions?: string[];
   endImageUrl?: string;
+  endTextOverlay?: TextOverlay;
   spiritualConnection: string;
   metadata: {
     createdAt: string;

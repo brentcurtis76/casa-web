@@ -37,10 +37,21 @@ import {
   Upload,
   MessageSquare,
   RotateCw,
+  Type,
 } from 'lucide-react';
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
-import type { Story, StoryCharacter, StoryProp, StoryScene, StoryStatus } from '@/types/shared/story';
+import type {
+  Story,
+  StoryCharacter,
+  StoryProp,
+  StoryScene,
+  StoryStatus,
+  TextOverlay,
+  OverlayPosition,
+  OverlayColor,
+  OverlaySize,
+} from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
 import {
@@ -545,6 +556,9 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [endReferenceImage, setEndReferenceImage] = useState<string | null>(null);
   const [coverExcludedCharacters, setCoverExcludedCharacters] = useState<string[]>([]);
   const [coverIncludedCharacters, setCoverIncludedCharacters] = useState<string[]>([]);
+  // Opt-in: characters to include as references for the end image (default: none)
+  const [endIncludedCharacters, setEndIncludedCharacters] = useState<string[]>([]);
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
 
   // Estado de UI
   const [showPreview, setShowPreview] = useState(true);
@@ -1734,11 +1748,16 @@ Instrucciones críticas:
 
     const stylePrompt = STYLE_PROMPTS[story.illustrationStyle] || STYLE_PROMPTS['storybook'];
 
+    const includedCharacters = story.characters.filter(c => endIncludedCharacters.includes(c.id));
+    const characterSection = includedCharacters.length > 0
+      ? `\n\nPersonajes en la imagen final:\n${includedCharacters.map(c => `- ${c.name}: ${c.visualDescription || c.description}`).join('\n')}\n\nIMPORTANT: Los personajes anteriores deben aparecer con identidad visual EXACTAMENTE IDÉNTICA a sus imágenes de referencia (rostro, cabello, piel, ropa, accesorios distintivos).`
+      : '';
+
     return `${stylePrompt}
 
 IMAGEN FINAL "FIN" PARA CUENTO INFANTIL
 
-${editingEndPrompt || `Una imagen acogedora y conclusiva que transmita el final feliz del cuento. Puede mostrar elementos decorativos como estrellas, corazones, o un paisaje sereno que invite a la reflexión.`}
+${editingEndPrompt || `Una imagen acogedora y conclusiva que transmita el final feliz del cuento. Puede mostrar elementos decorativos como estrellas, corazones, o un paisaje sereno que invite a la reflexión.`}${characterSection}
 
 Instrucciones críticas:
 - Composición atractiva para página final de libro infantil
@@ -1747,7 +1766,7 @@ Instrucciones críticas:
 - Imágenes apropiadas para niños 5-10 años
 - SIN TEXTO NI PALABRAS en la imagen
 - Puede ser abstracta o con elementos del cuento`;
-  }, [story, editingEndPrompt]);
+  }, [story, editingEndPrompt, endIncludedCharacters]);
 
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
@@ -1757,11 +1776,27 @@ Instrucciones críticas:
     setError(null);
 
     try {
+      // Opt-in characters for the end image: only those explicitly selected
+      const charactersWithReferences = story.characters
+        .filter(c => endIncludedCharacters.includes(c.id))
+        .map(c => {
+          const options = characterSheetOptions[c.id];
+          const selectedIdx = selectedCharacterSheets[c.id];
+          const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+          return {
+            name: c.name,
+            visualDescription: c.visualDescription,
+            referenceImage,
+          };
+        });
+
       const requestBody = {
         type: 'end',
         styleId: story.illustrationStyle,
         // Imagen de referencia manual (si existe)
         referenceImage: endReferenceImage || undefined,
+        // Personajes opt-in (solo los seleccionados)
+        characters: charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
         // Prompt personalizado
         customPrompt: customPrompt || editingEndPrompt || undefined,
         count: 4,
@@ -1770,6 +1805,8 @@ Instrucciones críticas:
       console.log('[CuentacuentoEditor] End image generation request:', {
         ...requestBody,
         referenceImage: requestBody.referenceImage ? `${requestBody.referenceImage.slice(0, 50)}...` : undefined,
+        charactersCount: charactersWithReferences.length,
+        charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
       });
 
       const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
@@ -1789,7 +1826,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingEnd(false);
     }
-  }, [story, endReferenceImage, editingEndPrompt]);
+  }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets]);
 
   // Subir imagen de personaje manualmente
   const handleUploadCharacterImage = useCallback((characterId: string, base64: string) => {
@@ -3710,6 +3747,223 @@ Instrucciones críticas:
   };
 
   // Paso 5: Portada y fin
+  const commitTitleEdit = () => {
+    if (editingTitle === null) return;
+    const trimmed = editingTitle.trim();
+    if (trimmed) {
+      setStory(prev => {
+        if (!prev) return prev;
+        const prevTitle = prev.title;
+        const shouldSyncCoverOverlay =
+          prev.coverTextOverlay !== undefined &&
+          prev.coverTextOverlay.text === prevTitle;
+        return {
+          ...prev,
+          title: trimmed,
+          ...(shouldSyncCoverOverlay && prev.coverTextOverlay
+            ? {
+                coverTextOverlay: {
+                  ...prev.coverTextOverlay,
+                  text: trimmed,
+                },
+              }
+            : {}),
+          metadata: {
+            ...prev.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+    }
+    setEditingTitle(null);
+  };
+
+  // Helpers para controles del texto superpuesto (portada/fin)
+  const getOverlayOrDefault = (
+    which: 'cover' | 'end',
+    defaultText: string,
+    defaultPosition: OverlayPosition,
+  ): TextOverlay => {
+    const current = which === 'cover' ? story?.coverTextOverlay : story?.endTextOverlay;
+    return (
+      current ?? {
+        text: defaultText,
+        position: defaultPosition,
+        color: 'white',
+        size: 'L',
+      }
+    );
+  };
+
+  const updateTextOverlay = (
+    which: 'cover' | 'end',
+    patch: Partial<TextOverlay>,
+    defaultText: string,
+    defaultPosition: OverlayPosition,
+  ) => {
+    const base = getOverlayOrDefault(which, defaultText, defaultPosition);
+    const next: TextOverlay = { ...base, ...patch };
+    setStory(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+        metadata: {
+          ...prev.metadata,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    });
+  };
+
+  const renderTextOverlayControls = (
+    which: 'cover' | 'end',
+    defaultText: string,
+    defaultPosition: OverlayPosition,
+  ) => {
+    const overlay = getOverlayOrDefault(which, defaultText, defaultPosition);
+    const positions: OverlayPosition[] = ['top', 'center', 'bottom'];
+    const positionLabels: Record<OverlayPosition, string> = {
+      top: 'Arriba',
+      center: 'Centro',
+      bottom: 'Abajo',
+    };
+    const colors: OverlayColor[] = ['white', 'black', 'amber'];
+    const colorLabels: Record<OverlayColor, string> = {
+      white: 'Blanco',
+      black: 'Negro',
+      amber: 'Ámbar',
+    };
+    const colorSwatch: Record<OverlayColor, string> = {
+      white: '#FFFFFF',
+      black: '#000000',
+      amber: CASA_BRAND.colors.primary.amber,
+    };
+    const sizes: OverlaySize[] = ['S', 'M', 'L'];
+
+    const pillStyle = (active: boolean) => ({
+      borderColor: active ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+      backgroundColor: active ? `${CASA_BRAND.colors.amber.light}20` : 'transparent',
+      color: active ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayDark,
+    });
+
+    return (
+      <div
+        className="mt-4 pt-4 border-t space-y-3"
+        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+      >
+        <h6
+          className="text-sm font-medium flex items-center gap-2"
+          style={{ color: CASA_BRAND.colors.primary.black }}
+        >
+          <Type size={14} />
+          Texto superpuesto
+        </h6>
+
+        <div>
+          <label
+            className="block text-xs mb-1"
+            style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+          >
+            Texto
+          </label>
+          <input
+            type="text"
+            value={overlay.text}
+            onChange={(e) =>
+              updateTextOverlay(which, { text: e.target.value }, defaultText, defaultPosition)
+            }
+            className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2"
+            style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+            placeholder={defaultText}
+          />
+        </div>
+
+        <div>
+          <label
+            className="block text-xs mb-1"
+            style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+          >
+            Posición
+          </label>
+          <div className="flex gap-2 flex-wrap">
+            {positions.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() =>
+                  updateTextOverlay(which, { position: p }, defaultText, defaultPosition)
+                }
+                className="px-3 py-1.5 rounded-lg text-xs border transition-colors"
+                style={pillStyle(overlay.position === p)}
+              >
+                {positionLabels[p]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label
+            className="block text-xs mb-1"
+            style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+          >
+            Color
+          </label>
+          <div className="flex gap-2 flex-wrap">
+            {colors.map((c) => {
+              const active = overlay.color === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() =>
+                    updateTextOverlay(which, { color: c }, defaultText, defaultPosition)
+                  }
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border transition-colors"
+                  style={pillStyle(active)}
+                >
+                  <span
+                    className="inline-block w-3 h-3 rounded-full border"
+                    style={{
+                      backgroundColor: colorSwatch[c],
+                      borderColor: CASA_BRAND.colors.secondary.grayLight,
+                    }}
+                  />
+                  {colorLabels[c]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label
+            className="block text-xs mb-1"
+            style={{ color: CASA_BRAND.colors.secondary.grayDark }}
+          >
+            Tamaño
+          </label>
+          <div className="flex gap-2 flex-wrap">
+            {sizes.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() =>
+                  updateTextOverlay(which, { size: s }, defaultText, defaultPosition)
+                }
+                className="px-3 py-1.5 rounded-lg text-xs border transition-colors min-w-[40px]"
+                style={pillStyle(overlay.size === s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderCoverStep = () => {
     if (!story) return null;
 
@@ -3724,6 +3978,39 @@ Instrucciones críticas:
         {/* Portada */}
         <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
           <div className="p-4">
+            {editingTitle !== null ? (
+              <input
+                type="text"
+                value={editingTitle}
+                autoFocus
+                onChange={(e) => setEditingTitle(e.target.value)}
+                onBlur={commitTitleEdit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitTitleEdit();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditingTitle(null);
+                  }
+                }}
+                className="w-full mb-3 px-2 py-1 text-lg font-semibold rounded border focus:outline-none"
+                style={{
+                  color: CASA_BRAND.colors.primary.black,
+                  borderColor: CASA_BRAND.colors.primary.amber,
+                  backgroundColor: CASA_BRAND.colors.primary.white,
+                }}
+              />
+            ) : (
+              <h4
+                className="mb-3 text-lg font-semibold cursor-text rounded px-2 py-1 -mx-2 hover:bg-gray-50 transition-colors"
+                style={{ color: CASA_BRAND.colors.primary.black }}
+                onClick={() => setEditingTitle(story.title)}
+                title="Haz clic para editar el título"
+              >
+                {story.title}
+              </h4>
+            )}
             <div className="flex items-center justify-between mb-3">
               <h5 className="font-medium flex items-center gap-2" style={{ color: CASA_BRAND.colors.primary.black }}>
                 <BookOpen size={18} />
@@ -4030,6 +4317,8 @@ Instrucciones críticas:
                 Genera o sube opciones de portada para seleccionar
               </div>
             )}
+
+            {renderTextOverlayControls('cover', story.title, 'bottom')}
           </div>
         </div>
 
@@ -4207,6 +4496,73 @@ Instrucciones críticas:
                   </div>
                 </div>
 
+                {/* Personajes opt-in para imagen final */}
+                <div className="mb-4 pb-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                      <Users size={12} />
+                      Personajes en la imagen final
+                    </h6>
+                    <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Opcional - selecciona los personajes a incluir
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {story.characters.map(char => {
+                      const options = characterSheetOptions[char.id];
+                      const selectedIdx = selectedCharacterSheets[char.id];
+                      const refImage = options && selectedIdx !== undefined ? options[selectedIdx] : char.characterSheetUrl;
+                      const isIncluded = endIncludedCharacters.includes(char.id);
+
+                      return (
+                        <div
+                          key={char.id}
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${isIncluded ? '' : 'opacity-50'}`}
+                          style={{
+                            borderColor: isIncluded ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+                          }}
+                        >
+                          {refImage ? (
+                            <img
+                              src={refImage.startsWith('http') ? refImage : `data:image/png;base64,${refImage}`}
+                              alt={char.name}
+                              className="w-full aspect-square object-cover"
+                            />
+                          ) : (
+                            <div
+                              className="w-full aspect-square flex items-center justify-center"
+                              style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight }}
+                            >
+                              <User size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                            </div>
+                          )}
+                          <div
+                            className="absolute bottom-0 left-0 right-0 px-2 py-1 text-xs truncate"
+                            style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white' }}
+                          >
+                            {char.name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isIncluded) {
+                                setEndIncludedCharacters(prev => prev.filter(id => id !== char.id));
+                              } else {
+                                setEndIncludedCharacters(prev => [...prev, char.id]);
+                              }
+                            }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                            style={{ backgroundColor: isIncluded ? CASA_BRAND.colors.primary.amber : '#9CA3AF' }}
+                            title={isIncluded ? 'Quitar de la imagen final' : 'Incluir en la imagen final'}
+                          >
+                            {isIncluded ? <X size={14} color="white" /> : <Plus size={14} color="white" />}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Prompt editable para fin */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -4277,6 +4633,8 @@ Instrucciones críticas:
                 Genera o sube opciones de imagen final para seleccionar
               </div>
             )}
+
+            {renderTextOverlayControls('end', 'Fin', 'center')}
           </div>
         </div>
 
