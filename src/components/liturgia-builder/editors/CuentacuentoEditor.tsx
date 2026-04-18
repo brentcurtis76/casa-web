@@ -530,6 +530,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [sceneExcludedCharacters, setSceneExcludedCharacters] = useState<Record<number, string[]>>({});
   const [sceneIncludedCharacters, setSceneIncludedCharacters] = useState<Record<number, string[]>>({}); // Personajes agregados manualmente
   const [editingScenePrompt, setEditingScenePrompt] = useState<Record<number, string>>({});
+  const [editingSceneText, setEditingSceneText] = useState<Record<number, string>>({});
   const [editingCharacterPrompt, setEditingCharacterPrompt] = useState<Record<string, string>>({});
   const [showCharacterPicker, setShowCharacterPicker] = useState<number | null>(null); // Número de escena para picker
   const [sceneReferenceImages, setSceneReferenceImages] = useState<Record<number, string>>({}); // Imagen de referencia manual por escena
@@ -1466,6 +1467,25 @@ Instrucciones críticas:
   const handleGenerateSceneImage = useCallback(async (scene: StoryScene, customPrompt?: string) => {
     if (!story) return;
 
+    // Auto-guardar texto editado antes de generar, para que la API use la versión nueva
+    const editedText = editingSceneText[scene.number];
+    if (editedText !== undefined && editedText !== scene.text) {
+      setStory(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          scenes: prev.scenes.map(s =>
+            s.number === scene.number ? { ...s, text: editedText } : s
+          ),
+          metadata: {
+            ...prev.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+      scene = { ...scene, text: editedText };
+    }
+
     setGeneratingSceneIndex(scene.number);
     setError(null);
 
@@ -1564,7 +1584,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, sceneReferenceMode, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, sceneReferenceMode, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow, editingSceneText]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
@@ -3021,6 +3041,40 @@ Instrucciones críticas:
           [sceneNumber]: scene.visualDescription,
         }));
       }
+      if (scene && editingSceneText[sceneNumber] === undefined) {
+        setEditingSceneText(prev => ({
+          ...prev,
+          [sceneNumber]: scene.text,
+        }));
+      }
+    };
+
+    // Guardar texto editado de la escena en el estado principal de la historia
+    const saveSceneText = (sceneNumber: number) => {
+      const newText = editingSceneText[sceneNumber];
+      if (newText === undefined) return;
+      setStory(prev => {
+        if (!prev) return prev;
+        const updatedScenes = prev.scenes.map(s =>
+          s.number === sceneNumber ? { ...s, text: newText } : s
+        );
+        return {
+          ...prev,
+          scenes: updatedScenes,
+          metadata: {
+            ...prev.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+    };
+
+    // Restaurar el texto original de la escena en el estado local
+    const resetSceneText = (sceneNumber: number, originalText: string) => {
+      setEditingSceneText(prev => ({
+        ...prev,
+        [sceneNumber]: originalText,
+      }));
     };
 
     // Toggle para excluir/incluir un personaje de las referencias de una escena
@@ -3070,6 +3124,8 @@ Instrucciones críticas:
             const includedIds = sceneIncludedCharacters[scene.number] || [];
             const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
             const hasAnyReference = charactersWithRefs.some(c => c.hasReference);
+            const currentSceneText = editingSceneText[scene.number] ?? scene.text;
+            const isTextModified = editingSceneText[scene.number] !== undefined && editingSceneText[scene.number] !== scene.text;
 
             // Personajes disponibles para agregar (que no están ya en la lista)
             const availableToAdd = story.characters.filter(c =>
@@ -3134,9 +3190,7 @@ Instrucciones críticas:
                   </div>
 
                   {/* Texto de la escena */}
-                  <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
-                    {scene.text.slice(0, 200)}{scene.text.length > 200 ? '...' : ''}
-                  </p>
+                  <p className="text-sm max-h-32 overflow-y-auto whitespace-pre-wrap" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>{scene.text}</p>
                 </div>
 
                 {/* Panel expandible: Prompt e imágenes de referencia */}
@@ -3495,6 +3549,52 @@ Instrucciones críticas:
                           )}
                         </div>
                       )}
+                    </div>
+
+                    {/* Texto narrativo editable */}
+                    <div className="p-4 border-b" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
+                          <FileText size={12} />
+                          Texto de la escena
+                        </h6>
+                        <div className="flex items-center gap-2">
+                          {isTextModified && (
+                            <button
+                              type="button"
+                              onClick={() => resetSceneText(scene.number, scene.text)}
+                              className="text-xs hover:underline"
+                              style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                            >
+                              Restaurar original
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => saveSceneText(scene.number)}
+                            disabled={!isTextModified}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{
+                              backgroundColor: isTextModified ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight + '50',
+                              color: isTextModified ? 'white' : CASA_BRAND.colors.secondary.grayMedium,
+                            }}
+                          >
+                            <Check size={12} />
+                            Guardar cambios
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={currentSceneText}
+                        onChange={(e) => setEditingSceneText(prev => ({ ...prev, [scene.number]: e.target.value }))}
+                        rows={6}
+                        className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2"
+                        style={{
+                          borderColor: isTextModified ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayLight,
+                          lineHeight: 1.5,
+                        }}
+                        placeholder="Texto narrativo de la escena..."
+                      />
                     </div>
 
                     {/* Prompt editable */}
