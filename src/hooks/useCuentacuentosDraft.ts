@@ -24,6 +24,8 @@ export interface CuentacuentosDraft {
   selectedSceneImages: Record<number, number>;
   selectedCover: number | null;
   selectedEnd: number | null;
+  // Modo de la imagen de referencia por escena ('style' | 'pov')
+  sceneReferenceModes: Record<number, 'style' | 'pov'>;
   savedAt: string;
   version: number;
 }
@@ -402,12 +404,14 @@ async function saveDraftToSupabase(
       coverPaths?: string[];
       endPaths?: string[];
       propImagePaths?: Record<string, string[]>;
+      sceneReferenceModes?: Record<number, 'style' | 'pov'>;
     }) || {
       characterSheetPaths: {},
       sceneImagePaths: {},
       coverPaths: [],
       endPaths: [],
       propImagePaths: {},
+      sceneReferenceModes: {},
     };
 
     // Subir SOLO las imágenes nuevas (las que están en memoria)
@@ -415,12 +419,21 @@ async function saveDraftToSupabase(
 
     // CRITICAL FIX: Safer merge logic that NEVER loses existing valid paths
     // Only overwrite if we have valid new paths (non-null, non-empty strings)
-    const mergedPaths = {
+    const mergedPaths: {
+      characterSheetPaths: Record<string, string[]>;
+      sceneImagePaths: Record<string | number, string[]>;
+      coverPaths: string[];
+      endPaths: string[];
+      propImagePaths: Record<string, string[]>;
+      sceneReferenceModes: Record<number, 'style' | 'pov'>;
+    } = {
       characterSheetPaths: { ...existingPaths.characterSheetPaths },
       sceneImagePaths: { ...existingPaths.sceneImagePaths },
       coverPaths: existingPaths.coverPaths || [],
       endPaths: existingPaths.endPaths || [],
       propImagePaths: { ...(existingPaths.propImagePaths || {}) } as Record<string, string[]>,
+      // Los modos (style/pov) se persisten aquí; el draft en memoria es la fuente de verdad
+      sceneReferenceModes: { ...(draft.sceneReferenceModes || {}) },
     };
 
     // Merge character paths - only overwrite if we have valid new paths
@@ -593,6 +606,7 @@ async function loadDraftFromSupabase(
       coverPaths: string[];
       endPaths: string[];
       propImagePaths?: Record<string, string[]>;
+      sceneReferenceModes?: Record<number, 'style' | 'pov'>;
     } | undefined;
 
     let imageOptions = {
@@ -611,6 +625,16 @@ async function loadDraftFromSupabase(
       console.log('[useCuentacuentosDraft] Scene image options:', Object.entries(imageOptions.sceneImageOptions).map(([k, v]) => `${k}: ${v.length} images`));
     } else {
       console.log('[useCuentacuentosDraft] No imagePaths found in DB record');
+    }
+
+    // Restaurar los modos de referencia de escena (style/pov) desde image_paths.
+    // Las keys de JSONB siempre son strings, así que normalizamos a number para match con scene.number.
+    const rawModes = imagePaths?.sceneReferenceModes || {};
+    const sceneReferenceModes: Record<number, 'style' | 'pov'> = {};
+    for (const [key, value] of Object.entries(rawModes)) {
+      if (value === 'style' || value === 'pov') {
+        sceneReferenceModes[Number(key)] = value;
+      }
     }
 
     const story = data.story as Story | null;
@@ -632,6 +656,7 @@ async function loadDraftFromSupabase(
       selectedSceneImages: (data.selected_scene_images as Record<number, number>) || {},
       selectedCover: data.selected_cover as number | null,
       selectedEnd: data.selected_end as number | null,
+      sceneReferenceModes,
       savedAt: data.updated_at as string,
       version: 1,
       ...imageOptions,
@@ -822,6 +847,7 @@ export function useCuentacuentosDraft({
           selectedCover: null,
           endOptions: [],
           selectedEnd: null,
+          sceneReferenceModes: {},
           propReferenceImages: {},
           ...currentDraft,
           ...pendingDataRef.current,
@@ -896,6 +922,7 @@ export function useCuentacuentosDraft({
       selectedCover: null,
       endOptions: [],
       selectedEnd: null,
+      sceneReferenceModes: {},
       propReferenceImages: {},
       ...currentDraft,
       ...data,

@@ -533,7 +533,8 @@ serve(async (req) => {
     console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}`);
 
     if (type === 'scene') {
-      const { sceneReferenceImage, characters } = requestData;
+      const { sceneReferenceImage, sceneReferenceMode = 'style', characters } = requestData;
+      console.log(`[generate-scene-images] scene reference mode: ${sceneReferenceMode}`);
       console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
       if (sceneReferenceImage) {
         console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage length: ${sceneReferenceImage.length}`);
@@ -550,7 +551,7 @@ serve(async (req) => {
 
     switch (type) {
       case 'scene': {
-        const { scene, characters, location, sceneReferenceImage, landmarks, props } = requestData;
+        const { scene, characters, location, sceneReferenceImage, sceneReferenceMode = 'style', landmarks, props } = requestData;
         if (!scene || !location) {
           throw new Error('Se requiere scene y location para generar escena');
         }
@@ -679,9 +680,12 @@ serve(async (req) => {
           console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
           const processedSceneRef = await processReferenceImage(sceneReferenceImage);
           if (processedSceneRef) {
+            const sceneRefInstruction = sceneReferenceMode === 'pov'
+              ? 'SAME-LOCATION REFERENCE — This image shows the exact setting for this scene. Render the SAME location, same buildings, same props, same lighting atmosphere, but from a DIFFERENT camera angle / point of view that matches the new scene description. Preserve spatial relationships, scale, and environment details. Do NOT change the location or its distinctive features.'
+              : 'SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere';
             referenceImages.unshift(processedSceneRef);
-            characterDescriptions.unshift('SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere');
-            console.log(`[generate-scene-images] Scene reference image added successfully! Total refs now: ${referenceImages.length}`);
+            characterDescriptions.unshift(sceneRefInstruction);
+            console.log(`[generate-scene-images] Scene reference image added successfully (mode: ${sceneReferenceMode})! Total refs now: ${referenceImages.length}`);
           } else {
             console.log(`[generate-scene-images] Scene reference image processing FAILED`);
           }
