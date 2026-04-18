@@ -95,6 +95,9 @@ const ILLUSTRATION_STYLES = [
   { id: 'anime-soft', name: 'Anime Suave', description: 'Anime tierno con colores pastel' },
 ];
 
+// Escape a string so it can be safely embedded in a RegExp.
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Pasos del flujo de creación
 type CreationStep =
   | 'config'           // Configurar lugar, personajes, estilo
@@ -1013,19 +1016,21 @@ Instrucciones críticas:
   }, [story, detectCharactersInScene, characterSheetOptions, selectedCharacterSheets]);
 
   // Seleccionar los props relevantes para una escena: por sceneNumbers explícitos
-  // o por coincidencia de substring (case-insensitive) del nombre en la visualDescription.
+  // o por coincidencia de palabra completa (case-insensitive) del nombre en la visualDescription.
   // Devuelve la forma que espera el edge function generate-scene-images.
   const getPropsForScene = useCallback((scene: StoryScene) => {
     const source = (story?.props && story.props.length > 0) ? story.props : storyProps;
     if (!source || source.length === 0) return [];
 
-    const visualDesc = (scene.visualDescription || '').toLowerCase();
+    const visualDesc = scene.visualDescription || '';
 
     return source
       .filter((p) => {
         const byScene = Array.isArray(p.sceneNumbers) && p.sceneNumbers.includes(scene.number);
-        const needle = (p.name || '').trim().toLowerCase();
-        const byName = needle.length > 0 && visualDesc.includes(needle);
+        const needle = (p.name || '').trim();
+        const byName =
+          needle.length > 0 &&
+          new RegExp(`\\b${escapeRegex(needle)}\\b`, 'i').test(visualDesc);
         return byScene || byName;
       })
       .map((p) => ({
@@ -1101,9 +1106,12 @@ Instrucciones críticas:
     characters: (characters || '').split(',').map(c => c.trim()).filter(Boolean),
     style: style || 'reflexivo',
     additionalNotes: additionalNotes || '',
-    // Pasar props configurados (si hay) para que el edge function los analice con Gemini
+    // Pasar props configurados (si hay) para que el edge function los analice con Gemini.
+    // El `id` viaja con cada prop para poder mezclar la respuesta por id (no por índice
+    // ni por nombre, que pueden duplicarse o reordenarse).
     props: storyProps.length > 0
       ? storyProps.map(p => ({
+          id: p.id,
           kind: p.kind,
           name: p.name,
           narrativeRole: p.narrativeRole,
@@ -1210,16 +1218,17 @@ Instrucciones críticas:
             })),
         // Enriquecer props con la descripción visual analizada por Gemini (si la hay),
         // mezclando los datos de configuración originales (kind, role, referenceImages, sceneNumbers).
+        // Se mezcla por id (no por nombre ni por índice) para evitar colisiones cuando
+        // hay props con nombres repetidos o cuando el orden cambia.
         props: (() => {
-          const analyses = Array.isArray(data.propAnalyses) ? data.propAnalyses : [];
+          const analyses: Array<{ id: string; visualDescription: string }> =
+            Array.isArray(data.propAnalyses) ? data.propAnalyses : [];
           if (storyProps.length === 0 && analyses.length === 0) return undefined;
-          return storyProps.map((p) => {
-            const analysis = analyses.find((a: { name: string }) => a.name === p.name);
-            return {
-              ...p,
-              visualDescription: analysis?.visualDescription || p.visualDescription || '',
-            };
-          });
+          return storyProps.map((p) => ({
+            ...p,
+            visualDescription:
+              analyses.find((a) => a.id === p.id)?.visualDescription ?? p.visualDescription,
+          }));
         })(),
         spiritualConnection: data.spiritualConnection || data.moral || '',
         metadata: {

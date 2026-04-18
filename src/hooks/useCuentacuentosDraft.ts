@@ -466,6 +466,48 @@ async function saveDraftToSupabase(
       // If no valid paths, KEEP existing (don't overwrite with empty)
     }
 
+    // Purge stale propImagePaths: any key not present in the current draft.story.props
+    // is an orphan (prop was removed). Strip the key and best-effort delete its files.
+    const currentPropIds = new Set<string>(
+      (draft.story?.props || [])
+        .map(p => p?.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    );
+    const orphanedPropStoragePaths: string[] = [];
+    for (const key of Object.keys(mergedPaths.propImagePaths)) {
+      if (!currentPropIds.has(key)) {
+        const paths = mergedPaths.propImagePaths[key] || [];
+        for (const p of paths) {
+          // Only plain storage paths are removable; skip full URLs and __FULLURL__ markers.
+          if (typeof p === 'string' && p.length > 0 && !p.startsWith('http') && !p.startsWith('__FULLURL__')) {
+            orphanedPropStoragePaths.push(p);
+          }
+        }
+        delete mergedPaths.propImagePaths[key];
+        console.log(`[useCuentacuentosDraft] Purging orphaned propImagePaths key: ${key}`);
+      }
+    }
+
+    if (orphanedPropStoragePaths.length > 0) {
+      try {
+        const { error: removeError } = await supabase.storage
+          .from(BUCKET_NAME)
+          .remove(orphanedPropStoragePaths);
+        if (removeError) {
+          console.warn(
+            `[useCuentacuentosDraft] Best-effort orphan prop storage delete failed (${orphanedPropStoragePaths.length} files):`,
+            removeError
+          );
+        } else {
+          console.log(
+            `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
+          );
+        }
+      } catch (err) {
+        console.warn('[useCuentacuentosDraft] Best-effort orphan prop storage delete threw:', err);
+      }
+    }
+
     console.log(`[useCuentacuentosDraft] MERGE RESULT - scenes before: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, after: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
 
     // Preparar story sin imágenes base64 (limpiar characterSheetUrl y selectedImageUrl)

@@ -31,6 +31,11 @@ const createBlankProp = (): StoryProp => ({
   role: 'secondary',
 });
 
+const isPropRowEmpty = (p: StoryProp): boolean =>
+  !p.name.trim() &&
+  !p.narrativeRole.trim() &&
+  (!p.referenceImages || p.referenceImages.length === 0);
+
 interface StoryConfigFormProps {
   onSubmit: (config: StoryConfigInput) => void;
   isLoading?: boolean;
@@ -93,8 +98,9 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
       }
     }
 
-    // Validar props
+    // Validar props (ignorar filas completamente vacías)
     props.forEach((p, idx) => {
+      if (isPropRowEmpty(p)) return;
       const label = p.name.trim() || `Prop ${idx + 1}`;
       if (!p.name.trim()) {
         newErrors.push(`Debes ingresar el nombre del ${label}`);
@@ -126,6 +132,8 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
       return;
     }
 
+    const submittableProps = props.filter((p) => !isPropRowEmpty(p));
+
     const config: StoryConfigInput = {
       liturgyTitle: liturgyTitle.trim() || undefined,
       liturgyReadings: liturgyReadings.trim() || undefined,
@@ -138,8 +146,8 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
         referenceImages: landmark.referenceImages,
         role: landmark.role,
       }] : [],
-      props: props.length > 0
-        ? props.map((p) => ({
+      props: submittableProps.length > 0
+        ? submittableProps.map((p) => ({
             kind: p.kind,
             name: p.name.trim(),
             narrativeRole: p.narrativeRole.trim(),
