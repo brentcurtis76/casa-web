@@ -54,6 +54,7 @@ import type {
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
+import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -467,6 +468,8 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   onStoryDeleted,
   onNavigateToFullEditor,
 }) => {
+  const { toast } = useToast();
+
   // Determinar paso inicial basado en estado del story
   const getInitialStep = (): CreationStep => {
     if (!initialStory) return 'config';
@@ -887,6 +890,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setEndOptions(draftData.endOptions);
     setSelectedEnd(draftData.selectedEnd);
     setEndIncludedCharacters([]);
+    setEditingSceneText({});
 
     // Restaurar modos de imagen de referencia de escena (style | pov)
     // Normalizar keys a números por el mismo motivo que sceneImageOptions
@@ -1066,9 +1070,10 @@ Instrucciones críticas:
       .filter((p) => {
         const byScene = Array.isArray(p.sceneNumbers) && p.sceneNumbers.includes(scene.number);
         const needle = (p.name || '').trim();
-        const byName =
-          needle.length > 0 &&
-          new RegExp(`\\b${escapeRegex(needle)}\\b`, 'i').test(visualDesc);
+        const boundaryLeft  = '(?<![\\p{L}\\p{N}])';
+        const boundaryRight = '(?![\\p{L}\\p{N}])';
+        const pattern = new RegExp(`${boundaryLeft}${escapeRegex(needle)}${boundaryRight}`, 'iu');
+        const byName = needle.length > 0 && pattern.test(visualDesc);
         return byScene || byName;
       })
       .map((p) => ({
@@ -1495,7 +1500,11 @@ Instrucciones críticas:
 
     // Auto-guardar texto editado antes de generar, para que la API use la versión nueva
     const editedText = editingSceneText[scene.number];
-    if (editedText !== undefined && editedText !== scene.text) {
+    if (
+      editedText !== undefined &&
+      editedText.trim().length > 0 &&
+      editedText !== scene.text
+    ) {
       setStory(prev => {
         if (!prev) return prev;
         return {
@@ -1510,6 +1519,12 @@ Instrucciones críticas:
         };
       });
       scene = { ...scene, text: editedText };
+    } else if (editedText !== undefined && editedText.trim().length === 0) {
+      toast({
+        title: 'Error',
+        description: 'El texto narrativo no puede estar vacío. Restaurando texto anterior.',
+        variant: 'destructive',
+      });
     }
 
     setGeneratingSceneIndex(scene.number);
@@ -1610,7 +1625,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, sceneReferenceMode, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow, editingSceneText]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, sceneReferenceMode, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow, editingSceneText, toast]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
