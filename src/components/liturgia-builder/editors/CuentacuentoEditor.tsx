@@ -886,6 +886,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setSelectedCover(draftData.selectedCover);
     setEndOptions(draftData.endOptions);
     setSelectedEnd(draftData.selectedEnd);
+    setEndIncludedCharacters([]);
 
     // Restaurar modos de imagen de referencia de escena (style | pov)
     // Normalizar keys a números por el mismo motivo que sceneImageOptions
@@ -955,6 +956,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       };
     });
   }, [draft, initialStory]);
+
+  // Sincronizar endIncludedCharacters cuando cambian los personajes del cuento
+  useEffect(() => {
+    if (!story) return;
+    const validIds = new Set(story.characters.map(c => c.id));
+    setEndIncludedCharacters(prev => {
+      const filtered = prev.filter(id => validIds.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [story?.characters]);
 
   // Manejar aceptación de recuperación
   const handleAcceptRecovery = useCallback(() => {
@@ -1398,6 +1409,7 @@ Instrucciones críticas:
       setSelectedCover(null);
       setEndOptions([]);
       setSelectedEnd(null);
+      setEndIncludedCharacters([]);
       setStoryProps([]);
       setCurrentStep('config');
       setShowForm(true);
