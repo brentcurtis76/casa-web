@@ -475,12 +475,14 @@ serve(async (req) => {
       }
     }
 
-    // Analyze prop reference images if provided (lugares u objetos recurrentes)
-    const propAnalyses: Array<{ name: string; kind: string; narrativeRole: string; visualDescription: string; role: string }> = [];
+    // Analyze prop reference images if provided (lugares u objetos recurrentes).
+    // Each incoming prop must include `id` so the visual description can be merged
+    // back to the originating prop without relying on array order or duplicate names.
+    const propAnalyses: Array<{ id: string; name: string; kind: string; narrativeRole: string; visualDescription: string; role: string }> = [];
     if (props && Array.isArray(props) && props.length > 0) {
       for (const p of props) {
         const propKind: 'location' | 'prop' = p.kind === 'location' ? 'location' : 'prop';
-        console.log(`[generate-story] Analyzing ${propKind}: "${p.name}" with ${p.referenceImages?.length || 0} images`);
+        console.log(`[generate-story] Analyzing ${propKind}: "${p.name}" (id=${p.id}) with ${p.referenceImages?.length || 0} images`);
         const visualDescription = await analyzeImagesForVisualDescription({
           name: p.name,
           narrativeRole: p.narrativeRole || '',
@@ -488,6 +490,7 @@ serve(async (req) => {
           kind: propKind,
         });
         propAnalyses.push({
+          id: p.id,
           name: p.name,
           kind: propKind,
           narrativeRole: p.narrativeRole || '',
@@ -671,8 +674,9 @@ serve(async (req) => {
         spiritualConnection: story.spiritualConnection,
         // Landmark analysis results (visual descriptions from Gemini)
         landmarkAnalyses: landmarkAnalyses.length > 0 ? landmarkAnalyses : undefined,
-        // Prop analysis results (visual descriptions from Gemini) for recurring elements
-        propAnalyses,
+        // Prop analysis results (visual descriptions from Gemini) for recurring elements.
+        // Returned as `[{ id, visualDescription }]` so the caller can merge by id.
+        propAnalyses: propAnalyses.map(({ id, visualDescription }) => ({ id, visualDescription })),
         // Compatibilidad con formato anterior
         content: contentText,
         story: contentText,
