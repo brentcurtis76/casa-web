@@ -34,6 +34,8 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
   sceneImageOptions: Record<number, string[]>;
   coverOptions: string[];
   endOptions: string[];
+  // Imágenes de referencia de props (propId -> URLs públicas o base64)
+  propReferenceImages: Record<string, string[]>;
 }
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
@@ -228,11 +230,13 @@ async function saveImagesToStorage(
   sceneImagePaths: Record<number, string[]>;
   coverPaths: string[];
   endPaths: string[];
+  propImagePaths: Record<string, string[]>;
 }> {
   const characterSheetPaths: Record<string, string[]> = {};
   const sceneImagePaths: Record<number, string[]> = {};
   const coverPaths: string[] = [];
   const endPaths: string[] = [];
+  const propImagePaths: Record<string, string[]> = {};
 
   // Subir character sheets
   for (const [charId, options] of Object.entries(draft.characterSheetOptions || {})) {
@@ -270,7 +274,27 @@ async function saveImagesToStorage(
     if (path) endPaths.push(path);
   }
 
-  return { characterSheetPaths, sceneImagePaths, coverPaths, endPaths };
+  // Subir imágenes de referencia de props
+  // Fuente primaria: draft.propReferenceImages (indexado por propId)
+  // Fuente secundaria: draft.story.props[].referenceImages (si el story ya fue generado)
+  const propSources: Record<string, string[]> = { ...(draft.propReferenceImages || {}) };
+  if (draft.story?.props) {
+    for (const prop of draft.story.props) {
+      if (prop?.id && !propSources[prop.id] && Array.isArray(prop.referenceImages)) {
+        propSources[prop.id] = prop.referenceImages;
+      }
+    }
+  }
+
+  for (const [propId, images] of Object.entries(propSources)) {
+    propImagePaths[propId] = [];
+    for (let i = 0; i < images.length; i++) {
+      const path = await uploadImage(userId, liturgyId, 'props', propId, i, images[i]);
+      if (path) propImagePaths[propId].push(path);
+    }
+  }
+
+  return { characterSheetPaths, sceneImagePaths, coverPaths, endPaths, propImagePaths };
 }
 
 /**
@@ -284,17 +308,20 @@ async function loadImagesFromStorage(
     sceneImagePaths: Record<number, string[]>;
     coverPaths: string[];
     endPaths: string[];
+    propImagePaths?: Record<string, string[]>;
   }
 ): Promise<{
   characterSheetOptions: Record<string, string[]>;
   sceneImageOptions: Record<number, string[]>;
   coverOptions: string[];
   endOptions: string[];
+  propReferenceImages: Record<string, string[]>;
 }> {
   const characterSheetOptions: Record<string, string[]> = {};
   const sceneImageOptions: Record<number, string[]> = {};
   const coverOptions: string[] = [];
   const endOptions: string[] = [];
+  const propReferenceImages: Record<string, string[]> = {};
 
   // Helper function to handle __FULLURL__ marker
   const pathToUrl = (path: string): string => {
@@ -336,9 +363,16 @@ async function loadImagesFromStorage(
   const endUrls = (paths.endPaths || []).map(path => pathToUrl(path));
   endOptions.push(...endUrls);
 
+  // Generar URLs públicas para prop reference images
+  for (const [propId, pathList] of Object.entries(paths.propImagePaths || {})) {
+    if (pathList && pathList.length > 0) {
+      propReferenceImages[propId] = pathList.map(path => pathToUrl(path));
+    }
+  }
+
   console.log(`[useCuentacuentosDraft] Generated public URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
 
-  return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions };
+  return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions, propReferenceImages };
 }
 
 /**
@@ -367,11 +401,13 @@ async function saveDraftToSupabase(
       sceneImagePaths?: Record<number, string[]>;
       coverPaths?: string[];
       endPaths?: string[];
+      propImagePaths?: Record<string, string[]>;
     }) || {
       characterSheetPaths: {},
       sceneImagePaths: {},
       coverPaths: [],
       endPaths: [],
+      propImagePaths: {},
     };
 
     // Subir SOLO las imágenes nuevas (las que están en memoria)
@@ -384,6 +420,7 @@ async function saveDraftToSupabase(
       sceneImagePaths: { ...existingPaths.sceneImagePaths },
       coverPaths: existingPaths.coverPaths || [],
       endPaths: existingPaths.endPaths || [],
+      propImagePaths: { ...(existingPaths.propImagePaths || {}) } as Record<string, string[]>,
     };
 
     // Merge character paths - only overwrite if we have valid new paths
@@ -417,6 +454,16 @@ async function saveDraftToSupabase(
     if (validEndPaths.length > 0) {
       mergedPaths.endPaths = validEndPaths;
       console.log(`[useCuentacuentosDraft] Updating end with ${validEndPaths.length} valid paths`);
+    }
+
+    // Merge prop image paths - only overwrite if we have valid new paths
+    for (const [key, paths] of Object.entries(newImagePaths.propImagePaths || {})) {
+      const validPaths = (paths || []).filter(p => p != null && p !== '');
+      if (validPaths.length > 0) {
+        mergedPaths.propImagePaths[key] = validPaths;
+        console.log(`[useCuentacuentosDraft] Updating prop ${key} with ${validPaths.length} valid paths`);
+      }
+      // If no valid paths, KEEP existing (don't overwrite with empty)
     }
 
     console.log(`[useCuentacuentosDraft] MERGE RESULT - scenes before: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, after: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
@@ -503,6 +550,7 @@ async function loadDraftFromSupabase(
       sceneImagePaths: Record<number, string[]>;
       coverPaths: string[];
       endPaths: string[];
+      propImagePaths?: Record<string, string[]>;
     } | undefined;
 
     let imageOptions = {
@@ -510,6 +558,7 @@ async function loadDraftFromSupabase(
       sceneImageOptions: {} as Record<number, string[]>,
       coverOptions: [] as string[],
       endOptions: [] as string[],
+      propReferenceImages: {} as Record<string, string[]>,
     };
 
     if (imagePaths) {
@@ -522,11 +571,21 @@ async function loadDraftFromSupabase(
       console.log('[useCuentacuentosDraft] No imagePaths found in DB record');
     }
 
+    const story = data.story as Story | null;
+    const { propReferenceImages } = imageOptions;
+
+    if (story?.props && propReferenceImages) {
+      story.props = story.props.map(p => ({
+        ...p,
+        referenceImages: propReferenceImages[p.id] ?? p.referenceImages ?? [],
+      }));
+    }
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
       currentStep: data.current_step as CuentacuentosDraft['currentStep'],
       config: data.config as CuentacuentosDraft['config'],
-      story: data.story as Story | null,
+      story,
       selectedCharacterSheets: (data.selected_character_sheets as Record<string, number>) || {},
       selectedSceneImages: (data.selected_scene_images as Record<number, number>) || {},
       selectedCover: data.selected_cover as number | null,
@@ -721,6 +780,7 @@ export function useCuentacuentosDraft({
           selectedCover: null,
           endOptions: [],
           selectedEnd: null,
+          propReferenceImages: {},
           ...currentDraft,
           ...pendingDataRef.current,
           savedAt: new Date().toISOString(),
@@ -794,6 +854,7 @@ export function useCuentacuentosDraft({
       selectedCover: null,
       endOptions: [],
       selectedEnd: null,
+      propReferenceImages: {},
       ...currentDraft,
       ...data,
       savedAt: new Date().toISOString(),

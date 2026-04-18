@@ -5,13 +5,31 @@
 
 import React, { useState } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import { BookOpen, Sparkles, AlertCircle } from 'lucide-react';
-import type { StoryConfigInput } from '@/types/shared/story';
+import { BookOpen, Sparkles, AlertCircle, Plus, Layers } from 'lucide-react';
+import type { StoryConfigInput, StoryProp } from '@/types/shared/story';
 import { isNameForbidden } from '@/lib/cuentacuentos/promptBuilders';
 import StyleSelector from './StyleSelector';
 import CharacterInput from './CharacterInput';
 import LocationInput from './LocationInput';
 import LandmarkInput, { type LandmarkConfig } from './LandmarkInput';
+import PropInput from './PropInput';
+
+const makePropId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `prop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const createBlankProp = (): StoryProp => ({
+  id: makePropId(),
+  kind: 'prop',
+  name: '',
+  narrativeRole: '',
+  visualDescription: '',
+  referenceImages: [],
+  role: 'secondary',
+});
 
 interface StoryConfigFormProps {
   onSubmit: (config: StoryConfigInput) => void;
@@ -28,8 +46,21 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
     { description: '', name: '' },
   ]);
   const [landmark, setLandmark] = useState<LandmarkConfig | null>(null);
+  const [props, setProps] = useState<StoryProp[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+
+  const handleAddProp = () => {
+    setProps((prev) => [...prev, createBlankProp()]);
+  };
+
+  const handleUpdateProp = (id: string, updated: StoryProp) => {
+    setProps((prev) => prev.map((p) => (p.id === id ? updated : p)));
+  };
+
+  const handleRemoveProp = (id: string) => {
+    setProps((prev) => prev.filter((p) => p.id !== id));
+  };
 
   const validateForm = (): boolean => {
     const newErrors: string[] = [];
@@ -62,6 +93,20 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
       }
     }
 
+    // Validar props
+    props.forEach((p, idx) => {
+      const label = p.name.trim() || `Prop ${idx + 1}`;
+      if (!p.name.trim()) {
+        newErrors.push(`Debes ingresar el nombre del ${label}`);
+      }
+      if (!p.narrativeRole.trim()) {
+        newErrors.push(`Debes describir el rol narrativo de ${label}`);
+      }
+      if (p.referenceImages.length === 0) {
+        newErrors.push(`Debes subir al menos una foto de referencia de ${label}`);
+      }
+    });
+
     // Validar nombres prohibidos
     const forbiddenNames = characters
       .filter((c) => c.name && isNameForbidden(c.name))
@@ -93,6 +138,16 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
         referenceImages: landmark.referenceImages,
         role: landmark.role,
       }] : [],
+      props: props.length > 0
+        ? props.map((p) => ({
+            kind: p.kind,
+            name: p.name.trim(),
+            narrativeRole: p.narrativeRole.trim(),
+            referenceImages: p.referenceImages,
+            role: p.role,
+            sceneNumbers: p.sceneNumbers,
+          }))
+        : undefined,
       illustrationStyleId: selectedStyleId!,
     };
 
@@ -302,8 +357,74 @@ const StoryConfigForm: React.FC<StoryConfigFormProps> = ({ onSubmit, isLoading =
           {/* Personajes */}
           <CharacterInput characters={characters} onChange={setCharacters} />
 
-          {/* Landmark como personaje */}
-          <LandmarkInput landmark={landmark} onChange={setLandmark} />
+          {/* Elementos visuales: landmark + props */}
+          <div
+            className="p-4 rounded-lg border space-y-4"
+            style={{
+              borderColor: CASA_BRAND.colors.secondary.grayLight,
+              backgroundColor: `${CASA_BRAND.colors.amber.light}10`,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Layers size={18} style={{ color: CASA_BRAND.colors.primary.amber }} />
+              <h4
+                style={{
+                  fontFamily: CASA_BRAND.fonts.heading,
+                  fontSize: '16px',
+                  fontWeight: 500,
+                  color: CASA_BRAND.colors.primary.black,
+                }}
+              >
+                Elementos visuales
+              </h4>
+              <span
+                className="text-sm font-normal"
+                style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+              >
+                (opcional)
+              </span>
+            </div>
+            <p
+              style={{
+                fontFamily: CASA_BRAND.fonts.body,
+                fontSize: '12px',
+                color: CASA_BRAND.colors.secondary.grayDark,
+              }}
+            >
+              Agrega un landmark (edificio o monumento) y/o props (lugares y objetos) para
+              mantener consistencia visual en las escenas del cuento.
+            </p>
+
+            {/* Landmark como personaje */}
+            <LandmarkInput landmark={landmark} onChange={setLandmark} />
+
+            {/* Props (lugares y objetos) */}
+            <div className="space-y-4">
+              {props.map((prop) => (
+                <PropInput
+                  key={prop.id}
+                  value={prop}
+                  onChange={(updated) => handleUpdateProp(prop.id, updated)}
+                  onRemove={() => handleRemoveProp(prop.id)}
+                />
+              ))}
+
+              <button
+                type="button"
+                onClick={handleAddProp}
+                className="w-full py-3 rounded-lg border-2 border-dashed flex items-center justify-center gap-2 transition-colors hover:border-amber-400"
+                style={{
+                  borderColor: CASA_BRAND.colors.secondary.grayLight,
+                  color: CASA_BRAND.colors.secondary.grayMedium,
+                  fontFamily: CASA_BRAND.fonts.body,
+                  fontSize: '14px',
+                }}
+              >
+                <Plus size={18} />
+                Agregar prop (lugar u objeto)
+              </button>
+            </div>
+          </div>
 
           {/* Estilo de ilustración */}
           <StyleSelector selectedStyleId={selectedStyleId} onSelectStyle={setSelectedStyleId} />

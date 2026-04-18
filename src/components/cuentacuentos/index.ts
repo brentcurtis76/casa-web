@@ -8,5 +8,6 @@ export { default as StoryConfigForm } from './StoryConfigForm';
 export { default as StyleSelector } from './StyleSelector';
 export { default as CharacterInput } from './CharacterInput';
 export { default as LocationInput } from './LocationInput';
+export { default as PropInput } from './PropInput';
 export { default as ImageSelector } from './ImageSelector';
 export { default as StoryPreview } from './StoryPreview';

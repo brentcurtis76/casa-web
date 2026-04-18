@@ -14,6 +14,33 @@ export type CharacterRole = 'protagonist' | 'secondary';
 export type LandmarkRole = 'primary' | 'secondary';
 
 /**
+ * Tipo de prop: un lugar/escenario o un objeto físico
+ */
+export type PropKind = 'location' | 'prop';
+
+/**
+ * Prominencia del prop en el cuento
+ */
+export type PropRole = 'primary' | 'secondary';
+
+/**
+ * Prop del cuento: puede ser un lugar (playa, iglesia, parque) o un objeto
+ * (sombrero, tesoro, libro) que aparece de forma consistente en las escenas.
+ * Mantiene consistencia visual mediante fotos de referencia subidas por el usuario.
+ */
+export interface StoryProp {
+  id: string;
+  kind: PropKind;
+  name: string;
+  narrativeRole: string;
+  visualDescription: string;        // Descripción visual generada tras analizar las fotos
+  referenceImages: string[];        // URLs/base64 de fotos subidas por el usuario
+  selectedReferenceUrl?: string;    // URL de la imagen de referencia procesada
+  role: PropRole;
+  sceneNumbers?: number[];          // Escenas en las que aparece el prop
+}
+
+/**
  * Landmark o edificio que actúa como "personaje" visual en el cuento
  * Permite subir fotos de referencia para que el landmark se represente fielmente
  */
@@ -103,6 +130,7 @@ export interface Story {
   illustrationStyle: string;    // ID del estilo seleccionado
   characters: StoryCharacter[];
   landmarks?: StoryLandmark[];  // Landmarks que actúan como "personajes" visuales
+  props?: StoryProp[];          // Lugares y objetos de referencia visual
   scenes: StoryScene[];
   coverImageOptions?: string[];
   coverImageUrl?: string;
@@ -136,6 +164,7 @@ export interface StoryConfigInput {
     referenceImages: string[];   // base64 data URLs from uploaded photos
     role: LandmarkRole;
   }[];
+  props?: Omit<StoryProp, 'id' | 'visualDescription' | 'selectedReferenceUrl'>[];
   illustrationStyleId: string;
 }
 

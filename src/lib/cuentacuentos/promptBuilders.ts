@@ -10,6 +10,8 @@ import type {
   LocationInfo,
   IllustrationStyle,
   LandmarkRole,
+  PropKind,
+  PropRole,
 } from '@/types/shared/story';
 import forbiddenNames from '@/data/cuentacuentos/forbidden-names.json';
 
@@ -88,7 +90,8 @@ export function buildStoryUserPrompt(
   landmarks?: { name: string; narrativeRole: string; visualDescription?: string; role: LandmarkRole }[],
   liturgyTitle?: string,
   liturgyReadings?: string,
-  liturgySummary?: string
+  liturgySummary?: string,
+  props?: { name: string; kind: PropKind; narrativeRole: string; visualDescription?: string; role?: PropRole }[],
 ): string {
   const charactersText = characters
     .map((c, i) => `Personaje ${i + 1}: ${c.description}${c.name ? ` (nombre sugerido: ${c.name})` : ''}`)
@@ -122,6 +125,21 @@ IMPORTANTE sobre el landmark:
 - ${lm.role === 'primary' ? 'Como landmark principal, debe aparecer en al menos la mitad de las escenas' : 'Como landmark secundario, debe aparecer en al menos 3-4 escenas'}
 `;
     }
+  }
+
+  // Include recurring visual references (props: lugares y objetos) if provided
+  if (props && props.length > 0) {
+    prompt += `\n## Referencias visuales (elementos recurrentes)\n`;
+    for (const p of props) {
+      const kindLabel = p.kind === 'location' ? 'Lugar / escenario' : 'Objeto / prop';
+      prompt += `\n### ${p.name}
+- Tipo: ${kindLabel}
+- Rol narrativo: ${p.narrativeRole}
+${p.visualDescription ? `- Descripción visual detallada: ${p.visualDescription}` : ''}
+`;
+    }
+    prompt += `\nIMPORTANTE: Estos elementos deben aparecer de manera consistente en cualquier escena cuya descripción visual (visualDescription) los mencione. Cuando incluyas uno de estos elementos en una escena, usa los mismos detalles visuales descritos arriba para mantener coherencia entre ilustraciones.
+`;
   }
 
   if (liturgyTitle || liturgyReadings || liturgySummary) {
