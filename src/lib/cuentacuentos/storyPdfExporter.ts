@@ -3,9 +3,15 @@
  * Formato revista: cada página es un spread completo (imagen izquierda + texto derecha)
  */
 
-import jsPDF from 'jspdf';
+import jsPDF, { GState } from 'jspdf';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { Story, StoryScene } from '@/types/shared/story';
+import type {
+  OverlayColor,
+  OverlaySize,
+  Story,
+  StoryScene,
+  TextOverlay,
+} from '@/types/shared/story';
 
 // Constantes de diseño - Formato más ancho para spreads
 const PAGE_WIDTH = 1056; // 11" x 1.33 para spread más ancho (14.67")
@@ -18,6 +24,86 @@ const AMBER = { r: 245, g: 158, b: 11 }; // #F59E0B
 const BLACK = { r: 26, g: 26, b: 26 }; // #1A1A1A
 const GRAY = { r: 156, g: 163, b: 175 }; // #9CA3AF
 const SHADOW = { r: 200, g: 200, b: 200 };
+
+const OVERLAY_FONT_SIZE: Record<OverlaySize, number> = {
+  S: 18,
+  M: 28,
+  L: 44,
+};
+
+const OVERLAY_COLOR_RGB: Record<OverlayColor, { r: number; g: number; b: number }> = {
+  white: { r: 255, g: 255, b: 255 },
+  black: { r: 26, g: 26, b: 26 },
+  amber: { r: 245, g: 158, b: 11 },
+};
+
+/**
+ * Dibuja el texto superpuesto sobre un rectángulo de imagen (típicamente la portada o página final).
+ * Usa coordenadas top-left de jsPDF (la spec describe la matemática equivalente con origen bottom-left).
+ * Incluye un fondo semitransparente (alpha 0.4) negro para mejorar la legibilidad.
+ */
+function drawTextOverlay(
+  pdf: jsPDF,
+  overlay: TextOverlay,
+  imageX: number,
+  imageY: number,
+  imageWidth: number,
+  imageHeight: number
+): void {
+  const fontSize = OVERLAY_FONT_SIZE[overlay.size];
+  const color = OVERLAY_COLOR_RGB[overlay.color];
+
+  const innerPadding = 24;
+  const textBoxWidth = imageWidth - innerPadding * 2;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(fontSize);
+
+  const lines = pdf.splitTextToSize(overlay.text, textBoxWidth);
+  const lineHeight = fontSize * 1.2;
+  const blockHeight = lines.length * lineHeight;
+
+  // Y baseline de la primera línea (top-left origin de jsPDF).
+  // Equivalencias con origen bottom-left:
+  //   top    -> y = pageHeight - margin - fontSize
+  //   center -> y = (pageHeight + blockHeight) / 2 - fontSize
+  //   bottom -> y = margin + blockHeight - fontSize
+  let firstLineBaselineY: number;
+  switch (overlay.position) {
+    case 'top':
+      firstLineBaselineY = imageY + innerPadding + fontSize;
+      break;
+    case 'center':
+      firstLineBaselineY =
+        imageY + (imageHeight - blockHeight) / 2 + fontSize;
+      break;
+    case 'bottom':
+      firstLineBaselineY = imageY + imageHeight - innerPadding - blockHeight + fontSize;
+      break;
+  }
+
+  // Rect de fondo semitransparente
+  const bgPaddingX = 18;
+  const bgPaddingY = 10;
+  const bgWidth = Math.min(imageWidth, textBoxWidth + bgPaddingX * 2);
+  const bgHeight = blockHeight + bgPaddingY * 2;
+  const bgX = imageX + (imageWidth - bgWidth) / 2;
+  const bgY = firstLineBaselineY - fontSize - bgPaddingY;
+
+  pdf.setGState(new GState({ opacity: 0.4 }));
+  pdf.setFillColor(0, 0, 0);
+  pdf.rect(bgX, bgY, bgWidth, bgHeight, 'F');
+  pdf.setGState(new GState({ opacity: 1 }));
+
+  // Texto centrado
+  pdf.setTextColor(color.r, color.g, color.b);
+  const textCenterX = imageX + imageWidth / 2;
+  lines.forEach((line: string, i: number) => {
+    pdf.text(line, textCenterX, firstLineBaselineY + i * lineHeight, {
+      align: 'center',
+    });
+  });
+}
 
 /**
  * Exporta un cuento a PDF con diseño de revista/libro ilustrado
@@ -147,6 +233,7 @@ function fitImageToSpace(
  */
 async function renderCoverSpread(pdf: jsPDF, story: Story): Promise<void> {
   // === LADO IZQUIERDO: Imagen de portada ===
+  let coverImgRect: { x: number; y: number; width: number; height: number } | null = null;
   if (story.coverImageUrl) {
     const imgInfo = await loadImageWithDimensions(story.coverImageUrl);
     if (imgInfo) {
@@ -177,7 +264,21 @@ async function renderCoverSpread(pdf: jsPDF, story: Story): Promise<void> {
       pdf.setDrawColor(220, 220, 220);
       pdf.setLineWidth(1);
       pdf.roundedRect(x, y, imgWidth, imgHeight, 10, 10, 'S');
+
+      coverImgRect = { x, y, width: imgWidth, height: imgHeight };
     }
+  }
+
+  // Texto superpuesto sobre la imagen (si está configurado)
+  if (story.coverTextOverlay && coverImgRect) {
+    drawTextOverlay(
+      pdf,
+      story.coverTextOverlay,
+      coverImgRect.x,
+      coverImgRect.y,
+      coverImgRect.width,
+      coverImgRect.height
+    );
   }
 
   // === LADO DERECHO: Título y metadata ===
@@ -374,6 +475,7 @@ async function renderSceneSpread(
  */
 async function renderEndSpread(pdf: jsPDF, story: Story): Promise<void> {
   // === LADO IZQUIERDO: Imagen "Fin" ===
+  let endImgRect: { x: number; y: number; width: number; height: number } | null = null;
   if (story.endImageUrl) {
     const imgInfo = await loadImageWithDimensions(story.endImageUrl);
     if (imgInfo) {
@@ -404,7 +506,21 @@ async function renderEndSpread(pdf: jsPDF, story: Story): Promise<void> {
       pdf.setDrawColor(230, 230, 230);
       pdf.setLineWidth(0.5);
       pdf.roundedRect(x, y, imgWidth, imgHeight, 8, 8, 'S');
+
+      endImgRect = { x, y, width: imgWidth, height: imgHeight };
     }
+  }
+
+  // Texto superpuesto sobre la imagen (si está configurado)
+  if (story.endTextOverlay && endImgRect) {
+    drawTextOverlay(
+      pdf,
+      story.endTextOverlay,
+      endImgRect.x,
+      endImgRect.y,
+      endImgRect.width,
+      endImgRect.height
+    );
   }
 
   // === LADO DERECHO: Reflexión espiritual ===

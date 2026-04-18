@@ -11,12 +11,41 @@ import {
   Download,
   Eye,
 } from 'lucide-react';
-import type { Story } from '@/types/shared/story';
+import type {
+  OverlayColor,
+  OverlayPosition,
+  OverlaySize,
+  Story,
+  TextOverlay,
+} from '@/types/shared/story';
 
 interface StoryPreviewProps {
   story: Story;
   onExportPDF?: () => void;
 }
+
+const OVERLAY_SIZE_PX: Record<OverlaySize, number> = {
+  S: 24,
+  M: 36,
+  L: 56,
+};
+
+const OVERLAY_POSITION_CLASS: Record<OverlayPosition, string> = {
+  top: 'items-start pt-8',
+  center: 'items-center',
+  bottom: 'items-end pb-8',
+};
+
+const overlayColorHex = (color: OverlayColor): string => {
+  switch (color) {
+    case 'white':
+      return CASA_BRAND.colors.primary.white;
+    case 'black':
+      return CASA_BRAND.colors.primary.black;
+    case 'amber':
+      return CASA_BRAND.colors.primary.amber;
+  }
+};
 
 const StoryPreview: React.FC<StoryPreviewProps> = ({ story, onExportPDF }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -148,24 +177,61 @@ const StoryPreview: React.FC<StoryPreviewProps> = ({ story, onExportPDF }) => {
 
         {/* Overlay para portada y fin */}
         {(currentSlideData.type === 'cover' || currentSlideData.type === 'end') && (
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(to top, rgba(0,0,0,0.4), transparent)',
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: CASA_BRAND.fonts.heading,
-                fontSize: currentSlideData.type === 'cover' ? '36px' : '48px',
-                fontWeight: 300,
-                color: CASA_BRAND.colors.primary.white,
-                textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-              }}
-            >
-              {currentSlideData.type === 'cover' ? story.title : 'Fin'}
-            </h2>
-          </div>
+          (() => {
+            const overlay: TextOverlay | undefined =
+              currentSlideData.type === 'cover'
+                ? story.coverTextOverlay
+                : story.endTextOverlay;
+
+            if (overlay) {
+              return (
+                <div
+                  className={`absolute inset-0 flex justify-center px-6 ${OVERLAY_POSITION_CLASS[overlay.position]}`}
+                  style={{
+                    background:
+                      'linear-gradient(to top, rgba(0,0,0,0.25), transparent)',
+                  }}
+                >
+                  <h2
+                    style={{
+                      fontFamily: CASA_BRAND.fonts.heading,
+                      fontSize: `${OVERLAY_SIZE_PX[overlay.size]}px`,
+                      fontWeight: 300,
+                      color: overlayColorHex(overlay.color),
+                      textShadow: '0 2px 6px rgba(0,0,0,0.45)',
+                      textAlign: 'center',
+                      maxWidth: '90%',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {overlay.text}
+                  </h2>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{
+                  background:
+                    'linear-gradient(to top, rgba(0,0,0,0.4), transparent)',
+                }}
+              >
+                <h2
+                  style={{
+                    fontFamily: CASA_BRAND.fonts.heading,
+                    fontSize: currentSlideData.type === 'cover' ? '36px' : '48px',
+                    fontWeight: 300,
+                    color: CASA_BRAND.colors.primary.white,
+                    textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  {currentSlideData.type === 'cover' ? story.title : 'Fin'}
+                </h2>
+              </div>
+            );
+          })()
         )}
 
         {/* Navegación */}
