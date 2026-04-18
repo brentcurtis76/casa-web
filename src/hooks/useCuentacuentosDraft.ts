@@ -571,11 +571,21 @@ async function loadDraftFromSupabase(
       console.log('[useCuentacuentosDraft] No imagePaths found in DB record');
     }
 
+    const story = data.story as Story | null;
+    const { propReferenceImages } = imageOptions;
+
+    if (story?.props && propReferenceImages) {
+      story.props = story.props.map(p => ({
+        ...p,
+        referenceImages: propReferenceImages[p.id] ?? p.referenceImages ?? [],
+      }));
+    }
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
       currentStep: data.current_step as CuentacuentosDraft['currentStep'],
       config: data.config as CuentacuentosDraft['config'],
-      story: data.story as Story | null,
+      story,
       selectedCharacterSheets: (data.selected_character_sheets as Record<string, number>) || {},
       selectedSceneImages: (data.selected_scene_images as Record<number, number>) || {},
       selectedCover: data.selected_cover as number | null,

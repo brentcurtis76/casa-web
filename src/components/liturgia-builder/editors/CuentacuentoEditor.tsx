@@ -833,9 +833,8 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
 
       // Restaurar storyProps desde el story del draft para que las llamadas a
       // generate-scene-images incluyan los props correctos al regenerar imágenes.
-      if (restoredStory.props && restoredStory.props.length > 0) {
-        setStoryProps(restoredStory.props);
-      }
+      // Unconditional para evitar que quede estado viejo de una sesión previa.
+      setStoryProps(restoredStory.props ?? []);
 
       // Regenerar preview slides con las imágenes restauradas
       const slides = createPreviewSlideGroup(restoredStory);
