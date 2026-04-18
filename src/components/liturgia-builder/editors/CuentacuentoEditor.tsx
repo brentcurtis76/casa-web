@@ -36,6 +36,7 @@ import {
   Plus,
   Upload,
   MessageSquare,
+  RotateCw,
 } from 'lucide-react';
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { SlideGroup, Slide } from '@/types/shared/slide';
@@ -532,6 +533,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [editingCharacterPrompt, setEditingCharacterPrompt] = useState<Record<string, string>>({});
   const [showCharacterPicker, setShowCharacterPicker] = useState<number | null>(null); // Número de escena para picker
   const [sceneReferenceImages, setSceneReferenceImages] = useState<Record<number, string>>({}); // Imagen de referencia manual por escena
+  const [sceneReferenceMode, setSceneReferenceMode] = useState<Record<number, 'style' | 'pov'>>({}); // Modo de cada imagen de referencia: 'style' (default) o 'pov'
 
   // Estado para ver/editar prompts y referencias de portada y fin
   const [showCoverPromptEditor, setShowCoverPromptEditor] = useState(false);
@@ -869,6 +871,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setSelectedCover(draftData.selectedCover);
     setEndOptions(draftData.endOptions);
     setSelectedEnd(draftData.selectedEnd);
+
+    // Restaurar modos de imagen de referencia de escena (style | pov)
+    // Normalizar keys a números por el mismo motivo que sceneImageOptions
+    const normalizedModes: Record<number, 'style' | 'pov'> = {};
+    for (const [key, value] of Object.entries(draftData.sceneReferenceModes || {})) {
+      if (value === 'style' || value === 'pov') {
+        normalizedModes[Number(key)] = value;
+      }
+    }
+    setSceneReferenceMode(normalizedModes);
 
     // Restaurar paso actual
     setCurrentStep(draftData.currentStep);
@@ -1505,6 +1517,7 @@ Instrucciones críticas:
           characters: charactersWithReferences,
           location: story.location,
           sceneReferenceImage: sceneRefImage, // Imagen de referencia manual
+          sceneReferenceMode: sceneReferenceMode[scene.number] ?? 'style',
           props: propsForScene.length > 0 ? propsForScene : undefined,
           count: 4,
         },
@@ -1542,6 +1555,7 @@ Instrucciones críticas:
         currentStep,
         sceneImageOptions: newSceneImageOptions,
         selectedSceneImages,
+        sceneReferenceModes: sceneReferenceMode,
       });
       console.log(`[CuentacuentoEditor] Scene ${scene.number} images saved!`);
 
@@ -1550,7 +1564,7 @@ Instrucciones críticas:
     } finally {
       setGeneratingSceneIndex(null);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, sceneReferenceMode, getCharactersWithReferences, getPropsForScene, sceneImageOptions, selectedSceneImages, currentStep, saveDraftNow]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
@@ -3133,7 +3147,7 @@ Instrucciones críticas:
                       <div className="flex items-center justify-between mb-3">
                         <h6 className="text-xs font-medium flex items-center gap-1" style={{ color: CASA_BRAND.colors.primary.black }}>
                           <ImageIcon size={12} />
-                          Imagen de referencia para estilo
+                          Imagen de referencia
                         </h6>
                         <span className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
                           Opcional - guía el estilo visual
@@ -3142,27 +3156,81 @@ Instrucciones críticas:
                       <div className="flex items-start gap-4">
                         {/* Preview de imagen de referencia */}
                         {sceneReferenceImages[scene.number] ? (
-                          <div className="relative">
-                            <img
-                              src={sceneReferenceImages[scene.number].startsWith('http')
-                                ? sceneReferenceImages[scene.number]
-                                : `data:image/png;base64,${sceneReferenceImages[scene.number]}`}
-                              alt="Referencia de escena"
-                              className="w-24 h-24 object-cover rounded-lg border"
-                              style={{ borderColor: CASA_BRAND.colors.primary.amber }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setSceneReferenceImages(prev => {
-                                const updated = { ...prev };
-                                delete updated[scene.number];
-                                return updated;
-                              })}
-                              className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
-                              style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
-                            >
-                              <X size={12} color="white" />
-                            </button>
+                          <div className="flex flex-col gap-2">
+                            <div className="relative">
+                              <img
+                                src={sceneReferenceImages[scene.number].startsWith('http')
+                                  ? sceneReferenceImages[scene.number]
+                                  : `data:image/png;base64,${sceneReferenceImages[scene.number]}`}
+                                alt="Referencia de escena"
+                                className="w-24 h-24 object-cover rounded-lg border"
+                                style={{ borderColor: CASA_BRAND.colors.primary.amber }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSceneReferenceImages(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[scene.number];
+                                    return updated;
+                                  });
+                                  setSceneReferenceMode(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[scene.number];
+                                    return updated;
+                                  });
+                                }}
+                                className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                                style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
+                              >
+                                <X size={12} color="white" />
+                              </button>
+                            </div>
+                            {/* Toggle: Estilo vs POV */}
+                            {(() => {
+                              const currentMode = sceneReferenceMode[scene.number] ?? 'style';
+                              const makePillStyle = (active: boolean): React.CSSProperties => ({
+                                backgroundColor: active ? `${CASA_BRAND.colors.primary.amber}15` : CASA_BRAND.colors.secondary.grayLight + '50',
+                                color: active ? CASA_BRAND.colors.primary.amber : CASA_BRAND.colors.secondary.grayMedium,
+                              });
+                              return (
+                                <>
+                                  <div className="flex flex-col gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = { ...sceneReferenceMode, [scene.number]: 'style' as const };
+                                        setSceneReferenceMode(next);
+                                        saveDraft({ sceneReferenceModes: next });
+                                      }}
+                                      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
+                                      style={makePillStyle(currentMode === 'style')}
+                                    >
+                                      <Camera size={12} />
+                                      Estilo / ambiente
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = { ...sceneReferenceMode, [scene.number]: 'pov' as const };
+                                        setSceneReferenceMode(next);
+                                        saveDraft({ sceneReferenceModes: next });
+                                      }}
+                                      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
+                                      style={makePillStyle(currentMode === 'pov')}
+                                    >
+                                      <RotateCw size={12} />
+                                      Mismo lugar, otro ángulo
+                                    </button>
+                                  </div>
+                                  <p style={{ fontSize: '11px', color: CASA_BRAND.colors.secondary.grayMedium, lineHeight: 1.3 }}>
+                                    {currentMode === 'pov'
+                                      ? 'Mantiene el mismo lugar pero desde un ángulo o punto de vista distinto.'
+                                      : 'Usa la imagen como guía de estilo, iluminación y atmósfera.'}
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div
