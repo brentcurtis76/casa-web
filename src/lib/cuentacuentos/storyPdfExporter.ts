@@ -3,7 +3,11 @@
  * Formato revista: cada página es un spread completo (imagen izquierda + texto derecha)
  */
 
-import jsPDF, { GState } from 'jspdf';
+import jsPDF from 'jspdf';
+
+interface JsPDFWithGState extends jsPDF {
+  GState: new (opts: { opacity: number }) => unknown;
+}
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type {
   OverlayColor,
@@ -90,10 +94,10 @@ function drawTextOverlay(
   const bgX = imageX + (imageWidth - bgWidth) / 2;
   const bgY = firstLineBaselineY - fontSize - bgPaddingY;
 
-  pdf.setGState(new GState({ opacity: 0.4 }));
+  (pdf as JsPDFWithGState).setGState(new (pdf as JsPDFWithGState).GState({ opacity: 0.4 }));
   pdf.setFillColor(0, 0, 0);
   pdf.rect(bgX, bgY, bgWidth, bgHeight, 'F');
-  pdf.setGState(new GState({ opacity: 1 }));
+  (pdf as JsPDFWithGState).setGState(new (pdf as JsPDFWithGState).GState({ opacity: 1 }));
 
   // Texto centrado
   pdf.setTextColor(color.r, color.g, color.b);

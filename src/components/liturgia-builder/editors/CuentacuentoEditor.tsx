@@ -3753,9 +3753,21 @@ Instrucciones críticas:
     if (trimmed) {
       setStory(prev => {
         if (!prev) return prev;
+        const prevTitle = prev.title;
+        const shouldSyncCoverOverlay =
+          prev.coverTextOverlay !== undefined &&
+          prev.coverTextOverlay.text === prevTitle;
         return {
           ...prev,
           title: trimmed,
+          ...(shouldSyncCoverOverlay && prev.coverTextOverlay
+            ? {
+                coverTextOverlay: {
+                  ...prev.coverTextOverlay,
+                  text: trimmed,
+                },
+              }
+            : {}),
           metadata: {
             ...prev.metadata,
             updatedAt: new Date().toISOString(),
