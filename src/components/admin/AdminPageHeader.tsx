@@ -106,6 +106,7 @@ const AdminPageHeader: React.FC<AdminPageHeaderProps> = ({
                     {isFirst ? (
                       <button
                         onClick={() => handleBreadcrumbClick(item.href)}
+                        aria-label="Inicio"
                         className="flex items-center gap-1 px-2 py-1 rounded transition-colors hover:bg-gray-100"
                         style={{
                           fontFamily: CASA_BRAND.fonts.body,
