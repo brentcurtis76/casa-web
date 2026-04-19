@@ -147,6 +147,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
 
     let cancelled = false;
 
+    setExistingActivities(new Map());
+    setAgeGroups([]);
+
     (async () => {
       try {
         setIsLoading(true);
@@ -157,7 +160,8 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         const { data: lessons, error: lessonsError } = await supabase
           .from('church_children_lessons')
           .select('*')
-          .eq('liturgy_id', liturgyId);
+          .eq('liturgy_id', liturgyId)
+          .order('updated_at', { ascending: false });
 
         if (cancelled) return;
 
@@ -174,7 +178,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         const map: ExistingActivityMap = new Map();
         if (lessons) {
           for (const lesson of lessons as ChildrenLessonRow[]) {
-            if (lesson.age_group_id) {
+            if (lesson.age_group_id && !map.has(lesson.age_group_id)) {
               map.set(lesson.age_group_id, lesson);
             }
           }
@@ -301,6 +305,8 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         .select('*')
         .eq('liturgy_id', liturgyId)
         .eq('age_group_id', groupId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (!isActiveRef.current) return;
       if (updatedError) {
@@ -382,6 +388,8 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           .from('church_children_lessons')
           .select('*')
           .eq('id', target.lesson.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (!isActiveRef.current) return;
@@ -442,7 +450,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   const isBusy = isGenerating || isRefining;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
