@@ -56,6 +56,17 @@ export type ChildrenPacketDeliveryUpdate = Partial<ChildrenPacketDeliveryInsert>
 // AI GENERATION INTERFACES
 // =====================================================
 
+/** Refinement focus for refine-children-lesson Edge Function */
+export type RefinementType =
+  | 'general'
+  | 'materials'
+  | 'duration'
+  | 'adaptations'
+  | 'phases'
+  | 'spiritual'
+  | 'volunteer'
+  | 'tone';
+
 /** Request to generate-children-lesson Edge Function */
 export interface GenerateChildrenLessonRequest {
   liturgyId: string;
@@ -145,6 +156,7 @@ export interface GroupGenerationResult {
   publishVersionId?: string;
   error?: string;
   estimatedMinutes?: number;
+  refinementNotes?: string;
 }
 
 /** Overall publication result */

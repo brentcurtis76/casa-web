@@ -15,13 +15,17 @@ import type {
   PublishChildrenActivitiesResult,
   GroupGenerationResult,
   GenerateChildrenLessonResponse,
+  RefinementType,
 } from '@/types/childrenPublicationState';
+
+export type { RefinementType };
 import {
   getPublicationByLiturgyAndAgeGroup,
   createPublication,
   incrementPublishVersion,
 } from '@/lib/children-ministry/childrenPublicationStateService';
 import {
+  getLesson,
   getLessonByLiturgyAndAgeGroup,
   createLesson,
   updateLesson,
@@ -300,4 +304,191 @@ export async function publishChildrenActivities(
     totalActivitiesGenerated,
     warnings,
   };
+}
+
+// ─── Refinement ─────────────────────────────────────────────────────────────
+
+export interface RefineChildrenActivityParams {
+  lessonId: string;
+  feedback: string;
+  refinementType?: RefinementType;
+  liturgyContext?: {
+    title?: string;
+    summary?: string;
+  };
+}
+
+interface RefineChildrenLessonResponse {
+  success: boolean;
+  activityName?: string;
+  materials?: string[];
+  sequence?: GeneratedLesson['sequence'];
+  adaptations?: GeneratedLesson['adaptations'];
+  volunteerPlan?: GeneratedLesson['volunteerPlan'];
+  estimatedTotalMinutes?: number;
+  refinementNotes?: string;
+  error?: string;
+}
+
+/**
+ * Refine an existing children's lesson via the refine-children-lesson Edge Function.
+ * Updates the lesson in place and bumps the publication's publish_version.
+ */
+export async function refineChildrenActivity(
+  params: RefineChildrenActivityParams
+): Promise<GroupGenerationResult> {
+  const { lessonId, feedback, refinementType = 'general', liturgyContext } = params;
+
+  const lesson = await getLesson(lessonId);
+
+  const ageGroupId = lesson.age_group_id;
+  const ageGroupLabel = lesson.age_group?.name ?? 'Grupo';
+
+  if (!ageGroupId) {
+    return {
+      ageGroupId: '',
+      ageGroupLabel,
+      success: false,
+      error: 'La lección no tiene un grupo de edad asociado',
+    };
+  }
+
+  if (!lesson.content) {
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: 'La lección no tiene contenido para refinar',
+    };
+  }
+
+  let parsedContent: {
+    sequence: GeneratedLesson['sequence'];
+    adaptations: GeneratedLesson['adaptations'];
+    volunteerPlan: GeneratedLesson['volunteerPlan'];
+  };
+  try {
+    parsedContent = JSON.parse(lesson.content);
+  } catch {
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: 'El contenido de la lección no tiene un formato JSON válido',
+    };
+  }
+
+  const currentMaterials = lesson.materials_needed
+    ? lesson.materials_needed.split(',').map((m) => m.trim()).filter(Boolean)
+    : [];
+
+  const currentLesson = {
+    activityName: lesson.title,
+    sequence: parsedContent.sequence,
+    adaptations: parsedContent.adaptations,
+    volunteerPlan: parsedContent.volunteerPlan,
+    materials: currentMaterials,
+    estimatedTotalMinutes: lesson.duration_minutes,
+  };
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) {
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: 'No authentication token available',
+    };
+  }
+
+  const supabaseUrl =
+    import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
+  const edgeFunctionUrl = `${supabaseUrl}/functions/v1/refine-children-lesson`;
+
+  try {
+    const response = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentLesson,
+        feedback,
+        refinementType,
+        liturgyContext,
+        ageGroupLabel,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Error del servicio de refinamiento (${response.status}): ${errorText.slice(0, 200)}`
+      );
+    }
+
+    let refined: RefineChildrenLessonResponse;
+    try {
+      refined = (await response.json()) as RefineChildrenLessonResponse;
+    } catch {
+      throw new Error(
+        'El servicio de refinamiento retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
+      );
+    }
+
+    if (
+      !refined.success ||
+      !refined.sequence ||
+      !refined.adaptations ||
+      !refined.volunteerPlan ||
+      !refined.materials ||
+      !refined.activityName ||
+      refined.estimatedTotalMinutes === undefined
+    ) {
+      throw new Error(refined.error || 'Refinamiento falló');
+    }
+
+    const newContent = JSON.stringify({
+      sequence: refined.sequence,
+      adaptations: refined.adaptations,
+      volunteerPlan: refined.volunteerPlan,
+    });
+
+    await updateLesson(lessonId, {
+      title: refined.activityName,
+      content: newContent,
+      materials_needed: refined.materials.join(', '),
+      duration_minutes: refined.estimatedTotalMinutes,
+      status: 'ready',
+    });
+
+    if (lesson.liturgy_id) {
+      const publication = await getPublicationByLiturgyAndAgeGroup(lesson.liturgy_id, ageGroupId);
+      if (publication) {
+        const { data: authData } = await supabase.auth.getUser();
+        await incrementPublishVersion(publication.id, {
+          published_by: authData?.user?.id ?? null,
+        });
+      }
+    }
+
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: true,
+      lessonId,
+      estimatedMinutes: refined.estimatedTotalMinutes,
+      refinementNotes: refined.refinementNotes,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: errorMessage,
+    };
+  }
 }
