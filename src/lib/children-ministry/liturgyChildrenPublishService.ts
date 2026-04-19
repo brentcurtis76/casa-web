@@ -168,6 +168,10 @@ export async function publishChildrenActivities(
         volunteerPlan: generatedData.volunteerPlan,
       });
 
+      const materialsNeeded = generatedData.materials.length > 0
+        ? generatedData.materials.join(', ')
+        : null;
+
       if (existingLesson) {
         // Update existing lesson
         const updated = await updateLesson(existingLesson.id, {
@@ -175,7 +179,7 @@ export async function publishChildrenActivities(
           description: `Generado automáticamente para ${ageGroup.name}`,
           duration_minutes: generatedData.estimatedTotalMinutes,
           content: fullContent,
-          materials_needed: generatedData.materials.join(', '),
+          materials_needed: materialsNeeded,
           status: 'ready',
         });
         lessonId = updated.id;
@@ -188,7 +192,7 @@ export async function publishChildrenActivities(
           liturgy_id: liturgyId,
           duration_minutes: generatedData.estimatedTotalMinutes || 30,
           content: fullContent,
-          materials_needed: generatedData.materials.join(', '),
+          materials_needed: materialsNeeded,
           status: 'ready',
           created_by: userId,
         };
@@ -422,7 +426,7 @@ export async function refineChildrenActivity(
     await updateLesson(lessonId, {
       title: refined.activityName,
       content: newContent,
-      materials_needed: refined.materials.join(', '),
+      materials_needed: refined.materials.length > 0 ? refined.materials.join(', ') : null,
       duration_minutes: refined.estimatedTotalMinutes,
       status: 'ready',
     });

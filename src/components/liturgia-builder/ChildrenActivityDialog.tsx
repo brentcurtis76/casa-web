@@ -139,6 +139,13 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     };
   }, [isOpen]);
 
+  // Tracks the current liturgyId so in-flight async handlers from a previous
+  // liturgy cannot apply results to a newer one after the prop changes.
+  const liturgyIdRef = useRef(liturgyId);
+  useEffect(() => {
+    liturgyIdRef.current = liturgyId;
+  }, [liturgyId]);
+
   // Load age groups + existing lessons for this liturgy on open.
   // Uses a `cancelled` flag so older requests (e.g. from a previous liturgyId)
   // cannot overwrite state for the newer one if they resolve out of order.
@@ -225,6 +232,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   };
 
   const runGenerationForGroups = async (groupIds: string[]) => {
+    const requestLiturgyId = liturgyId;
     const selectedGroups = ageGroups.filter((ag) => groupIds.includes(ag.id));
 
     const params: PublishChildrenActivitiesParams = {
@@ -240,7 +248,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
 
     const result = await publishChildrenActivities(params);
 
-    if (!isActiveRef.current) return;
+    if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
 
     setResults(result.results);
     setViewState('results');
@@ -268,6 +276,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   };
 
   const handleGenerateNew = async () => {
+    const requestLiturgyId = liturgyId;
     if (selectedGroupIds.size === 0) {
       toast({
         title: 'Error',
@@ -281,7 +290,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     try {
       await runGenerationForGroups(Array.from(selectedGroupIds));
     } catch (error) {
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
@@ -295,10 +304,11 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   };
 
   const handleRegenerate = async (groupId: string) => {
+    const requestLiturgyId = liturgyId;
     setIsGenerating(true);
     try {
       await runGenerationForGroups([groupId]);
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       // Refresh existing activities map for this group so returning to 'select' shows updated data
       const { data: updated, error: updatedError } = await supabase
         .from('church_children_lessons')
@@ -307,7 +317,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         .eq('age_group_id', groupId)
         .order('updated_at', { ascending: false })
         .limit(1);
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       const updatedRow = (updated as ChildrenLessonRow[] | null)?.[0] ?? null;
       if (updatedError) {
         console.warn('Error actualizando actividad regenerada:', updatedError);
@@ -326,7 +336,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         });
       }
     } catch (error) {
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
@@ -358,6 +368,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   };
 
   const handleSubmitRefine = async () => {
+    const requestLiturgyId = liturgyId;
     if (!refineTarget) return;
     const trimmed = feedback.trim();
     if (trimmed.length === 0) {
@@ -379,7 +390,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         liturgyContext: { title: liturgyTitle, summary: liturgySummary },
       });
 
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
 
       if (result.success) {
         // Refresh this lesson in the existing map so a second refinement uses the updated content
@@ -390,7 +401,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           .order('updated_at', { ascending: false })
           .limit(1);
 
-        if (!isActiveRef.current) return;
+        if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
 
         const nextRow = (updated as ChildrenLessonRow[] | null)?.[0] ?? null;
         if (updatedError) {
@@ -427,7 +438,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         // Preserve feedback text so the user can retry.
       }
     } catch (error) {
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',

@@ -91,6 +91,7 @@ Tu tarea es REFINAR una lección infantil existente basándote en el feedback de
 5. Si el refinamiento es de tipo "materials", SOLO sustituye materiales — no cambies la intención pedagógica ni la descripción de las fases.
 6. Haz mejoras incrementales; no reescribas la lección completa a menos que el feedback lo pida.
 7. La lección debe seguir siendo divertida, educativa y espiritualmente significativa.
+8. La lista "materials" puede estar vacía si la actividad no requiere materiales (por ejemplo, una actividad de movimiento o canto). Incluye materiales solo si son realmente necesarios.
 
 ## Formato de Respuesta
 
@@ -164,7 +165,8 @@ function validateRefinedLesson(data: unknown): data is RefinedLesson {
   const lesson = data as Record<string, unknown>;
 
   if (typeof lesson.activityName !== 'string' || !lesson.activityName.trim()) return false;
-  if (!Array.isArray(lesson.materials) || lesson.materials.length === 0) return false;
+  if (!Array.isArray(lesson.materials)) return false;
+  if (lesson.materials.some((m) => typeof m !== 'string')) return false;
 
   if (!Array.isArray(lesson.sequence) || lesson.sequence.length !== 3) return false;
   const expectedPhases = ['movimiento', 'expresion_conversacion', 'reflexion_metaprendizaje'];
