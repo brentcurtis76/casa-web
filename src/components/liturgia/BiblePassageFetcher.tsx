@@ -77,9 +77,14 @@ export const BiblePassageFetcher = ({
         throw new Error(data?.error || 'Error desconocido');
       }
 
+      // Algunas versiones (p. ej. NTV desde Bolls.life) devuelven etiquetas
+      // literales `<br>` en el texto. Las normalizamos a saltos de línea para
+      // que no aparezcan literales en la presentación.
+      const sanitizedText = data.text.replace(/<br\s*\/?>/gi, '\n');
+
       onLecturaFetched({
         cita: data.reference || cita,
-        texto: data.text,
+        texto: sanitizedText,
         version: data.version || version,
         versionCode: data.versionCode || version,
       });

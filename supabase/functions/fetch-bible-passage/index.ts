@@ -262,9 +262,12 @@ serve(async (req) => {
       throw new Error('No se encontraron versículos en el rango especificado');
     }
 
-    // Construir texto con números de versículo
+    // Construir texto con números de versículo.
+    // Bolls.life incluye etiquetas HTML literales `<br>` en algunas versiones (p. ej. NTV)
+    // que se usan para saltos de línea en prosa. Las normalizamos a `\n` aquí para que
+    // el frontend no muestre el texto literal y las versiones tengan comportamiento uniforme.
     const text = verses
-      .map((v: { verse: number; text: string }) => `${v.verse} ${v.text.trim()}`)
+      .map((v: { verse: number; text: string }) => `${v.verse} ${v.text.replace(/<br\s*\/?>/gi, '\n').trim()}`)
       .join(' ');
 
     // Construir referencia formateada

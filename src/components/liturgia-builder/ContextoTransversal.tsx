@@ -215,9 +215,13 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
         throw new Error(data?.error || 'Error al obtener el texto');
       }
 
+      // Normaliza `<br>` literales (presentes en NTV desde Bolls.life) a `\n`
+      // para evitar que aparezcan como texto en las diapositivas.
+      const sanitizedText = data.text.replace(/<br\s*\/?>/gi, '\n');
+
       updated[index] = {
         ...updated[index],
-        text: data.text,
+        text: sanitizedText,
         version: data.version,
         versionCode: data.versionCode || reading.versionCode,
         reference: data.reference || reading.reference,
