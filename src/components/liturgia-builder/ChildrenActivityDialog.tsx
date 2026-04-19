@@ -235,7 +235,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     const selectedGroups = ageGroups.filter((ag) => groupIds.includes(ag.id));
 
     const params: PublishChildrenActivitiesParams = {
-      liturgyId,
+      liturgyId: requestLiturgyId,
       liturgyTitle,
       liturgySummary,
       bibleText,
