@@ -306,9 +306,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         .eq('liturgy_id', liturgyId)
         .eq('age_group_id', groupId)
         .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
       if (!isActiveRef.current) return;
+      const updatedRow = (updated as ChildrenLessonRow[] | null)?.[0] ?? null;
       if (updatedError) {
         console.warn('Error actualizando actividad regenerada:', updatedError);
         toast({
@@ -318,8 +318,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         });
         return;
       }
-      if (updated) {
-        const updatedRow = updated as ChildrenLessonRow;
+      if (updatedRow) {
         setExistingActivities((prev) => {
           const next = new Map(prev);
           next.set(groupId, updatedRow);
@@ -389,11 +388,11 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           .select('*')
           .eq('id', target.lesson.id)
           .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(1);
 
         if (!isActiveRef.current) return;
 
+        const nextRow = (updated as ChildrenLessonRow[] | null)?.[0] ?? null;
         if (updatedError) {
           console.warn('Error recargando lección refinada:', updatedError);
           toast({
@@ -401,8 +400,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
             description: 'La actividad se refinó, pero no se pudo recargar la vista. Vuelve a abrirla para ver el resultado.',
             variant: 'destructive',
           });
-        } else if (updated) {
-          const nextRow = updated as ChildrenLessonRow;
+        } else if (nextRow) {
           setExistingActivities((prev) => {
             const next = new Map(prev);
             next.set(target.ageGroup.id, nextRow);

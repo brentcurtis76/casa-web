@@ -252,11 +252,17 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    if (!data.content || !data.content[0] || !data.content[0].text) {
-      throw new Error('La API no retornó contenido');
+    const textBlocks = Array.isArray(data?.content)
+      ? data.content.filter((b: unknown): b is { type: 'text'; text: string } =>
+          typeof b === 'object' && b !== null &&
+          (b as { type?: unknown }).type === 'text' &&
+          typeof (b as { text?: unknown }).text === 'string'
+        )
+      : [];
+    if (textBlocks.length === 0) {
+      throw new Error('La API no retornó contenido de texto');
     }
-
-    let jsonText = data.content[0].text;
+    let jsonText = textBlocks.map((b) => b.text).join('');
     console.log('[refine-children-lesson] Respuesta cruda (primeros 500 chars):', jsonText.slice(0, 500));
 
     let jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
@@ -311,6 +317,24 @@ serve(async (req) => {
 
     if (!refinedLesson) {
       throw new Error('La respuesta no tiene la estructura esperada');
+    }
+
+    const sumMinutes = refinedLesson.sequence.reduce(
+      (acc: number, p: { minutes?: number }) => acc + (typeof p.minutes === 'number' ? p.minutes : 0),
+      0
+    );
+    if (sumMinutes !== refinedLesson.estimatedTotalMinutes) {
+      throw new Error(
+        `Suma de minutos por fase (${sumMinutes}) no coincide con estimatedTotalMinutes (${refinedLesson.estimatedTotalMinutes})`
+      );
+    }
+
+    if (refinementType !== 'duration') {
+      if (refinedLesson.estimatedTotalMinutes < 15 || refinedLesson.estimatedTotalMinutes > 45) {
+        throw new Error(
+          `estimatedTotalMinutes (${refinedLesson.estimatedTotalMinutes}) fuera del rango válido [15, 45]`
+        );
+      }
     }
 
     console.log(

@@ -317,12 +317,18 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    if (!data.content || !data.content[0] || !data.content[0].text) {
-      throw new Error('La API no retornó contenido');
+    const textBlocks = Array.isArray(data?.content)
+      ? data.content.filter((b: unknown): b is { type: 'text'; text: string } =>
+          typeof b === 'object' && b !== null &&
+          (b as { type?: unknown }).type === 'text' &&
+          typeof (b as { text?: unknown }).text === 'string'
+        )
+      : [];
+    if (textBlocks.length === 0) {
+      throw new Error('La API no retornó contenido de texto');
     }
-
     // Extract and parse JSON
-    let jsonText = data.content[0].text;
+    let jsonText = textBlocks.map((b) => b.text).join('');
     console.log('[generate-children-lesson] Response (first 500 chars):', jsonText.slice(0, 500));
 
     // Try to find JSON in the response
