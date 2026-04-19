@@ -118,16 +118,8 @@ export async function publishChildrenActivities(
       // 1. Check for existing lesson (idempotency)
       const existingLesson = await getLessonByLiturgyAndAgeGroup(liturgyId, ageGroupId);
 
-      // 2. Generate lesson via Edge Function
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
-      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/generate-children-lesson`;
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
-      if (!token) {
-        throw new Error('No authentication token available');
-      }
-
+      // 2. Generate lesson via Edge Function — use the shared supabase client so auth,
+      // base URL, and headers are managed centrally (no hardcoded fallback URL).
       const generationRequest = {
         liturgyId,
         liturgyTitle,
@@ -141,34 +133,25 @@ export async function publishChildrenActivities(
         childrenCountMax: 15,
       };
 
-      const generationResponse = await fetch(edgeFunctionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(generationRequest),
+      const { data: invokeData, error: invokeError } = await supabase.functions.invoke<
+        GenerateChildrenLessonResponse
+      >('generate-children-lesson', {
+        body: generationRequest,
       });
 
-      // Check status BEFORE parsing JSON — non-OK responses may return non-JSON bodies
-      // (e.g., HTML gateway errors, Supabase timeout pages). Calling .json() first
-      // would throw a SyntaxError that surfaces as "unexpected JSON response" to the user.
-      if (!generationResponse.ok) {
-        const errorText = await generationResponse.text();
+      if (invokeError) {
         throw new Error(
-          `Error del servicio de generación (${generationResponse.status}): ${errorText.slice(0, 200)}`
+          `Error del servicio de generación: ${invokeError.message ?? 'Error desconocido'}`
         );
       }
 
-      // Safe JSON parse — guard against unexpected format even on 2xx responses
-      let generatedData: GenerateChildrenLessonResponse;
-      try {
-        generatedData = (await generationResponse.json()) as GenerateChildrenLessonResponse;
-      } catch {
+      if (!invokeData) {
         throw new Error(
           'El servicio de actividades retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
         );
       }
+
+      const generatedData = invokeData;
 
       if (!generatedData.success) {
         throw new Error(generatedData.error || 'Generation failed');
