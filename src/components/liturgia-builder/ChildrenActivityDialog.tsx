@@ -11,7 +11,7 @@
  * Pattern: ExportPanel + MusicPublishDialog
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -129,20 +129,47 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   const [refinementType, setRefinementType] = useState<RefinementType>('general');
   const [lastRefinementNotes, setLastRefinementNotes] = useState<string | null>(null);
 
-  // Load age groups + existing lessons for this liturgy on open
+  // Tracks whether the dialog is still mounted/open; async handlers check this
+  // before calling setState to avoid stale updates after close/unmount.
+  const isActiveRef = useRef(false);
+  useEffect(() => {
+    isActiveRef.current = isOpen;
+    return () => {
+      isActiveRef.current = false;
+    };
+  }, [isOpen]);
+
+  // Load age groups + existing lessons for this liturgy on open.
+  // Uses a `cancelled` flag so older requests (e.g. from a previous liturgyId)
+  // cannot overwrite state for the newer one if they resolve out of order.
   useEffect(() => {
     if (!isOpen) return;
+
+    let cancelled = false;
 
     (async () => {
       try {
         setIsLoading(true);
         const groups = await getAgeGroups();
+        if (cancelled) return;
         setAgeGroups(groups);
 
-        const { data: lessons } = await supabase
+        const { data: lessons, error: lessonsError } = await supabase
           .from('church_children_lessons')
           .select('*')
           .eq('liturgy_id', liturgyId);
+
+        if (cancelled) return;
+
+        if (lessonsError) {
+          console.warn('Error cargando actividades existentes:', lessonsError);
+          toast({
+            title: 'Aviso',
+            description: 'No se pudieron cargar las actividades existentes.',
+            variant: 'destructive',
+          });
+          return;
+        }
 
         const map: ExistingActivityMap = new Map();
         if (lessons) {
@@ -153,13 +180,20 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           }
         }
         setExistingActivities(map);
-      } catch (_error) {
-        // Silent — UI will show empty age group list
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('Error cargando datos del diálogo de niños:', error);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     })();
-  }, [isOpen, liturgyId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, liturgyId, toast]);
 
   const resetAll = () => {
     setSelectedGroupIds(new Set());
@@ -202,6 +236,8 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
 
     const result = await publishChildrenActivities(params);
 
+    if (!isActiveRef.current) return;
+
     setResults(result.results);
     setViewState('results');
 
@@ -241,13 +277,16 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     try {
       await runGenerationForGroups(Array.from(selectedGroupIds));
     } catch (error) {
+      if (!isActiveRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
         variant: 'destructive',
       });
     } finally {
-      setIsGenerating(false);
+      if (isActiveRef.current) {
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -255,26 +294,43 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     setIsGenerating(true);
     try {
       await runGenerationForGroups([groupId]);
+      if (!isActiveRef.current) return;
       // Refresh existing activities map for this group so returning to 'select' shows updated data
-      const { data: updated } = await supabase
+      const { data: updated, error: updatedError } = await supabase
         .from('church_children_lessons')
         .select('*')
         .eq('liturgy_id', liturgyId)
         .eq('age_group_id', groupId)
         .maybeSingle();
+      if (!isActiveRef.current) return;
+      if (updatedError) {
+        console.warn('Error actualizando actividad regenerada:', updatedError);
+        toast({
+          title: 'Aviso',
+          description: 'La actividad se regeneró, pero no se pudo actualizar la vista. Vuelve a abrir el diálogo.',
+          variant: 'destructive',
+        });
+        return;
+      }
       if (updated) {
-        const next = new Map(existingActivities);
-        next.set(groupId, updated as ChildrenLessonRow);
-        setExistingActivities(next);
+        const updatedRow = updated as ChildrenLessonRow;
+        setExistingActivities((prev) => {
+          const next = new Map(prev);
+          next.set(groupId, updatedRow);
+          return next;
+        });
       }
     } catch (error) {
+      if (!isActiveRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
         variant: 'destructive',
       });
     } finally {
-      setIsGenerating(false);
+      if (isActiveRef.current) {
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -309,27 +365,42 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     }
 
     setIsRefining(true);
+    const target = refineTarget;
     try {
       const result = await refineChildrenActivity({
-        lessonId: refineTarget.lesson.id,
+        lessonId: target.lesson.id,
         feedback: trimmed,
         refinementType,
         liturgyContext: { title: liturgyTitle, summary: liturgySummary },
       });
 
+      if (!isActiveRef.current) return;
+
       if (result.success) {
         // Refresh this lesson in the existing map so a second refinement uses the updated content
-        const { data: updated } = await supabase
+        const { data: updated, error: updatedError } = await supabase
           .from('church_children_lessons')
           .select('*')
-          .eq('id', refineTarget.lesson.id)
+          .eq('id', target.lesson.id)
           .maybeSingle();
-        if (updated) {
+
+        if (!isActiveRef.current) return;
+
+        if (updatedError) {
+          console.warn('Error recargando lección refinada:', updatedError);
+          toast({
+            title: 'Aviso',
+            description: 'La actividad se refinó, pero no se pudo recargar la vista. Vuelve a abrirla para ver el resultado.',
+            variant: 'destructive',
+          });
+        } else if (updated) {
           const nextRow = updated as ChildrenLessonRow;
-          const next = new Map(existingActivities);
-          next.set(refineTarget.ageGroup.id, nextRow);
-          setExistingActivities(next);
-          setRefineTarget({ lesson: nextRow, ageGroup: refineTarget.ageGroup });
+          setExistingActivities((prev) => {
+            const next = new Map(prev);
+            next.set(target.ageGroup.id, nextRow);
+            return next;
+          });
+          setRefineTarget({ lesson: nextRow, ageGroup: target.ageGroup });
         }
 
         setLastRefinementNotes(result.refinementNotes ?? null);
@@ -350,6 +421,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         // Preserve feedback text so the user can retry.
       }
     } catch (error) {
+      if (!isActiveRef.current) return;
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
@@ -357,7 +429,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       });
       // Preserve feedback text so the user can retry.
     } finally {
-      setIsRefining(false);
+      if (isActiveRef.current) {
+        setIsRefining(false);
+      }
     }
   };
 

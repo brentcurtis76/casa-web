@@ -391,52 +391,32 @@ export async function refineChildrenActivity(
     estimatedTotalMinutes: lesson.duration_minutes,
   };
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
-  if (!token) {
-    return {
-      ageGroupId,
-      ageGroupLabel,
-      success: false,
-      error: 'No authentication token available',
-    };
-  }
-
-  const supabaseUrl =
-    import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
-  const edgeFunctionUrl = `${supabaseUrl}/functions/v1/refine-children-lesson`;
-
   try {
-    const response = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    const { data: invokeData, error: invokeError } = await supabase.functions.invoke<
+      RefineChildrenLessonResponse
+    >('refine-children-lesson', {
+      body: {
         currentLesson,
         feedback,
         refinementType,
         liturgyContext,
         ageGroupLabel,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    if (invokeError) {
       throw new Error(
-        `Error del servicio de refinamiento (${response.status}): ${errorText.slice(0, 200)}`
+        `Error del servicio de refinamiento: ${invokeError.message ?? 'Error desconocido'}`
       );
     }
 
-    let refined: RefineChildrenLessonResponse;
-    try {
-      refined = (await response.json()) as RefineChildrenLessonResponse;
-    } catch {
+    if (!invokeData) {
       throw new Error(
         'El servicio de refinamiento retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
       );
     }
+
+    const refined: RefineChildrenLessonResponse = invokeData;
 
     if (
       !refined.success ||
