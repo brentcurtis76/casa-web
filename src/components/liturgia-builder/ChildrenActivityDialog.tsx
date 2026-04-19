@@ -231,8 +231,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     setSelectedGroupIds(next);
   };
 
-  const runGenerationForGroups = async (groupIds: string[]) => {
-    const requestLiturgyId = liturgyId;
+  const runGenerationForGroups = async (groupIds: string[], requestLiturgyId: string) => {
     const selectedGroups = ageGroups.filter((ag) => groupIds.includes(ag.id));
 
     const params: PublishChildrenActivitiesParams = {
@@ -288,7 +287,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
 
     setIsGenerating(true);
     try {
-      await runGenerationForGroups(Array.from(selectedGroupIds));
+      await runGenerationForGroups(Array.from(selectedGroupIds), requestLiturgyId);
     } catch (error) {
       if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       toast({
@@ -297,7 +296,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         variant: 'destructive',
       });
     } finally {
-      if (isActiveRef.current) {
+      if (isActiveRef.current && requestLiturgyId === liturgyIdRef.current) {
         setIsGenerating(false);
       }
     }
@@ -307,7 +306,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     const requestLiturgyId = liturgyId;
     setIsGenerating(true);
     try {
-      await runGenerationForGroups([groupId]);
+      await runGenerationForGroups([groupId], requestLiturgyId);
       if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       // Refresh existing activities map for this group so returning to 'select' shows updated data
       const { data: updated, error: updatedError } = await supabase
@@ -343,7 +342,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         variant: 'destructive',
       });
     } finally {
-      if (isActiveRef.current) {
+      if (isActiveRef.current && requestLiturgyId === liturgyIdRef.current) {
         setIsGenerating(false);
       }
     }
@@ -446,7 +445,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       });
       // Preserve feedback text so the user can retry.
     } finally {
-      if (isActiveRef.current) {
+      if (isActiveRef.current && requestLiturgyId === liturgyIdRef.current) {
         setIsRefining(false);
       }
     }
