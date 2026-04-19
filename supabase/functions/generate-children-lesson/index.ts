@@ -67,7 +67,8 @@ function validateLesson(data: unknown): data is GeneratedLesson {
 
   // Validate required fields
   if (typeof lesson.activityName !== 'string' || !lesson.activityName.trim()) return false;
-  if (!Array.isArray(lesson.materials) || lesson.materials.length === 0) return false;
+  if (!Array.isArray(lesson.materials)) return false;
+  if (lesson.materials.some((m) => typeof m !== 'string')) return false;
 
   // Validate sequence array (must be exactly 3 phases)
   if (!Array.isArray(lesson.sequence) || lesson.sequence.length !== 3) return false;
