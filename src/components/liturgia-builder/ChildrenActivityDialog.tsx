@@ -312,7 +312,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       const { data: updated, error: updatedError } = await supabase
         .from('church_children_lessons')
         .select('*')
-        .eq('liturgy_id', liturgyId)
+        .eq('liturgy_id', requestLiturgyId)
         .eq('age_group_id', groupId)
         .order('updated_at', { ascending: false })
         .limit(1);
