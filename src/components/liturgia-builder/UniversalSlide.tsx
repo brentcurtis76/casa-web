@@ -105,6 +105,11 @@ async function processIllustrationBackground(imageUrl: string, targetColor: stri
 // Path to CASA logo in public folder
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
+const FONT_SIZE_BOOSTED_SOURCES = new Set([
+  'canciones', 'oracion-editor', 'elementos-fijos', 'lectura-biblica-editor', 'custom-element',
+  'quick-add', 'quick-add-text', 'quick-add-image', 'quick-add-video', 'quick-add-bible'
+]);
+
 interface UniversalSlideProps {
   slide: Slide;
   scale?: number;
@@ -551,12 +556,14 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     return styleOverrides?.font?.family || defaultFont;
   };
 
+  const sourceMultiplier = FONT_SIZE_BOOSTED_SOURCES.has(slide.metadata?.sourceComponent ?? '') ? 1.3 : 1;
+
   // Helper to get font size with style override
   const getFontSize = (defaultSize: number) => {
     if (styleOverrides?.font?.size) {
-      return `${styleOverrides.font.size * scale}px`;
+      return `${styleOverrides.font.size * scale * sourceMultiplier}px`;
     }
-    return `${defaultSize * scale}px`;
+    return `${defaultSize * scale * sourceMultiplier}px`;
   };
 
   // Detect if this is a multi-color slide (has both primary and secondary content)
@@ -675,7 +682,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             style={{
               fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
               fontWeight: 300,
-              fontSize: `${56 * scale}px`,
+              fontSize: `${56 * scale * sourceMultiplier}px`,
               color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.black,
               letterSpacing: '0.05em',
               lineHeight: 1.2,
@@ -688,7 +695,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               style={{
                 fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.body,
                 fontWeight: 400,
-                fontSize: `${18 * scale}px`,
+                fontSize: `${18 * scale * sourceMultiplier}px`,
                 color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.secondary.grayMedium,
                 marginTop: `${16 * scale}px`,
                 letterSpacing: '0.05em',
@@ -875,7 +882,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             style={{
               fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
               fontWeight: 300,
-              fontSize: `${48 * scale}px`,
+              fontSize: `${48 * scale * sourceMultiplier}px`,
               letterSpacing: '0.05em',
               color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
               lineHeight: 1.3,
@@ -898,7 +905,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               style={{
                 fontFamily: slide.style.secondaryFont || CASA_BRAND.fonts.heading,
                 fontWeight: 500,
-                fontSize: `${40 * scale}px`,
+                fontSize: `${40 * scale * sourceMultiplier}px`,
                 color: textColorOverride || slide.style.secondaryColor || CASA_BRAND.colors.primary.amber,
                 marginBottom: `${24 * scale}px`,
               }}
@@ -912,7 +919,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             style={{
               fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
-              fontSize: `${28 * scale}px`,
+              fontSize: `${28 * scale * sourceMultiplier}px`,
               lineHeight: 1.7,
               color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
             }}
@@ -951,7 +958,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
               style={{
                 fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
                 fontWeight: 500,
-                fontSize: `${40 * scale}px`,
+                fontSize: `${40 * scale * sourceMultiplier}px`,
                 color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.amber,
                 marginBottom: `${24 * scale}px`,
               }}
@@ -964,7 +971,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
             style={{
               fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
               fontWeight: 400,
-              fontSize: `${28 * scale}px`,
+              fontSize: `${28 * scale * sourceMultiplier}px`,
               lineHeight: 1.7,
               color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.secondary.grayDark,
             }}
@@ -1003,7 +1010,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
                 style={{
                   fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.heading,
                   fontWeight: 600,
-                  fontSize: `${48 * scale}px`,
+                  fontSize: `${48 * scale * sourceMultiplier}px`,
                   color: textColorOverride || slide.style.primaryColor || CASA_BRAND.colors.primary.white,
                   textShadow: '0 2px 8px rgba(0,0,0,0.6)',
                   marginBottom: `${12 * scale}px`,
@@ -1017,7 +1024,7 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
                 style={{
                   fontFamily: slide.style.primaryFont || CASA_BRAND.fonts.body,
                   fontWeight: 400,
-                  fontSize: `${32 * scale}px`,
+                  fontSize: `${32 * scale * sourceMultiplier}px`,
                   color: textColorOverride || CASA_BRAND.colors.primary.white,
                   textShadow: '0 1px 4px rgba(0,0,0,0.6)',
                 }}
