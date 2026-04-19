@@ -58,8 +58,9 @@ const AdminPageHeader: React.FC<AdminPageHeaderProps> = ({
     }
   };
 
-  // Build full breadcrumb list (always starts with Admin)
+  // Build full breadcrumb list (always starts with Inicio → Admin)
   const fullBreadcrumbs: BreadcrumbItem[] = [
+    { label: 'Inicio', href: '/' },
     { label: 'Admin', href: '/admin' },
     ...breadcrumbs,
   ];
@@ -89,7 +90,7 @@ const AdminPageHeader: React.FC<AdminPageHeaderProps> = ({
             </button>
 
             {/* Breadcrumbs */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="flex items-center gap-1">
               {fullBreadcrumbs.map((item, index) => {
                 const isLast = index === fullBreadcrumbs.length - 1;
                 const isFirst = index === 0;
