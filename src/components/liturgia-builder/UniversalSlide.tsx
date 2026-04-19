@@ -105,6 +105,11 @@ async function processIllustrationBackground(imageUrl: string, targetColor: stri
 // Path to CASA logo in public folder
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
+const FONT_SIZE_BOOSTED_SOURCES = new Set([
+  'canciones', 'oracion-editor', 'elementos-fijos', 'lectura-biblica-editor', 'custom-element',
+  'quick-add', 'quick-add-text', 'quick-add-image', 'quick-add-video', 'quick-add-bible'
+]);
+
 interface UniversalSlideProps {
   slide: Slide;
   scale?: number;
@@ -551,10 +556,6 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
     return styleOverrides?.font?.family || defaultFont;
   };
 
-  const FONT_SIZE_BOOSTED_SOURCES = new Set([
-    'canciones', 'oracion-editor', 'elementos-fijos', 'lectura-biblica-editor',
-    'quick-add', 'quick-add-text', 'quick-add-image', 'quick-add-video', 'quick-add-bible'
-  ]);
   const sourceMultiplier = FONT_SIZE_BOOSTED_SOURCES.has(slide.metadata?.sourceComponent ?? '') ? 1.3 : 1;
 
   // Helper to get font size with style override
