@@ -15,13 +15,17 @@ import type {
   PublishChildrenActivitiesResult,
   GroupGenerationResult,
   GenerateChildrenLessonResponse,
+  RefinementType,
 } from '@/types/childrenPublicationState';
+
+export type { RefinementType };
 import {
   getPublicationByLiturgyAndAgeGroup,
   createPublication,
   incrementPublishVersion,
 } from '@/lib/children-ministry/childrenPublicationStateService';
 import {
+  getLesson,
   getLessonByLiturgyAndAgeGroup,
   createLesson,
   updateLesson,
@@ -114,16 +118,8 @@ export async function publishChildrenActivities(
       // 1. Check for existing lesson (idempotency)
       const existingLesson = await getLessonByLiturgyAndAgeGroup(liturgyId, ageGroupId);
 
-      // 2. Generate lesson via Edge Function
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
-      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/generate-children-lesson`;
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
-      if (!token) {
-        throw new Error('No authentication token available');
-      }
-
+      // 2. Generate lesson via Edge Function — use the shared supabase client so auth,
+      // base URL, and headers are managed centrally (no hardcoded fallback URL).
       const generationRequest = {
         liturgyId,
         liturgyTitle,
@@ -137,34 +133,25 @@ export async function publishChildrenActivities(
         childrenCountMax: 15,
       };
 
-      const generationResponse = await fetch(edgeFunctionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(generationRequest),
+      const { data: invokeData, error: invokeError } = await supabase.functions.invoke<
+        GenerateChildrenLessonResponse
+      >('generate-children-lesson', {
+        body: generationRequest,
       });
 
-      // Check status BEFORE parsing JSON — non-OK responses may return non-JSON bodies
-      // (e.g., HTML gateway errors, Supabase timeout pages). Calling .json() first
-      // would throw a SyntaxError that surfaces as "unexpected JSON response" to the user.
-      if (!generationResponse.ok) {
-        const errorText = await generationResponse.text();
+      if (invokeError) {
         throw new Error(
-          `Error del servicio de generación (${generationResponse.status}): ${errorText.slice(0, 200)}`
+          `Error del servicio de generación: ${invokeError.message ?? 'Error desconocido'}`
         );
       }
 
-      // Safe JSON parse — guard against unexpected format even on 2xx responses
-      let generatedData: GenerateChildrenLessonResponse;
-      try {
-        generatedData = (await generationResponse.json()) as GenerateChildrenLessonResponse;
-      } catch {
+      if (!invokeData) {
         throw new Error(
           'El servicio de actividades retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
         );
       }
+
+      const generatedData = invokeData;
 
       if (!generatedData.success) {
         throw new Error(generatedData.error || 'Generation failed');
@@ -300,4 +287,171 @@ export async function publishChildrenActivities(
     totalActivitiesGenerated,
     warnings,
   };
+}
+
+// ─── Refinement ─────────────────────────────────────────────────────────────
+
+export interface RefineChildrenActivityParams {
+  lessonId: string;
+  feedback: string;
+  refinementType?: RefinementType;
+  liturgyContext?: {
+    title?: string;
+    summary?: string;
+  };
+}
+
+interface RefineChildrenLessonResponse {
+  success: boolean;
+  activityName?: string;
+  materials?: string[];
+  sequence?: GeneratedLesson['sequence'];
+  adaptations?: GeneratedLesson['adaptations'];
+  volunteerPlan?: GeneratedLesson['volunteerPlan'];
+  estimatedTotalMinutes?: number;
+  refinementNotes?: string;
+  error?: string;
+}
+
+/**
+ * Refine an existing children's lesson via the refine-children-lesson Edge Function.
+ * Updates the lesson in place and bumps the publication's publish_version.
+ */
+export async function refineChildrenActivity(
+  params: RefineChildrenActivityParams
+): Promise<GroupGenerationResult> {
+  const { lessonId, feedback, refinementType = 'general', liturgyContext } = params;
+
+  const lesson = await getLesson(lessonId);
+
+  const ageGroupId = lesson.age_group_id;
+  const ageGroupLabel = lesson.age_group?.name ?? 'Grupo';
+
+  if (!ageGroupId) {
+    return {
+      ageGroupId: '',
+      ageGroupLabel,
+      success: false,
+      error: 'La lección no tiene un grupo de edad asociado',
+    };
+  }
+
+  if (!lesson.content) {
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: 'La lección no tiene contenido para refinar',
+    };
+  }
+
+  let parsedContent: {
+    sequence: GeneratedLesson['sequence'];
+    adaptations: GeneratedLesson['adaptations'];
+    volunteerPlan: GeneratedLesson['volunteerPlan'];
+  };
+  try {
+    parsedContent = JSON.parse(lesson.content);
+  } catch {
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: 'El contenido de la lección no tiene un formato JSON válido',
+    };
+  }
+
+  const currentMaterials = lesson.materials_needed
+    ? lesson.materials_needed.split(',').map((m) => m.trim()).filter(Boolean)
+    : [];
+
+  const currentLesson = {
+    activityName: lesson.title,
+    sequence: parsedContent.sequence,
+    adaptations: parsedContent.adaptations,
+    volunteerPlan: parsedContent.volunteerPlan,
+    materials: currentMaterials,
+    estimatedTotalMinutes: lesson.duration_minutes,
+  };
+
+  try {
+    const { data: invokeData, error: invokeError } = await supabase.functions.invoke<
+      RefineChildrenLessonResponse
+    >('refine-children-lesson', {
+      body: {
+        currentLesson,
+        feedback,
+        refinementType,
+        liturgyContext,
+        ageGroupLabel,
+      },
+    });
+
+    if (invokeError) {
+      throw new Error(
+        `Error del servicio de refinamiento: ${invokeError.message ?? 'Error desconocido'}`
+      );
+    }
+
+    if (!invokeData) {
+      throw new Error(
+        'El servicio de refinamiento retornó un formato de respuesta inesperado. Por favor intenta nuevamente.'
+      );
+    }
+
+    const refined: RefineChildrenLessonResponse = invokeData;
+
+    if (
+      !refined.success ||
+      !refined.sequence ||
+      !refined.adaptations ||
+      !refined.volunteerPlan ||
+      !refined.materials ||
+      !refined.activityName ||
+      refined.estimatedTotalMinutes === undefined
+    ) {
+      throw new Error(refined.error || 'Refinamiento falló');
+    }
+
+    const newContent = JSON.stringify({
+      sequence: refined.sequence,
+      adaptations: refined.adaptations,
+      volunteerPlan: refined.volunteerPlan,
+    });
+
+    await updateLesson(lessonId, {
+      title: refined.activityName,
+      content: newContent,
+      materials_needed: refined.materials.join(', '),
+      duration_minutes: refined.estimatedTotalMinutes,
+      status: 'ready',
+    });
+
+    if (lesson.liturgy_id) {
+      const publication = await getPublicationByLiturgyAndAgeGroup(lesson.liturgy_id, ageGroupId);
+      if (publication) {
+        const { data: authData } = await supabase.auth.getUser();
+        await incrementPublishVersion(publication.id, {
+          published_by: authData?.user?.id ?? null,
+        });
+      }
+    }
+
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: true,
+      lessonId,
+      estimatedMinutes: refined.estimatedTotalMinutes,
+      refinementNotes: refined.refinementNotes,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    return {
+      ageGroupId,
+      ageGroupLabel,
+      success: false,
+      error: errorMessage,
+    };
+  }
 }
