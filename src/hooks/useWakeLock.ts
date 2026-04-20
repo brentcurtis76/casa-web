@@ -44,9 +44,26 @@ export function useWakeLock(): UseWakeLockResult {
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const sentinelRef = useRef<WakeLockSentinelLike | null>(null);
+  // Guardamos el listener para poder desenlazarlo del sentinel cuando
+  // liberamos o reemplazamos el wake lock — evita acumular listeners sobre
+  // sentinels obsoletos a lo largo de una sesión larga de grabación.
+  const releaseListenerRef = useRef<(() => void) | null>(null);
   const wantActiveRef = useRef(false);
 
   const isSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+
+  const detachReleaseListener = useCallback(() => {
+    const sentinel = sentinelRef.current;
+    const listener = releaseListenerRef.current;
+    if (sentinel && listener) {
+      try {
+        sentinel.removeEventListener('release', listener);
+      } catch {
+        /* Safari puede rechazar removeEventListener en sentinels ya liberados */
+      }
+    }
+    releaseListenerRef.current = null;
+  }, []);
 
   const acquire = useCallback(async () => {
     const api = getWakeLockApi();
@@ -56,19 +73,23 @@ export function useWakeLock(): UseWakeLockResult {
     }
     try {
       const sentinel = await api.request('screen');
+      // Asegura que no quede un listener viejo apuntando al sentinel previo.
+      detachReleaseListener();
       const onRelease = () => {
         sentinelRef.current = null;
+        releaseListenerRef.current = null;
         setIsActive(false);
       };
       sentinel.addEventListener('release', onRelease);
       sentinelRef.current = sentinel;
+      releaseListenerRef.current = onRelease;
       setIsActive(true);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
       setIsActive(false);
     }
-  }, []);
+  }, [detachReleaseListener]);
 
   const request = useCallback(async () => {
     wantActiveRef.current = true;
@@ -78,6 +99,7 @@ export function useWakeLock(): UseWakeLockResult {
   const release = useCallback(async () => {
     wantActiveRef.current = false;
     const sentinel = sentinelRef.current;
+    detachReleaseListener();
     sentinelRef.current = null;
     setIsActive(false);
     if (sentinel && !sentinel.released) {
@@ -87,7 +109,7 @@ export function useWakeLock(): UseWakeLockResult {
         setError(err instanceof Error ? err : new Error(String(err)));
       }
     }
-  }, []);
+  }, [detachReleaseListener]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -105,6 +127,7 @@ export function useWakeLock(): UseWakeLockResult {
   useEffect(() => {
     return () => {
       const sentinel = sentinelRef.current;
+      detachReleaseListener();
       sentinelRef.current = null;
       wantActiveRef.current = false;
       if (sentinel && !sentinel.released) {
@@ -113,7 +136,7 @@ export function useWakeLock(): UseWakeLockResult {
         });
       }
     };
-  }, []);
+  }, [detachReleaseListener]);
 
   return { isActive, isSupported, error, request, release };
 }
