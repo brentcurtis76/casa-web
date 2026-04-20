@@ -672,6 +672,18 @@ const RecorderPopupPage: React.FC = () => {
   return (
     <div lang="es" className="min-h-screen bg-casa-900 text-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md bg-casa-800 border border-casa-700 rounded-xl shadow-xl p-6 space-y-6">
+        {showWakeLockWarning && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+          >
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400 mt-0.5" aria-hidden />
+            <span>
+              La pantalla puede apagarse durante la grabación. Mantén esta
+              ventana visible para evitar interrupciones.
+            </span>
+          </div>
+        )}
         <header className="flex items-center gap-3">
           {status === 'recording' && (
             <span className="inline-flex items-center gap-2">
@@ -715,19 +727,6 @@ const RecorderPopupPage: React.FC = () => {
             {atAbsoluteCap ? ' (tope máximo)' : ''}
           </p>
         </div>
-
-        {showWakeLockWarning && isRunning && (
-          <div
-            role="status"
-            className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
-          >
-            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400 mt-0.5" aria-hidden />
-            <span>
-              La pantalla puede apagarse durante la grabación. Mantén esta
-              ventana visible para evitar interrupciones.
-            </span>
-          </div>
-        )}
 
         {errorMessage && (
           <div
