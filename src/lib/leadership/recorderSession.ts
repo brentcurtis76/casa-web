@@ -7,6 +7,8 @@
  * object store.
  */
 
+import { supabase } from '@/integrations/supabase/client';
+
 const DB_NAME = 'casa-recorder';
 const DB_VERSION = 1;
 const STORE_NAME = 'segments';
@@ -154,8 +156,8 @@ export async function deleteSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function listSessions(): Promise<string[]> {
-  return withStore('readonly', async (store) => {
+export async function listSessions(meetingId?: string): Promise<string[]> {
+  const all = await withStore('readonly', async (store) => {
     const index = store.index('by_session');
     const keys = await promisifyRequest<IDBValidKey[]>(index.getAllKeys());
     const unique = new Set<string>();
@@ -166,4 +168,19 @@ export async function listSessions(): Promise<string[]> {
     }
     return Array.from(unique);
   });
+
+  if (!meetingId || all.length === 0) return all;
+
+  const { data, error } = await supabase
+    .from('church_leadership_recording_sessions')
+    .select('id')
+    .eq('meeting_id', meetingId)
+    .in('id', all);
+
+  if (error) {
+    throw new Error(`Error al filtrar sesiones por reunión: ${error.message}`);
+  }
+
+  const matching = new Set((data ?? []).map((row) => row.id as string));
+  return all.filter((id) => matching.has(id));
 }

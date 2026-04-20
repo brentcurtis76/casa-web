@@ -75,6 +75,29 @@ export interface RecoverySummary {
   failed: Array<{ sessionId: string; error: string }>;
 }
 
+export interface ServerOrphanSession {
+  sessionId: string;
+  startedAt: string;
+  segmentCount: number;
+  approxDurationSeconds: number;
+}
+
+export class MeetingIdMismatchError extends Error {
+  readonly sessionId: string;
+  readonly expectedMeetingId: string;
+  readonly actualMeetingId: string;
+
+  constructor(sessionId: string, expectedMeetingId: string, actualMeetingId: string) {
+    super(
+      `La sesión ${sessionId} pertenece a la reunión ${actualMeetingId}, se esperaba ${expectedMeetingId}`,
+    );
+    this.name = 'MeetingIdMismatchError';
+    this.sessionId = sessionId;
+    this.expectedMeetingId = expectedMeetingId;
+    this.actualMeetingId = actualMeetingId;
+  }
+}
+
 // =====================================================
 // Helpers de rutas
 // =====================================================
@@ -349,37 +372,116 @@ export async function finalize(
 }
 
 // =====================================================
-// 4. recoverAndFinalize
+// 4. listServerOrphans
 // =====================================================
 
 /**
- * Escanea IndexedDB en busca de sesiones huérfanas (con chunks bufferizados
- * pero no finalizadas) y las finaliza. Para cada sesión: sube los segmentos
- * faltantes en Storage y luego invoca finalize(). Idempotente: segmentos ya
- * subidos (presentes en church_leadership_recording_segments) se saltan.
+ * Lista sesiones activas en el servidor (estado 'active') para el usuario y la
+ * reunión dados. Útil para descubrir huérfanas que ya tienen segmentos subidos
+ * al servidor pero cuyos chunks locales en IDB pueden no existir (p. ej. tras
+ * limpieza de caché, cambio de dispositivo, u otro navegador).
+ */
+export async function listServerOrphans(
+  userId: string,
+  meetingId: string,
+): Promise<ServerOrphanSession[]> {
+  const { data, error } = await supabase
+    .from('church_leadership_recording_sessions')
+    .select(
+      'id, started_at, church_leadership_recording_segments(duration_seconds)',
+    )
+    .eq('status', 'active')
+    .eq('user_id', userId)
+    .eq('meeting_id', meetingId);
+
+  if (error) {
+    throw new Error(`Error al listar huérfanas del servidor: ${error.message}`);
+  }
+
+  type Row = {
+    id: string;
+    started_at: string;
+    church_leadership_recording_segments:
+      | Array<{ duration_seconds: number | string | null }>
+      | null;
+  };
+
+  return ((data ?? []) as Row[]).map((row) => {
+    const segments = row.church_leadership_recording_segments ?? [];
+    const approxDurationSeconds = segments.reduce(
+      (sum, seg) => sum + Number(seg.duration_seconds ?? 0),
+      0,
+    );
+    return {
+      sessionId: row.id,
+      startedAt: row.started_at,
+      segmentCount: segments.length,
+      approxDurationSeconds,
+    };
+  });
+}
+
+// =====================================================
+// 5. recoverAndFinalize
+// =====================================================
+
+/**
+ * Recupera sesiones huérfanas y las finaliza. Combina sesiones locales (IDB)
+ * con huérfanas del servidor para la reunión dada (si se pasa `meetingId`),
+ * sube los segmentos que falten desde IDB y luego invoca finalize(). Si una
+ * sesión no tiene chunks locales (server-only), se intenta finalizar con los
+ * segmentos ya subidos al servidor.
+ *
+ * Cuando se provee `meetingId`, cada sesión se verifica contra él y se lanza
+ * `MeetingIdMismatchError` si no coincide (el error se captura por sesión y se
+ * acumula en `summary.failed`).
  *
  * Seguro para invocar en arranque. Los errores por sesión se acumulan en el
  * resumen retornado en lugar de lanzarse.
  */
-export async function recoverAndFinalize(): Promise<RecoverySummary> {
+export async function recoverAndFinalize(
+  meetingId?: string,
+): Promise<RecoverySummary> {
   const summary: RecoverySummary = { recovered: 0, failed: [] };
 
-  let localSessionIds: string[];
+  let localSessionIds: string[] = [];
   try {
-    localSessionIds = await listSessions();
+    localSessionIds = await listSessions(meetingId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     summary.failed.push({ sessionId: '<indexeddb>', error: message });
-    return summary;
   }
 
-  for (const sessionId of localSessionIds) {
+  const sessionIds = new Set<string>(localSessionIds);
+
+  if (meetingId) {
+    try {
+      const userId = await getCurrentUserId();
+      const serverOrphans = await listServerOrphans(userId, meetingId);
+      for (const orphan of serverOrphans) {
+        sessionIds.add(orphan.sessionId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      summary.failed.push({ sessionId: '<server-orphans>', error: message });
+    }
+  }
+
+  for (const sessionId of sessionIds) {
     try {
       const session = await getSessionRow(sessionId);
       if (!session) {
         // Sesión local sin fila DB — no hay a qué ligarla. Limpia cache.
         await deleteSession(sessionId);
         continue;
+      }
+
+      if (meetingId && session.meeting_id !== meetingId) {
+        throw new MeetingIdMismatchError(
+          sessionId,
+          meetingId,
+          session.meeting_id,
+        );
       }
 
       if (session.status === 'completed') {
@@ -408,7 +510,8 @@ export async function recoverAndFinalize(): Promise<RecoverySummary> {
         });
       }
 
-      const postRows = await listSegmentRows(sessionId);
+      const postRows =
+        localChunks.length === 0 ? existingRows : await listSegmentRows(sessionId);
       if (postRows.length === 0) {
         // Nada que finalizar; marcamos la sesión como abandonada.
         await supabase

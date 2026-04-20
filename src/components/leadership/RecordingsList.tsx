@@ -11,7 +11,8 @@ import { useToast } from '@/hooks/use-toast';
 import { getRecordings, deleteRecording, getRecordingUrl } from '@/lib/leadership/recordingService';
 import { triggerTranscription } from '@/lib/leadership/transcriptionService';
 import { listSessions } from '@/lib/leadership/recorderSession';
-import { recoverAndFinalize } from '@/lib/leadership/recorderUploader';
+import { listServerOrphans, recoverAndFinalize } from '@/lib/leadership/recorderUploader';
+import { useAuth } from '@/components/auth/AuthContext';
 import AudioRecorder from './AudioRecorder';
 import TranscriptionViewer from './TranscriptionViewer';
 import type { RecordingRow } from '@/types/leadershipModule';
@@ -40,6 +41,8 @@ const TRANSCRIPTION_STATUS_VARIANTS: Record<string, string> = {
 
 const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps) => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [recordings, setRecordings] = useState<RecordingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedRecording, setExpandedRecording] = useState<string | null>(null);
@@ -50,12 +53,19 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
 
   const loadOrphans = useCallback(async () => {
     try {
-      const sessions = await listSessions();
-      setOrphanSessions(sessions);
+      const [localSessions, serverOrphans] = await Promise.all([
+        listSessions(meetingId),
+        userId ? listServerOrphans(userId, meetingId) : Promise.resolve([]),
+      ]);
+      const union = new Set<string>(localSessions);
+      for (const orphan of serverOrphans) {
+        union.add(orphan.sessionId);
+      }
+      setOrphanSessions(Array.from(union));
     } catch (_e) {
       setOrphanSessions([]);
     }
-  }, []);
+  }, [meetingId, userId]);
 
   const loadRecordings = useCallback(async () => {
     setLoading(true);
@@ -81,7 +91,7 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
   const handleRecoverOrphans = async () => {
     setIsRecovering(true);
     try {
-      const summary = await recoverAndFinalize();
+      const summary = await recoverAndFinalize(meetingId);
       if (summary.recovered > 0) {
         toast({
           title: 'Grabación recuperada',
