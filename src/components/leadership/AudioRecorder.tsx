@@ -1,22 +1,120 @@
 /**
- * AudioRecorder — Browser-based audio recorder
- * MediaRecorder API + AnalyserNode level meter + auto-upload on stop
+ * AudioRecorder — Launcher card that opens the /recorder popup window.
+ *
+ * If the browser blocks the popup, shows a Spanish warning toast and falls
+ * back to the inline MediaRecorder flow (InlineAudioRecorder below).
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Mic, Pause, Play, Save, Square } from 'lucide-react';
+import { ExternalLink, Loader2, Mic, Pause, Play, Save, Square } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthContext';
 import { uploadRecording } from '@/lib/leadership/recordingService';
+import { createRecorderChannel } from '@/lib/leadership/recorderChannel';
 
 interface AudioRecorderProps {
   meetingId: string;
   onRecordingSaved: () => void;
 }
 
-// Detect best supported MIME type
+const POPUP_FEATURES = 'popup=yes,width=480,height=720,resizable=yes,scrollbars=yes';
+
+const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
+  const { toast } = useToast();
+  const [fallbackInline, setFallbackInline] = useState(false);
+  const [popupWindow, setPopupWindow] = useState<Window | null>(null);
+  const popupWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const channel = createRecorderChannel();
+    const unsubscribe = channel.subscribe((msg) => {
+      if (msg.type === 'SESSION_STOP') {
+        onRecordingSaved();
+      }
+    });
+    return () => {
+      unsubscribe();
+      channel.close();
+    };
+  }, [onRecordingSaved]);
+
+  useEffect(() => {
+    return () => {
+      if (popupWatchRef.current) clearInterval(popupWatchRef.current);
+    };
+  }, []);
+
+  const launchPopup = useCallback(() => {
+    const url = `/recorder?meetingId=${encodeURIComponent(meetingId)}`;
+    const win = window.open(url, 'casa-recorder', POPUP_FEATURES);
+    if (!win) {
+      toast({
+        title: 'Ventana emergente bloqueada',
+        description:
+          'Tu navegador bloqueó la ventana emergente. Usaremos grabación en línea.',
+        variant: 'destructive',
+      });
+      setFallbackInline(true);
+      return;
+    }
+    setPopupWindow(win);
+    win.focus();
+
+    if (popupWatchRef.current) clearInterval(popupWatchRef.current);
+    popupWatchRef.current = setInterval(() => {
+      if (win.closed) {
+        if (popupWatchRef.current) clearInterval(popupWatchRef.current);
+        popupWatchRef.current = null;
+        setPopupWindow(null);
+        onRecordingSaved();
+      }
+    }, 1000);
+  }, [meetingId, toast, onRecordingSaved]);
+
+  if (fallbackInline) {
+    return <InlineAudioRecorder meetingId={meetingId} onRecordingSaved={onRecordingSaved} />;
+  }
+
+  const popupOpen = popupWindow !== null && !popupWindow.closed;
+
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-3">
+        <div>
+          <div className="text-sm font-semibold">Grabadora de audio</div>
+          <p className="text-xs text-muted-foreground mt-1">
+            La grabación se abre en una ventana separada para que puedas seguir
+            usando la app sin interrumpir la captura.
+          </p>
+        </div>
+        <Button
+          onClick={launchPopup}
+          disabled={popupOpen}
+          className="w-full gap-2 h-12 bg-red-600 hover:bg-red-700 text-white"
+        >
+          {popupOpen ? (
+            <>
+              <Mic className="h-5 w-5" />
+              Grabación en curso…
+            </>
+          ) : (
+            <>
+              <ExternalLink className="h-5 w-5" />
+              Abrir grabadora
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
+
+// =====================================================
+// Inline fallback (used when the popup is blocked)
+// =====================================================
+
 function getSupportedMimeType(): string {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
   for (const type of types) {
@@ -25,7 +123,7 @@ function getSupportedMimeType(): string {
   return '';
 }
 
-const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
+const InlineAudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -242,7 +340,6 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
             </div>
           </div>
 
-          {/* Audio level meter */}
           <div className="w-full h-2 bg-red-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-red-600 transition-all duration-100"
@@ -275,7 +372,6 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
     );
   }
 
-  // Preview & save
   return (
     <Card>
       <CardContent className="pt-6 space-y-4">

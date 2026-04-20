@@ -6,10 +6,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Mic, Loader2, Trash2, Zap } from 'lucide-react';
+import { AlertTriangle, Mic, Loader2, Trash2, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getRecordings, deleteRecording, getRecordingUrl } from '@/lib/leadership/recordingService';
 import { triggerTranscription } from '@/lib/leadership/transcriptionService';
+import { listSessions } from '@/lib/leadership/recorderSession';
+import { recoverAndFinalize } from '@/lib/leadership/recorderUploader';
 import AudioRecorder from './AudioRecorder';
 import TranscriptionViewer from './TranscriptionViewer';
 import type { RecordingRow } from '@/types/leadershipModule';
@@ -43,6 +45,17 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
   const [expandedRecording, setExpandedRecording] = useState<string | null>(null);
   const [transcribingId, setTranscribingId] = useState<string | null>(null);
   const [recordingUrls, setRecordingUrls] = useState<Record<string, string>>({});
+  const [orphanSessions, setOrphanSessions] = useState<string[]>([]);
+  const [isRecovering, setIsRecovering] = useState(false);
+
+  const loadOrphans = useCallback(async () => {
+    try {
+      const sessions = await listSessions();
+      setOrphanSessions(sessions);
+    } catch (_e) {
+      setOrphanSessions([]);
+    }
+  }, []);
 
   const loadRecordings = useCallback(async () => {
     setLoading(true);
@@ -62,7 +75,48 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
 
   useEffect(() => {
     loadRecordings();
-  }, [loadRecordings]);
+    void loadOrphans();
+  }, [loadRecordings, loadOrphans]);
+
+  const handleRecoverOrphans = async () => {
+    setIsRecovering(true);
+    try {
+      const summary = await recoverAndFinalize();
+      if (summary.recovered > 0) {
+        toast({
+          title: 'Grabación recuperada',
+          description:
+            summary.recovered === 1
+              ? 'Se recuperó 1 grabación pendiente.'
+              : `Se recuperaron ${summary.recovered} grabaciones pendientes.`,
+        });
+      }
+      if (summary.failed.length > 0) {
+        toast({
+          title: 'No se pudo recuperar todo',
+          description: `Errores: ${summary.failed.length}. Intenta de nuevo más tarde.`,
+          variant: 'destructive',
+        });
+      }
+      if (summary.recovered === 0 && summary.failed.length === 0) {
+        toast({
+          title: 'Sin cambios',
+          description: 'No había grabaciones pendientes de recuperar.',
+        });
+      }
+      await loadRecordings();
+      await loadOrphans();
+      onUpdated();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: `No se pudo recuperar la grabación: ${error instanceof Error ? error.message : 'desconocido'}`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRecovering(false);
+    }
+  };
 
   const handleGetUrl = async (recording: RecordingRow) => {
     if (recordingUrls[recording.id]) return;
@@ -132,9 +186,40 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
           meetingId={meetingId}
           onRecordingSaved={() => {
             loadRecordings();
+            void loadOrphans();
             onUpdated();
           }}
         />
+      )}
+
+      {canWrite && orphanSessions.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5" aria-hidden />
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-amber-900">
+                  Grabación sin guardar detectada
+                </div>
+                <p className="text-xs text-amber-800 mt-1">
+                  {orphanSessions.length === 1
+                    ? 'Encontramos una grabación previa que no terminó de subir.'
+                    : `Encontramos ${orphanSessions.length} grabaciones previas que no terminaron de subir.`}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleRecoverOrphans}
+              disabled={isRecovering}
+              className="gap-2 bg-amber-600 hover:bg-amber-700 text-stone-900"
+            >
+              {isRecovering && <Loader2 className="h-4 w-4 animate-spin" />}
+              Recuperar grabación sin guardar
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {loading ? (
