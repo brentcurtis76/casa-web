@@ -230,11 +230,17 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
       await loadRecordings();
       onUpdated();
     } catch (error) {
+      const description =
+        error instanceof Error ? error.message : 'No se pudo iniciar la transcripción';
+      // Útil para diagnóstico: el objeto completo queda en la consola con
+      // toda la info que devolvió la edge function (error + detail).
+      console.error('[transcription] trigger failed', error);
       toast({
         title: 'Error',
-        description: 'No se pudo iniciar la transcripción',
+        description,
         variant: 'destructive',
       });
+      await loadRecordings();
     } finally {
       setTranscribingId(null);
     }
