@@ -88,8 +88,11 @@ export class MeetingIdMismatchError extends Error {
   readonly actualMeetingId: string;
 
   constructor(sessionId: string, expectedMeetingId: string, actualMeetingId: string) {
+    // Nota: el mensaje visible al usuario no incluye actualMeetingId para evitar
+    // filtrar identificadores de otras reuniones. Los detalles quedan en las
+    // propiedades de la instancia para logging interno.
     super(
-      `La sesión ${sessionId} pertenece a la reunión ${actualMeetingId}, se esperaba ${expectedMeetingId}`,
+      `La sesión ${sessionId} no pertenece a la reunión actual.`,
     );
     this.name = 'MeetingIdMismatchError';
     this.sessionId = sessionId;
