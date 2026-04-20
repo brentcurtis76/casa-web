@@ -405,22 +405,26 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    {recording.transcription_status === 'none' && canWrite && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTranscribe(recording.id)}
-                        disabled={transcribingId === recording.id}
-                        className="gap-2"
-                      >
-                        {transcribingId === recording.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Zap className="h-4 w-4" />
-                        )}
-                        Transcribir con IA
-                      </Button>
-                    )}
+                    {(recording.transcription_status === 'none' ||
+                      recording.transcription_status === 'failed') &&
+                      canWrite && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTranscribe(recording.id)}
+                          disabled={transcribingId === recording.id}
+                          className="gap-2"
+                        >
+                          {transcribingId === recording.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Zap className="h-4 w-4" />
+                          )}
+                          {recording.transcription_status === 'failed'
+                            ? 'Reintentar transcripción'
+                            : 'Transcribir con IA'}
+                        </Button>
+                      )}
 
                     {recording.transcription_status === 'completed' && (
                       <Button
