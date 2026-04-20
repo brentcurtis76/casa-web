@@ -273,7 +273,17 @@ const RecorderPopupPage: React.FC = () => {
           rotatingRef.current = false;
           const s = streamRef.current;
           if (s && !stoppingRef.current) {
-            startRecorder(s);
+            try {
+              startRecorder(s);
+            } catch (restartErr) {
+              console.error('No se pudo reiniciar el grabador', restartErr);
+              const message =
+                restartErr instanceof Error
+                  ? restartErr.message
+                  : String(restartErr);
+              setErrorMessage(message);
+              setStatus('error');
+            }
           }
         }
       });
@@ -787,8 +797,9 @@ const RecorderPopupPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>La grabación se detendrá pronto</DialogTitle>
             <DialogDescription>
-              Quedan aproximadamente {minutesUntilCeiling} minuto
-              {minutesUntilCeiling === 1 ? '' : 's'} antes del límite actual
+              La grabación se detendrá automáticamente en{' '}
+              {minutesUntilCeiling} minuto
+              {minutesUntilCeiling === 1 ? '' : 's'} al llegar al límite actual
               ({ceilingLabel}). Puedes extender 30 minutos más (hasta un tope
               de 3 horas) o detenerla y guardar ahora.
             </DialogDescription>
