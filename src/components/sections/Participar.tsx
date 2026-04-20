@@ -244,7 +244,7 @@ export function Participar() {
               Club de Lectura
             </DialogTitle>
             <DialogDescription className="text-center">
-              Inscríbete en nuestro club de lectura: El Cristo Universal — Richard Rohr.
+              ¿Y si Cristo fuera mucho más grande de lo que imaginamos? En <em>El Cristo Universal</em>, Richard Rohr nos invita a redescubrir una verdad olvidada: Dios se hace presente en toda la creación, en cada persona y en cada momento. Acompáñanos estos dos meses en un espacio online de lectura, conversación y descubrimiento espiritual.
             </DialogDescription>
           </DialogHeader>
           <SignupFormLectura onSuccess={closeDialog} />
