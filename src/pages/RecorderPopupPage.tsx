@@ -144,6 +144,14 @@ const RecorderPopupPage: React.FC = () => {
   // -----------------------------------------------------
   // Limpieza: stop + liberar stream + cerrar canal + wake lock
   // -----------------------------------------------------
+  // NOTA: dependemos únicamente de wakeLock.release / wakeLock.request
+  // (referencias estables por useCallback dentro de useWakeLock). Depender
+  // del objeto wakeLock completo rompería la estabilidad porque useWakeLock
+  // devuelve un objeto literal nuevo en cada render — eso haría que teardown
+  // cambiara de identidad en cada render y la limpieza del useEffect de
+  // pagehide se dispararía constantemente, deteniendo el grabador.
+  const releaseWakeLock = wakeLock.release;
+  const requestWakeLock = wakeLock.request;
   const teardown = useCallback(() => {
     try {
       const recorder = recorderRef.current;
@@ -160,12 +168,12 @@ const RecorderPopupPage: React.FC = () => {
     }
     streamRef.current = null;
     recorderRef.current = null;
-    void wakeLock.release();
+    void releaseWakeLock();
     if (channelRef.current) {
       channelRef.current.close();
       channelRef.current = null;
     }
-  }, [wakeLock]);
+  }, [releaseWakeLock]);
 
   // -----------------------------------------------------
   // Subir el segmento actual a Storage + IndexedDB
@@ -386,10 +394,10 @@ const RecorderPopupPage: React.FC = () => {
       if (stream) stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       recorderRef.current = null;
-      void wakeLock.release();
+      void releaseWakeLock();
       setStatus('stopped');
     },
-    [flushSegment, wakeLock],
+    [flushSegment, releaseWakeLock],
   );
 
   // -----------------------------------------------------
@@ -485,11 +493,11 @@ const RecorderPopupPage: React.FC = () => {
       },
     });
 
-    void wakeLock.request();
+    void requestWakeLock();
     startRecorder(stream);
     setStatus('recording');
     channel.send({ type: 'RECORDER_READY', sessionId });
-  }, [meetingId, sessionIdParam, user, startRecorder, wakeLock, stopSession, toast]);
+  }, [meetingId, sessionIdParam, user, startRecorder, requestWakeLock, stopSession, toast]);
 
   // -----------------------------------------------------
   // Pausar / Reanudar
