@@ -5,6 +5,50 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { RecordingRow, RecordingInsert, RecordingUpdate } from '@/types/leadershipModule';
 
+export interface InsertRecordingRowParams {
+  meetingId: string;
+  storagePath: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds: number | null;
+  userId: string;
+}
+
+/**
+ * Insert a row into church_leadership_recordings.
+ * Shared by the legacy single-shot upload flow and the
+ * popup-window segmented recorder's finalize step so the
+ * two paths produce identical DB rows.
+ */
+export async function insertRecordingRow(
+  params: InsertRecordingRowParams,
+): Promise<RecordingRow> {
+  const recordingInsert: RecordingInsert = {
+    meeting_id: params.meetingId,
+    filename: params.filename,
+    storage_path: params.storagePath,
+    mime_type: params.mimeType || 'audio/webm',
+    file_size_bytes: params.sizeBytes,
+    created_by: params.userId,
+    transcription_status: 'none',
+    transcript_text: null,
+    transcript_summary: null,
+    transcription_action_items: [],
+    transcribed_at: null,
+    duration_seconds: params.durationSeconds,
+  };
+
+  const { data, error } = await supabase
+    .from('church_leadership_recordings')
+    .insert(recordingInsert)
+    .select('*')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as RecordingRow;
+}
+
 /**
  * Upload a recording file to storage and create a DB record.
  * File is stored in: leadership-recordings/meetings/{meetingId}/{timestamp}_{filename}
@@ -24,29 +68,15 @@ export async function uploadRecording(
 
   if (uploadError) throw new Error(`Error al subir la grabación: ${uploadError.message}`);
 
-  const recordingInsert: RecordingInsert = {
-    meeting_id: meetingId,
+  return insertRecordingRow({
+    meetingId,
+    storagePath,
     filename,
-    storage_path: storagePath,
-    mime_type: file.type || 'audio/webm',
-    file_size_bytes: file.size,
-    created_by: userId,
-    transcription_status: 'none',
-    transcript_text: null,
-    transcript_summary: null,
-    transcription_action_items: [],
-    transcribed_at: null,
-    duration_seconds: null,
-  };
-
-  const { data, error } = await supabase
-    .from('church_leadership_recordings')
-    .insert(recordingInsert)
-    .select('*')
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as RecordingRow;
+    mimeType: file.type || 'audio/webm',
+    sizeBytes: file.size,
+    durationSeconds: null,
+    userId,
+  });
 }
 
 /**
