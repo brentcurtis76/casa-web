@@ -26,11 +26,11 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
   const [fallbackInline, setFallbackInline] = useState(false);
   const [popupWindow, setPopupWindow] = useState<Window | null>(null);
   const popupWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const savedFiredRef = useRef(false);
+  const notifiedRef = useRef(false);
 
   const fireSavedOnce = useCallback(() => {
-    if (savedFiredRef.current) return;
-    savedFiredRef.current = true;
+    if (notifiedRef.current) return;
+    notifiedRef.current = true;
     onRecordingSaved();
   }, [onRecordingSaved]);
 
@@ -67,7 +67,7 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
       return;
     }
     setPopupWindow(win);
-    savedFiredRef.current = false;
+    notifiedRef.current = false;
     win.focus();
 
     if (popupWatchRef.current) clearInterval(popupWatchRef.current);

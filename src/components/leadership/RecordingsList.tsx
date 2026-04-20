@@ -16,7 +16,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, Mic, Loader2, Trash2, Zap } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { AlertTriangle, ChevronDown, Mic, Loader2, Trash2, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getRecordings, deleteRecording, getRecordingUrl } from '@/lib/leadership/recordingService';
 import { triggerTranscription } from '@/lib/leadership/transcriptionService';
@@ -31,6 +36,7 @@ interface OrphanMeta {
   sessionId: string;
   segmentCount: number;
   approxDurationSeconds: number;
+  startedAt?: string;
 }
 
 interface RecordingsListProps {
@@ -67,6 +73,7 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
   const [orphanSessions, setOrphanSessions] = useState<OrphanMeta[]>([]);
   const [isRecovering, setIsRecovering] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RecordingRow | null>(null);
+  const [orphansExpanded, setOrphansExpanded] = useState(false);
 
   const loadOrphans = useCallback(async () => {
     try {
@@ -80,6 +87,7 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
           sessionId: orphan.sessionId,
           segmentCount: orphan.segmentCount,
           approxDurationSeconds: orphan.approxDurationSeconds,
+          startedAt: orphan.startedAt,
         });
       }
       const localOnly = localSessions.filter((id) => !byId.has(id));
@@ -91,10 +99,17 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
               (sum, seg) => sum + (seg.meta.durationMs ?? 0) / 1000,
               0,
             );
+            const earliest = segments.reduce<number | undefined>((min, seg) => {
+              const createdAt = seg.meta.createdAt;
+              if (createdAt === undefined) return min;
+              if (min === undefined) return createdAt;
+              return Math.min(min, createdAt);
+            }, undefined);
             return {
               sessionId,
               segmentCount: segments.length,
               approxDurationSeconds,
+              startedAt: earliest !== undefined ? new Date(earliest).toISOString() : undefined,
             } satisfies OrphanMeta;
           } catch (_e) {
             return {
@@ -106,7 +121,13 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
         }),
       );
       for (const meta of localMetas) byId.set(meta.sessionId, meta);
-      setOrphanSessions(Array.from(byId.values()));
+      const sorted = Array.from(byId.values()).sort((a, b) => {
+        const at = a.startedAt ?? '';
+        const bt = b.startedAt ?? '';
+        if (at === bt) return a.sessionId.localeCompare(b.sessionId);
+        return bt.localeCompare(at);
+      });
+      setOrphanSessions(sorted);
     } catch (_e) {
       setOrphanSessions([]);
     }
@@ -257,31 +278,60 @@ const RecordingsList = ({ meetingId, canWrite, onUpdated }: RecordingsListProps)
                 <div className="text-sm font-semibold text-amber-900">
                   Grabación sin guardar detectada
                 </div>
-                <p className="text-xs text-amber-800 mt-1">
-                  {(() => {
-                    const totalMinutes = Math.max(
-                      1,
-                      Math.round(
-                        orphanSessions.reduce(
-                          (sum, o) => sum + o.approxDurationSeconds,
-                          0,
-                        ) / 60,
-                      ),
-                    );
-                    const totalSegments = orphanSessions.reduce(
-                      (sum, o) => sum + o.segmentCount,
-                      0,
-                    );
-                    if (orphanSessions.length === 1) {
-                      return `Se encontró 1 grabación sin guardar de ~${totalMinutes} min (${totalSegments} segmento${
-                        totalSegments === 1 ? '' : 's'
-                      } listos).`;
-                    }
-                    return `Se encontraron ${orphanSessions.length} grabaciones sin guardar de ~${totalMinutes} min en total (${totalSegments} segmento${
-                      totalSegments === 1 ? '' : 's'
-                    } listos).`;
-                  })()}
-                </p>
+                {(() => {
+                  const [mostRecent, ...rest] = orphanSessions;
+                  const mostRecentMinutes = Math.max(
+                    1,
+                    Math.round(mostRecent.approxDurationSeconds / 60),
+                  );
+                  return (
+                    <>
+                      <p className="text-xs text-amber-800 mt-1">
+                        {`Se encontró 1 grabación sin guardar de ~${mostRecentMinutes} min (${mostRecent.segmentCount} segmento${
+                          mostRecent.segmentCount === 1 ? '' : 's'
+                        } listos).`}
+                      </p>
+                      {rest.length > 0 && (
+                        <Collapsible
+                          open={orphansExpanded}
+                          onOpenChange={setOrphansExpanded}
+                          className="mt-2"
+                        >
+                          <CollapsibleTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 text-xs font-medium text-amber-900 underline-offset-2 hover:underline"
+                            >
+                              <ChevronDown
+                                className={`h-3 w-3 transition-transform ${
+                                  orphansExpanded ? 'rotate-180' : ''
+                                }`}
+                                aria-hidden
+                              />
+                              {orphansExpanded
+                                ? 'Ocultar grabaciones adicionales'
+                                : `Ver ${rest.length} grabación${rest.length === 1 ? '' : 'es'} adicional${rest.length === 1 ? '' : 'es'}`}
+                            </button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="mt-2">
+                            <ul className="space-y-1 text-xs text-amber-800">
+                              {rest.map((o) => {
+                                const mins = Math.max(1, Math.round(o.approxDurationSeconds / 60));
+                                return (
+                                  <li key={o.sessionId}>
+                                    {`~${mins} min (${o.segmentCount} segmento${
+                                      o.segmentCount === 1 ? '' : 's'
+                                    })`}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </CardHeader>
