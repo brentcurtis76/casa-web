@@ -84,54 +84,31 @@ export async function publishCuentacuento(params: {
 
   const pdfUrl = urlData.publicUrl;
 
-  // 3. Check if there's an existing active cuentacuento
-  const { data: existingResource } = await supabase
+  // 3. Deactivate any existing active cuentacuento so the archive preserves history
+  const { error: deactivateError } = await supabase
     .from('published_resources')
-    .select('id')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('resource_type', 'cuentacuento')
-    .eq('is_active', true)
-    .maybeSingle();
+    .eq('is_active', true);
 
-  const resourceData = {
-    resource_type: 'cuentacuento' as const,
-    liturgy_id: liturgyId,
-    liturgy_date: liturgyDate.toISOString().split('T')[0],
-    title,
-    description: `Cuento ilustrado para familias: ${title}`,
-    pdf_url: pdfUrl,
-    pdf_filename: filename,
-    file_size_bytes: pdfBlob.size,
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  };
+  if (deactivateError) throw new Error(`Error al archivar recurso anterior: ${deactivateError.message}`);
 
-  let data;
-  let error;
-
-  if (existingResource) {
-    // Update the existing active record
-    console.log('[publishCuentacuento] Updating existing record:', existingResource.id);
-    const updateResult = await supabase
-      .from('published_resources')
-      .update(resourceData)
-      .eq('id', existingResource.id)
-      .select()
-      .single();
-
-    data = updateResult.data;
-    error = updateResult.error;
-  } else {
-    // Insert new record
-    console.log('[publishCuentacuento] Inserting new record');
-    const insertResult = await supabase
-      .from('published_resources')
-      .insert(resourceData)
-      .select()
-      .single();
-
-    data = insertResult.data;
-    error = insertResult.error;
-  }
+  // 4. Insert new active record so the archive accumulates history
+  const { data, error } = await supabase
+    .from('published_resources')
+    .insert({
+      resource_type: 'cuentacuento' as const,
+      liturgy_id: liturgyId,
+      liturgy_date: liturgyDate.toISOString().split('T')[0],
+      title,
+      description: `Cuento ilustrado para familias: ${title}`,
+      pdf_url: pdfUrl,
+      pdf_filename: filename,
+      file_size_bytes: pdfBlob.size,
+      is_active: true,
+    })
+    .select()
+    .single();
 
   if (error) throw new Error(`Error al publicar: ${error.message}`);
   return data as PublishedResource;
@@ -168,54 +145,31 @@ export async function publishReflexion(params: {
 
   const pdfUrl = urlData.publicUrl;
 
-  // 3. Check if there's an existing active reflexion
-  const { data: existingResource } = await supabase
+  // 3. Deactivate any existing active reflexion so the archive preserves history
+  const { error: deactivateError } = await supabase
     .from('published_resources')
-    .select('id')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('resource_type', 'reflexion')
-    .eq('is_active', true)
-    .maybeSingle();
+    .eq('is_active', true);
 
-  const resourceData = {
-    resource_type: 'reflexion' as const,
-    liturgy_id: liturgyId,
-    liturgy_date: liturgyDate.toISOString().split('T')[0],
-    title,
-    description: `Reflexion pastoral: ${title}`,
-    pdf_url: pdfUrl,
-    pdf_filename: filename,
-    file_size_bytes: pdfFile.size,
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  };
+  if (deactivateError) throw new Error(`Error al archivar recurso anterior: ${deactivateError.message}`);
 
-  let data;
-  let error;
-
-  if (existingResource) {
-    // Update the existing active record
-    console.log('[publishReflexion] Updating existing record:', existingResource.id);
-    const updateResult = await supabase
-      .from('published_resources')
-      .update(resourceData)
-      .eq('id', existingResource.id)
-      .select()
-      .single();
-
-    data = updateResult.data;
-    error = updateResult.error;
-  } else {
-    // Insert new record
-    console.log('[publishReflexion] Inserting new record');
-    const insertResult = await supabase
-      .from('published_resources')
-      .insert(resourceData)
-      .select()
-      .single();
-
-    data = insertResult.data;
-    error = insertResult.error;
-  }
+  // 4. Insert new active record so the archive accumulates history
+  const { data, error } = await supabase
+    .from('published_resources')
+    .insert({
+      resource_type: 'reflexion' as const,
+      liturgy_id: liturgyId,
+      liturgy_date: liturgyDate.toISOString().split('T')[0],
+      title,
+      description: `Reflexion pastoral: ${title}`,
+      pdf_url: pdfUrl,
+      pdf_filename: filename,
+      file_size_bytes: pdfFile.size,
+      is_active: true,
+    })
+    .select()
+    .single();
 
   if (error) throw new Error(`Error al publicar: ${error.message}`);
   return data as PublishedResource;
