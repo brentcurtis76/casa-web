@@ -646,6 +646,34 @@ const RecorderPopupPage: React.FC = () => {
   }, [authLoading]);
 
   // -----------------------------------------------------
+  // Salvaguarda: Radix Dialog a veces deja `pointer-events: none`
+  // en <body> tras cerrar el modal (transición interrumpida,
+  // re-render durante close). Eso bloquea TODOS los clicks del
+  // popup, incluidos Pausar y Detener y guardar.
+  //
+  // Observamos el atributo style de <body>: si el diálogo de
+  // advertencia NO debe estar abierto pero body quedó con
+  // pointer-events=none, lo limpiamos.
+  // -----------------------------------------------------
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+
+    const clearIfStuck = () => {
+      if (!showWarning && body.style.pointerEvents === 'none') {
+        body.style.pointerEvents = '';
+      }
+    };
+
+    // Limpieza inmediata al montar / al cambiar showWarning a false.
+    clearIfStuck();
+
+    const observer = new MutationObserver(clearIfStuck);
+    observer.observe(body, { attributes: true, attributeFilter: ['style'] });
+    return () => observer.disconnect();
+  }, [showWarning]);
+
+  // -----------------------------------------------------
   // Render
   // -----------------------------------------------------
   const statusLabel = useMemo(() => {
@@ -790,7 +818,16 @@ const RecorderPopupPage: React.FC = () => {
       <Dialog
         open={showWarning}
         onOpenChange={(open) => {
-          if (!open) setShowWarning(false);
+          if (!open) {
+            setShowWarning(false);
+            // Fuerza un reset del pointer-events del body después de la
+            // transición de cierre de Radix (~200ms) por si quedó bloqueado.
+            setTimeout(() => {
+              if (document.body.style.pointerEvents === 'none') {
+                document.body.style.pointerEvents = '';
+              }
+            }, 250);
+          }
         }}
       >
         <DialogContent>
