@@ -65,6 +65,8 @@ const ABSOLUTE_CAP_MS = 10_800_000; // 3h
 const PREFERRED_MIME = 'audio/webm;codecs=opus';
 const FALLBACK_MIME = 'audio/webm';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type RecorderStatus =
   | 'idle'
   | 'requesting'
@@ -107,6 +109,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 const RecorderPopupPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const meetingId = searchParams.get('meetingId');
+  const sessionIdParam = searchParams.get('sessionId');
   const { user, loading: authLoading } = useAuth();
   const wakeLock = useWakeLock();
 
@@ -319,6 +322,16 @@ const RecorderPopupPage: React.FC = () => {
       setStatus('error');
       return;
     }
+    if (!UUID_RE.test(meetingId)) {
+      setErrorMessage('Identificador de reunión inválido.');
+      setStatus('error');
+      return;
+    }
+    if (sessionIdParam && !UUID_RE.test(sessionIdParam)) {
+      setErrorMessage('Identificador de sesión inválido.');
+      setStatus('error');
+      return;
+    }
     if (!user) {
       setErrorMessage('Usuario no autenticado.');
       setStatus('error');
@@ -381,7 +394,7 @@ const RecorderPopupPage: React.FC = () => {
     startRecorder(stream);
     setStatus('recording');
     channel.send({ type: 'RECORDER_READY', sessionId });
-  }, [meetingId, user, startRecorder, wakeLock]);
+  }, [meetingId, sessionIdParam, user, startRecorder, wakeLock]);
 
   // -----------------------------------------------------
   // Detener definitivamente + finalizar

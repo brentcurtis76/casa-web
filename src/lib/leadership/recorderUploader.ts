@@ -79,16 +79,27 @@ export interface RecoverySummary {
 // Helpers de rutas
 // =====================================================
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertSessionUuid(sessionId: string): void {
+  if (!UUID_RE.test(sessionId)) {
+    throw new Error(`Identificador de sesión inválido: ${sessionId}`);
+  }
+}
+
 function liveSnapshotPath(sessionId: string): string {
+  assertSessionUuid(sessionId);
   return `sessions/${sessionId}/live.webm`;
 }
 
 function segmentPath(sessionId: string, segmentIndex: number): string {
+  assertSessionUuid(sessionId);
   const padded = String(segmentIndex).padStart(5, '0');
   return `sessions/${sessionId}/segments/${padded}.webm`;
 }
 
 function manifestPath(sessionId: string): string {
+  assertSessionUuid(sessionId);
   return `sessions/${sessionId}/manifest.json`;
 }
 
@@ -201,16 +212,19 @@ export async function uploadSegment(
 
   const { data, error: insertError } = await supabase
     .from('church_leadership_recording_segments')
-    .insert({
-      session_id: sessionId,
-      segment_index: segmentIndex,
-      storage_path: storagePath,
-      started_at: meta.startedAt.toISOString(),
-      ended_at: meta.endedAt.toISOString(),
-      duration_seconds: meta.durationSeconds,
-      size_bytes: blob.size,
-      mime_type: mimeType,
-    })
+    .upsert(
+      {
+        session_id: sessionId,
+        segment_index: segmentIndex,
+        storage_path: storagePath,
+        started_at: meta.startedAt.toISOString(),
+        ended_at: meta.endedAt.toISOString(),
+        duration_seconds: meta.durationSeconds,
+        size_bytes: blob.size,
+        mime_type: mimeType,
+      },
+      { onConflict: 'session_id,segment_index' },
+    )
     .select('*')
     .single();
 
