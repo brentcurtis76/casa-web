@@ -679,8 +679,9 @@ const RecorderPopupPage: React.FC = () => {
           >
             <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400 mt-0.5" aria-hidden />
             <span>
-              La pantalla puede apagarse durante la grabación. Mantén esta
-              ventana visible para evitar interrupciones.
+              Bloqueo de pantalla no disponible — la grabación puede
+              interrumpirse si la pantalla se apaga. Sigue siendo seguro cerrar
+              esta ventana; se recuperará automáticamente.
             </span>
           </div>
         )}
@@ -716,11 +717,13 @@ const RecorderPopupPage: React.FC = () => {
           >
             {formatDuration(activeMs)}
           </div>
-          <p className="mt-2 text-sm text-casa-400" aria-live="polite">
-            <span aria-live="polite" aria-atomic="true">
-              {segmentsUploaded} segmento{segmentsUploaded === 1 ? '' : 's'} guardado
-              {segmentsUploaded === 1 ? '' : 's'}
-            </span>
+          <p
+            className="mt-2 text-sm text-casa-400"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {segmentsUploaded} segmento{segmentsUploaded === 1 ? '' : 's'} guardado
+            {segmentsUploaded === 1 ? '' : 's'}
           </p>
           <p className="mt-1 text-xs text-casa-500" aria-live="polite">
             Límite actual: {ceilingLabel}
