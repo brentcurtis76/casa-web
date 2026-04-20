@@ -121,9 +121,14 @@ function segmentPath(sessionId: string, segmentIndex: number): string {
   return `sessions/${sessionId}/segments/${padded}.webm`;
 }
 
-function manifestPath(sessionId: string): string {
+function finalRecordingPath(meetingId: string, sessionId: string): string {
   assertSessionUuid(sessionId);
-  return `sessions/${sessionId}/manifest.json`;
+  return `meetings/${meetingId}/${sessionId}/final.webm`;
+}
+
+function finalManifestPath(meetingId: string, sessionId: string): string {
+  assertSessionUuid(sessionId);
+  return `meetings/${meetingId}/${sessionId}/manifest.json`;
 }
 
 // =====================================================
@@ -326,30 +331,64 @@ export async function finalize(
     })),
   };
 
+  // Descarga cada segmento desde Storage y concatena en un único webm
+  // reproducible. MediaRecorder con timeslice produce chunks webm/opus
+  // independientes, por lo que concatenarlos con el mismo mime_type da un
+  // archivo reproducible sin necesidad de remuxing.
+  const segmentBlobs: Blob[] = [];
+  for (const seg of segments) {
+    const { data: segData, error: downloadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .download(seg.storage_path);
+    if (downloadError || !segData) {
+      throw new Error(
+        `Error al descargar segmento ${seg.segment_index} (${seg.storage_path}): ${
+          downloadError?.message ?? 'sin datos'
+        }`,
+      );
+    }
+    segmentBlobs.push(segData);
+  }
+
+  const finalBlob = new Blob(segmentBlobs, { type: mimeType });
+  const finalStoragePath = finalRecordingPath(meetingId, sessionId);
+
+  const { error: finalUploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(finalStoragePath, finalBlob, {
+      upsert: true,
+      contentType: mimeType,
+    });
+
+  if (finalUploadError) {
+    throw new Error(`Error al subir grabación final: ${finalUploadError.message}`);
+  }
+
+  // Manifest como debug a path hermano; no bloquear si falla.
   const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], {
     type: 'application/json',
   });
-  const manifestStoragePath = manifestPath(sessionId);
-
+  const debugManifestPath = finalManifestPath(meetingId, sessionId);
   const { error: manifestError } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .upload(manifestStoragePath, manifestBlob, {
+    .upload(debugManifestPath, manifestBlob, {
       upsert: true,
       contentType: 'application/json',
     });
-
   if (manifestError) {
-    throw new Error(`Error al subir manifest: ${manifestError.message}`);
+    console.warn(
+      `[recorderUploader] No se pudo subir manifest debug (${debugManifestPath}): ${manifestError.message}`,
+    );
   }
 
   const filename = opts.filename ?? `session-${sessionId}.webm`;
 
   const recording = await insertRecordingRow({
     meetingId,
-    storagePath: manifestStoragePath,
+    storagePath: finalStoragePath,
     filename,
     mimeType,
-    sizeBytes: totalSize,
+    sizeBytes: finalBlob.size,
     durationSeconds: Math.round(totalDuration),
     userId,
   });
