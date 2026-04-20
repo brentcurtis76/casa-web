@@ -336,7 +336,7 @@ const InlineAudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps
               {formatTime(elapsedTime)}
             </div>
             <div className="text-sm text-red-700 mt-1" aria-live="polite" aria-atomic="true">
-              {isPaused ? 'Pausada' : 'Grabando...'}
+              {isPaused ? 'Pausada' : 'Grabando'}
             </div>
           </div>
 

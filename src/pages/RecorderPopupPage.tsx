@@ -580,9 +580,16 @@ const RecorderPopupPage: React.FC = () => {
 
   const isRunning = status === 'recording' || status === 'paused';
 
+  const minutesUntilHardStop = Math.max(
+    1,
+    Math.ceil((HARD_STOP_AT_MS - activeMs) / 60_000),
+  );
+
+  const showWakeLockWarning = !wakeLock.isSupported || wakeLock.error !== null;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md bg-slate-900/80 border border-slate-700 rounded-xl shadow-xl p-6 space-y-6">
+    <div className="min-h-screen bg-casa-900 text-white flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md bg-casa-800 border border-casa-700 rounded-xl shadow-xl p-6 space-y-6">
         <header className="flex items-center gap-3">
           {status === 'recording' && (
             <span className="inline-flex items-center gap-2">
@@ -590,24 +597,37 @@ const RecorderPopupPage: React.FC = () => {
               <Mic className="h-5 w-5 text-red-400" aria-hidden />
             </span>
           )}
-          {status === 'paused' && <Pause className="h-5 w-5 text-yellow-400" aria-hidden />}
+          {status === 'paused' && <Pause className="h-5 w-5 text-amber-500" aria-hidden />}
           {(status === 'idle' || status === 'requesting') && (
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden />
+            <Loader2 className="h-5 w-5 animate-spin text-casa-400" aria-hidden />
           )}
-          {status === 'stopped' && <MicOff className="h-5 w-5 text-slate-400" aria-hidden />}
+          {status === 'stopped' && <MicOff className="h-5 w-5 text-casa-400" aria-hidden />}
           {status === 'error' && <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden />}
-          <h1 className="text-xl font-semibold">{statusLabel}</h1>
+          <h1 className="text-xl font-mont font-semibold">{statusLabel}</h1>
         </header>
 
         <div className="text-center">
           <div className="text-5xl font-mono tabular-nums tracking-tight">
             {formatDuration(activeMs)}
           </div>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-casa-400">
             {segmentsUploaded} segmento{segmentsUploaded === 1 ? '' : 's'} sincronizado
             {segmentsUploaded === 1 ? '' : 's'}
           </p>
         </div>
+
+        {showWakeLockWarning && isRunning && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+          >
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400 mt-0.5" aria-hidden />
+            <span>
+              La pantalla puede apagarse durante la grabación. Mantén esta
+              ventana visible para evitar interrupciones.
+            </span>
+          </div>
+        )}
 
         {errorMessage && (
           <div
@@ -640,16 +660,16 @@ const RecorderPopupPage: React.FC = () => {
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant="default"
             onClick={() => void stopSession('user')}
             disabled={!isRunning && status !== 'stopping'}
           >
             <StopCircle className="h-4 w-4 mr-2" aria-hidden />
-            Detener
+            Detener y guardar
           </Button>
         </div>
 
-        <p className="text-xs text-center text-slate-500">
+        <p className="text-xs text-center text-casa-500">
           Barra espaciadora para pausar o reanudar.
         </p>
       </div>
@@ -662,18 +682,19 @@ const RecorderPopupPage: React.FC = () => {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Advertencia: grabación larga</DialogTitle>
+            <DialogTitle>La grabación se detendrá pronto</DialogTitle>
             <DialogDescription>
-              La grabación llegará a su límite de 2 horas en unos minutos. Si
-              quieres continuar, pulsa <strong>Extender</strong>; de lo
-              contrario la grabación se detendrá automáticamente.
+              Quedan aproximadamente {minutesUntilHardStop} minuto
+              {minutesUntilHardStop === 1 ? '' : 's'} antes del límite de 2
+              horas. Puedes extender la grabación 30 minutos más o detenerla y
+              guardar ahora.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">
             <Button variant="outline" onClick={() => void stopSession('user')}>
-              Detener
+              Detener y guardar
             </Button>
-            <Button onClick={extendRecording}>Extender</Button>
+            <Button onClick={extendRecording}>Extender 30 min</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
