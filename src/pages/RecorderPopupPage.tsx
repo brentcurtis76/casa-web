@@ -39,6 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuth } from '@/components/auth/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import useWakeLock from '@/hooks/useWakeLock';
 import {
@@ -58,9 +59,10 @@ import {
 
 const SEGMENT_ROTATE_MS = 120_000; // 2 min
 const LIVE_SNAPSHOT_MS = 15_000; // 15 s
-const WARN_AT_MS = 6_900_000; // 1h 55m
-const HARD_STOP_AT_MS = 7_200_000; // 2h
-const ABSOLUTE_CAP_MS = 10_800_000; // 3h
+const INITIAL_CEILING_MS = 7_200_000; // 2h — tope inicial (extensible)
+const CEILING_STEP_MS = 1_800_000; // 30 min — paso de extensión
+const ABSOLUTE_CAP_MS = 10_800_000; // 3h — tope absoluto
+const WARN_LEAD_MS = 300_000; // 5 min — aviso antes del tope actual
 
 const PREFERRED_MIME = 'audio/webm;codecs=opus';
 const FALLBACK_MIME = 'audio/webm';
@@ -76,11 +78,9 @@ type RecorderStatus =
   | 'stopped'
   | 'error';
 
-// Narrow helper: the generated Database type doesn't yet include the new
-// recording-session tables. Cast once here and keep the rest of the file
-// strongly typed.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+interface RecordingSessionInsertRow {
+  id: string;
+}
 
 function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -112,13 +112,14 @@ const RecorderPopupPage: React.FC = () => {
   const sessionIdParam = searchParams.get('sessionId');
   const { user, loading: authLoading } = useAuth();
   const wakeLock = useWakeLock();
+  const { toast } = useToast();
 
   const [status, setStatus] = useState<RecorderStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeMs, setActiveMs] = useState(0);
   const [segmentsUploaded, setSegmentsUploaded] = useState(0);
   const [showWarning, setShowWarning] = useState(false);
-  const [extended, setExtended] = useState(false);
+  const [ceilingMs, setCeilingMs] = useState<number>(INITIAL_CEILING_MS);
 
   // Refs — estado imperativo que no debe re-renderizar.
   const sessionIdRef = useRef<string | null>(null);
@@ -132,13 +133,13 @@ const RecorderPopupPage: React.FC = () => {
   const rotatingRef = useRef(false);
   const stoppingRef = useRef(false);
   const activeMsRef = useRef(0);
-  const extendedRef = useRef(false);
+  const ceilingMsRef = useRef<number>(INITIAL_CEILING_MS);
   const channelRef = useRef<RecorderChannel | null>(null);
 
   // Mantener ref en sincronía con estado para usos sincrónicos.
   useEffect(() => {
-    extendedRef.current = extended;
-  }, [extended]);
+    ceilingMsRef.current = ceilingMs;
+  }, [ceilingMs]);
 
   // -----------------------------------------------------
   // Limpieza: stop + liberar stream + cerrar canal + wake lock
@@ -281,13 +282,35 @@ const RecorderPopupPage: React.FC = () => {
       const sessionId = sessionIdRef.current;
       const err = (evt as unknown as { error?: { message?: string } }).error;
       const message = err?.message ?? 'Error desconocido del grabador';
-      setErrorMessage(message);
       if (sessionId) {
         channelRef.current?.send({
           type: 'RECORDER_ERROR',
           sessionId,
           error: message,
         });
+      }
+      // Intenta recuperar: rota el segmento actual (flush lo sube) y arranca
+      // un MediaRecorder nuevo sobre el mismo stream.
+      const stream = streamRef.current;
+      if (!stream || stoppingRef.current) {
+        setErrorMessage(message);
+        setStatus('error');
+        return;
+      }
+      try {
+        rotatingRef.current = true;
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+        toast({
+          title: 'Reiniciando grabación',
+          description:
+            'Tuvimos un problema con el grabador. Continuamos en un segmento nuevo.',
+        });
+      } catch (recoverErr) {
+        console.error('No se pudo recuperar del error del grabador', recoverErr);
+        setErrorMessage(message);
+        setStatus('error');
       }
     };
 
@@ -296,7 +319,7 @@ const RecorderPopupPage: React.FC = () => {
     // Timeslice 1s para que los ticks dataavailable lleguen rápido.
     recorder.start(1000);
     recorderRef.current = recorder;
-  }, [flushSegment]);
+  }, [flushSegment, toast]);
 
   // -----------------------------------------------------
   // Rotación (stop actual → onstop dispara flush + start siguiente)
@@ -312,89 +335,6 @@ const RecorderPopupPage: React.FC = () => {
       rotatingRef.current = false;
     }
   }, []);
-
-  // -----------------------------------------------------
-  // Inicio de sesión: pedir mic, insertar fila, arrancar grabación
-  // -----------------------------------------------------
-  const startSession = useCallback(async () => {
-    if (!meetingId) {
-      setErrorMessage('Falta el parámetro meetingId en la URL.');
-      setStatus('error');
-      return;
-    }
-    if (!UUID_RE.test(meetingId)) {
-      setErrorMessage('Identificador de reunión inválido.');
-      setStatus('error');
-      return;
-    }
-    if (sessionIdParam && !UUID_RE.test(sessionIdParam)) {
-      setErrorMessage('Identificador de sesión inválido.');
-      setStatus('error');
-      return;
-    }
-    if (!user) {
-      setErrorMessage('Usuario no autenticado.');
-      setStatus('error');
-      return;
-    }
-    setStatus('requesting');
-    setErrorMessage(null);
-
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`No se pudo acceder al micrófono: ${message}`);
-      setStatus('error');
-      return;
-    }
-    streamRef.current = stream;
-
-    const mime = pickMimeType();
-    mimeTypeRef.current = mime;
-
-    let sessionId: string;
-    try {
-      const { data, error } = await db
-        .from('church_leadership_recording_sessions')
-        .insert({
-          meeting_id: meetingId,
-          user_id: user.id,
-          status: 'active',
-          mime_type: mime,
-        })
-        .select('id')
-        .single();
-      if (error) throw error;
-      sessionId = data.id as string;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`No se pudo crear la sesión: ${message}`);
-      setStatus('error');
-      stream.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      return;
-    }
-    sessionIdRef.current = sessionId;
-
-    // Canal broadcast + aviso a la app principal.
-    const channel = createRecorderChannel();
-    channelRef.current = channel;
-    channel.send({
-      type: 'SESSION_START',
-      session: {
-        sessionId,
-        meetingId,
-        startedAt: Date.now(),
-      },
-    });
-
-    void wakeLock.request();
-    startRecorder(stream);
-    setStatus('recording');
-    channel.send({ type: 'RECORDER_READY', sessionId });
-  }, [meetingId, sessionIdParam, user, startRecorder, wakeLock]);
 
   // -----------------------------------------------------
   // Detener definitivamente + finalizar
@@ -443,6 +383,105 @@ const RecorderPopupPage: React.FC = () => {
   );
 
   // -----------------------------------------------------
+  // Inicio de sesión: pedir mic, insertar fila, arrancar grabación
+  // -----------------------------------------------------
+  const startSession = useCallback(async () => {
+    if (!meetingId) {
+      setErrorMessage('Falta el parámetro meetingId en la URL.');
+      setStatus('error');
+      return;
+    }
+    if (!UUID_RE.test(meetingId)) {
+      setErrorMessage('Identificador de reunión inválido.');
+      setStatus('error');
+      return;
+    }
+    if (sessionIdParam && !UUID_RE.test(sessionIdParam)) {
+      setErrorMessage('Identificador de sesión inválido.');
+      setStatus('error');
+      return;
+    }
+    if (!user) {
+      setErrorMessage('Usuario no autenticado.');
+      setStatus('error');
+      return;
+    }
+    setStatus('requesting');
+    setErrorMessage(null);
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`No se pudo acceder al micrófono: ${message}`);
+      setStatus('error');
+      return;
+    }
+    streamRef.current = stream;
+
+    // Si el track del mic se cae (dispositivo desconectado, permiso revocado,
+    // otra app lo toma), detén la sesión guardando lo grabado.
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.addEventListener('ended', () => {
+        if (stoppingRef.current) return;
+        toast({
+          title: 'Micrófono desconectado',
+          description:
+            'Se perdió acceso al micrófono. Guardando lo grabado hasta ahora…',
+          variant: 'destructive',
+        });
+        void stopSession('user');
+      });
+    }
+
+    const mime = pickMimeType();
+    mimeTypeRef.current = mime;
+
+    let sessionId: string;
+    try {
+      const { data, error } = await supabase
+        .from('church_leadership_recording_sessions' as const)
+        .insert({
+          meeting_id: meetingId,
+          user_id: user.id,
+          status: 'active',
+          mime_type: mime,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      sessionId = (data as RecordingSessionInsertRow).id;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`No se pudo crear la sesión: ${message}`);
+      setStatus('error');
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      return;
+    }
+    sessionIdRef.current = sessionId;
+
+    // Canal broadcast + aviso a la app principal.
+    const channel = createRecorderChannel();
+    channelRef.current = channel;
+    channel.send({
+      type: 'SESSION_START',
+      session: {
+        sessionId,
+        meetingId,
+        startedAt: Date.now(),
+      },
+    });
+
+    void wakeLock.request();
+    startRecorder(stream);
+    setStatus('recording');
+    channel.send({ type: 'RECORDER_READY', sessionId });
+  }, [meetingId, sessionIdParam, user, startRecorder, wakeLock, stopSession, toast]);
+
+  // -----------------------------------------------------
   // Pausar / Reanudar
   // -----------------------------------------------------
   const togglePause = useCallback(() => {
@@ -473,7 +512,7 @@ const RecorderPopupPage: React.FC = () => {
   }, []);
 
   const extendRecording = useCallback(() => {
-    setExtended(true);
+    setCeilingMs((prev) => Math.min(prev + CEILING_STEP_MS, ABSOLUTE_CAP_MS));
     setShowWarning(false);
   }, []);
 
@@ -494,16 +533,23 @@ const RecorderPopupPage: React.FC = () => {
       segmentActiveMsRef.current += 1000;
       setActiveMs(activeMsRef.current);
 
-      // Escalera de auto-parada.
+      // Escalera de auto-parada — siempre respeta el tope absoluto.
       if (activeMsRef.current >= ABSOLUTE_CAP_MS) {
         void stopSession('cap_3h');
         return;
       }
-      if (activeMsRef.current >= HARD_STOP_AT_MS && !extendedRef.current) {
-        void stopSession('hard_2h');
+      const currentCeiling = ceilingMsRef.current;
+      if (activeMsRef.current >= currentCeiling) {
+        void stopSession(
+          currentCeiling >= ABSOLUTE_CAP_MS ? 'cap_3h' : 'hard_2h',
+        );
         return;
       }
-      if (activeMsRef.current >= WARN_AT_MS && !extendedRef.current && !showWarning) {
+      if (
+        activeMsRef.current >= currentCeiling - WARN_LEAD_MS &&
+        currentCeiling < ABSOLUTE_CAP_MS &&
+        !showWarning
+      ) {
         setShowWarning(true);
       }
 
@@ -531,15 +577,49 @@ const RecorderPopupPage: React.FC = () => {
   }, [status, togglePause]);
 
   // -----------------------------------------------------
-  // beforeunload + unmount — tear down stream + wake lock + canal
+  // beforeunload / pagehide + unmount — tear down stream + wake lock + canal
   // -----------------------------------------------------
   useEffect(() => {
     const onBeforeUnload = () => {
       teardown();
     };
+    // pagehide también cubre bfcache/mobile/safari y es el evento recomendado
+    // para persistir estado al cierre. Capturamos sincrónicamente el buffer
+    // actual a IndexedDB para que recoverAndFinalize pueda recuperar lo
+    // grabado aunque el popup se cierre de golpe.
+    const onPageHide = () => {
+      try {
+        const sessionId = sessionIdRef.current;
+        const chunks = currentChunksRef.current;
+        if (sessionId && chunks.length > 0) {
+          const blob = new Blob(chunks, { type: mimeTypeRef.current });
+          const index = segmentIndexRef.current;
+          // Fire-and-forget: no se puede esperar a una promesa en pagehide,
+          // pero la escritura a IDB se lanza antes de cortar el event loop.
+          void saveSegment(sessionId, index, blob, {
+            mimeType: mimeTypeRef.current,
+            durationMs: segmentActiveMsRef.current,
+            createdAt: Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error('Error guardando segmento en pagehide', err);
+      }
+      try {
+        const recorder = recorderRef.current;
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      } catch {
+        /* ignore */
+      }
+      teardown();
+    };
     window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
       teardown();
     };
   }, [teardown]);
@@ -580,20 +660,23 @@ const RecorderPopupPage: React.FC = () => {
 
   const isRunning = status === 'recording' || status === 'paused';
 
-  const minutesUntilHardStop = Math.max(
+  const minutesUntilCeiling = Math.max(
     1,
-    Math.ceil((HARD_STOP_AT_MS - activeMs) / 60_000),
+    Math.ceil((ceilingMs - activeMs) / 60_000),
   );
+  const ceilingLabel = formatDuration(ceilingMs);
+  const atAbsoluteCap = ceilingMs >= ABSOLUTE_CAP_MS;
 
   const showWakeLockWarning = !wakeLock.isSupported || wakeLock.error !== null;
 
   return (
-    <div className="min-h-screen bg-casa-900 text-white flex flex-col items-center justify-center p-6">
+    <div lang="es" className="min-h-screen bg-casa-900 text-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md bg-casa-800 border border-casa-700 rounded-xl shadow-xl p-6 space-y-6">
         <header className="flex items-center gap-3">
           {status === 'recording' && (
             <span className="inline-flex items-center gap-2">
               <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse" aria-hidden />
+              <span className="sr-only">Grabando activamente</span>
               <Mic className="h-5 w-5 text-red-400" aria-hidden />
             </span>
           )}
@@ -603,16 +686,33 @@ const RecorderPopupPage: React.FC = () => {
           )}
           {status === 'stopped' && <MicOff className="h-5 w-5 text-casa-400" aria-hidden />}
           {status === 'error' && <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden />}
-          <h1 className="text-xl font-mont font-semibold">{statusLabel}</h1>
+          <h1
+            className="text-xl font-mont font-semibold"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {statusLabel}
+          </h1>
         </header>
 
         <div className="text-center">
-          <div className="text-5xl font-mono tabular-nums tracking-tight">
+          <div
+            role="timer"
+            aria-label="Tiempo grabado"
+            aria-live="off"
+            className="text-5xl font-mono tabular-nums tracking-tight"
+          >
             {formatDuration(activeMs)}
           </div>
-          <p className="mt-2 text-sm text-casa-400">
-            {segmentsUploaded} segmento{segmentsUploaded === 1 ? '' : 's'} sincronizado
-            {segmentsUploaded === 1 ? '' : 's'}
+          <p className="mt-2 text-sm text-casa-400" aria-live="polite">
+            <span aria-live="polite" aria-atomic="true">
+              {segmentsUploaded} segmento{segmentsUploaded === 1 ? '' : 's'} guardado
+              {segmentsUploaded === 1 ? '' : 's'}
+            </span>
+          </p>
+          <p className="mt-1 text-xs text-casa-500" aria-live="polite">
+            Límite actual: {ceilingLabel}
+            {atAbsoluteCap ? ' (tope máximo)' : ''}
           </p>
         </div>
 
@@ -663,6 +763,7 @@ const RecorderPopupPage: React.FC = () => {
             variant="default"
             onClick={() => void stopSession('user')}
             disabled={!isRunning && status !== 'stopping'}
+            aria-label="Detener grabación y guardar"
           >
             <StopCircle className="h-4 w-4 mr-2" aria-hidden />
             Detener y guardar
@@ -684,17 +785,27 @@ const RecorderPopupPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>La grabación se detendrá pronto</DialogTitle>
             <DialogDescription>
-              Quedan aproximadamente {minutesUntilHardStop} minuto
-              {minutesUntilHardStop === 1 ? '' : 's'} antes del límite de 2
-              horas. Puedes extender la grabación 30 minutos más o detenerla y
-              guardar ahora.
+              Quedan aproximadamente {minutesUntilCeiling} minuto
+              {minutesUntilCeiling === 1 ? '' : 's'} antes del límite actual
+              ({ceilingLabel}). Puedes extender 30 minutos más (hasta un tope
+              de 3 horas) o detenerla y guardar ahora.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">
             <Button variant="outline" onClick={() => void stopSession('user')}>
               Detener y guardar
             </Button>
-            <Button onClick={extendRecording}>Extender 30 min</Button>
+            <Button
+              onClick={extendRecording}
+              disabled={atAbsoluteCap}
+              aria-label={
+                atAbsoluteCap
+                  ? 'Ya alcanzaste el tope máximo de 3 horas'
+                  : 'Extender 30 minutos'
+              }
+            >
+              {atAbsoluteCap ? 'Tope máximo alcanzado' : 'Extender 30 min'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -26,19 +26,26 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
   const [fallbackInline, setFallbackInline] = useState(false);
   const [popupWindow, setPopupWindow] = useState<Window | null>(null);
   const popupWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const savedFiredRef = useRef(false);
+
+  const fireSavedOnce = useCallback(() => {
+    if (savedFiredRef.current) return;
+    savedFiredRef.current = true;
+    onRecordingSaved();
+  }, [onRecordingSaved]);
 
   useEffect(() => {
     const channel = createRecorderChannel();
     const unsubscribe = channel.subscribe((msg) => {
       if (msg.type === 'SESSION_STOP') {
-        onRecordingSaved();
+        fireSavedOnce();
       }
     });
     return () => {
       unsubscribe();
       channel.close();
     };
-  }, [onRecordingSaved]);
+  }, [fireSavedOnce]);
 
   useEffect(() => {
     return () => {
@@ -60,6 +67,7 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
       return;
     }
     setPopupWindow(win);
+    savedFiredRef.current = false;
     win.focus();
 
     if (popupWatchRef.current) clearInterval(popupWatchRef.current);
@@ -68,10 +76,10 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
         if (popupWatchRef.current) clearInterval(popupWatchRef.current);
         popupWatchRef.current = null;
         setPopupWindow(null);
-        onRecordingSaved();
+        fireSavedOnce();
       }
     }, 1000);
-  }, [meetingId, toast, onRecordingSaved]);
+  }, [meetingId, toast, fireSavedOnce]);
 
   if (fallbackInline) {
     return <InlineAudioRecorder meetingId={meetingId} onRecordingSaved={onRecordingSaved} />;
@@ -97,6 +105,11 @@ const AudioRecorder = ({ meetingId, onRecordingSaved }: AudioRecorderProps) => {
           {popupOpen ? (
             <>
               <Mic className="h-5 w-5" />
+              <span
+                className="h-2 w-2 rounded-full bg-red-500 animate-pulse ml-2"
+                aria-hidden="true"
+              />
+              <span className="sr-only">Grabación en curso</span>
               Grabación en curso…
             </>
           ) : (

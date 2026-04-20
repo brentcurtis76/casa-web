@@ -381,7 +381,9 @@ export async function finalize(
     );
   }
 
-  const filename = opts.filename ?? `grabacion-${new Date().toISOString()}.webm`;
+  const filename =
+    opts.filename ??
+    `grabacion-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
   const recording = await insertRecordingRow({
     meetingId,
