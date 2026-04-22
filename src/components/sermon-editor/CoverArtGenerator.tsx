@@ -23,7 +23,6 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CoverCropTool } from './CoverCropTool';
@@ -32,6 +31,7 @@ import {
   buildSermonCoverPrompt,
   getCasaLogoAsBase64,
 } from '@/lib/covers/coverPromptBuilder';
+import { CASA_BRAND } from '@/lib/brand-kit';
 
 // Gemini generates at 4:3 (1024x768). The custom-upload path still uses the
 // crop tool's single-size square target until the crop tool supports rectangles.
@@ -46,13 +46,15 @@ interface CoverArtGeneratorProps {
   disabled?: boolean;
 }
 
-// Brand-consistent toast styles
+// Brand-consistent toast styles. Amber border uses the exact CASA Ámbar
+// token (#D4A853) rather than Tailwind's amber-600 (#D97706), which is a
+// deeper orange and reads off-brand against the CASA palette.
 const toastStyles = {
   success: {
     style: {
       background: '#292524',
       color: '#fef3c7',
-      border: '1px solid #D97706',
+      border: `1px solid ${CASA_BRAND.colors.primary.amber}`,
     },
   },
   error: {
@@ -72,7 +74,6 @@ export function CoverArtGenerator({
 }: CoverArtGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState(0);
   const [coverOptions, setCoverOptions] = useState<string[]>([]);
   const [selectedCover, setSelectedCover] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -84,8 +85,11 @@ export function CoverArtGenerator({
 
   // Load CASA logo (passed to Gemini as reference image so the logo renders
   // from the real asset rather than being hallucinated).
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+  const [logoRetryNonce, setLogoRetryNonce] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setLogoLoadFailed(false);
     getCasaLogoAsBase64()
       .then((b64) => {
         if (!cancelled) setLogoBase64(b64);
@@ -93,8 +97,9 @@ export function CoverArtGenerator({
       .catch((err) => {
         console.error('[CoverArtGenerator] Failed to load CASA logo:', err);
         if (!cancelled) {
+          setLogoLoadFailed(true);
           toast.error(
-            'No se pudo cargar el logo CASA. Recarga la página para reintentar.',
+            'No se pudo cargar el logo CASA. Usa el botón Reintentar.',
             toastStyles.error,
           );
         }
@@ -102,7 +107,8 @@ export function CoverArtGenerator({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [logoRetryNonce]);
+  const retryLogoLoad = () => setLogoRetryNonce((n) => n + 1);
 
   // Update preview when cover image changes
   useEffect(() => {
@@ -130,7 +136,6 @@ export function CoverArtGenerator({
     }
 
     setIsGenerating(true);
-    setGenerationProgress(10);
     setCoverOptions([]);
     setSelectedCover(null);
 
@@ -140,7 +145,6 @@ export function CoverArtGenerator({
         preacher: metadata.speaker,
         illustrationTheme,
       });
-      setGenerationProgress(20);
 
       const { data, error } = await supabase.functions.invoke('generate-illustration', {
         body: {
@@ -151,8 +155,6 @@ export function CoverArtGenerator({
         },
       });
 
-      setGenerationProgress(80);
-
       if (error) throw error;
 
       const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
@@ -161,7 +163,6 @@ export function CoverArtGenerator({
       }
 
       setCoverOptions(valid);
-      setGenerationProgress(100);
 
       toast.success(
         `${valid.length} portadas generadas. Selecciona una.`,
@@ -276,7 +277,7 @@ export function CoverArtGenerator({
       </div>
 
       {/* Cover Preview — 4:3 frame. Custom uploads (1:1) letterbox inside it. */}
-      <div className="relative aspect-[4/3] w-full max-w-[320px] mx-auto rounded-lg overflow-hidden bg-muted border-2 border-dashed border-muted-foreground/25">
+      <div className="relative aspect-[4/3] w-full max-w-[480px] mx-auto rounded-lg overflow-hidden bg-muted border-2 border-dashed border-muted-foreground/25">
         {previewUrl ? (
           <>
             <img
@@ -315,9 +316,13 @@ export function CoverArtGenerator({
         )}
       </div>
 
-      {/* Generation Progress */}
-      {isGenerating && generationProgress > 0 && generationProgress < 100 && (
-        <Progress value={generationProgress} className="h-2" />
+      {/* Generation status label (replaces the old progress bar, which jumped
+          non-linearly 10 → 20 → wait → 80 → 100 and communicated "stuck"). */}
+      {isGenerating && (
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>Generando 4 variaciones con texto integrado...</span>
+        </div>
       )}
 
       {/* Illustration Theme Input */}
@@ -339,12 +344,50 @@ export function CoverArtGenerator({
         </p>
       </div>
 
+      {/* Persistent warning when the CASA logo failed to load. Recovery
+          path (retry) matches the Portadas pattern. */}
+      {logoLoadFailed && !logoBase64 && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border p-3"
+          style={{
+            borderColor: CASA_BRAND.colors.amber.dark,
+            backgroundColor: CASA_BRAND.colors.primary.white,
+          }}
+        >
+          <p
+            className="text-sm"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              color: CASA_BRAND.colors.secondary.carbon,
+            }}
+          >
+            No se pudo cargar el logo CASA. La generación de portadas lo requiere como referencia.
+          </p>
+          <button
+            type="button"
+            onClick={retryLogoLoad}
+            className="shrink-0 px-3 py-1 rounded-lg text-sm font-medium"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex flex-col gap-2">
         <Button
           onClick={generateCovers}
           disabled={!canGenerate || isGenerating || !logoBase64}
-          className="w-full bg-amber-600 hover:bg-amber-700"
+          className="w-full"
+          style={{
+            backgroundColor: CASA_BRAND.colors.primary.amber,
+            color: CASA_BRAND.colors.primary.white,
+          }}
         >
           {isGenerating ? (
             <>
@@ -375,9 +418,17 @@ export function CoverArtGenerator({
         </Button>
       </div>
 
-      {/* Metadata Warning */}
+      {/* Metadata Warning — uses Carbón (#333) for reliable contrast on cream
+          rather than Tailwind amber-600 (#D97706), which fails WCAG for body
+          text on the cream background. */}
       {!canGenerate && !disabled && (
-        <p className="text-xs text-amber-600 text-center">
+        <p
+          className="text-xs text-center"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.secondary.carbon,
+          }}
+        >
           Completa el título y predicador para generar la portada
         </p>
       )}

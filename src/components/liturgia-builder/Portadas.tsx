@@ -19,7 +19,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { currentSeason as fallbackSeason } from '@/data/currentSeason';
-import { Image as ImageIcon, Loader2, RefreshCw, Check, Download } from 'lucide-react';
+import { Image as ImageIcon, Loader2, RefreshCw, Check, Save } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
@@ -81,8 +81,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
 
   // ---- CASA logo as Gemini reference image ----
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+  const [logoRetryNonce, setLogoRetryNonce] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setLogoLoadFailed(false);
     getCasaLogoAsBase64()
       .then((b64) => {
         if (!cancelled) setLogoBase64(b64);
@@ -90,10 +93,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       .catch((err) => {
         console.error('[Portadas] Failed to load CASA logo for Gemini reference:', err);
         if (!cancelled) {
+          setLogoLoadFailed(true);
           toast({
             title: 'No se pudo cargar el logo CASA',
             description:
-              'La generación de portadas requiere el logo. Recarga la página para reintentar.',
+              'La generación de portadas requiere el logo. Usa el botón Reintentar.',
             variant: 'destructive',
           });
         }
@@ -101,7 +105,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [toast, logoRetryNonce]);
+  const retryLogoLoad = () => setLogoRetryNonce((n) => n + 1);
 
   // ---- Liturgical season (same source as the rest of the app) ----
   const [seasonName, setSeasonName] = useState(fallbackSeason.name);
@@ -477,10 +482,18 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         <button
           type="button"
           onClick={() => setPreviewType('main')}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-            previewType === 'main' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
-          }`}
-          style={{ fontFamily: CASA_BRAND.fonts.body }}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-colors"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            backgroundColor:
+              previewType === 'main'
+                ? CASA_BRAND.colors.primary.black
+                : CASA_BRAND.colors.secondary.grayLight,
+            color:
+              previewType === 'main'
+                ? CASA_BRAND.colors.primary.white
+                : CASA_BRAND.colors.secondary.carbon,
+          }}
         >
           Portada Principal
         </button>
@@ -489,10 +502,18 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           onClick={() => setPreviewType('reflection')}
           disabled={!selectedMainCover}
           aria-describedby={!selectedMainCover ? 'portada-reflection-disabled-hint' : undefined}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-            previewType === 'reflection' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
-          }`}
-          style={{ fontFamily: CASA_BRAND.fonts.body }}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            backgroundColor:
+              previewType === 'reflection'
+                ? CASA_BRAND.colors.primary.black
+                : CASA_BRAND.colors.secondary.grayLight,
+            color:
+              previewType === 'reflection'
+                ? CASA_BRAND.colors.primary.white
+                : CASA_BRAND.colors.secondary.carbon,
+          }}
         >
           Portada Reflexión
           {isGeneratingReflection && (
@@ -501,6 +522,22 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         </button>
         <span id="portada-reflection-disabled-hint" className="sr-only">
           Selecciona primero una portada principal
+        </span>
+      </div>
+
+      {/* Current liturgical season (read-only informational) */}
+      <div className="flex items-center justify-center">
+        <span
+          className="text-xs"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.secondary.grayMedium,
+          }}
+        >
+          Temporada:&nbsp;
+          <span style={{ color: CASA_BRAND.colors.secondary.grayDark, fontWeight: 500 }}>
+            {seasonName}
+          </span>
         </span>
       </div>
 
@@ -529,7 +566,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           onChange={(e) => setIllustrationTheme(e.target.value)}
           placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
           maxLength={200}
-          className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2"
+          className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500"
           style={{
             fontFamily: CASA_BRAND.fonts.body,
             fontSize: '14px',
@@ -547,6 +584,41 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           Describe en español lo que quieres ver. Deja vacío para usar el tema litúrgico de la temporada.
         </p>
       </div>
+
+      {/* Persistent warning when the CASA logo (required as a reference image
+          for Gemini) failed to load. Gives the user a recovery path rather
+          than leaving the Generate button silently disabled. */}
+      {logoLoadFailed && !logoBase64 && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border p-3"
+          style={{
+            borderColor: CASA_BRAND.colors.amber.dark,
+            backgroundColor: CASA_BRAND.colors.primary.white,
+          }}
+        >
+          <p
+            className="text-sm"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              color: CASA_BRAND.colors.secondary.carbon,
+            }}
+          >
+            No se pudo cargar el logo CASA. La generación de portadas lo requiere como referencia.
+          </p>
+          <button
+            type="button"
+            onClick={retryLogoLoad}
+            className="shrink-0 px-3 py-1 rounded-lg text-sm font-medium"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              backgroundColor: CASA_BRAND.colors.primary.amber,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
 
       {/* Generate button */}
       <div className="flex justify-center">
@@ -667,7 +739,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
               <button
                 type="button"
                 onClick={retryReflection}
-                className="text-sm px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                className="text-sm px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
                 style={{
                   fontFamily: CASA_BRAND.fonts.body,
                   color: CASA_BRAND.colors.secondary.grayDark,
@@ -691,7 +763,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
               fontWeight: 500,
             }}
           >
-            <Download size={16} />
+            <Save size={16} aria-hidden="true" />
             Usar estas portadas
           </button>
         </div>
