@@ -506,6 +506,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           value={illustrationTheme}
           onChange={(e) => setIllustrationTheme(e.target.value)}
           placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
+          maxLength={200}
           className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2"
           style={{
             fontFamily: CASA_BRAND.fonts.body,

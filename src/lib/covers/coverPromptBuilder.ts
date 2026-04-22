@@ -198,9 +198,16 @@ export function buildLiturgyCoverPrompt(args: {
 export function buildLiturgyReflectionCoverPrompt(args: {
   preacher: string;
 }): string {
-  // Strip double quotes and line breaks so an unusual preacher name can't
-  // confuse Gemini's parse of the Subtitle: "<...>" line in the plaintext prompt.
-  const preacher = args.preacher.replace(/["\n\r]/g, '').trim();
+  // Allowlist sanitization: keep letters (incl. accented Unicode), digits,
+  // whitespace, hyphens, dots, commas. Strip everything else — straight
+  // quotes, smart quotes, backticks, newlines, parens, control chars, etc.
+  // This prevents an unusual preacher name from breaking out of the
+  // Subtitle: "<...>" line in the plaintext prompt or smuggling extra
+  // instructions to Gemini.
+  const preacher = args.preacher
+    .replace(/[^\p{L}\p{N}\s\-.,]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const subtitleLine = preacher
     ? `Subtitle: "${preacher}" (rendered as a quiet caption beneath the title, clean sans-serif, muted gray)`
     : 'Subtitle: none — render the title alone, centered vertically';

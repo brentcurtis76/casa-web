@@ -315,6 +315,7 @@ export function CoverArtGenerator({
           value={illustrationTheme}
           onChange={(e) => setIllustrationTheme(e.target.value)}
           placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
+          maxLength={200}
           className="w-full p-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500"
           disabled={disabled || isGenerating}
         />

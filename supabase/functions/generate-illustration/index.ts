@@ -12,6 +12,14 @@ const GEMINI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
 // Modelo: Nano Banana Pro para generación de imágenes
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';
 
+// Request size limits — reject early to avoid DoS / quota drain.
+// jsonPrompt is a JSON-stringified design spec (~5-15 KB typical).
+// referenceImage is a base64-encoded PNG (logo ~100 KB, user-selected main
+// cover ~1-3 MB). Cap generously above the expected max.
+const MAX_JSON_PROMPT_BYTES = 50_000;          // 50 KB
+const MAX_REFERENCE_IMAGE_BYTES = 6_000_000;   // ~6 MB base64 (≈ 4.5 MB raw)
+const MAX_TOTAL_BODY_BYTES = 10_000_000;       // 10 MB hard ceiling on the whole body
+
 // Build style prompt requesting pure white background
 // The frontend will replace white pixels with the exact brand color
 function buildStylePrompt(): string {
@@ -68,6 +76,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function unauthorized(detail: string): Response {
+  return new Response(
+    JSON.stringify({ error: 'Unauthorized', detail }),
+    { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+}
+
+function payloadTooLarge(detail: string): Response {
+  return new Response(
+    JSON.stringify({ error: 'Payload too large', detail }),
+    { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -79,7 +101,55 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
+    // ── Auth: require a valid JWT. Platform-level verify_jwt=true (Supabase
+    // default) guarantees the signature; we just need the user identity for
+    // logging and to refuse anonymous callers.
+    const authHeader = req.headers.get('authorization') ?? '';
+    if (!authHeader) return unauthorized('Missing authorization header');
+
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    let userId = '';
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) throw new Error('malformed JWT');
+      const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+      const decoded = JSON.parse(atob(padded));
+      userId = decoded.sub ?? '';
+      if (!userId) throw new Error('missing sub claim');
+    } catch (err) {
+      return unauthorized(`No se pudo leer el token: ${(err as Error).message}`);
+    }
+
+    // ── Body size cap: reject oversized payloads before JSON.parse to avoid
+    // Deno-worker OOM. Content-Length is advisory; the field-level caps below
+    // are the real enforcement for individual strings.
+    const contentLength = Number(req.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_TOTAL_BODY_BYTES) {
+      return payloadTooLarge(`Body exceeds ${MAX_TOTAL_BODY_BYTES} bytes`);
+    }
+
     const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, aspectRatio } = await req.json();
+
+    // ── Per-field size caps.
+    if (typeof jsonPrompt === 'string' && jsonPrompt.length > MAX_JSON_PROMPT_BYTES) {
+      return payloadTooLarge(`jsonPrompt exceeds ${MAX_JSON_PROMPT_BYTES} bytes`);
+    }
+    if (typeof referenceImage === 'string' && referenceImage.length > MAX_REFERENCE_IMAGE_BYTES) {
+      return payloadTooLarge(`referenceImage exceeds ${MAX_REFERENCE_IMAGE_BYTES} bytes`);
+    }
+
+    // ── Magic-byte validation on referenceImage: confirm it's a real PNG/JPEG
+    // before we forward it upstream to Gemini. Protects against payloads
+    // disguised as base64 of arbitrary binary content.
+    if (referenceImage !== undefined && referenceImage !== null) {
+      if (typeof referenceImage !== 'string' || !isValidImageBase64(referenceImage)) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid referenceImage', detail: 'Must be base64-encoded PNG or JPEG' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
 
     // Only forward aspectRatio when caller explicitly provides a valid value.
     // Omitting aspectRatio preserves prior behavior for callers that never passed it.
@@ -91,7 +161,10 @@ serve(async (req) => {
         : undefined;
 
     const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
-    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode${forwardedAspectRatio ? `, aspectRatio: ${forwardedAspectRatio}` : ''})`);
+    // Structural log — avoids echoing user-provided prompt/title/preacher content.
+    console.log(
+      `[generate-illustration] user=${userId} mode=${mode} eventType=${eventType} count=${count}${forwardedAspectRatio ? ` aspectRatio=${forwardedAspectRatio}` : ''}`,
+    );
 
     // Validate backgroundMode
     if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
@@ -122,12 +195,16 @@ serve(async (req) => {
       prompt += '\n\nIMPORTANT: The background MUST be PURE WHITE (#FFFFFF) with absolutely no texture, gradients, or patterns. This allows easy background extraction.';
     }
 
-    console.log(`[generate-illustration] Prompt: ${prompt.slice(0, 100)}...`);
+    // Intentionally omit prompt content from logs — it may contain user PII
+    // (liturgy title, preacher name). Structural signal only.
+    console.log(`[generate-illustration] promptBytes=${prompt.length}`);
 
     const illustrations: string[] = [];
 
-    // Usar Nano Banana Pro (gemini-3-pro-image-preview) para generar ilustraciones
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    // Usar Nano Banana Pro (gemini-3-pro-image-preview) para generar ilustraciones.
+    // API key moved from URL to header so it can never leak via echoed URLs in
+    // upstream error messages.
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent`;
 
     // Generar cada ilustración individualmente (Gemini genera una por request)
     const generateOne = async (index: number): Promise<string> => {
@@ -155,6 +232,7 @@ serve(async (req) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY,
           },
           body: JSON.stringify({
             contents: [{
@@ -174,7 +252,11 @@ serve(async (req) => {
         }
 
         const data = await response.json();
-        console.log(`[generate-illustration] Respuesta ${index}:`, JSON.stringify(data).slice(0, 300));
+        // Avoid dumping full response body — it contains base64 image data
+        // (large) and potential echoed prompt content. Log structural signals
+        // only.
+        const hasCandidates = !!(data?.candidates && data.candidates.length > 0);
+        console.log(`[generate-illustration] Respuesta ${index}: hasCandidates=${hasCandidates}`);
 
         // Extraer imagen de la respuesta de Gemini
         // Formato: data.candidates[0].content.parts[].inlineData.data
@@ -233,10 +315,11 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('[generate-illustration] Error:', error);
+    const message = error instanceof Error ? error.message : String(error);
 
     return new Response(
       JSON.stringify({
-        error: error.message || 'Error generando ilustraciones',
+        error: message || 'Error generando ilustraciones',
         illustrations: ['', '', '', ''],
       }),
       {
