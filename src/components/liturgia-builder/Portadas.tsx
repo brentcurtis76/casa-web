@@ -23,7 +23,7 @@ import { Image as ImageIcon, Loader2, RefreshCw, Check, Save } from 'lucide-reac
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Slide, SlideGroup } from '@/types/shared/slide';
-import type { LiturgyContext, IllustrationConfig, PortadasConfig } from '@/types/shared/liturgy';
+import type { LiturgyContext } from '@/types/shared/liturgy';
 import { v4 as uuidv4 } from 'uuid';
 import { UniversalSlide } from './UniversalSlide';
 import {
@@ -34,39 +34,9 @@ import {
 import { useCasaLogo } from '@/lib/covers/useCasaLogo';
 import { IllustrationThemeInput } from '@/components/covers/IllustrationThemeInput';
 
-// ============================================================
-// BACKWARD-COMPAT EXPORTS
-// These are preserved so existing consumers (ConstructorLiturgias.tsx) keep
-// compiling. The inner fields are no longer used by this component — text,
-// logo, and illustration positioning are all handled by Gemini now. The type
-// stays for DB-persisted liturgies saved before this refactor.
-// ============================================================
-
-const DEFAULT_ILLUSTRATION_CONFIG: IllustrationConfig = {
-  opacity: 100,
-  scale: 100,
-  positionX: 0,
-  positionY: 0,
-};
-
-export const DEFAULT_PORTADAS_CONFIG: PortadasConfig = {
-  illustrationConfig: DEFAULT_ILLUSTRATION_CONFIG,
-  logoAlignment: 'right',
-  textAlignment: 'right',
-  titleBreakAfterWord: null,
-};
-
 interface PortadasProps {
   context: LiturgyContext;
   onSlidesGenerated?: (mainSlides: SlideGroup, reflectionSlides: SlideGroup) => void;
-  /** @deprecated Unused in baked-text flow. Kept for consumer compat. */
-  sharedIllustration?: string | null;
-  /** @deprecated Unused in baked-text flow. Kept for consumer compat. */
-  onIllustrationChange?: (illustration: string | null) => void;
-  /** @deprecated Controls no longer surfaced. Kept for consumer compat. */
-  portadasConfig?: PortadasConfig;
-  /** @deprecated Controls no longer surfaced. Kept for consumer compat. */
-  onConfigChange?: (config: PortadasConfig) => void;
 }
 
 const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {

@@ -38,7 +38,7 @@ import {
   deleteLiturgy,
   downloadPortadaImage,
 } from '@/lib/liturgia/liturgyService';
-import type { Liturgy, PortadasConfig } from '@/types/shared/liturgy';
+import type { Liturgy } from '@/types/shared/liturgy';
 
 const STORAGE_KEY = 'casa-liturgy-draft';
 
@@ -62,7 +62,6 @@ const ConstructorLiturgiasPage: React.FC = () => {
   const [liturgies, setLiturgies] = useState<LiturgyListItem[]>([]);
   const [selectedLiturgy, setSelectedLiturgy] = useState<Liturgy | undefined>(undefined);
   const [selectedPortadaImage, setSelectedPortadaImage] = useState<string | null>(null);
-  const [selectedPortadasConfig, setSelectedPortadasConfig] = useState<PortadasConfig | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
@@ -112,8 +111,9 @@ const ConstructorLiturgiasPage: React.FC = () => {
           setSelectedPortadaImage(null);
         }
 
-        // Load portadas config if it exists
-        setSelectedPortadasConfig(result.portadasConfig);
+        // Note: `result.portadasConfig` is intentionally not loaded into
+        // component state. Baked-in covers don't use it. The read path on
+        // liturgyService is preserved for presentationService legacy rendering.
 
         setView('editor');
       } else {
@@ -139,7 +139,6 @@ const ConstructorLiturgiasPage: React.FC = () => {
   const handleNewLiturgy = () => {
     setSelectedLiturgy(undefined);
     setSelectedPortadaImage(null);
-    setSelectedPortadasConfig(undefined);
     setView('editor');
   };
 
@@ -172,10 +171,10 @@ const ConstructorLiturgiasPage: React.FC = () => {
   };
 
   // Save handler
-  const handleSave = useCallback(async (liturgy: Liturgy, portadaImage?: string | null, portadasConfig?: PortadasConfig) => {
+  const handleSave = useCallback(async (liturgy: Liturgy, portadaImage?: string | null) => {
     try {
-      // Save to Supabase with image and config (primary save target)
-      const result = await saveLiturgy(liturgy, portadaImage, portadasConfig);
+      // Save to Supabase with image (primary save target)
+      const result = await saveLiturgy(liturgy, portadaImage);
 
       if (!result.success) {
         throw new Error(result.error || 'Error desconocido guardando liturgia');
@@ -196,10 +195,6 @@ const ConstructorLiturgiasPage: React.FC = () => {
       });
       // Update the selected liturgy with any new IDs
       setSelectedLiturgy(liturgy);
-      // Update the saved config
-      if (portadasConfig) {
-        setSelectedPortadasConfig(portadasConfig);
-      }
     } catch (err) {
       console.error('Error saving liturgy:', err);
       const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -325,7 +320,6 @@ const ConstructorLiturgiasPage: React.FC = () => {
           <ConstructorLiturgias
             initialLiturgy={selectedLiturgy}
             initialPortadaImage={selectedPortadaImage}
-            initialPortadasConfig={selectedPortadasConfig}
             onSave={handleSave}
             onDirtyChange={setIsDirty}
           />

@@ -47,7 +47,6 @@ import type {
   LiturgyElementStatus,
   LiturgyContextInput,
   AnnouncementConfig,
-  PortadasConfig,
   LITURGY_ORDER,
   LiturgyOrderElement,
   CustomElementSubtype,
@@ -58,7 +57,7 @@ import type { Slide, SlideGroup } from '@/types/shared/slide';
 import type { Song } from '@/types/shared/song';
 import type { Story } from '@/types/shared/story';
 import ContextoTransversal from './ContextoTransversal';
-import Portadas, { DEFAULT_PORTADAS_CONFIG } from './Portadas';
+import Portadas from './Portadas';
 import Anuncios from './Anuncios';
 import {
   OracionEditor,
@@ -267,11 +266,10 @@ const LITURGY_ELEMENTS: {
 type WorkflowStep = 'contexto' | 'elementos' | 'preview' | 'export';
 
 interface ConstructorLiturgiasProps {
-  onSave?: (liturgy: Liturgy, portadaImage?: string | null, portadasConfig?: PortadasConfig) => void | Promise<void>;
+  onSave?: (liturgy: Liturgy, portadaImage?: string | null) => void | Promise<void>;
   onDirtyChange?: (isDirty: boolean) => void;
   initialLiturgy?: Liturgy;
   initialPortadaImage?: string | null;
-  initialPortadasConfig?: PortadasConfig;
 }
 
 /**
@@ -319,7 +317,6 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
   onDirtyChange,
   initialLiturgy,
   initialPortadaImage,
-  initialPortadasConfig,
 }) => {
   const { toast } = useToast();
 
@@ -418,14 +415,12 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     });
   }, []);
 
-  // Shared illustration state for portadas
-  const [sharedIllustration, setSharedIllustration] = useState<string | null>(
+  // Shared illustration state for portadas — used as the single thumbnail
+  // (portada_imagen_url) for the liturgy list. Baked-in covers no longer
+  // drive this from Portadas; it stays at the initial DB value until a
+  // future feature updates it from the selected main cover.
+  const [sharedIllustration] = useState<string | null>(
     initialPortadaImage || null
-  );
-
-  // Portadas configuration
-  const [portadasConfig, setPortadasConfig] = useState<PortadasConfig>(
-    initialPortadasConfig || DEFAULT_PORTADAS_CONFIG
   );
 
   // Loading states
@@ -547,18 +542,6 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLiturgyId]); // Solo depende del ID, no del contenido completo
-
-  // Handler for illustration changes
-  const handleIllustrationChange = useCallback((illustration: string | null) => {
-    setSharedIllustration(illustration);
-    setIsDirty(true);
-  }, []);
-
-  // Handler for portadas config changes
-  const handlePortadasConfigChange = useCallback((config: PortadasConfig) => {
-    setPortadasConfig(config);
-    setIsDirty(true);
-  }, []);
 
   // Handle context save
   const handleContextSave = async (input: LiturgyContextInput) => {
@@ -1000,7 +983,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
         setPendingContextChanges(null);
       }
       // Await the onSave callback to ensure the save completes before marking as not dirty
-      await onSave?.(liturgy, sharedIllustration, portadasConfig);
+      await onSave?.(liturgy, sharedIllustration);
       setIsDirty(false);
     } catch (error) {
       console.error('[ConstructorLiturgias] Error saving:', error);
@@ -1037,10 +1020,6 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       return (
         <Portadas
           context={liturgyContext}
-          sharedIllustration={sharedIllustration}
-          onIllustrationChange={handleIllustrationChange}
-          portadasConfig={portadasConfig}
-          onConfigChange={handlePortadasConfigChange}
           onSlidesGenerated={(mainSlides, reflectionSlides) => {
             console.log('[ConstructorLiturgias] Received portada slides:', {
               mainSlides: mainSlides.slides.length,

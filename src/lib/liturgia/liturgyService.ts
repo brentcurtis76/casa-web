@@ -320,13 +320,18 @@ interface DBLiturgiaLectura {
 /**
  * Guarda una liturgia completa en Supabase
  * @param liturgy - La liturgia a guardar
- * @param portadaImageBase64 - Imagen de portada en base64 (opcional)
- * @param portadasConfig - Configuración de portadas (alineación, escala, posición)
+ * @param portadaImageBase64 - Imagen de portada en base64 (opcional, usada para thumbnail `portada_imagen_url`)
+ *
+ * Note: the former `portadasConfig` parameter (illustration alignment / scale /
+ * position / title-break word) was removed after the baked-in-text cover
+ * refactor — those fields are no longer user-controlled. The `portadas_config`
+ * DB column is NOT written anymore. It is still READ by
+ * `presentationService.migratePortadasSlides` for legacy liturgies saved
+ * before the refactor, so the column and the `PortadasConfig` type remain.
  */
 export async function saveLiturgy(
   liturgy: Liturgy,
-  portadaImageBase64?: string | null,
-  portadasConfig?: PortadasConfig
+  portadaImageBase64?: string | null
 ): Promise<{ success: boolean; error?: string; imageUrl?: string }> {
   console.log('[saveLiturgy] Starting save for liturgy:', liturgy.id);
   try {
@@ -417,10 +422,9 @@ export async function saveLiturgy(
       upsertData.portada_imagen_url = imageUrl;
     }
 
-    // Guardar configuración de portadas si se proporciona
-    if (portadasConfig) {
-      upsertData.portadas_config = portadasConfig;
-    }
+    // Note: `portadas_config` column is intentionally NOT written. Baked-in
+    // covers don't use it. The column still exists for legacy liturgies and
+    // is read by presentationService.migratePortadasSlides at render time.
 
     console.log('[saveLiturgy] Upserting liturgia with data:', upsertData);
     const { data: liturgiaData, error: liturgiaError } = await supabase
