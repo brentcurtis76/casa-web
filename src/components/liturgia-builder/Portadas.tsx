@@ -423,6 +423,17 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
 
   const canExport = !!(selectedMainCover && reflectionCover);
 
+  // Concise status string for screen-reader announcement via aria-live.
+  const generationStatusForSr = isGeneratingMain
+    ? 'Generando portadas principales con texto y logo integrados'
+    : isGeneratingReflection
+      ? 'Generando portada de reflexión a partir de la portada principal'
+      : canExport
+        ? 'Ambas portadas están listas'
+        : selectedMainCover
+          ? 'Selecciona la portada principal para continuar'
+          : '';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -456,6 +467,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         </div>
       </div>
 
+      {/* Screen-reader-only live region announcing generation progress */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {generationStatusForSr}
+      </div>
+
       {/* Preview type toggle */}
       <div className="flex items-center justify-center gap-2">
         <button
@@ -472,14 +488,20 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           type="button"
           onClick={() => setPreviewType('reflection')}
           disabled={!selectedMainCover}
+          aria-describedby={!selectedMainCover ? 'portada-reflection-disabled-hint' : undefined}
           className={`px-4 py-2 rounded-full text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
             previewType === 'reflection' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
           }`}
           style={{ fontFamily: CASA_BRAND.fonts.body }}
         >
           Portada Reflexión
-          {isGeneratingReflection && <Loader2 className="inline ml-2 animate-spin" size={14} />}
+          {isGeneratingReflection && (
+            <Loader2 className="inline ml-2 animate-spin" size={14} aria-hidden="true" />
+          )}
         </button>
+        <span id="portada-reflection-disabled-hint" className="sr-only">
+          Selecciona primero una portada principal
+        </span>
       </div>
 
       {/* Preview */}
@@ -578,6 +600,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
                   key={index}
                   type="button"
                   onClick={() => selectMainVariation(variation)}
+                  aria-label={`Seleccionar portada opción ${index + 1}`}
+                  aria-pressed={isSelected}
                   className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
                     isSelected ? 'ring-2 ring-offset-2' : ''
                   }`}
@@ -589,7 +613,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
                 >
                   <img
                     src={`data:image/png;base64,${variation}`}
-                    alt={`Opción ${index + 1}`}
+                    alt=""
+                    aria-hidden="true"
                     className="w-full h-full object-cover"
                   />
                   {isSelected && (

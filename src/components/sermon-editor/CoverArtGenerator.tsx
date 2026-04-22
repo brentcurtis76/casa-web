@@ -71,6 +71,7 @@ export function CoverArtGenerator({
   disabled = false,
 }: CoverArtGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [coverOptions, setCoverOptions] = useState<string[]>([]);
   const [selectedCover, setSelectedCover] = useState<string | null>(null);
@@ -177,11 +178,13 @@ export function CoverArtGenerator({
     }
   }, [metadata.title, metadata.speaker, illustrationTheme, logoBase64]);
 
-  // Select a baked-in cover — convert base64 to Blob and save directly
+  // Select a baked-in cover — convert base64 to Blob and save directly.
+  // Uses a distinct saving flag so the brief "saving" state is separate from
+  // the "generating 4 variations" state for both UI affordances and AT.
   const selectCover = useCallback(
     async (base64: string) => {
       setSelectedCover(base64);
-      setIsGenerating(true);
+      setIsSaving(true);
       try {
         const response = await fetch(`data:image/png;base64,${base64}`);
         const blob = await response.blob();
@@ -191,7 +194,7 @@ export function CoverArtGenerator({
         console.error('Error saving cover:', err);
         toast.error('Error al guardar la portada', toastStyles.error);
       } finally {
-        setIsGenerating(false);
+        setIsSaving(false);
       }
     },
     [onCoverChange],
@@ -263,6 +266,15 @@ export function CoverArtGenerator({
         className="hidden"
       />
 
+      {/* Screen-reader-only live region for async status */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {isGenerating
+          ? 'Generando portadas con texto y logo integrados'
+          : isSaving
+            ? 'Guardando portada seleccionada'
+            : ''}
+      </div>
+
       {/* Cover Preview — 4:3 frame. Custom uploads (1:1) letterbox inside it. */}
       <div className="relative aspect-[4/3] w-full max-w-[320px] mx-auto rounded-lg overflow-hidden bg-muted border-2 border-dashed border-muted-foreground/25">
         {previewUrl ? (
@@ -274,10 +286,11 @@ export function CoverArtGenerator({
             />
             <button
               onClick={clearCover}
+              aria-label="Eliminar portada"
               className="absolute top-2 right-2 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
               title="Eliminar portada"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
             <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-xs bg-black/60 text-white">
               {GEMINI_COVER_WIDTH} x {GEMINI_COVER_HEIGHT}
@@ -285,7 +298,7 @@ export function CoverArtGenerator({
           </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-12 w-12 mb-2 opacity-50" />
+            <ImageIcon className="h-12 w-12 mb-2 opacity-50" aria-hidden="true" />
             <span className="text-sm">Sin portada</span>
             <span className="text-xs mt-1">
               {GEMINI_COVER_WIDTH} x {GEMINI_COVER_HEIGHT}
@@ -293,9 +306,11 @@ export function CoverArtGenerator({
           </div>
         )}
 
+        {/* Overlay only during the long-running generation call — not during
+            the brief Blob save that follows variation selection. */}
         {isGenerating && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <Loader2 className="h-8 w-8 text-white animate-spin" />
+            <Loader2 className="h-8 w-8 text-white animate-spin" aria-hidden="true" />
           </div>
         )}
       </div>
@@ -380,7 +395,9 @@ export function CoverArtGenerator({
                 <button
                   key={index}
                   onClick={() => selectCover(bg)}
-                  disabled={isGenerating}
+                  disabled={isGenerating || isSaving}
+                  aria-label={`Seleccionar portada opción ${index + 1}`}
+                  aria-pressed={isSelected}
                   className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
                     isSelected
                       ? 'border-amber-500 ring-2 ring-amber-500 ring-offset-2'
@@ -389,12 +406,13 @@ export function CoverArtGenerator({
                 >
                   <img
                     src={`data:image/png;base64,${bg}`}
-                    alt={`Background option ${index + 1}`}
+                    alt=""
+                    aria-hidden="true"
                     className="w-full h-full object-cover"
                   />
                   {isSelected && (
                     <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
-                      <Check className="h-3 w-3 text-white" />
+                      <Check className="h-3 w-3 text-white" aria-hidden="true" />
                     </div>
                   )}
                   <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-xs bg-black/60 text-white">
