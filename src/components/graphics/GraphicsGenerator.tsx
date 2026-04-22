@@ -99,7 +99,7 @@ function buildPatternPromptFromTheme(theme: GraphicsTheme, aspectRatio: string):
 
 ABSOLUTE RULE: NO ALPHABET LETTERS. No A, B, C, no words, no text, no writing, no typography whatsoever. If you generate any letter of any alphabet, you have failed.
 
-BACKGROUND: Solid warm cream color (#F5F0E6)
+BACKGROUND: Solid cream color (#F7F7F7)
 
 DOODLES TO DRAW (simple line art only):
 ${selectedElements.map(e => `- ${e}`).join('\n')}

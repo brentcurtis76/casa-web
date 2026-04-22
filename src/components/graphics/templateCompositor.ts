@@ -151,7 +151,7 @@ export const DEFAULT_ILLUSTRATION_ADJUSTMENTS: IllustrationAdjustments = {
 const COLORS = {
   amber: { r: 184, g: 146, b: 61 },      // #b8923d - líneas/iconos/detalles
   black: { r: 26, g: 26, b: 26 },        // #1A1A1A - texto título
-  cream: { r: 249, g: 247, b: 245 },     // #F9F7F5 - fondo
+  cream: { r: 247, g: 247, b: 247 },     // #F7F7F7 - fondo
   white: { r: 255, g: 255, b: 255 },
 };
 

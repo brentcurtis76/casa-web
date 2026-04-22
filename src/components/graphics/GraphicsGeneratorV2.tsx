@@ -386,7 +386,7 @@ export const GraphicsGeneratorV2 = () => {
   // Background settings for transparent/solid color control
   const [backgroundSettings, setBackgroundSettings] = useState<GraphicsBackgroundSettings>({
     mode: 'solid',
-    color: '#F9F7F5', // default cream
+    color: CASA_BRAND.colors.primary.white, // default cream
   });
 
   // Format date range for display
@@ -1507,7 +1507,7 @@ export const GraphicsGeneratorV2 = () => {
                     <input
                       id="bg-color"
                       type="color"
-                      value={backgroundSettings.color || '#F9F7F5'}
+                      value={backgroundSettings.color || CASA_BRAND.colors.primary.white}
                       onChange={(e) => setBackgroundSettings(prev => ({ ...prev, color: e.target.value }))}
                       className="h-8 w-16 rounded border cursor-pointer"
                     />

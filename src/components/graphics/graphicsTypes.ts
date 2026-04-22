@@ -159,7 +159,7 @@ export const ELEMENT_META: Record<string, { label: string; color: string }> = {
 /** Background settings for graphics generation */
 export interface GraphicsBackgroundSettings {
   mode: 'solid' | 'transparent';
-  color?: string; // hex color, default #F9F7F5
+  color?: string; // hex color, default #F7F7F7 (CASA_BRAND.colors.primary.white)
 }
 
 /** Deep clone helper for ElementPositions */

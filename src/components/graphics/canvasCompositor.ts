@@ -10,12 +10,13 @@
  */
 
 import { OVERLAY_CONFIG, OverlayContent } from './constants';
+import { CASA_BRAND } from '@/lib/brand-kit';
 
 const BRAND = {
   amber: '#D4A853',
   amberDark: '#B8923D',
   charcoal: '#1A1A1A',
-  cream: '#F9F7F5',
+  cream: CASA_BRAND.colors.primary.white,
   white: '#FFFFFF',
   black: '#000000',
 };
