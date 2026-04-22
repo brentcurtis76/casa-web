@@ -79,7 +79,7 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, aspectRatio } = await req.json();
 
     const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
     console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode)`);
@@ -88,6 +88,14 @@ serve(async (req) => {
     if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
       throw new Error('Invalid backgroundMode. Must be "solid", "transparent", or undefined.');
     }
+
+    // Validate aspectRatio and default to '4:3'
+    const allowedAspectRatios = ['1:1', '4:3', '3:4', '16:9', '9:16'] as const;
+    type AspectRatio = typeof allowedAspectRatios[number];
+    if (aspectRatio !== undefined && !allowedAspectRatios.includes(aspectRatio)) {
+      throw new Error(`Invalid aspectRatio. Must be one of: ${allowedAspectRatios.join(', ')}.`);
+    }
+    const resolvedAspectRatio: AspectRatio = (aspectRatio as AspectRatio) ?? '4:3';
 
     // Build prompt based on mode
     let prompt: string;
@@ -153,6 +161,9 @@ serve(async (req) => {
             }],
             generationConfig: {
               responseModalities: ['Text', 'Image'],
+              imageConfig: {
+                aspectRatio: resolvedAspectRatio,
+              },
             },
           }),
         });
