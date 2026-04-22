@@ -1,13 +1,16 @@
 /**
- * CoverArtGenerator - AI-powered cover art generation with text overlay
- * PROMPT_005: Cover Art & Metadata
+ * CoverArtGenerator — Sermon cover with baked-in-text generation
  *
- * Features:
- * - Generate AI background via existing generate-illustration edge function
- * - Add text overlay (sermon title + preacher name) using Canvas API
- * - 1400x1400 output (Spotify requirement)
- * - Regenerate option for new variations
- * - Custom image upload with crop tool
+ * Calls Gemini 3 Pro Image Preview (via the generate-illustration edge function)
+ * with a JSON prompt that renders the sermon title, preacher name, and CASA
+ * logo directly inside the image. No Canvas/React text overlay.
+ *
+ * Format: 4:3 (1024x768). CASA logo is passed as referenceImage so Gemini uses
+ * the real logo rather than inventing one.
+ *
+ * Custom image upload is still supported (via the crop tool) for users who
+ * want to provide a pre-designed cover. That path produces a 1:1 image and
+ * does NOT have text overlaid — the uploaded image is saved verbatim.
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -25,9 +28,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CoverCropTool } from './CoverCropTool';
 import type { SermonMetadata } from './MetadataForm';
+import {
+  buildSermonCoverPrompt,
+  getCasaLogoAsBase64,
+} from '@/lib/covers/coverPromptBuilder';
 
-// Spotify cover art requirements
-const COVER_SIZE = 1400;
+// Gemini generates at 4:3 (1024x768). The custom-upload path still uses the
+// crop tool's single-size square target until the crop tool supports rectangles.
+const GEMINI_COVER_WIDTH = 1024;
+const GEMINI_COVER_HEIGHT = 768;
+const CUSTOM_CROP_SIZE = 1400;
 
 interface CoverArtGeneratorProps {
   metadata: SermonMetadata;
@@ -54,144 +64,6 @@ const toastStyles = {
   },
 };
 
-/**
- * Load an image from a Blob
- * Note: Object URLs are revoked after image loads to prevent memory leaks
- */
-function loadImage(blob: Blob): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image'));
-    };
-    img.src = url;
-  });
-}
-
-/**
- * Word wrap text for canvas
- */
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number
-): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  }
-
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  return lines;
-}
-
-/**
- * Add text overlay to background image
- */
-async function addTextOverlay(
-  backgroundImage: Blob,
-  title: string,
-  speaker: string
-): Promise<Blob> {
-  const canvas = document.createElement('canvas');
-  canvas.width = COVER_SIZE;
-  canvas.height = COVER_SIZE;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to create canvas context');
-
-  // Draw background image
-  const img = await loadImage(backgroundImage);
-  ctx.drawImage(img, 0, 0, COVER_SIZE, COVER_SIZE);
-
-  // Add semi-transparent overlay at bottom for text readability
-  const gradient = ctx.createLinearGradient(0, COVER_SIZE * 0.65, 0, COVER_SIZE);
-  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(0.3, 'rgba(0, 0, 0, 0.4)');
-  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.75)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, COVER_SIZE * 0.65, COVER_SIZE, COVER_SIZE * 0.35);
-
-  // Set up text rendering
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Draw sermon title (large, bold)
-  ctx.font = 'bold 72px "Georgia", serif';
-  ctx.fillStyle = '#FFFFFF';
-
-  // Word wrap title if needed
-  const titleLines = wrapText(ctx, title, COVER_SIZE - 100);
-  const lineHeight = 80;
-  const titleStartY = COVER_SIZE - 180 - (titleLines.length - 1) * lineHeight / 2;
-
-  // Add text shadow for better readability
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
-
-  titleLines.forEach((line, i) => {
-    ctx.fillText(line, COVER_SIZE / 2, titleStartY + i * lineHeight);
-  });
-
-  // Draw preacher name (smaller, amber color)
-  ctx.font = '48px "Georgia", serif';
-  ctx.fillStyle = '#D4A03E'; // Brand amber
-  ctx.shadowBlur = 4;
-  const speakerY = titleStartY + titleLines.length * lineHeight + 20;
-  ctx.fillText(speaker, COVER_SIZE / 2, speakerY);
-
-  // Reset shadow
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 0;
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error('Failed to create cover image'));
-        }
-      },
-      'image/jpeg',
-      0.9
-    );
-  });
-}
-
-/**
- * Generate AI background prompt based on illustration theme
- * Uses same style as Portadas in liturgia-builder (Matisse/Picasso)
- */
-function generateBackgroundPrompt(illustrationTheme: string, fallbackTitle: string): string {
-  const themeDescription = illustrationTheme.trim() || fallbackTitle;
-
-  return `Minimalist line art illustration with PURE WHITE (#FFFFFF) solid flat background, no texture, no pattern, no gradients. Single continuous gray (#666666) line drawing in the style of Henri Matisse or Pablo Picasso one-line art. Subject: ${themeDescription}. Abstract and contemplative, suggestive of spiritual reflection. No text, no labels, no words. Elegant flowing lines with amber/gold (#D4A853) accent on 20-30% of the illustration.`;
-}
-
 export function CoverArtGenerator({
   metadata,
   coverImage,
@@ -200,15 +72,38 @@ export function CoverArtGenerator({
 }: CoverArtGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
-  const [backgroundOptions, setBackgroundOptions] = useState<string[]>([]);
-  const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
+  const [coverOptions, setCoverOptions] = useState<string[]>([]);
+  const [selectedCover, setSelectedCover] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showCropTool, setShowCropTool] = useState(false);
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
+  const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Update preview when cover image changes (handles cleanup via return statement)
+  // Load CASA logo (passed to Gemini as reference image so the logo renders
+  // from the real asset rather than being hallucinated).
+  useEffect(() => {
+    let cancelled = false;
+    getCasaLogoAsBase64()
+      .then((b64) => {
+        if (!cancelled) setLogoBase64(b64);
+      })
+      .catch((err) => {
+        console.error('[CoverArtGenerator] Failed to load CASA logo:', err);
+        if (!cancelled) {
+          toast.error(
+            'No se pudo cargar el logo CASA. Recarga la página para reintentar.',
+            toastStyles.error,
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Update preview when cover image changes
   useEffect(() => {
     if (coverImage) {
       const url = URL.createObjectURL(coverImage);
@@ -219,27 +114,39 @@ export function CoverArtGenerator({
     }
   }, [coverImage]);
 
-  // Generate AI backgrounds
-  const generateBackgrounds = useCallback(async () => {
-    if (!metadata.title) {
-      toast.error('Ingresa un título para generar la portada', toastStyles.error);
+  // Generate 4 variations of the cover via Gemini with title + preacher + logo baked in
+  const generateCovers = useCallback(async () => {
+    if (!metadata.title || !metadata.speaker) {
+      toast.error('Ingresa título y predicador antes de generar', toastStyles.error);
+      return;
+    }
+    if (!logoBase64) {
+      toast.error(
+        'El logo CASA aún se está cargando. Intenta de nuevo en un momento.',
+        toastStyles.error,
+      );
       return;
     }
 
     setIsGenerating(true);
     setGenerationProgress(10);
-    setBackgroundOptions([]);
-    setSelectedBackground(null);
+    setCoverOptions([]);
+    setSelectedCover(null);
 
     try {
-      const prompt = generateBackgroundPrompt(illustrationTheme, metadata.title);
+      const jsonPrompt = buildSermonCoverPrompt({
+        title: metadata.title,
+        preacher: metadata.speaker,
+        illustrationTheme,
+      });
       setGenerationProgress(20);
 
       const { data, error } = await supabase.functions.invoke('generate-illustration', {
         body: {
-          eventType: 'culto_dominical',
+          jsonPrompt,
+          referenceImage: logoBase64,
           count: 4,
-          customPrompt: prompt,
+          aspectRatio: '4:3',
         },
       });
 
@@ -247,125 +154,85 @@ export function CoverArtGenerator({
 
       if (error) throw error;
 
-      // Filter valid illustrations
-      const validIllustrations = (data.illustrations || []).filter(
-        (i: string) => i && i.length > 0
-      );
-
-      if (validIllustrations.length === 0) {
-        throw new Error('No se pudieron generar ilustraciones');
+      const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
+      if (valid.length === 0) {
+        throw new Error('No se pudieron generar portadas');
       }
 
-      setBackgroundOptions(validIllustrations);
+      setCoverOptions(valid);
       setGenerationProgress(100);
 
       toast.success(
-        `${validIllustrations.length} fondos generados. Selecciona uno.`,
-        toastStyles.success
+        `${valid.length} portadas generadas. Selecciona una.`,
+        toastStyles.success,
       );
     } catch (err) {
-      console.error('Error generating backgrounds:', err);
+      console.error('Error generating covers:', err);
       toast.error(
-        err instanceof Error ? err.message : 'Error al generar fondos',
-        toastStyles.error
+        err instanceof Error ? err.message : 'Error al generar portadas',
+        toastStyles.error,
       );
     } finally {
       setIsGenerating(false);
     }
-  }, [metadata, illustrationTheme]);
+  }, [metadata.title, metadata.speaker, illustrationTheme, logoBase64]);
 
-  // Select a background and apply text overlay
-  const selectBackground = useCallback(async (base64: string) => {
-    if (!metadata.title || !metadata.speaker) {
-      toast.error('Completa el título y predicador antes de generar la portada', toastStyles.error);
-      return;
-    }
-
-    setSelectedBackground(base64);
-    setIsGenerating(true);
-
-    try {
-      // Convert base64 to blob
-      const response = await fetch(`data:image/png;base64,${base64}`);
-      const backgroundBlob = await response.blob();
-
-      // Resize to 1400x1400 first
-      const resizedBlob = await resizeImage(backgroundBlob, COVER_SIZE, COVER_SIZE);
-
-      // Add text overlay
-      const coverWithText = await addTextOverlay(
-        resizedBlob,
-        metadata.title,
-        metadata.speaker
-      );
-
-      onCoverChange(coverWithText);
-      toast.success('Portada generada con éxito', toastStyles.success);
-    } catch (err) {
-      console.error('Error creating cover:', err);
-      toast.error('Error al crear la portada', toastStyles.error);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [metadata, onCoverChange]);
+  // Select a baked-in cover — convert base64 to Blob and save directly
+  const selectCover = useCallback(
+    async (base64: string) => {
+      setSelectedCover(base64);
+      setIsGenerating(true);
+      try {
+        const response = await fetch(`data:image/png;base64,${base64}`);
+        const blob = await response.blob();
+        onCoverChange(blob);
+        toast.success('Portada guardada', toastStyles.success);
+      } catch (err) {
+        console.error('Error saving cover:', err);
+        toast.error('Error al guardar la portada', toastStyles.error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [onCoverChange],
+  );
 
   // Handle custom image upload
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        toast.error('Por favor selecciona un archivo de imagen', toastStyles.error);
+        return;
+      }
+      setCustomImageFile(file);
+      setShowCropTool(true);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    [],
+  );
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor selecciona un archivo de imagen', toastStyles.error);
-      return;
-    }
-
-    setCustomImageFile(file);
-    setShowCropTool(true);
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, []);
-
-  // Handle cropped image from crop tool
-  const handleCroppedImage = useCallback(async (croppedBlob: Blob) => {
-    if (!metadata.title || !metadata.speaker) {
-      toast.error('Completa el título y predicador antes de usar la imagen', toastStyles.error);
+  // Handle cropped custom image — save as-is (no text overlay applied)
+  const handleCroppedImage = useCallback(
+    (croppedBlob: Blob) => {
       setShowCropTool(false);
-      return;
-    }
-
-    setShowCropTool(false);
-    setIsGenerating(true);
-
-    try {
-      // Add text overlay to cropped image
-      const coverWithText = await addTextOverlay(
-        croppedBlob,
-        metadata.title,
-        metadata.speaker
-      );
-
-      onCoverChange(coverWithText);
-      setSelectedBackground(null);
-      setBackgroundOptions([]);
-      toast.success('Portada personalizada creada', toastStyles.success);
-    } catch (err) {
-      console.error('Error creating custom cover:', err);
-      toast.error('Error al crear la portada personalizada', toastStyles.error);
-    } finally {
-      setIsGenerating(false);
       setCustomImageFile(null);
-    }
-  }, [metadata, onCoverChange]);
+      setSelectedCover(null);
+      setCoverOptions([]);
+      onCoverChange(croppedBlob);
+      toast.success('Portada personalizada guardada', toastStyles.success);
+    },
+    [onCoverChange],
+  );
 
   // Clear cover image
   const clearCover = useCallback(() => {
     onCoverChange(null);
-    setSelectedBackground(null);
-    setBackgroundOptions([]);
+    setSelectedCover(null);
+    setCoverOptions([]);
   }, [onCoverChange]);
 
   // Check if metadata is complete for cover generation
@@ -382,7 +249,7 @@ export function CoverArtGenerator({
             setShowCropTool(false);
             setCustomImageFile(null);
           }}
-          targetSize={COVER_SIZE}
+          targetSize={CUSTOM_CROP_SIZE}
         />
       )}
 
@@ -396,14 +263,14 @@ export function CoverArtGenerator({
         className="hidden"
       />
 
-      {/* Cover Preview */}
-      <div className="relative aspect-square w-full max-w-[280px] mx-auto rounded-lg overflow-hidden bg-muted border-2 border-dashed border-muted-foreground/25">
+      {/* Cover Preview — 4:3 frame. Custom uploads (1:1) letterbox inside it. */}
+      <div className="relative aspect-[4/3] w-full max-w-[320px] mx-auto rounded-lg overflow-hidden bg-muted border-2 border-dashed border-muted-foreground/25">
         {previewUrl ? (
           <>
             <img
               src={previewUrl}
               alt="Cover preview"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
             <button
               onClick={clearCover}
@@ -413,14 +280,16 @@ export function CoverArtGenerator({
               <X className="h-4 w-4" />
             </button>
             <div className="absolute bottom-2 left-2 px-2 py-1 rounded text-xs bg-black/60 text-white">
-              {COVER_SIZE} x {COVER_SIZE}
+              {GEMINI_COVER_WIDTH} x {GEMINI_COVER_HEIGHT}
             </div>
           </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
             <ImageIcon className="h-12 w-12 mb-2 opacity-50" />
             <span className="text-sm">Sin portada</span>
-            <span className="text-xs mt-1">{COVER_SIZE} x {COVER_SIZE}</span>
+            <span className="text-xs mt-1">
+              {GEMINI_COVER_WIDTH} x {GEMINI_COVER_HEIGHT}
+            </span>
           </div>
         )}
 
@@ -436,7 +305,7 @@ export function CoverArtGenerator({
         <Progress value={generationProgress} className="h-2" />
       )}
 
-      {/* Illustration Theme Input - Simple field like Portadas */}
+      {/* Illustration Theme Input */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-foreground">
           ¿Qué ilustración quieres?
@@ -457,19 +326,19 @@ export function CoverArtGenerator({
       {/* Action Buttons */}
       <div className="flex flex-col gap-2">
         <Button
-          onClick={generateBackgrounds}
-          disabled={!canGenerate || isGenerating}
+          onClick={generateCovers}
+          disabled={!canGenerate || isGenerating || !logoBase64}
           className="w-full bg-amber-600 hover:bg-amber-700"
         >
           {isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Generando estilo Matisse/Picasso...
+              Generando portadas con texto...
             </>
-          ) : backgroundOptions.length > 0 ? (
+          ) : coverOptions.length > 0 ? (
             <>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Regenerar fondos
+              Regenerar portadas
             </>
           ) : (
             <>
@@ -497,21 +366,21 @@ export function CoverArtGenerator({
         </p>
       )}
 
-      {/* Background Options Grid */}
-      {backgroundOptions.length > 0 && (
+      {/* Cover Options Grid */}
+      {coverOptions.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground text-center">
-            Selecciona un fondo para tu portada:
+            Selecciona una portada:
           </p>
           <div className="grid grid-cols-2 gap-2">
-            {backgroundOptions.map((bg, index) => {
-              const isSelected = selectedBackground === bg;
+            {coverOptions.map((bg, index) => {
+              const isSelected = selectedCover === bg;
               return (
                 <button
                   key={index}
-                  onClick={() => selectBackground(bg)}
+                  onClick={() => selectCover(bg)}
                   disabled={isGenerating}
-                  className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
+                  className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
                     isSelected
                       ? 'border-amber-500 ring-2 ring-amber-500 ring-offset-2'
                       : 'border-transparent'
@@ -538,40 +407,4 @@ export function CoverArtGenerator({
       )}
     </div>
   );
-}
-
-/**
- * Resize image to target dimensions
- */
-async function resizeImage(
-  blob: Blob,
-  width: number,
-  height: number
-): Promise<Blob> {
-  const img = await loadImage(blob);
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to create canvas context');
-
-  // Draw image scaled to fill canvas (cover mode)
-  const scale = Math.max(width / img.width, height / img.height);
-  const scaledWidth = img.width * scale;
-  const scaledHeight = img.height * scale;
-  const x = (width - scaledWidth) / 2;
-  const y = (height - scaledHeight) / 2;
-
-  ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Failed to resize image'));
-      },
-      'image/jpeg',
-      0.9
-    );
-  });
 }
