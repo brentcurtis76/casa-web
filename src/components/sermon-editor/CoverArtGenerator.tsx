@@ -29,8 +29,10 @@ import { CoverCropTool } from './CoverCropTool';
 import type { SermonMetadata } from './MetadataForm';
 import {
   buildSermonCoverPrompt,
-  getCasaLogoAsBase64,
+  type GenerateIllustrationResponse,
 } from '@/lib/covers/coverPromptBuilder';
+import { useCasaLogo } from '@/lib/covers/useCasaLogo';
+import { IllustrationThemeInput } from '@/components/covers/IllustrationThemeInput';
 import { CASA_BRAND } from '@/lib/brand-kit';
 
 // Gemini generates at 4:3 (1024x768). The custom-upload path still uses the
@@ -80,35 +82,16 @@ export function CoverArtGenerator({
   const [showCropTool, setShowCropTool] = useState(false);
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
-  const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load CASA logo (passed to Gemini as reference image so the logo renders
   // from the real asset rather than being hallucinated).
-  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
-  const [logoRetryNonce, setLogoRetryNonce] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    setLogoLoadFailed(false);
-    getCasaLogoAsBase64()
-      .then((b64) => {
-        if (!cancelled) setLogoBase64(b64);
-      })
-      .catch((err) => {
-        console.error('[CoverArtGenerator] Failed to load CASA logo:', err);
-        if (!cancelled) {
-          setLogoLoadFailed(true);
-          toast.error(
-            'No se pudo cargar el logo CASA. Usa el botón Reintentar.',
-            toastStyles.error,
-          );
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [logoRetryNonce]);
-  const retryLogoLoad = () => setLogoRetryNonce((n) => n + 1);
+  const { logoBase64, failed: logoLoadFailed, retry: retryLogoLoad } = useCasaLogo(() => {
+    toast.error(
+      'No se pudo cargar el logo CASA. Usa el botón Reintentar.',
+      toastStyles.error,
+    );
+  });
 
   // Update preview when cover image changes
   useEffect(() => {
@@ -140,24 +123,32 @@ export function CoverArtGenerator({
     setSelectedCover(null);
 
     try {
+      // Note: SermonMetadata exposes `speaker` (the canonical field in
+      // MetadataForm.tsx). The Gemini prompt builder uses `preacher`, matching
+      // the vocabulary used by Portadas and the rest of the cover pipeline.
+      // This is an intentional one-way remap — renaming upstream would touch
+      // the whole sermon editor and is out of scope.
       const jsonPrompt = buildSermonCoverPrompt({
         title: metadata.title,
         preacher: metadata.speaker,
         illustrationTheme,
       });
 
-      const { data, error } = await supabase.functions.invoke('generate-illustration', {
-        body: {
-          jsonPrompt,
-          referenceImage: logoBase64,
-          count: 4,
-          aspectRatio: '4:3',
+      const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+        'generate-illustration',
+        {
+          body: {
+            jsonPrompt,
+            referenceImage: logoBase64,
+            count: 4,
+            aspectRatio: '4:3',
+          },
         },
-      });
+      );
 
       if (error) throw error;
 
-      const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
+      const valid = (data?.illustrations ?? []).filter((i) => i && i.length > 0);
       if (valid.length === 0) {
         throw new Error('No se pudieron generar portadas');
       }
@@ -325,24 +316,15 @@ export function CoverArtGenerator({
         </div>
       )}
 
-      {/* Illustration Theme Input */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-foreground">
-          ¿Qué ilustración quieres?
-        </label>
-        <input
-          type="text"
-          value={illustrationTheme}
-          onChange={(e) => setIllustrationTheme(e.target.value)}
-          placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
-          maxLength={200}
-          className="w-full p-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500"
-          disabled={disabled || isGenerating}
-        />
-        <p className="text-xs text-muted-foreground">
-          Describe en español lo que quieres ver. Deja vacío para usar el título de la reflexión.
-        </p>
-      </div>
+      {/* Illustration theme input (shared component). Sermon cover uses a
+          distinct helper text — falls back to the sermon title instead of
+          a liturgical season when the field is empty. */}
+      <IllustrationThemeInput
+        value={illustrationTheme}
+        onChange={setIllustrationTheme}
+        disabled={disabled || isGenerating}
+        helpText="Describe en español lo que quieres ver. Deja vacío para usar el título de la reflexión."
+      />
 
       {/* Persistent warning when the CASA logo failed to load. Recovery
           path (retry) matches the Portadas pattern. */}

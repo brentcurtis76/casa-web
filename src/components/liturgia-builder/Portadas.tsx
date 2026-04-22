@@ -29,8 +29,10 @@ import { UniversalSlide } from './UniversalSlide';
 import {
   buildLiturgyCoverPrompt,
   buildLiturgyReflectionCoverPrompt,
-  getCasaLogoAsBase64,
+  type GenerateIllustrationResponse,
 } from '@/lib/covers/coverPromptBuilder';
+import { useCasaLogo } from '@/lib/covers/useCasaLogo';
+import { IllustrationThemeInput } from '@/components/covers/IllustrationThemeInput';
 
 // ============================================================
 // BACKWARD-COMPAT EXPORTS
@@ -80,33 +82,13 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
 
   // ---- CASA logo as Gemini reference image ----
-  const [logoBase64, setLogoBase64] = useState<string | null>(null);
-  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
-  const [logoRetryNonce, setLogoRetryNonce] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    setLogoLoadFailed(false);
-    getCasaLogoAsBase64()
-      .then((b64) => {
-        if (!cancelled) setLogoBase64(b64);
-      })
-      .catch((err) => {
-        console.error('[Portadas] Failed to load CASA logo for Gemini reference:', err);
-        if (!cancelled) {
-          setLogoLoadFailed(true);
-          toast({
-            title: 'No se pudo cargar el logo CASA',
-            description:
-              'La generación de portadas requiere el logo. Usa el botón Reintentar.',
-            variant: 'destructive',
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [toast, logoRetryNonce]);
-  const retryLogoLoad = () => setLogoRetryNonce((n) => n + 1);
+  const { logoBase64, failed: logoLoadFailed, retry: retryLogoLoad } = useCasaLogo(() => {
+    toast({
+      title: 'No se pudo cargar el logo CASA',
+      description: 'La generación de portadas requiere el logo. Usa el botón Reintentar.',
+      variant: 'destructive',
+    });
+  });
 
   // ---- Liturgical season (same source as the rest of the app) ----
   const [seasonName, setSeasonName] = useState(fallbackSeason.name);
@@ -148,18 +130,21 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         illustrationTheme,
       });
 
-      const { data, error } = await supabase.functions.invoke('generate-illustration', {
-        body: {
-          jsonPrompt,
-          referenceImage: logoBase64,
-          count: 4,
-          aspectRatio: '4:3',
+      const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+        'generate-illustration',
+        {
+          body: {
+            jsonPrompt,
+            referenceImage: logoBase64,
+            count: 4,
+            aspectRatio: '4:3',
+          },
         },
-      });
+      );
 
       if (error) throw error;
 
-      const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
+      const valid = (data?.illustrations ?? []).filter((i) => i && i.length > 0);
       if (valid.length === 0) {
         throw new Error('No se pudieron generar portadas');
       }
@@ -196,18 +181,21 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         const referencePrompt = buildLiturgyReflectionCoverPrompt({
           preacher: context.preacher ?? '',
         });
-        const { data, error } = await supabase.functions.invoke('generate-illustration', {
-          body: {
-            referenceImage: mainCoverBase64,
-            referencePrompt,
-            count: 1,
-            aspectRatio: '4:3',
+        const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+          'generate-illustration',
+          {
+            body: {
+              referenceImage: mainCoverBase64,
+              referencePrompt,
+              count: 1,
+              aspectRatio: '4:3',
+            },
           },
-        });
+        );
         // If a newer request has started since, abandon this response entirely.
         if (reflectionRequestIdRef.current !== requestId) return;
         if (error) throw error;
-        const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
+        const valid = (data?.illustrations ?? []).filter((i) => i && i.length > 0);
         if (valid.length === 0) {
           throw new Error('No se pudo generar la portada de reflexión');
         }
@@ -544,46 +532,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       {/* Preview */}
       <div className="max-w-2xl mx-auto">{renderCoverPreview(previewType)}</div>
 
-      {/* Illustration theme input */}
-      <div
-        className="rounded-lg border p-4"
-        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
-      >
-        <label
-          className="block mb-2"
-          style={{
-            fontFamily: CASA_BRAND.fonts.body,
-            fontSize: '14px',
-            fontWeight: 500,
-            color: CASA_BRAND.colors.primary.black,
-          }}
-        >
-          ¿Qué ilustración quieres?
-        </label>
-        <input
-          type="text"
-          value={illustrationTheme}
-          onChange={(e) => setIllustrationTheme(e.target.value)}
-          placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
-          maxLength={200}
-          className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500"
-          style={{
-            fontFamily: CASA_BRAND.fonts.body,
-            fontSize: '14px',
-            borderColor: CASA_BRAND.colors.secondary.grayLight,
-            color: CASA_BRAND.colors.primary.black,
-          }}
-        />
-        <p
-          className="mt-2 text-xs"
-          style={{
-            fontFamily: CASA_BRAND.fonts.body,
-            color: CASA_BRAND.colors.secondary.grayMedium,
-          }}
-        >
-          Describe en español lo que quieres ver. Deja vacío para usar el tema litúrgico de la temporada.
-        </p>
-      </div>
+      {/* Illustration theme input (shared component) */}
+      <IllustrationThemeInput
+        value={illustrationTheme}
+        onChange={setIllustrationTheme}
+      />
 
       {/* Persistent warning when the CASA logo (required as a reference image
           for Gemini) failed to load. Gives the user a recovery path rather

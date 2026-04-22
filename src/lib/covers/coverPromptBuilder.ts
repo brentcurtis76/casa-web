@@ -17,6 +17,18 @@ import { CASA_BRAND } from '@/lib/brand-kit';
 
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
+/**
+ * Shape of the `generate-illustration` edge function response. Exported so
+ * callers can narrow `data` from the untyped `supabase.functions.invoke`
+ * result without redefining the contract locally.
+ */
+export interface GenerateIllustrationResponse {
+  illustrations: string[];
+  validCount?: number;
+  requestedCount?: number;
+  error?: string;
+}
+
 interface CoverJsonPrompt {
   core: {
     subject: string;
