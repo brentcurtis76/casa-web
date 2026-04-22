@@ -73,6 +73,8 @@ export interface Slide {
     order: number;               // Orden dentro del grupo
     groupTotal: number;          // Total de slides en el grupo
     batchId?: string;            // ID del batch de gráficos (para anuncios)
+    /** True when slide.content.imageUrl already contains the rendered text (from an image-generation model). Signals UniversalSlide to render the image full-bleed and skip all text overlays. */
+    textBakedIn?: boolean;
   };
   notes?: string;                // Notas del presentador para este slide
 }

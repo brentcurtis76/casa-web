@@ -1270,6 +1270,35 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
       ? CASA_BRAND.colors.primary.white
       : (slide.style.backgroundColor || CASA_BRAND.colors.primary.white);
 
+  // Baked-text image path: when the slide image already contains rendered text
+  // (from an image-generation model), render it full-bleed with no overlays.
+  // Honors transparentBackground so baked slides over video backgrounds still
+  // show the video through.
+  if (slide.metadata?.textBakedIn === true && slide.content.imageUrl) {
+    return (
+      <div
+        className="relative overflow-hidden"
+        style={{
+          width: baseWidth * scale,
+          height: baseHeight * scale,
+          backgroundColor: slideBackgroundColor,
+          borderRadius: `${CASA_BRAND.ui.borderRadius.md}px`,
+          boxShadow: transparentBackground ? 'none' : '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+        }}
+      >
+        <img
+          src={getImageSrc(slide.content.imageUrl)}
+          alt=""
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+          }}
+        />
+      </div>
+    );
+  }
+
   // Wrap content with text readability styles
   const renderContentWithReadability = () => {
     const content = renderContent();

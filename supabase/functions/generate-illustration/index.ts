@@ -79,10 +79,19 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, aspectRatio } = await req.json();
+
+    // Only forward aspectRatio when caller explicitly provides a valid value.
+    // Omitting aspectRatio preserves prior behavior for callers that never passed it.
+    const ALLOWED_ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16'] as const;
+    type AllowedAspectRatio = typeof ALLOWED_ASPECT_RATIOS[number];
+    const forwardedAspectRatio: AllowedAspectRatio | undefined =
+      typeof aspectRatio === 'string' && (ALLOWED_ASPECT_RATIOS as readonly string[]).includes(aspectRatio)
+        ? (aspectRatio as AllowedAspectRatio)
+        : undefined;
 
     const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
-    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode)`);
+    console.log(`[generate-illustration] Generando ${count} ilustraciones para: ${eventType} (${mode} mode${forwardedAspectRatio ? `, aspectRatio: ${forwardedAspectRatio}` : ''})`);
 
     // Validate backgroundMode
     if (backgroundMode && backgroundMode !== 'solid' && backgroundMode !== 'transparent') {
@@ -153,6 +162,7 @@ serve(async (req) => {
             }],
             generationConfig: {
               responseModalities: ['Text', 'Image'],
+              ...(forwardedAspectRatio ? { imageConfig: { aspectRatio: forwardedAspectRatio } } : {}),
             },
           }),
         });
