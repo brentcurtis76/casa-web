@@ -308,13 +308,13 @@ export function CoverArtGenerator({
         )}
       </div>
 
-      {/* Generation status label (replaces the old progress bar, which jumped
-          non-linearly 10 → 20 → wait → 80 → 100 and communicated "stuck").
-          role=status gives screen readers the implicit announcement they
-          previously got from shadcn's Progress component. */}
+      {/* Visual generation label (replaces the old non-linear progress bar).
+          Screen-reader announcement is handled by the sr-only aria-live
+          region above — this label is visual only to avoid duplicate polite
+          announcements. Icon is decorative. */}
       {isGenerating && (
         <div
-          role="status"
+          aria-hidden="true"
           className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
         >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -322,14 +322,17 @@ export function CoverArtGenerator({
         </div>
       )}
 
-      {/* Illustration theme input (shared component). Sermon cover uses a
-          distinct helper text — falls back to the sermon title instead of
-          a liturgical season when the field is empty. */}
+      {/* Illustration theme input (shared component). Sermon cover uses the
+          `plain` variant so the sermon-editor's shadcn chrome is preserved —
+          the component's default `card` variant is Portadas-specific. The
+          helper text also falls back to the sermon title instead of a
+          liturgical season when the field is empty. */}
       <IllustrationThemeInput
         value={illustrationTheme}
         onChange={setIllustrationTheme}
         disabled={disabled || isGenerating}
         helpText="Describe en español lo que quieres ver. Deja vacío para usar el título de la reflexión."
+        variant="plain"
       />
 
       {/* Persistent warning when the CASA logo failed to load. Recovery
