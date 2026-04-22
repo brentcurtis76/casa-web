@@ -16,7 +16,7 @@
  * rendering via the text-overlay path — no migration needed.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { currentSeason as fallbackSeason } from '@/data/currentSeason';
 import { Image as ImageIcon, Loader2, RefreshCw, Check, Download } from 'lucide-react';
@@ -89,11 +89,19 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       })
       .catch((err) => {
         console.error('[Portadas] Failed to load CASA logo for Gemini reference:', err);
+        if (!cancelled) {
+          toast({
+            title: 'No se pudo cargar el logo CASA',
+            description:
+              'La generación de portadas requiere el logo. Recarga la página para reintentar.',
+            variant: 'destructive',
+          });
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [toast]);
 
   // ---- Liturgical season (same source as the rest of the app) ----
   const [seasonName, setSeasonName] = useState(fallbackSeason.name);
@@ -170,8 +178,13 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   };
 
   // ---- Reflection cover generation (image-to-image from the selected main) ----
+  // Monotonic request counter guards against races: if the user switches
+  // main-cover selections before a prior reflection call returns, the stale
+  // response is discarded instead of overwriting the current one.
+  const reflectionRequestIdRef = useRef(0);
   const generateReflectionCover = useCallback(
     async (mainCoverBase64: string) => {
+      const requestId = ++reflectionRequestIdRef.current;
       setIsGeneratingReflection(true);
       setReflectionCover(null);
       try {
@@ -186,6 +199,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
             aspectRatio: '4:3',
           },
         });
+        // If a newer request has started since, abandon this response entirely.
+        if (reflectionRequestIdRef.current !== requestId) return;
         if (error) throw error;
         const valid = (data.illustrations || []).filter((i: string) => i && i.length > 0);
         if (valid.length === 0) {
@@ -193,6 +208,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         }
         setReflectionCover(valid[0]);
       } catch (err) {
+        if (reflectionRequestIdRef.current !== requestId) return;
         console.error('[Portadas] Error generating reflection cover:', err);
         toast({
           title: 'Error al generar portada de reflexión',
@@ -203,7 +219,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           variant: 'destructive',
         });
       } finally {
-        setIsGeneratingReflection(false);
+        // Only the latest request is allowed to clear the in-flight flag —
+        // earlier (superseded) requests return without touching it.
+        if (reflectionRequestIdRef.current === requestId) {
+          setIsGeneratingReflection(false);
+        }
       }
     },
     [context.preacher, toast],
