@@ -1,5 +1,11 @@
 # Welcome to your Lovable project
 
+## Local Development
+
+1. Run `npm install` to install dependencies
+2. Run `npm run dev` to start the development server
+3. Run `npm test` to execute the test suite
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/3ed86446-54bf-46b6-8b79-474632315927
