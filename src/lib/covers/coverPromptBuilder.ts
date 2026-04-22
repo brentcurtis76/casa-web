@@ -142,13 +142,20 @@ ${JSON.stringify(prompt, null, 2)}`;
 /**
  * Build a JSON prompt for the MAIN liturgy cover.
  * Gemini renders: liturgy title + liturgical season label + CASA logo (from reference image).
+ * Pass `illustrationTheme` to override the default season-derived subject with a custom mood hint
+ * (e.g. "storm-tossed boat", "walk to Emmaus").
  */
 export function buildLiturgyCoverPrompt(args: {
   title: string;
   season: string;
+  illustrationTheme?: string;
 }): string {
-  const { title, season } = args;
+  const { title, season, illustrationTheme } = args;
   const common = commonPromptParts();
+  const themeOverride = illustrationTheme?.trim();
+  const illustrationSubject = themeOverride
+    ? themeOverride
+    : `Contemplative scene evoking the ${season} liturgical season — abstract, suggestive of sacred reflection, no literal religious symbols`;
 
   const prompt: CoverJsonPrompt = {
     core: {
@@ -167,7 +174,7 @@ export function buildLiturgyCoverPrompt(args: {
     },
     illustration: {
       ...common.illustration,
-      subject: `Contemplative scene evoking the ${season} liturgical season — abstract, suggestive of sacred reflection, no literal religious symbols`,
+      subject: illustrationSubject,
     },
     logo: common.logo,
     composition: {
@@ -209,13 +216,19 @@ Everything else — the Matisse-style line art, the warm cream background, the a
 /**
  * Build a JSON prompt for the SERMON cover (used by CoverArtGenerator).
  * Gemini renders: sermon title + preacher name + CASA logo (from reference image).
+ * Pass `illustrationTheme` to override the default title-derived subject with a custom mood hint.
  */
 export function buildSermonCoverPrompt(args: {
   title: string;
   preacher: string;
+  illustrationTheme?: string;
 }): string {
-  const { title, preacher } = args;
+  const { title, preacher, illustrationTheme } = args;
   const common = commonPromptParts();
+  const themeOverride = illustrationTheme?.trim();
+  const illustrationSubject = themeOverride
+    ? themeOverride
+    : `Abstract, contemplative scene evoking the theme of "${title}" — avoid literal depictions, keep it suggestive and reflective`;
 
   const prompt: CoverJsonPrompt = {
     core: {
@@ -234,7 +247,7 @@ export function buildSermonCoverPrompt(args: {
     },
     illustration: {
       ...common.illustration,
-      subject: `Abstract, contemplative scene evoking the theme of "${title}" — avoid literal depictions, keep it suggestive and reflective`,
+      subject: illustrationSubject,
     },
     logo: common.logo,
     composition: {
