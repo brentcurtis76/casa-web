@@ -82,6 +82,7 @@ export function CoverArtGenerator({
   const [showCropTool, setShowCropTool] = useState(false);
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
+  const [generateButtonHover, setGenerateButtonHover] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load CASA logo (passed to Gemini as reference image so the logo renders
@@ -308,9 +309,14 @@ export function CoverArtGenerator({
       </div>
 
       {/* Generation status label (replaces the old progress bar, which jumped
-          non-linearly 10 → 20 → wait → 80 → 100 and communicated "stuck"). */}
+          non-linearly 10 → 20 → wait → 80 → 100 and communicated "stuck").
+          role=status gives screen readers the implicit announcement they
+          previously got from shadcn's Progress component. */}
       {isGenerating && (
-        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div
+          role="status"
+          className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
+        >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           <span>Generando 4 variaciones con texto integrado...</span>
         </div>
@@ -365,9 +371,17 @@ export function CoverArtGenerator({
         <Button
           onClick={generateCovers}
           disabled={!canGenerate || isGenerating || !logoBase64}
+          onMouseEnter={() => setGenerateButtonHover(true)}
+          onMouseLeave={() => setGenerateButtonHover(false)}
           className="w-full"
           style={{
-            backgroundColor: CASA_BRAND.colors.primary.amber,
+            // Inline styles override Tailwind classes by specificity, so
+            // the lost hover feedback is restored via a hover state swap
+            // to CASA Ámbar dark (amber.dark) — #B8923D. Matches the old
+            // Tailwind hover:bg-amber-700 intent with brand tokens.
+            backgroundColor: generateButtonHover
+              ? CASA_BRAND.colors.amber.dark
+              : CASA_BRAND.colors.primary.amber,
             color: CASA_BRAND.colors.primary.white,
           }}
         >

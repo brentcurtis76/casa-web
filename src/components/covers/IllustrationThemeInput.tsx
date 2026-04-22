@@ -50,7 +50,9 @@ export function IllustrationThemeInput({
         placeholder="Ej: pescadores en un bote, manos orando, paloma volando..."
         maxLength={200}
         disabled={disabled}
-        className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500"
+        // focus:ring-[#D4A853] uses CASA Ámbar (primary.amber) via Tailwind
+        // arbitrary value — Tailwind's amber-500 (#F59E0B) is off-brand.
+        className="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#D4A853]"
         style={{
           fontFamily: CASA_BRAND.fonts.body,
           fontSize: '14px',
