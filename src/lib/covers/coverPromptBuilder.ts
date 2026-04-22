@@ -15,6 +15,18 @@
 
 import { CASA_BRAND } from '@/lib/brand-kit';
 
+/**
+ * Normalize a human name for safe embedding in a Gemini prompt. Keeps letters
+ * (incl. accented Unicode), digits, whitespace, hyphens, dots, commas; strips
+ * straight/smart quotes, backticks, parens, control chars, etc. Used on
+ * preacher fields in all cover-prompt builders. The JSON.stringify escaping
+ * around structured fields already stops syntactic injection — this adds a
+ * defense-in-depth layer against prompt-shaping content.
+ */
+function sanitizeHumanName(raw: string): string {
+  return raw.replace(/[^\p{L}\p{N}\s\-.,]/gu, '').replace(/\s+/g, ' ').trim();
+}
+
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
 /**
@@ -216,10 +228,7 @@ export function buildLiturgyReflectionCoverPrompt(args: {
   // This prevents an unusual preacher name from breaking out of the
   // Subtitle: "<...>" line in the plaintext prompt or smuggling extra
   // instructions to Gemini.
-  const preacher = args.preacher
-    .replace(/[^\p{L}\p{N}\s\-.,]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const preacher = sanitizeHumanName(args.preacher);
   const subtitleLine = preacher
     ? `Subtitle: "${preacher}" (rendered as a quiet caption beneath the title, clean sans-serif, muted gray)`
     : 'Subtitle: none — render the title alone, centered vertically';
@@ -242,7 +251,8 @@ export function buildSermonCoverPrompt(args: {
   preacher: string;
   illustrationTheme?: string;
 }): string {
-  const { title, preacher, illustrationTheme } = args;
+  const { title, illustrationTheme } = args;
+  const preacher = sanitizeHumanName(args.preacher);
   const common = commonPromptParts();
   const themeOverride = illustrationTheme?.trim();
   const illustrationSubject = themeOverride

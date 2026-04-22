@@ -56,6 +56,19 @@ describe('buildSermonCoverPrompt', () => {
     expect(prompt).toContain('walk to Emmaus at sunset');
     expect(prompt).not.toContain('Abstract, contemplative scene evoking the theme of "Parable of the Sower"');
   });
+
+  it('sanitizes preacher name consistently with the reflection path', () => {
+    // The reflection-cover path strips smart quotes, backticks, parens, etc.
+    // The sermon-cover path now applies the same allowlist for consistency.
+    const prompt = buildSermonCoverPrompt({
+      title: 'La Oveja Perdida',
+      preacher: 'Pastor `Juan` (invitado) "Apodo"',
+    });
+    expect(prompt).toContain('Pastor Juan invitado Apodo');
+    expect(prompt).not.toContain('`Juan`');
+    expect(prompt).not.toContain('(invitado)');
+    expect(prompt).not.toContain('"Apodo"');
+  });
 });
 
 describe('buildLiturgyReflectionCoverPrompt preacher sanitization', () => {
