@@ -1,5 +1,13 @@
 # Welcome to your Lovable project
 
+## Table of Contents
+
+- [Project info](#project-info)
+- [How can I edit this code?](#how-can-i-edit-this-code)
+- [What technologies are used for this project?](#what-technologies-are-used-for-this-project)
+- [How can I deploy this project?](#how-can-i-deploy-this-project)
+- [Can I connect a custom domain to my Lovable project?](#can-i-connect-a-custom-domain-to-my-lovable-project)
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/3ed86446-54bf-46b6-8b79-474632315927
