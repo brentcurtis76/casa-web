@@ -71,14 +71,44 @@ describe('buildSermonCoverPrompt', () => {
   });
 });
 
-describe('buildLiturgyReflectionCoverPrompt preacher sanitization', () => {
-  it('preserves Spanish accented names', () => {
-    const prompt = buildLiturgyReflectionCoverPrompt({ preacher: 'María José Núñez' });
+describe('buildLiturgyReflectionCoverPrompt', () => {
+  it('uses the liturgy title as the hero (not the word "Reflexión")', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Mi Copa Rebosa',
+      preacher: 'Brent Curtis',
+    });
+    expect(prompt).toContain('Title: "Mi Copa Rebosa"');
+    // Older template rendered "Reflexión" as the title — verify we no
+    // longer emit that string as the hero line.
+    expect(prompt).not.toContain('Title: "Reflexión"');
+  });
+
+  it('explicitly instructs the subtitle to be distinctly smaller than the title', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
+      preacher: 'Padre Juan',
+    });
+    expect(prompt).toContain('DISTINCTLY SMALLER than the title');
+    expect(prompt).toMatch(/40-50%/);
+  });
+
+  it('emphasizes exact background hex to stop Gemini drifting between variations', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({ title: 'Test', preacher: 'X' });
+    expect(prompt).toContain('#F7F7F7');
+    expect(prompt).toMatch(/flat uniform fill/i);
+  });
+
+  it('preserves Spanish accented preacher names', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
+      preacher: 'María José Núñez',
+    });
     expect(prompt).toContain('María José Núñez');
   });
 
-  it('strips straight and smart quotes', () => {
+  it('strips straight and smart quotes from the preacher', () => {
     const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
       preacher: 'Juan "El Predicador" \u201cApodo\u201d',
     });
     expect(prompt).toContain('Juan El Predicador Apodo');
@@ -88,25 +118,34 @@ describe('buildLiturgyReflectionCoverPrompt preacher sanitization', () => {
 
   it('strips backticks, parentheses, and newlines from the preacher value', () => {
     const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
       preacher: 'Pastor `Juan` (invitado)\nreader',
     });
-    // Sanitized name appears clean in the rendered Subtitle line.
     expect(prompt).toContain('Subtitle: "Pastor Juan invitado reader"');
-    // The raw characters from the preacher string must not survive — the
-    // template itself does contain parentheses, so assert on the sanitized
-    // substring rather than the whole prompt.
     expect(prompt).not.toContain('`Juan`');
     expect(prompt).not.toContain('(invitado)');
   });
 
-  it('produces the "none" subtitle branch when preacher is empty after sanitization', () => {
-    const prompt = buildLiturgyReflectionCoverPrompt({ preacher: '   ' });
+  it('strips double quotes from the title so the plaintext template stays valid', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'La "Gran" Comunión',
+      preacher: 'Rev',
+    });
+    expect(prompt).toContain('Title: "La Gran Comunión"');
+    expect(prompt).not.toContain('"Gran"');
+  });
+
+  it('falls back to a subtitle-less template when preacher is empty', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
+      preacher: '   ',
+    });
     expect(prompt).toContain('Subtitle: none');
     expect(prompt).not.toMatch(/Subtitle:\s*"/);
   });
 
   it('always pins 4:3 aspect ratio in the recomposition prompt', () => {
-    const prompt = buildLiturgyReflectionCoverPrompt({ preacher: 'Test' });
+    const prompt = buildLiturgyReflectionCoverPrompt({ title: 'Test', preacher: 'X' });
     expect(prompt).toContain('4:3');
   });
 });

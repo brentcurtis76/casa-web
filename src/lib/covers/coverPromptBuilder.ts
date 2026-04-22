@@ -27,6 +27,15 @@ function sanitizeHumanName(raw: string): string {
   return raw.replace(/[^\p{L}\p{N}\s\-.,]/gu, '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Lighter sanitization for freeform text (titles) that may legitimately
+ * contain broader punctuation. Strips only the characters that would break
+ * the plaintext prompt template (double quotes, line breaks).
+ */
+function sanitizeForPlaintextPrompt(raw: string): string {
+  return raw.replace(/["\n\r]/g, '').trim();
+}
+
 const CASA_LOGO_PATH = '/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png';
 
 /**
@@ -94,7 +103,7 @@ function commonPromptParts() {
         'Single continuous flowing line art in the style of Henri Matisse or Pablo Picasso one-line drawings. Abstract and contemplative. Elegant, minimalist, with generous negative space. Hand-drawn organic curves — NOT geometric, NOT digital, NOT clipart.',
       lineColor: 'Medium gray (#666666) — single continuous line weight',
       accentColor: `Warm amber/gold (${CASA_BRAND.colors.primary.amber}) — used as accent on 20-30% of the illustration elements`,
-      background: `Solid flat warm cream (${CASA_BRAND.colors.primary.white}) — no texture, no gradient, no pattern`,
+      background: `MANDATORY EXACT COLOR: warm cream hex ${CASA_BRAND.colors.primary.white}. Flat solid fill — absolutely no gradient, no texture, no tonal variation, no vignetting, no lighting effects. The background must be the identical uniform ${CASA_BRAND.colors.primary.white} across the entire canvas and identical across every variation in this batch. Do not shift the hue warmer, cooler, lighter, or darker.`,
       placement:
         'The illustration occupies one side or the background of the composition, leaving clear space for the title and subtitle. Illustration and text coexist as a unified editorial layout.',
     },
@@ -152,12 +161,14 @@ function jsonPromptToString(prompt: CoverJsonPrompt): string {
 
 CRITICAL INSTRUCTIONS:
 1. The illustration MUST be Henri Matisse / Pablo Picasso one-line continuous line art — flowing gray (#666666) lines with warm amber/gold (${CASA_BRAND.colors.primary.amber}) accents on a warm cream (${CASA_BRAND.colors.primary.white}) background. Signature visual style, non-negotiable.
-2. Render ALL text elements directly into the image with professional typography. Text is part of the design, never a separate layer.
-3. Use the provided reference image EXACTLY as the CASA logo, placed in the top-right corner. Do not redraw or restyle the logo.
-4. Follow the color palette EXACTLY — warm cream background, gray line art, amber accents, charcoal text.
-5. Follow the typography direction — elegant serif for titles, clean sans-serif for subtitles.
-6. Use ONLY the exact text content provided in the specification. No placeholder text.
-7. The final result must look like an editorial magazine cover — illustration and typography as a unified design.
+2. BACKGROUND COLOR IS MANDATORY AND FIXED: exact hex ${CASA_BRAND.colors.primary.white}. The background must be a perfectly flat, uniform ${CASA_BRAND.colors.primary.white} across the entire canvas — no gradients, no textures, no tonal shifts, no lighting effects, no vignetting. If you generate this scene as multiple variations, the background hex must be identical across every variation. Do not drift warmer, cooler, lighter, or darker.
+3. Render ALL text elements directly into the image with professional typography. Text is part of the design, never a separate layer.
+4. Use the provided reference image EXACTLY as the CASA logo, placed in the top-right corner. Do not redraw or restyle the logo.
+5. Follow the color palette EXACTLY — warm cream background (${CASA_BRAND.colors.primary.white}), gray line art, amber accents, charcoal text.
+6. TYPOGRAPHIC HIERARCHY IS MANDATORY: the title is the hero of the composition (large serif). Any subtitle MUST be distinctly smaller than the title — approximately 40-50% of the title's cap height. The subtitle is a quiet caption, never a co-equal line.
+7. Follow the typography direction — elegant serif for titles, clean sans-serif for subtitles.
+8. Use ONLY the exact text content provided in the specification. No placeholder text.
+9. The final result must look like an editorial magazine cover — illustration and typography as a unified design.
 
 DESIGN SPECIFICATION:
 ${JSON.stringify(prompt, null, 2)}`;
@@ -193,7 +204,7 @@ export function buildLiturgyCoverPrompt(args: {
       },
       subtitle: {
         content: season.toUpperCase(),
-        style: `small-caps sans-serif, muted gray ${CASA_BRAND.colors.secondary.grayDark}, letter-spaced, smaller than title, quiet and ecclesial`,
+        style: `small-caps sans-serif, muted gray ${CASA_BRAND.colors.secondary.grayDark}, letter-spaced, DISTINCTLY SMALLER than the title — approximately 40-50% of the title's cap height — quiet and ecclesial. Never render at a size similar to the title.`,
       },
     },
     illustration: {
@@ -218,27 +229,30 @@ export function buildLiturgyCoverPrompt(args: {
  * Build a short image-to-image recomposition prompt for the REFLECTION cover.
  * Paired with the selected main cover passed as `referenceImage` to the edge
  * function. Gemini keeps the illustration/composition and swaps only the text.
+ *
+ * The reflection cover renders the liturgy TITLE (same as the main cover) as
+ * the hero, with the preacher name as a quiet caption beneath. No "Reflexión"
+ * word on the image — its role as the reflection section is understood from
+ * its position in the liturgy, not from a label on the cover.
  */
 export function buildLiturgyReflectionCoverPrompt(args: {
+  title: string;
   preacher: string;
 }): string {
-  // Allowlist sanitization: keep letters (incl. accented Unicode), digits,
-  // whitespace, hyphens, dots, commas. Strip everything else — straight
-  // quotes, smart quotes, backticks, newlines, parens, control chars, etc.
-  // This prevents an unusual preacher name from breaking out of the
-  // Subtitle: "<...>" line in the plaintext prompt or smuggling extra
-  // instructions to Gemini.
+  const title = sanitizeForPlaintextPrompt(args.title);
   const preacher = sanitizeHumanName(args.preacher);
   const subtitleLine = preacher
-    ? `Subtitle: "${preacher}" (rendered as a quiet caption beneath the title, clean sans-serif, muted gray)`
+    ? `Subtitle: "${preacher}" (clean sans-serif, muted gray ${CASA_BRAND.colors.secondary.grayDark}, DISTINCTLY SMALLER than the title — approximately 40-50% of the title's cap height, positioned as a quiet caption directly below the title)`
     : 'Subtitle: none — render the title alone, centered vertically';
 
   return `Recompose the provided reference image. Keep the illustration style, composition, color palette, logo placement, and overall editorial layout visually identical. Replace ONLY the text content with:
 
-Title: "Reflexión" (elegant serif, same weight and treatment as the title in the reference image)
+Title: "${title}" (elegant serif, same weight and treatment as the title in the reference image — this IS the liturgy name, the hero of the composition)
 ${subtitleLine}
 
-Everything else — the Matisse-style line art, the warm cream background, the amber accents, the CASA logo in the top-right corner, the aspect ratio (4:3), the typographic hierarchy — must remain visually identical to the reference image. Do NOT redraw the illustration. Do NOT redesign the layout. Do NOT change the color palette. Use ONLY the exact text content specified above.`;
+CRITICAL typographic rule: the subtitle (preacher name) MUST be rendered distinctly smaller than the title — roughly 40-50% of the title's cap height. The title dominates the composition; the subtitle is a quiet caption, never a co-equal line. Do not render them at similar sizes.
+
+Everything else — the Matisse-style line art, the warm cream background (EXACT hex ${CASA_BRAND.colors.primary.white}, flat uniform fill with no tonal variation from the reference), the amber accents, the CASA logo in the top-right corner, the aspect ratio (4:3), the typographic hierarchy — must remain visually identical to the reference image. Do NOT redraw the illustration. Do NOT redesign the layout. Do NOT change the color palette or background hue. Use ONLY the exact text content specified above.`;
 }
 
 /**
@@ -271,7 +285,7 @@ export function buildSermonCoverPrompt(args: {
       },
       subtitle: {
         content: preacher,
-        style: `clean sans-serif, weight ${CASA_BRAND.typography.body.fontWeight}, muted gray ${CASA_BRAND.colors.secondary.grayDark}, preceded by a small warm amber (${CASA_BRAND.colors.primary.amber}) dot or subtle bullet as a quiet accent, positioned as a caption below or beside the title`,
+        style: `clean sans-serif, weight ${CASA_BRAND.typography.body.fontWeight}, muted gray ${CASA_BRAND.colors.secondary.grayDark}, DISTINCTLY SMALLER than the title — approximately 40-50% of the title's cap height — preceded by a small warm amber (${CASA_BRAND.colors.primary.amber}) dot or subtle bullet as a quiet accent, positioned as a caption directly below the title. Never render at a size similar to the title.`,
       },
     },
     illustration: {

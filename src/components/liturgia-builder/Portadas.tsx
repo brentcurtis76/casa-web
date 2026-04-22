@@ -179,6 +179,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       setReflectionCover(null);
       try {
         const referencePrompt = buildLiturgyReflectionCoverPrompt({
+          title: context.title,
           preacher: context.preacher ?? '',
         });
         const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
@@ -246,7 +247,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         type: type === 'main' ? 'portada-main' : 'portada-reflection',
         content: {
           primary: context.title,
-          secondary: type === 'reflection' ? 'Reflexión' : undefined,
+          // Both cover types render the liturgy title as the hero. Subtitle
+          // differs: season label for the main cover, preacher name for the
+          // reflection cover. These fields are metadata only (not rendered
+          // by UniversalSlide when textBakedIn=true) but are kept accurate
+          // for search, export, and accessibility tools.
           subtitle: type === 'reflection' ? context.preacher || undefined : seasonName,
           imageUrl,
         },
@@ -376,8 +381,11 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       id: uuidv4(),
       type: 'title',
       content: {
+        // Reflection cover uses the liturgy title as its hero (matches the
+        // baked image) with the preacher name as a quiet caption. No
+        // "Reflexión" text on the cover — its position in the liturgy is
+        // what signals it's the reflection section.
         primary: context.title,
-        secondary: 'Reflexión',
         subtitle: context.preacher || undefined,
         imageUrl: `data:image/png;base64,${reflectionCover}`,
       },
