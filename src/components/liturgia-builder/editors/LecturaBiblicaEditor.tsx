@@ -34,12 +34,15 @@ function generateId(): string {
 }
 
 /**
- * Máximo de caracteres por slide para lectura legible
- * ~45 chars per line x 8 lines = ~360 chars
+ * Máximo de caracteres por slide para lectura legible.
+ * Calibrado al font-size efectivo del presentador: 34px base × 1.3 boost
+ * (FONT_SIZE_BOOSTED_SOURCES en UniversalSlide) ≈ 44px. A ese tamaño caben
+ * ~35 chars por línea × 6 líneas = ~210 chars antes de que el slide se
+ * desborde verticalmente.
  */
-const MAX_CHARS_PER_SLIDE = 360;
-const MAX_LINES_PER_SLIDE = 8;
-const AVG_CHARS_PER_LINE = 45;
+const MAX_CHARS_PER_SLIDE = 210;
+const MAX_LINES_PER_SLIDE = 6;
+const AVG_CHARS_PER_LINE = 35;
 
 /**
  * Elimina los números de versículos del texto bíblico
@@ -67,7 +70,7 @@ function removeVerseNumbers(text: string): string {
  */
 function splitReadingIntoSlides(reading: LiturgyReading): string[] {
   const cleanText = removeVerseNumbers(reading.text);
-  const maxChars = MAX_LINES_PER_SLIDE * AVG_CHARS_PER_LINE; // 8 * 45 = 360
+  const maxChars = MAX_LINES_PER_SLIDE * AVG_CHARS_PER_LINE; // 6 * 35 = 210
 
   // Si el texto es corto, un solo slide
   if (cleanText.length <= maxChars) {
@@ -511,6 +514,30 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
     setTimeout(() => setIsSaved(false), 3000);
   }, [selectedReading, previewSlideGroup, onSlidesGenerated]);
 
+  // Detecta slides guardados con la calibración anterior (chunks > MAX).
+  // Los chunks viejos (pre-boost) tenían hasta ~360 chars y ahora se desbordan
+  // con el font-size efectivo de 44px (ver UniversalSlide FONT_SIZE_BOOSTED_SOURCES).
+  const hasStaleSlides = useMemo(() => {
+    if (!initialSlides?.slides) return false;
+    return initialSlides.slides.some(
+      (s) => s.type === 'reading' && (s.content?.primary?.length ?? 0) > MAX_CHARS_PER_SLIDE
+    );
+  }, [initialSlides]);
+
+  // Regenera chunks desde el texto fuente e inmediatamente guarda, bypasseando
+  // cualquier customSlideTexts que pudiera estar en memoria. Usado por el
+  // banner de slides desactualizados.
+  const handleRegenerateAndSave = useCallback(() => {
+    if (!selectedReading) return;
+    const freshTexts = splitReadingIntoSlides(selectedReading);
+    const freshGroup = readingToSlideGroup(selectedReading, freshTexts);
+    setCustomSlideTexts(null);
+    setRegenerateKey((k) => k + 1);
+    onSlidesGenerated(freshGroup);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 3000);
+  }, [selectedReading, onSlidesGenerated]);
+
   // Si no hay lecturas
   if (!hasReadings) {
     return (
@@ -600,6 +627,54 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
               {reading.reference}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Banner: slides desactualizados (calibración anterior) */}
+      {hasStaleSlides && !isSaved && (
+        <div
+          className="p-3 rounded-lg border flex items-center justify-between gap-3"
+          style={{
+            backgroundColor: '#FEF3C7',
+            borderColor: '#FBBF24',
+            fontFamily: CASA_BRAND.fonts.body,
+          }}
+        >
+          <div className="flex items-start gap-2 flex-1">
+            <AlertCircle
+              size={18}
+              style={{ color: '#B45309', flexShrink: 0, marginTop: 2 }}
+            />
+            <div>
+              <p
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#92400E',
+                  marginBottom: '2px',
+                }}
+              >
+                Slides desactualizados
+              </p>
+              <p style={{ fontSize: '12px', color: '#92400E' }}>
+                Esta lectura fue dividida con la calibración anterior y el texto se desborda del slide. Regenera para ajustar al tamaño actual de fuente.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleRegenerateAndSave}
+            className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors flex-shrink-0"
+            style={{
+              backgroundColor: '#B45309',
+              color: CASA_BRAND.colors.primary.white,
+              fontFamily: CASA_BRAND.fonts.body,
+              fontWeight: 500,
+            }}
+          >
+            <RefreshCw size={14} />
+            Regenerar y guardar
+          </button>
         </div>
       )}
 
