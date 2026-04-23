@@ -16,6 +16,16 @@ describe('buildLiturgyCoverPrompt', () => {
     expect(prompt).toContain('4:3');
   });
 
+  it('instructs Gemini to render the logo small (4-6% of canvas width)', () => {
+    const prompt = buildLiturgyCoverPrompt({
+      title: 'Culto',
+      season: 'Adviento',
+    });
+    expect(prompt).toContain('4-6% of the canvas width');
+    expect(prompt).toMatch(/SMALL and understated/);
+    expect(prompt).not.toContain('8-12% of the canvas width');
+  });
+
   it('uses illustrationTheme override when provided', () => {
     const prompt = buildLiturgyCoverPrompt({
       title: 'Culto Dominical',
@@ -81,6 +91,28 @@ describe('buildLiturgyReflectionCoverPrompt', () => {
     // Older template rendered "Reflexión" as the title — verify we no
     // longer emit that string as the hero line.
     expect(prompt).not.toContain('Title: "Reflexión"');
+  });
+
+  it('explicitly forbids Gemini from rendering the word "Reflexión" on the image', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Mi Copa Rebosa',
+      preacher: 'Brent Curtis',
+    });
+    // The negative instruction has to be explicit — Gemini tends to add
+    // section labels like "Reflexión" when recomposing a religious cover.
+    expect(prompt).toMatch(/MUST NOT appear/);
+    expect(prompt).toContain('"Reflexión"');
+    expect(prompt).toContain('"Reflection"');
+    expect(prompt).toContain('"Sermón"');
+  });
+
+  it('instructs Gemini to preserve the small logo size from the reference', () => {
+    const prompt = buildLiturgyReflectionCoverPrompt({
+      title: 'Culto',
+      preacher: 'Padre Juan',
+    });
+    expect(prompt).toMatch(/same small size/i);
+    expect(prompt).toMatch(/do not enlarge it/i);
   });
 
   it('explicitly instructs the subtitle to be distinctly smaller than the title', () => {

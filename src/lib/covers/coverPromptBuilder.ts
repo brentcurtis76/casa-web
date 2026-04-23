@@ -111,7 +111,7 @@ function commonPromptParts() {
       description:
         'A CASA logo is provided as a reference image. Use that reference image EXACTLY as the logo in the final composition — do NOT invent, redraw, or stylize a new logo. Preserve its original shape, proportions, line weights, and anti-aliasing.',
       placement:
-        'Place the logo in the top-right corner of the image. The logo should occupy approximately 8-12% of the canvas width, with a comfortable margin (roughly 4-6% of canvas width) from both the top and right edges. Do not crop, rotate, or distort the logo.',
+        'Place the logo in the top-right corner of the image. The logo must be SMALL and understated — a quiet brand mark, never a focal element. It should occupy approximately 4-6% of the canvas width (absolute maximum 7%), with a comfortable margin (roughly 3-4% of canvas width) from both the top and right edges. Err on the side of smaller rather than larger. Do not crop, rotate, or distort the logo.',
       source:
         'The logo comes from the reference image provided alongside this prompt. No other mark, seal, monogram, or watermark should appear anywhere in the image.',
     },
@@ -249,6 +249,10 @@ export function buildLiturgyReflectionCoverPrompt(args: {
 
 Title: "${title}" (elegant serif, same weight and treatment as the title in the reference image — this IS the liturgy name, the hero of the composition)
 ${subtitleLine}
+
+CRITICAL text content rule: render EXACTLY the title and subtitle specified above — nothing else. The word "Reflexión" (and its variants "Reflection", "Reflexion", "Sermón", "Sermon") MUST NOT appear anywhere on the image — not as a title, not as a heading, not as a label, not as a watermark. The liturgy title is the hero; it is NOT labeled "Reflexión" or "Sermón". Do NOT retain any text from the reference image. Do NOT introduce section headings. Do NOT add section labels. If you feel an urge to add a section label like "Reflexión", resist it — omit it entirely.
+
+CRITICAL logo rule: preserve the logo from the reference image at the SAME small size and top-right position as the reference — do not enlarge it, do not move it, do not redraw it. The logo is a quiet brand mark, not a focal element.
 
 CRITICAL typographic rule: the subtitle (preacher name) MUST be rendered distinctly smaller than the title — roughly 40-50% of the title's cap height. The title dominates the composition; the subtitle is a quiet caption, never a co-equal line. Do not render them at similar sizes.
 

@@ -5,8 +5,9 @@
  * - MAIN cover: liturgy title + liturgical season + CASA logo, all rendered
  *   inside the image by Gemini (no Canvas/React text overlay).
  * - REFLECTION cover: image-to-image recomposition from the selected main
- *   cover. Illustration and layout are preserved; text is swapped to
- *   "Reflexión" + preacher name.
+ *   cover. Illustration and layout are preserved; text is swapped to the
+ *   liturgy title (same as the main cover) + preacher name as subtitle. No
+ *   "Reflexión" label — the slide's position in the liturgy signals its role.
  *
  * Format: 4:3 (1024x768). CASA logo is passed as `referenceImage` so Gemini
  * uses the real logo rather than inventing one.
