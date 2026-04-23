@@ -45,17 +45,19 @@ const MAX_LINES_PER_SLIDE = 6;
 const AVG_CHARS_PER_LINE = 35;
 
 /**
- * Elimina los números de versículos del texto bíblico
- * Los versículos típicamente son números de 1-3 dígitos seguidos de espacio
+ * Limpia el texto bíblico eliminando marcado que filtra desde APIs
+ * (etiquetas HTML como <sup>, referencias a notas como [43], números de
+ * versículo sueltos, etc.) para dejar solo la prosa legible.
  */
 function removeVerseNumbers(text: string): string {
-  // Estrategia: eliminar cualquier número de 1-3 dígitos que esté solo
-  // (no parte de una palabra) seguido de espacio
   return text
+    // Etiquetas HTML (sup, b, i, span, etc.) que algunas fuentes bíblicas dejan
+    .replace(/<[^>]+>/g, '')
+    // Referencias bracketeadas a notas al pie: [43], [a], [footnote 1]
+    .replace(/\[[^\]]+\]/g, '')
     // Números al inicio del texto (1-176 para cubrir Salmo 119)
     .replace(/^\s*\d{1,3}\s+/g, '')
     // Números después de puntuación o espacio, seguidos de espacio
-    // Patrón: espacio + número + espacio -> solo espacio
     .replace(/\s+\d{1,3}\s+/g, ' ')
     // Números después de puntuación directamente
     .replace(/([.!?,;:'"])\s*\d{1,3}\s+/g, '$1 ')
@@ -65,32 +67,96 @@ function removeVerseNumbers(text: string): string {
 }
 
 /**
- * Divide el texto de la lectura en slides de forma equitativa
- * Simple: divide el texto en chunks iguales respetando palabras
+ * Divide un texto en chunks por palabras, sin exceder targetChars por chunk.
+ * Último recurso cuando ni oraciones ni cláusulas caben.
+ */
+function splitByWords(text: string, targetChars: number): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const potential = current ? `${current} ${word}` : word;
+    if (potential.length > targetChars && current) {
+      chunks.push(current.trim());
+      current = word;
+    } else {
+      current = potential;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+/**
+ * Divide una oración larga en fragmentos, prefiriendo límites de cláusula
+ * (coma, punto y coma, dos puntos). Cae a división por palabras si alguna
+ * cláusula excede targetChars.
+ */
+function splitLongSentence(sentence: string, targetChars: number): string[] {
+  const clauses = sentence.split(/(?<=[,;:])\s+/).filter((s) => s.trim());
+  if (clauses.length <= 1) {
+    return splitByWords(sentence, targetChars);
+  }
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const clause of clauses) {
+    const potential = current ? `${current} ${clause}` : clause;
+    if (potential.length > targetChars && current) {
+      chunks.push(current.trim());
+      current = clause;
+    } else {
+      current = potential;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+
+  return chunks.flatMap((chunk) =>
+    chunk.length <= targetChars ? [chunk] : splitByWords(chunk, targetChars)
+  );
+}
+
+/**
+ * Divide el texto de la lectura en slides, prefiriendo límites de oración
+ * (. ! ? ») sobre cláusulas y palabras. Evita cortes a mitad de frase que
+ * producen slides feos como "...Jesús les | puso este ejemplo...".
  */
 function splitReadingIntoSlides(reading: LiturgyReading): string[] {
   const cleanText = removeVerseNumbers(reading.text);
   const maxChars = MAX_LINES_PER_SLIDE * AVG_CHARS_PER_LINE; // 6 * 35 = 210
 
-  // Si el texto es corto, un solo slide
   if (cleanText.length <= maxChars) {
     return [cleanText];
   }
 
-  // Calcular cuántos slides necesitamos
   const numSlides = Math.ceil(cleanText.length / maxChars);
   const targetChars = Math.ceil(cleanText.length / numSlides);
 
-  const words = cleanText.split(/\s+/);
+  // Segmenta por oraciones usando lookbehind sobre puntuación fuerte seguida
+  // de espacio. Preserva la puntuación al final de cada oración.
+  const sentences = cleanText.split(/(?<=[.!?»])\s+/).filter((s) => s.trim());
+
   const slides: string[] = [];
   let currentSlide = '';
 
-  for (const word of words) {
-    const potential = currentSlide + (currentSlide ? ' ' : '') + word;
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    if (!trimmed) continue;
 
+    // Oración que por sí sola excede el máximo: flush + sub-dividir por cláusulas
+    if (trimmed.length > maxChars) {
+      if (currentSlide) {
+        slides.push(currentSlide.trim());
+        currentSlide = '';
+      }
+      slides.push(...splitLongSentence(trimmed, targetChars));
+      continue;
+    }
+
+    const potential = currentSlide ? `${currentSlide} ${trimmed}` : trimmed;
     if (potential.length > targetChars && currentSlide) {
       slides.push(currentSlide.trim());
-      currentSlide = word;
+      currentSlide = trimmed;
     } else {
       currentSlide = potential;
     }
@@ -100,16 +166,13 @@ function splitReadingIntoSlides(reading: LiturgyReading): string[] {
     slides.push(currentSlide.trim());
   }
 
-  // Post-proceso: si el último slide es muy corto (< 30% del objetivo),
+  // Post-proceso: si el último slide es muy corto (< 40% del objetivo),
   // fusionarlo con el anterior
   while (slides.length > 1) {
     const lastSlide = slides[slides.length - 1];
-    const minLength = targetChars * 0.4; // 40% del objetivo
-
-    if (lastSlide.length < minLength) {
-      // Fusionar con el slide anterior
+    if (lastSlide.length < targetChars * 0.4) {
       slides.pop();
-      slides[slides.length - 1] = slides[slides.length - 1] + ' ' + lastSlide;
+      slides[slides.length - 1] = `${slides[slides.length - 1]} ${lastSlide}`;
     } else {
       break;
     }
@@ -119,71 +182,90 @@ function splitReadingIntoSlides(reading: LiturgyReading): string[] {
 }
 
 /**
- * Convierte una lectura en SlideGroup
+ * Combina una o más lecturas en un SlideGroup único. Cada lectura aporta su
+ * propio slide de título seguido por sus chunks de contenido.
+ *
+ * Nota: el subtítulo de la última lámina de cada lectura NO lleva el guión
+ * largo ("— ") como prefijo; el renderer en UniversalSlide ya lo añade, así
+ * que duplicarlo producía "— — Juan 10:1-10 (NVI)".
  */
-function readingToSlideGroup(
-  reading: LiturgyReading,
-  slideTexts: string[]
+function combineReadingsToSlideGroup(
+  items: Array<{ reading: LiturgyReading; texts: string[] }>
 ): SlideGroup {
-  const slides: Slide[] = [];
-  const totalSlides = slideTexts.length + 1; // +1 por el título
+  const allSlides: Slide[] = [];
+  const totalSlides = items.reduce((sum, item) => sum + item.texts.length + 1, 0);
+  let order = 0;
 
-  // Slide de título
-  slides.push({
-    id: generateId(),
-    type: 'title',
-    content: {
-      primary: 'LECTURA BÍBLICA',
-      subtitle: reading.reference,
-    },
-    style: {
-      primaryColor: CASA_BRAND.colors.primary.black,
-      backgroundColor: CASA_BRAND.colors.primary.white,
-      primaryFont: CASA_BRAND.fonts.heading,
-    },
-    metadata: {
-      sourceComponent: 'lectura-biblica-editor',
-      sourceId: 'lectura-biblica',
-      order: 0,
-      groupTotal: totalSlides,
-    },
-  });
-
-  // Slides de contenido
-  slideTexts.forEach((text, index) => {
-    const isLast = index === slideTexts.length - 1;
-
-    slides.push({
+  for (const { reading, texts } of items) {
+    // Slide de título por lectura
+    allSlides.push({
       id: generateId(),
-      type: 'reading',
+      type: 'title',
       content: {
-        primary: text,
-        subtitle: isLast ? `— ${reading.reference} (${reading.versionCode})` : undefined,
+        primary: 'LECTURA BÍBLICA',
+        subtitle: reading.reference,
       },
       style: {
         primaryColor: CASA_BRAND.colors.primary.black,
         backgroundColor: CASA_BRAND.colors.primary.white,
-        primaryFont: CASA_BRAND.fonts.body,
+        primaryFont: CASA_BRAND.fonts.heading,
       },
       metadata: {
         sourceComponent: 'lectura-biblica-editor',
         sourceId: 'lectura-biblica',
-        order: index + 1,
+        order: order++,
         groupTotal: totalSlides,
       },
     });
-  });
+
+    // Slides de contenido para esta lectura
+    texts.forEach((text, index) => {
+      const isLast = index === texts.length - 1;
+      allSlides.push({
+        id: generateId(),
+        type: 'reading',
+        content: {
+          primary: text,
+          subtitle: isLast ? `${reading.reference} (${reading.versionCode})` : undefined,
+        },
+        style: {
+          primaryColor: CASA_BRAND.colors.primary.black,
+          backgroundColor: CASA_BRAND.colors.primary.white,
+          primaryFont: CASA_BRAND.fonts.body,
+        },
+        metadata: {
+          sourceComponent: 'lectura-biblica-editor',
+          sourceId: 'lectura-biblica',
+          order: order++,
+          groupTotal: totalSlides,
+        },
+      });
+    });
+  }
 
   return {
     id: generateId(),
     type: 'reading',
-    title: `Lectura: ${reading.reference}`,
-    slides,
+    title:
+      items.length === 1
+        ? `Lectura: ${items[0].reading.reference}`
+        : `Lecturas: ${items.map((i) => i.reading.reference).join(' • ')}`,
+    slides: allSlides,
     metadata: {
       sourceComponent: 'lectura-biblica-editor',
       createdAt: new Date().toISOString(),
     },
   };
+}
+
+/**
+ * Atajo para el preview: un solo SlideGroup para la lectura seleccionada.
+ */
+function readingToSlideGroup(
+  reading: LiturgyReading,
+  slideTexts: string[]
+): SlideGroup {
+  return combineReadingsToSlideGroup([{ reading, texts: slideTexts }]);
 }
 
 /**
@@ -421,122 +503,145 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
   onSlidesGenerated,
 }) => {
   const [selectedReadingIndex, setSelectedReadingIndex] = useState(0);
-  const [customSlideTexts, setCustomSlideTexts] = useState<string[] | null>(null);
+  // Ediciones por lectura (por índice). Un map permite preservar cambios cuando
+  // el usuario alterna entre pestañas de lecturas sin perder sus ajustes.
+  const [customTextsByReading, setCustomTextsByReading] = useState<Record<number, string[]>>({});
   const [showPreview, setShowPreview] = useState(true);
   const [editingSlideIndex, setEditingSlideIndex] = useState<number | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [regenerateKey, setRegenerateKey] = useState(0); // Clave para forzar regeneración
   const [isRegenerating, setIsRegenerating] = useState(false); // Visual feedback
 
-  const readings = context.readings || [];
+  const readings = useMemo(() => context.readings || [], [context.readings]);
   const hasReadings = readings.length > 0;
   const selectedReading = hasReadings ? readings[selectedReadingIndex] : null;
 
-  // Generar división automática de slides
-  // regenerateKey fuerza recálculo cuando el usuario hace clic en "Regenerar"
+  // División automática para la lectura seleccionada (para preview)
   const autoSlideTexts = useMemo(() => {
     if (!selectedReading?.text) return [];
     console.log('[LecturaBiblicaEditor] Regenerando slides...', { regenerateKey });
     return splitReadingIntoSlides(selectedReading);
   }, [selectedReading, regenerateKey]);
 
-  // Usar división personalizada o automática
-  const slideTexts = customSlideTexts || autoSlideTexts;
+  // Usar división personalizada (si existe para esta lectura) o automática
+  const slideTexts = customTextsByReading[selectedReadingIndex] ?? autoSlideTexts;
 
-  console.log('[LecturaBiblicaEditor] slideTexts:', slideTexts.length, 'slides');
-  console.log('[LecturaBiblicaEditor] Slide 1 (first 50):', slideTexts[0]?.substring(0, 50));
-
-  // Generar SlideGroup para preview
+  // Generar SlideGroup para preview — solo la lectura seleccionada
   const previewSlideGroup = useMemo(() => {
     if (!selectedReading) return null;
-    console.log('[LecturaBiblicaEditor] Generando previewSlideGroup con', slideTexts.length, 'slides');
     return readingToSlideGroup(selectedReading, slideTexts);
   }, [selectedReading, slideTexts]);
 
-  // Regenerar división - fuerza recálculo
+  // Resolver textos finales de cada lectura (custom o auto) para construir el
+  // SlideGroup combinado al guardar.
+  const resolveAllReadings = useCallback(
+    () =>
+      readings.map((reading, idx) => ({
+        reading,
+        texts: customTextsByReading[idx] ?? splitReadingIntoSlides(reading),
+      })),
+    [readings, customTextsByReading]
+  );
+
+  // Regenerar división de la lectura seleccionada
   const handleRegenerate = useCallback(() => {
     setIsRegenerating(true);
-    setCustomSlideTexts(null);
-    setRegenerateKey(k => k + 1);
+    setCustomTextsByReading((prev) => {
+      const next = { ...prev };
+      delete next[selectedReadingIndex];
+      return next;
+    });
+    setRegenerateKey((k) => k + 1);
     setTimeout(() => setIsRegenerating(false), 300);
-  }, []);
+  }, [selectedReadingIndex]);
 
   // Editar un slide específico
   const handleEditSlide = useCallback((index: number) => {
     setEditingSlideIndex(index);
   }, []);
 
-  // Guardar edición de slide
-  const handleSaveSlideEdit = useCallback((newText: string) => {
-    if (editingSlideIndex === null) return;
+  // Guardar edición de slide (aplica a la lectura seleccionada)
+  const handleSaveSlideEdit = useCallback(
+    (newText: string) => {
+      if (editingSlideIndex === null) return;
+      const newTexts = [...slideTexts];
+      newTexts[editingSlideIndex] = newText;
+      setCustomTextsByReading((prev) => ({ ...prev, [selectedReadingIndex]: newTexts }));
+      setEditingSlideIndex(null);
+    },
+    [editingSlideIndex, slideTexts, selectedReadingIndex]
+  );
 
-    const newTexts = [...(customSlideTexts || autoSlideTexts)];
-    newTexts[editingSlideIndex] = newText;
-    setCustomSlideTexts(newTexts);
-    setEditingSlideIndex(null);
-  }, [editingSlideIndex, customSlideTexts, autoSlideTexts]);
+  // Dividir un slide en dos (en la lectura seleccionada)
+  const handleSplitSlide = useCallback(
+    (index: number) => {
+      const text = slideTexts[index];
+      const midpoint = Math.floor(text.length / 2);
 
-  // Dividir un slide en dos
-  const handleSplitSlide = useCallback((index: number) => {
-    const texts = customSlideTexts || autoSlideTexts;
-    const text = texts[index];
-    const midpoint = Math.floor(text.length / 2);
-
-    // Buscar el mejor punto de corte (final de oración o espacio)
-    let splitPoint = midpoint;
-    for (let i = midpoint; i < text.length && i < midpoint + 50; i++) {
-      if (text[i] === '.' || text[i] === '!' || text[i] === '?') {
-        splitPoint = i + 1;
-        break;
+      // Buscar el mejor punto de corte (final de oración o espacio)
+      let splitPoint = midpoint;
+      for (let i = midpoint; i < text.length && i < midpoint + 50; i++) {
+        if (text[i] === '.' || text[i] === '!' || text[i] === '?') {
+          splitPoint = i + 1;
+          break;
+        }
       }
-    }
 
-    if (splitPoint === midpoint) {
-      // Si no encontramos puntuación, buscar espacio
-      const spaceIndex = text.lastIndexOf(' ', midpoint);
-      if (spaceIndex > 0) {
-        splitPoint = spaceIndex;
+      if (splitPoint === midpoint) {
+        const spaceIndex = text.lastIndexOf(' ', midpoint);
+        if (spaceIndex > 0) {
+          splitPoint = spaceIndex;
+        }
       }
-    }
 
-    const newTexts = [...texts];
-    newTexts.splice(index, 1, text.slice(0, splitPoint).trim(), text.slice(splitPoint).trim());
-    setCustomSlideTexts(newTexts);
-  }, [customSlideTexts, autoSlideTexts]);
+      const newTexts = [...slideTexts];
+      newTexts.splice(index, 1, text.slice(0, splitPoint).trim(), text.slice(splitPoint).trim());
+      setCustomTextsByReading((prev) => ({ ...prev, [selectedReadingIndex]: newTexts }));
+    },
+    [slideTexts, selectedReadingIndex]
+  );
 
-  // Guardar y generar slides finales
+  // Guardar: combina TODAS las lecturas en un solo SlideGroup. Antes solo se
+  // guardaba la lectura seleccionada, sobrescribiendo cualquier otra al cambiar
+  // de pestaña.
   const handleSave = useCallback(() => {
-    if (!selectedReading || !previewSlideGroup) return;
-    onSlidesGenerated(previewSlideGroup);
-
-    // Mostrar feedback de guardado
+    if (!hasReadings) return;
+    const combined = combineReadingsToSlideGroup(resolveAllReadings());
+    onSlidesGenerated(combined);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
-  }, [selectedReading, previewSlideGroup, onSlidesGenerated]);
+  }, [hasReadings, resolveAllReadings, onSlidesGenerated]);
 
-  // Detecta slides guardados con la calibración anterior (chunks > MAX).
-  // Los chunks viejos (pre-boost) tenían hasta ~360 chars y ahora se desbordan
-  // con el font-size efectivo de 44px (ver UniversalSlide FONT_SIZE_BOOSTED_SOURCES).
+  // Detecta slides guardados con la calibración anterior o con formato viejo
+  // de subtítulo. Los chunks viejos (pre-boost) tenían hasta ~360 chars y
+  // ahora se desbordan; el subtítulo anterior incluía un "— " literal que el
+  // renderer ya añade, produciendo doble guión largo en la cita.
   const hasStaleSlides = useMemo(() => {
     if (!initialSlides?.slides) return false;
-    return initialSlides.slides.some(
-      (s) => s.type === 'reading' && (s.content?.primary?.length ?? 0) > MAX_CHARS_PER_SLIDE
-    );
+    return initialSlides.slides.some((s) => {
+      if (s.type !== 'reading') return false;
+      if ((s.content?.primary?.length ?? 0) > MAX_CHARS_PER_SLIDE) return true;
+      if (s.content?.subtitle?.trimStart().startsWith('—')) return true;
+      return false;
+    });
   }, [initialSlides]);
 
-  // Regenera chunks desde el texto fuente e inmediatamente guarda, bypasseando
-  // cualquier customSlideTexts que pudiera estar en memoria. Usado por el
-  // banner de slides desactualizados.
+  // Regenera chunks desde el texto fuente (de TODAS las lecturas) e
+  // inmediatamente guarda. Descarta customTextsByReading para volver al estado
+  // generado automáticamente.
   const handleRegenerateAndSave = useCallback(() => {
-    if (!selectedReading) return;
-    const freshTexts = splitReadingIntoSlides(selectedReading);
-    const freshGroup = readingToSlideGroup(selectedReading, freshTexts);
-    setCustomSlideTexts(null);
+    if (!hasReadings) return;
+    const items = readings.map((reading) => ({
+      reading,
+      texts: splitReadingIntoSlides(reading),
+    }));
+    const combined = combineReadingsToSlideGroup(items);
+    setCustomTextsByReading({});
     setRegenerateKey((k) => k + 1);
-    onSlidesGenerated(freshGroup);
+    onSlidesGenerated(combined);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
-  }, [selectedReading, onSlidesGenerated]);
+  }, [hasReadings, readings, onSlidesGenerated]);
 
   // Si no hay lecturas
   if (!hasReadings) {
@@ -603,10 +708,7 @@ const LecturaBiblicaEditor: React.FC<LecturaBiblicaEditorProps> = ({
             <button
               key={index}
               type="button"
-              onClick={() => {
-                setSelectedReadingIndex(index);
-                setCustomSlideTexts(null);
-              }}
+              onClick={() => setSelectedReadingIndex(index)}
               className={`px-4 py-2 rounded-full transition-colors ${
                 selectedReadingIndex === index ? 'ring-2 ring-offset-1' : ''
               }`}
