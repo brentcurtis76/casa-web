@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -110,9 +110,23 @@ function ActivityCard({ title, description, icon, onClick, cta }: ActivityCardPr
 
 type DialogType = 'grupos' | 'lectura' | 'apoyo' | null;
 
+const SIGNUP_PARAM_MAP: Record<string, Exclude<DialogType, null>> = {
+  grupos: 'grupos',
+  lectura: 'lectura',
+  apoyo: 'apoyo',
+};
+
 export function Participar() {
   const [openDialog, setOpenDialog] = useState<DialogType>(null);
   const closeDialog = () => setOpenDialog(null);
+
+  useEffect(() => {
+    const signup = new URLSearchParams(window.location.search).get('signup');
+    if (signup && signup in SIGNUP_PARAM_MAP) {
+      setOpenDialog(SIGNUP_PARAM_MAP[signup]);
+      document.getElementById('participar')?.scrollIntoView({ behavior: 'auto' });
+    }
+  }, []);
 
   const activities = [
     {
