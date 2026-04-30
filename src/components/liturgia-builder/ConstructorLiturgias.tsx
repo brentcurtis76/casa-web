@@ -640,6 +640,9 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
 
   // Handler for cuentacuentos progress updates (in-progress story)
   // This allows the story to survive tab navigation by persisting intermediate state
+  // Stable identity (empty deps + functional setElements) is REQUIRED — the child's
+  // progress useEffect lists this callback as a dep, and a changing identity creates
+  // an infinite render loop.
   const handleCuentacuentosProgress = useCallback((
     story: Story,
     slides: SlideGroup | null
@@ -648,35 +651,30 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     const elementDef = LITURGY_ELEMENTS.find((e) => e.type === elementType);
     if (!elementDef) return;
 
-    const existingElement = elements.get(elementType);
+    setElements((prev) => {
+      const existingElement = prev.get(elementType);
 
-    // Only update if story status is not 'ready' (finalized stories use handleElementSlides)
-    // This prevents overwriting finalized stories with in-progress data
-    if (story.metadata.status === 'ready' && existingElement?.status === 'completed') {
-      return;
-    }
+      // Only update if story status is not 'ready' (finalized stories use handleElementSlides)
+      // This prevents overwriting finalized stories with in-progress data
+      if (story.metadata.status === 'ready' && existingElement?.status === 'completed') {
+        return prev;
+      }
 
-    const element: LiturgyElement = {
-      id: existingElement?.id || uuidv4(),
-      type: elementType,
-      order: LITURGY_ELEMENTS.findIndex((e) => e.type === elementType),
-      title: story.title || elementDef.label,
-      status: story.metadata.status === 'ready' ? 'completed' : 'in_progress',
-      slides: slides || existingElement?.slides,
-      sourceId: story.id,
-      config: { storyData: story },
-    };
+      const element: LiturgyElement = {
+        id: existingElement?.id || uuidv4(),
+        type: elementType,
+        order: LITURGY_ELEMENTS.findIndex((e) => e.type === elementType),
+        title: story.title || elementDef.label,
+        status: story.metadata.status === 'ready' ? 'completed' : 'in_progress',
+        slides: slides || existingElement?.slides,
+        sourceId: story.id,
+        config: { storyData: story },
+      };
 
-    console.log('[handleCuentacuentosProgress] Updating progress:', {
-      storyStatus: story.metadata.status,
-      elementStatus: element.status,
-      hasCharacterImages: story.characters.some(c => c.characterSheetUrl),
-      hasSceneImages: story.scenes.some(s => s.selectedImageUrl),
+      return new Map(prev).set(elementType, element);
     });
-
-    setElements((prev) => new Map(prev).set(elementType, element));
     // Don't mark as dirty for progress updates - only final save should mark dirty
-  }, [elements]);
+  }, []);
 
   // Get element status - verifica completitud real según tipo de elemento
   const getElementStatus = (type: LiturgyElementType): LiturgyElementStatus => {
