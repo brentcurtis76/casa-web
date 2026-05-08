@@ -33,6 +33,20 @@ interface Character {
   referenceImage?: string;
 }
 
+/**
+ * Local mirror of GenerateSceneImagesRefine in src/types/shared/story.ts.
+ * Edge functions cannot import app types, so this shape must be kept in sync
+ * with Phase 1. When present on a request, the handler forces exactly one
+ * generated image and uses sourceImage as slot 0 of the Gemini inlineData parts.
+ */
+interface Refine {
+  sourceImage: string;
+  feedback: string;
+}
+
+const REFINE_INSTRUCTION_TEMPLATE =
+  'REFINE THE PROVIDED IMAGE according to this feedback: {feedback}. Preserve all unmentioned visual elements (composition, lighting, characters, style, color palette) exactly. The reference images that follow are character / landmark / prop references — keep them visually consistent with the source image.';
+
 interface Landmark {
   name: string;
   visualDescription: string;
@@ -315,16 +329,34 @@ async function generateImage(
   prompt: string,
   variation: number = 0,
   referenceImages: string[] = [],
-  characterDescriptions: string[] = []
+  characterDescriptions: string[] = [],
+  refine?: Refine
 ): Promise<string> {
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
-    console.log(`[generateImage] Starting with ${referenceImages.length} reference images, variation ${variation}`);
+    console.log(`[generateImage] Starting with ${referenceImages.length} reference images, variation ${variation}, refine=${!!refine}`);
 
     let imagesAdded = 0;
+
+    if (refine && isValidImageBase64(refine.sourceImage)) {
+      const refineMime = refine.sourceImage.startsWith('/9j/')
+        ? 'image/jpeg'
+        : refine.sourceImage.startsWith('UklGR')
+          ? 'image/webp'
+          : 'image/png';
+      parts.push({
+        text: 'REFINE SOURCE IMAGE — This is the existing image to refine. It is provided as the FIRST inlineData part. Use it as the base; modify ONLY what the user feedback requests.',
+      });
+      parts.push({ inlineData: { mimeType: refineMime, data: refine.sourceImage } });
+      imagesAdded++;
+      console.log(`[generateImage] Added refine source image as slot 0 (${refineMime})`);
+    } else if (refine) {
+      console.warn('[generateImage] refine.sourceImage missing or invalid base64 — proceeding without refine source');
+    }
+
     const hasSceneRef = characterDescriptions[0]?.includes('SCENE STYLE REFERENCE');
     const hasLandmarkRef = characterDescriptions.some(d => d?.includes('LANDMARK REFERENCE'));
 
@@ -528,9 +560,17 @@ serve(async (req) => {
 
     const requestData = await req.json();
     const { type, styleId, count = 4 } = requestData;
+    const refine: Refine | undefined =
+      requestData.refine && typeof requestData.refine === 'object'
+        && typeof requestData.refine.sourceImage === 'string'
+        && typeof requestData.refine.feedback === 'string'
+        ? { sourceImage: requestData.refine.sourceImage, feedback: requestData.refine.feedback }
+        : undefined;
+    // Refine requests always produce exactly one image; slot 0 of inlineData is the source.
+    const effectiveCount = refine ? 1 : count;
 
     console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-    console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}`);
+    console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}`);
 
     if (type === 'scene') {
       const { sceneReferenceImage, sceneReferenceMode = 'style', characters } = requestData;
@@ -639,44 +679,84 @@ serve(async (req) => {
           }
         }
 
-        // Enforce scene-wide cap: characters + landmarks + props <= 12 (Gemini 14-image ceiling, leave headroom for scene style ref + system).
-        // Trim order: drop props first, then landmarks. Never drop characters.
-        const MAX_PROCESSED = 12;
-        const initialTotal = referenceImages.length + landmarkRefImages.length + propRefImages.length;
-        let droppedProps = 0;
-        let droppedLandmarks = 0;
+        // Enforce scene-wide cap: characters + landmarks + props (+ scene-style + refine source) <= 12
+        // (Gemini 14-image ceiling, leave headroom for system parts).
+        // In refine mode, slot 0 is reserved for refine.sourceImage so the budget for everything
+        // else shrinks to 11. Trim order (lowest priority first):
+        // scene-style ref → props → landmarks. Never drop characters.
+        const HARD_CAP = 12;
+        const MAX_PROCESSED = refine ? HARD_CAP - 1 : HARD_CAP;
+        const willAddSceneRef = !!sceneReferenceImage;
+        const sceneRefBudgetCost = willAddSceneRef ? 1 : 0;
+        const initialTotal =
+          referenceImages.length +
+          landmarkRefImages.length +
+          propRefImages.length +
+          sceneRefBudgetCost;
+        let droppedSceneRef = false;
+        const droppedPropNames: string[] = [];
+        const droppedLandmarkNames: string[] = [];
 
         if (initialTotal > MAX_PROCESSED) {
           let overflow = initialTotal - MAX_PROCESSED;
 
-          const propsToDrop = Math.min(overflow, propRefImages.length);
-          if (propsToDrop > 0) {
-            propRefImages.splice(propRefImages.length - propsToDrop, propsToDrop);
-            propRefDescriptions.splice(propRefDescriptions.length - propsToDrop, propsToDrop);
-            droppedProps = propsToDrop;
-            overflow -= propsToDrop;
+          if (overflow > 0 && willAddSceneRef) {
+            droppedSceneRef = true;
+            overflow -= 1;
+            console.warn(
+              `[generate-scene-images] Refine/cap pressure: dropping scene-style reference image (mode=${sceneReferenceMode}) to keep refine source in slot 0`
+            );
           }
 
-          if (overflow > 0) {
-            const landmarksToDrop = Math.min(overflow, landmarkRefImages.length);
-            if (landmarksToDrop > 0) {
-              landmarkRefImages.splice(landmarkRefImages.length - landmarksToDrop, landmarksToDrop);
-              landmarkRefDescriptions.splice(landmarkRefDescriptions.length - landmarksToDrop, landmarksToDrop);
-              droppedLandmarks = landmarksToDrop;
-            }
+          while (overflow > 0 && propRefImages.length > 0) {
+            propRefImages.pop();
+            const droppedDesc = propRefDescriptions.pop() ?? '';
+            const propName = droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ?? 'unknown prop';
+            droppedPropNames.push(propName);
+            overflow -= 1;
           }
 
-          const finalCount = referenceImages.length + landmarkRefImages.length + propRefImages.length;
+          while (overflow > 0 && landmarkRefImages.length > 0) {
+            landmarkRefImages.pop();
+            const droppedDesc = landmarkRefDescriptions.pop() ?? '';
+            const lmName = droppedDesc.match(/LANDMARK REFERENCE - ([^:]+):/)?.[1] ?? 'unknown landmark';
+            droppedLandmarkNames.push(lmName);
+            overflow -= 1;
+          }
+
+          if (droppedPropNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedPropNames.join(', ')}`
+            );
+          }
+          if (droppedLandmarkNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedLandmarkNames.join(', ')}`
+            );
+          }
+
+          const finalCount =
+            referenceImages.length +
+            landmarkRefImages.length +
+            propRefImages.length +
+            (willAddSceneRef && !droppedSceneRef ? 1 : 0);
           console.warn(
             `[generate-scene-images] Trimmed reference images to stay under ${MAX_PROCESSED}-image cap`,
-            { initialTotal, droppedProps, droppedLandmarks, finalCount }
+            {
+              initialTotal,
+              droppedSceneRef,
+              droppedProps: droppedPropNames.length,
+              droppedLandmarks: droppedLandmarkNames.length,
+              finalCount,
+              refine: !!refine,
+            }
           );
         }
 
         referenceImages.push(...landmarkRefImages, ...propRefImages);
         characterDescriptions.push(...landmarkRefDescriptions, ...propRefDescriptions);
 
-        if (sceneReferenceImage) {
+        if (sceneReferenceImage && !droppedSceneRef) {
           console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
           const processedSceneRef = await processReferenceImage(sceneReferenceImage);
           if (processedSceneRef) {
@@ -796,31 +876,64 @@ Instrucciones críticas:
           }
         }
 
-        // Enforce cap: characters + props <= 12 (covers have no landmarks today).
-        // Trim order: drop props first. Never drop characters.
-        const COVER_MAX_PROCESSED = 12;
-        const coverInitialTotal = referenceImages.length + coverPropRefImages.length;
-        let coverDroppedProps = 0;
+        // Enforce cap: characters + props (+ cover-style + refine source) <= 12 (covers have no landmarks today).
+        // In refine mode, slot 0 is reserved for refine.sourceImage so the budget shrinks to 11.
+        // Trim order: cover-style ref → props. Never drop characters.
+        const COVER_HARD_CAP = 12;
+        const COVER_MAX_PROCESSED = refine ? COVER_HARD_CAP - 1 : COVER_HARD_CAP;
+        const coverWillAddStyleRef = !!sceneReferenceImage;
+        const coverStyleRefBudgetCost = coverWillAddStyleRef ? 1 : 0;
+        const coverInitialTotal =
+          referenceImages.length + coverPropRefImages.length + coverStyleRefBudgetCost;
+        let coverDroppedStyleRef = false;
+        const coverDroppedPropNames: string[] = [];
 
         if (coverInitialTotal > COVER_MAX_PROCESSED) {
-          const overflow = coverInitialTotal - COVER_MAX_PROCESSED;
-          const propsToDrop = Math.min(overflow, coverPropRefImages.length);
-          if (propsToDrop > 0) {
-            coverPropRefImages.splice(coverPropRefImages.length - propsToDrop, propsToDrop);
-            coverPropRefDescriptions.splice(coverPropRefDescriptions.length - propsToDrop, propsToDrop);
-            coverDroppedProps = propsToDrop;
+          let overflow = coverInitialTotal - COVER_MAX_PROCESSED;
+
+          if (overflow > 0 && coverWillAddStyleRef) {
+            coverDroppedStyleRef = true;
+            overflow -= 1;
+            console.warn(
+              `[generate-scene-images] Refine/cap pressure: dropping cover style reference image to keep refine source in slot 0`
+            );
           }
-          const finalCount = referenceImages.length + coverPropRefImages.length;
+
+          while (overflow > 0 && coverPropRefImages.length > 0) {
+            coverPropRefImages.pop();
+            const droppedDesc = coverPropRefDescriptions.pop() ?? '';
+            const propName = droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ?? 'unknown prop';
+            coverDroppedPropNames.push(propName);
+            overflow -= 1;
+          }
+
+          if (coverDroppedPropNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${coverDroppedPropNames.join(', ')}`
+            );
+          }
+
+          const finalCount =
+            referenceImages.length +
+            coverPropRefImages.length +
+            (coverWillAddStyleRef && !coverDroppedStyleRef ? 1 : 0);
           console.warn(
             `[generate-scene-images] Trimmed cover reference images to stay under ${COVER_MAX_PROCESSED}-image cap`,
-            { initialTotal: coverInitialTotal, droppedProps: coverDroppedProps, droppedLandmarks: 0, finalCount }
+            {
+              initialTotal: coverInitialTotal,
+              droppedStyleRef: coverDroppedStyleRef,
+              droppedProps: coverDroppedPropNames.length,
+              droppedLandmarks: 0,
+              finalCount,
+              refine: !!refine,
+            }
           );
         }
 
         referenceImages.push(...coverPropRefImages);
         characterDescriptions.push(...coverPropRefDescriptions);
 
-        if (sceneReferenceImage) {
+        if (sceneReferenceImage && !coverDroppedStyleRef) {
           console.log(`[generate-scene-images] Cover style reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
           const processedSceneRef = await processReferenceImage(sceneReferenceImage);
           if (processedSceneRef) {
@@ -889,16 +1002,27 @@ Instrucciones críticas:
           let endCharRefImages = validResults.map(r => r.image);
           let endCharRefDescriptions = validResults.map(r => r.description);
 
-          // Enforce 12-image cap for character references on the end image (Gemini 14-image ceiling
-          // leaves headroom for end style ref + system parts). Trim from the end (lowest priority).
-          const END_MAX_PROCESSED = 12;
+          // Enforce 12-image cap on end character references (Gemini 14-image ceiling leaves
+          // headroom for system parts). In refine mode the cap shrinks to 11 to reserve slot 0
+          // for refine.sourceImage. Trim from the end (lowest priority) and emit a warn naming
+          // the dropped reference(s).
+          const END_HARD_CAP = 12;
+          const END_MAX_PROCESSED = refine ? END_HARD_CAP - 1 : END_HARD_CAP;
           if (endCharRefImages.length > END_MAX_PROCESSED) {
             const initialTotal = endCharRefImages.length;
+            const droppedNames = endCharRefDescriptions
+              .slice(END_MAX_PROCESSED)
+              .map(d => d.split(':')[0] || 'unknown character');
             endCharRefImages = endCharRefImages.slice(0, END_MAX_PROCESSED);
             endCharRefDescriptions = endCharRefDescriptions.slice(0, END_MAX_PROCESSED);
             console.warn(
-              `[generate-scene-images] Trimmed end character reference images to stay under ${END_MAX_PROCESSED}-image cap`,
-              { initialTotal, finalCount: endCharRefImages.length, dropped: initialTotal - endCharRefImages.length }
+              `[generate-scene-images] Trimmed end character reference image(s) to stay under ${END_MAX_PROCESSED}-image cap: ${droppedNames.join(', ')}`,
+              {
+                initialTotal,
+                finalCount: endCharRefImages.length,
+                dropped: initialTotal - endCharRefImages.length,
+                refine: !!refine,
+              }
             );
           }
 
@@ -908,12 +1032,21 @@ Instrucciones críticas:
         }
 
         if (endReferenceImage) {
-          console.log(`[generate-scene-images] End reference image type: ${isUrl(endReferenceImage) ? 'URL' : 'base64'}`);
-          const processedImage = await processReferenceImage(endReferenceImage);
-          if (processedImage) {
-            referenceImages.push(processedImage);
-            characterDescriptions.push('END STYLE REFERENCE - Use this image as visual style reference for the final image');
-            console.log(`[generate-scene-images] End reference image processed successfully`);
+          // In refine mode, drop the end-style reference if it would push us past the
+          // 11-slot budget for non-source refs (slot 0 reserved for refine.sourceImage).
+          const endNonSourceBudget = refine ? 11 : 12;
+          if (referenceImages.length >= endNonSourceBudget) {
+            console.warn(
+              `[generate-scene-images] Dropping end style reference image to stay under ${endNonSourceBudget + (refine ? 1 : 0)}-image cap (refine=${!!refine})`
+            );
+          } else {
+            console.log(`[generate-scene-images] End reference image type: ${isUrl(endReferenceImage) ? 'URL' : 'base64'}`);
+            const processedImage = await processReferenceImage(endReferenceImage);
+            if (processedImage) {
+              referenceImages.push(processedImage);
+              characterDescriptions.push('END STYLE REFERENCE - Use this image as visual style reference for the final image');
+              console.log(`[generate-scene-images] End reference image processed successfully`);
+            }
           }
         }
         break;
@@ -923,16 +1056,20 @@ Instrucciones críticas:
         throw new Error(`Tipo no válido: ${type}. Use: scene, character, cover, end`);
     }
 
+    if (refine) {
+      prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', refine.feedback)}`;
+    }
+
     console.log(`[generate-scene-images] Prompt (${type}):`, prompt.slice(0, 300) + '...');
-    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini`);
+    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`);
     console.log(`[generate-scene-images] FINAL STATE - Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
     referenceImages.forEach((img, idx) => {
       console.log(`[generate-scene-images] FINAL ref image ${idx}: length=${img?.length || 0}, isValid=${isValidImageBase64(img)}, prefix=${img?.slice(0, 20) || 'empty'}`);
     });
 
     const promises = [];
-    for (let i = 0; i < Math.min(count, 4); i++) {
-      promises.push(generateImage(prompt, i, referenceImages, characterDescriptions));
+    for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
+      promises.push(generateImage(prompt, i, referenceImages, characterDescriptions, refine));
     }
 
     const settledResults = await Promise.allSettled(promises);
