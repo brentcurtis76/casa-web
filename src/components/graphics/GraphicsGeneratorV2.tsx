@@ -83,6 +83,7 @@ import {
 import { DragCanvasEditor } from './DragCanvasEditor';
 import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 
 // Tipos de evento disponibles
 const EVENT_TYPES = [
@@ -387,6 +388,9 @@ export const GraphicsGeneratorV2 = () => {
   // interfere with each other (mirrors the Portadas refine pattern).
   const [isRefiningGraphic, setIsRefiningGraphic] = useState(false);
   const [refineGraphicError, setRefineGraphicError] = useState<string | null>(null);
+  // Tracks which card's source image is actively being refined so the
+  // active card can stay fully opaque while siblings dim.
+  const [refiningSourceImage, setRefiningSourceImage] = useState<string | null>(null);
 
   // Illustration adjustment state - per format
   const [adjustFormat, setAdjustFormat] = useState<FormatType>('ppt_4_3');
@@ -926,6 +930,7 @@ export const GraphicsGeneratorV2 = () => {
     const target = generatedGraphics[targetIndex];
 
     setIsRefiningGraphic(true);
+    setRefiningSourceImage(sourceImage);
     try {
       const body: GenerateIllustrationRequest = {
         eventType,
@@ -996,6 +1001,7 @@ export const GraphicsGeneratorV2 = () => {
       );
     } finally {
       setIsRefiningGraphic(false);
+      setRefiningSourceImage(null);
     }
   };
 
@@ -1960,54 +1966,69 @@ export const GraphicsGeneratorV2 = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 mb-6">
-                {generatedGraphics.map((graphic) => (
-                  <div
-                    key={graphic.format}
-                    className="relative rounded-lg overflow-hidden border border-gray-200"
-                  >
-                    <img
-                      src={`data:image/png;base64,${graphic.base64}`}
-                      alt={FORMAT_LABELS[graphic.format]}
-                      className="w-full"
-                      style={{
-                        aspectRatio:
-                          graphic.format === 'instagram_story'
-                            ? '9/16'
-                            : graphic.format === 'instagram_post'
-                            ? '1/1'
-                            : graphic.format === 'facebook_post'
-                            ? '1200/630'
-                            : '4/3',
-                      }}
-                    />
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-white font-medium text-sm">
-                          {FORMAT_LABELS[graphic.format]}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleDownload(graphic)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
+                {generatedGraphics.map((graphic) => {
+                  const isActiveRefine =
+                    isRefiningGraphic && refiningSourceImage === graphic.base64;
+                  const isDimmed = isRefiningGraphic && !isActiveRefine;
+                  return (
+                    <div
+                      key={graphic.format}
+                      className={`space-y-3 transition-opacity ${isDimmed ? 'opacity-50' : ''}`}
+                    >
+                      <div className="relative rounded-lg overflow-hidden border border-gray-200">
+                        <img
+                          src={`data:image/png;base64,${graphic.base64}`}
+                          alt={FORMAT_LABELS[graphic.format]}
+                          className="w-full"
+                          style={{
+                            aspectRatio:
+                              graphic.format === 'instagram_story'
+                                ? '9/16'
+                                : graphic.format === 'instagram_post'
+                                ? '1/1'
+                                : graphic.format === 'facebook_post'
+                                ? '1200/630'
+                                : '4/3',
+                          }}
+                        />
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-white font-medium text-sm">
+                              {FORMAT_LABELS[graphic.format]}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleDownload(graphic)}
+                              disabled={isRefiningGraphic}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
+                      <ImageRefineBox
+                        onRefine={(feedback) => handleRefineGraphic(graphic.base64, feedback)}
+                        isRefining={isRefiningGraphic}
+                        refineError={refineGraphicError}
+                      />
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   onClick={() => setPhase(textBakedIn ? 'logo-adjust' : 'adjusting')}
+                  disabled={isRefiningGraphic}
                 >
                   {textBakedIn ? 'Ajustar Logo' : 'Volver a Ajustar'}
                 </Button>
                 <Button
                   className="flex-1 bg-amber-500 hover:bg-amber-600"
                   onClick={handleDownloadAll}
+                  disabled={isRefiningGraphic}
                 >
                   <Archive className="h-4 w-4 mr-2" />
                   Descargar Todos
@@ -2015,7 +2036,7 @@ export const GraphicsGeneratorV2 = () => {
                 <Button
                   variant="outline"
                   onClick={handleOpenSaveDialog}
-                  disabled={batchSaved}
+                  disabled={batchSaved || isRefiningGraphic}
                   className={batchSaved ? 'text-green-600 border-green-600' : ''}
                 >
                   {batchSaved ? (
@@ -2030,7 +2051,11 @@ export const GraphicsGeneratorV2 = () => {
                     </>
                   )}
                 </Button>
-                <Button variant="outline" onClick={handleReset}>
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={isRefiningGraphic}
+                >
                   Crear Nuevo
                 </Button>
               </div>
