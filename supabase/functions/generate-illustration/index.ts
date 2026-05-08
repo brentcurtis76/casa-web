@@ -129,7 +129,7 @@ serve(async (req) => {
       return payloadTooLarge(`Body exceeds ${MAX_TOTAL_BODY_BYTES} bytes`);
     }
 
-    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, aspectRatio } = await req.json();
+    const { eventType = 'generic', count = 4, customPrompt, backgroundMode, jsonPrompt, referenceImage, referencePrompt, aspectRatio, refine } = await req.json();
 
     // ── Per-field size caps.
     if (typeof jsonPrompt === 'string' && jsonPrompt.length > MAX_JSON_PROMPT_BYTES) {
@@ -151,6 +151,32 @@ serve(async (req) => {
       }
     }
 
+    // ── Refine mode: optional sibling to referenceImage. When present, runs a
+    // single-image refinement pass against refine.sourceImage using minimal
+    // change instructions derived from refine.feedback. Reuses the same
+    // size-cap and magic-byte validation as referenceImage.
+    const isRefine = refine !== undefined && refine !== null;
+    if (isRefine) {
+      if (typeof refine !== 'object' || typeof refine.sourceImage !== 'string' || typeof refine.feedback !== 'string') {
+        return new Response(
+          JSON.stringify({ error: 'Invalid refine', detail: 'Must be { sourceImage: string, feedback: string }' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      if (refine.sourceImage.length > MAX_REFERENCE_IMAGE_BYTES) {
+        return payloadTooLarge(`refine.sourceImage exceeds ${MAX_REFERENCE_IMAGE_BYTES} bytes`);
+      }
+      if (!isValidImageBase64(refine.sourceImage)) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid refine.sourceImage', detail: 'Must be base64-encoded PNG or JPEG' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
+    // Refine mode forces a single output regardless of caller-supplied count.
+    const effectiveCount = isRefine ? 1 : count;
+
     // Only forward aspectRatio when caller explicitly provides a valid value.
     // Omitting aspectRatio preserves prior behavior for callers that never passed it.
     const ALLOWED_ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16'] as const;
@@ -160,10 +186,10 @@ serve(async (req) => {
         ? (aspectRatio as AllowedAspectRatio)
         : undefined;
 
-    const mode = referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
+    const mode = isRefine ? 'refine' : referenceImage ? 'image-to-image' : jsonPrompt ? 'JSON prompt' : 'legacy';
     // Structural log — avoids echoing user-provided prompt/title/preacher content.
     console.log(
-      `[generate-illustration] user=${userId} mode=${mode} eventType=${eventType} count=${count}${forwardedAspectRatio ? ` aspectRatio=${forwardedAspectRatio}` : ''}`,
+      `[generate-illustration] user=${userId} mode=${mode} eventType=${eventType} count=${effectiveCount}${forwardedAspectRatio ? ` aspectRatio=${forwardedAspectRatio}` : ''}`,
     );
 
     // Validate backgroundMode
@@ -174,7 +200,12 @@ serve(async (req) => {
     // Build prompt based on mode
     let prompt: string;
 
-    if (referenceImage && referencePrompt) {
+    if (isRefine) {
+      // Refine mode: lightweight single-pass edit driven by user feedback.
+      // Keep eventType context so the model knows what kind of graphic it is
+      // refining, but do not invoke the full cover prompt builders.
+      prompt = `REFINE THE PROVIDED IMAGE according to this feedback: "${refine.feedback}". Preserve the event type, color palette, composition, layout, typography, and any other unmentioned visual elements exactly. Only change what the feedback explicitly requests.\n\nEvent type context: ${eventType}`;
+    } else if (referenceImage && referencePrompt) {
       // Image-to-image mode: recompose a reference image for a new aspect ratio
       prompt = referencePrompt;
     } else if (jsonPrompt && typeof jsonPrompt === 'string') {
@@ -191,7 +222,7 @@ serve(async (req) => {
     }
 
     // Add transparency extraction hint if backgroundMode === 'transparent' (legacy mode only)
-    if (backgroundMode === 'transparent' && !jsonPrompt && !referenceImage) {
+    if (backgroundMode === 'transparent' && !jsonPrompt && !referenceImage && !isRefine) {
       prompt += '\n\nIMPORTANT: The background MUST be PURE WHITE (#FFFFFF) with absolutely no texture, gradients, or patterns. This allows easy background extraction.';
     }
 
@@ -212,7 +243,17 @@ serve(async (req) => {
         // Build parts array — text-only or text+image depending on mode
         const parts: Array<Record<string, unknown>> = [];
 
-        if (referenceImage && typeof referenceImage === 'string') {
+        if (isRefine) {
+          // Refine: source image in slot 0 + minimal change instructions.
+          // Same inline-data shape as the referenceImage path.
+          parts.push({
+            inlineData: {
+              mimeType: 'image/png',
+              data: refine.sourceImage,
+            }
+          });
+          parts.push({ text: prompt });
+        } else if (referenceImage && typeof referenceImage === 'string') {
           // Image-to-image: send reference image + recomposition instructions
           parts.push({
             inlineData: {
@@ -282,7 +323,7 @@ serve(async (req) => {
 
     // Generar todas las ilustraciones en paralelo
     const promises = [];
-    for (let i = 0; i < Math.min(count, 4); i++) {
+    for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
       promises.push(generateOne(i));
     }
 
@@ -296,10 +337,10 @@ serve(async (req) => {
     }
 
     const validCount = illustrations.length;
-    console.log(`[generate-illustration] ${validCount}/${count} ilustraciones válidas`);
+    console.log(`[generate-illustration] ${validCount}/${effectiveCount} ilustraciones válidas`);
 
     // Si no se generaron suficientes, rellenar con vacíos
-    while (illustrations.length < count) {
+    while (illustrations.length < effectiveCount) {
       illustrations.push('');
     }
 
@@ -307,7 +348,7 @@ serve(async (req) => {
       JSON.stringify({
         illustrations,
         validCount,
-        requestedCount: count,
+        requestedCount: effectiveCount,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
