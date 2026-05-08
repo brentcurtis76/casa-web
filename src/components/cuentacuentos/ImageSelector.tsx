@@ -3,9 +3,10 @@
  * Usado tanto para character sheets como para escenas
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { Check, RefreshCw, ImageIcon } from 'lucide-react';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 
 interface ImageSelectorProps {
   title: string;
@@ -15,6 +16,9 @@ interface ImageSelectorProps {
   onSelect: (imageUrl: string) => void;
   onRegenerate?: () => void;
   isRegenerating?: boolean;
+  onRefine?: (sourceImage: string, feedback: string) => Promise<void>;
+  isRefining?: boolean;
+  refineError?: string | null;
 }
 
 const ImageSelector: React.FC<ImageSelectorProps> = ({
@@ -25,7 +29,37 @@ const ImageSelector: React.FC<ImageSelectorProps> = ({
   onSelect,
   onRegenerate,
   isRegenerating = false,
+  onRefine,
+  isRefining,
+  refineError,
 }) => {
+  // Track the selected slot by index so the selection survives a parent that
+  // swaps the image at the selected index in place (e.g. after a refine).
+  const [selectedIdx, setSelectedIdx] = useState<number>(() =>
+    selectedImageUrl ? imageOptions.indexOf(selectedImageUrl) : -1
+  );
+
+  useEffect(() => {
+    if (selectedImageUrl == null) {
+      setSelectedIdx(-1);
+      return;
+    }
+    const idx = imageOptions.indexOf(selectedImageUrl);
+    // Only sync when the URL maps to a known slot; if the parent swapped the
+    // image in place, the URL won't match — keep the previous index.
+    if (idx >= 0 && idx !== selectedIdx) {
+      setSelectedIdx(idx);
+    }
+  }, [selectedImageUrl, imageOptions, selectedIdx]);
+
+  const selectedImageBase64 =
+    selectedIdx >= 0 && selectedIdx < imageOptions.length
+      ? imageOptions[selectedIdx]
+      : selectedImageUrl;
+
+  const refining = !!isRefining;
+  const showRefineBox = !!onRefine && selectedImageBase64 != null;
+
   return (
     <div
       className="p-4 rounded-lg border"
@@ -66,7 +100,7 @@ const ImageSelector: React.FC<ImageSelectorProps> = ({
           <button
             type="button"
             onClick={onRegenerate}
-            disabled={isRegenerating}
+            disabled={isRegenerating || refining}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-colors hover:bg-amber-50 disabled:opacity-50"
             style={{
               color: CASA_BRAND.colors.primary.amber,
@@ -84,15 +118,24 @@ const ImageSelector: React.FC<ImageSelectorProps> = ({
 
       {/* Grid de opciones */}
       {imageOptions.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div
+          className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${
+            refining ? 'opacity-60 pointer-events-none' : ''
+          }`}
+          aria-disabled={refining || undefined}
+        >
           {imageOptions.map((imageUrl, index) => {
-            const isSelected = selectedImageUrl === imageUrl;
+            const isSelected = index === selectedIdx;
 
             return (
               <button
                 key={index}
                 type="button"
-                onClick={() => onSelect(imageUrl)}
+                disabled={refining}
+                onClick={() => {
+                  setSelectedIdx(index);
+                  onSelect(imageUrl);
+                }}
                 className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
                   isSelected ? 'ring-2 ring-offset-2' : ''
                 }`}
@@ -172,6 +215,16 @@ const ImageSelector: React.FC<ImageSelectorProps> = ({
             ? '✓ Imagen seleccionada'
             : 'Haz clic en una imagen para seleccionarla'}
         </p>
+      )}
+
+      {showRefineBox && (
+        <div className="mt-4">
+          <ImageRefineBox
+            onRefine={(feedback) => onRefine!(selectedImageBase64!, feedback)}
+            isRefining={isRefining ?? false}
+            refineError={refineError}
+          />
+        </div>
       )}
     </div>
   );
