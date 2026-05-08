@@ -241,6 +241,74 @@ export interface StoryPDFContent {
 }
 
 /**
+ * Refinamiento opcional de una imagen existente: la imagen base se manda
+ * como base64 (sin prefijo data URI) junto con feedback en texto libre que
+ * describe los cambios deseados.
+ */
+export interface GenerateSceneImagesRefine {
+  sourceImage: string; // base64 sin prefijo data URI
+  feedback: string;    // instrucciones de refinamiento en texto libre
+}
+
+/**
+ * Cuerpo de la petición a la edge function `generate-scene-images` cuando
+ * se regenera un character sheet (`handleRegenerateCharacterSheet`).
+ */
+export interface GenerateSceneImagesCharacterRequest {
+  type: 'character';
+  styleId: string;
+  character: {
+    name: string;
+    description: string;
+    visualDescription: string;
+  };
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/**
+ * Cuerpo de la petición a la edge function `generate-scene-images` cuando
+ * se (re)genera una imagen de escena (`handleRegenerateSceneImage`).
+ */
+export interface GenerateSceneImagesSceneRequest {
+  type: 'scene';
+  styleId: string;
+  scene: {
+    text: string;
+    visualDescription: string;
+    landmarkVisible?: boolean;
+  };
+  characters?: {
+    name: string;
+    visualDescription: string;
+    referenceImage?: string;
+  }[];
+  location: LocationInfo;
+  sceneReferenceImage?: string;
+  sceneReferenceMode?: 'style' | 'composition';
+  landmarks?: {
+    name: string;
+    visualDescription: string;
+    referenceImages: string[];
+  }[];
+  props?: {
+    name: string;
+    visualDescription: string;
+    referenceImages: string[];
+  }[];
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/**
+ * Cuerpo de la petición a la edge function `generate-scene-images`
+ * (unión discriminada por `type`).
+ */
+export type GenerateSceneImagesRequest =
+  | GenerateSceneImagesCharacterRequest
+  | GenerateSceneImagesSceneRequest;
+
+/**
  * Índice de cuentos guardados
  */
 export interface StoryIndexEntry {
