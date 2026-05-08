@@ -69,6 +69,10 @@ import {
 } from './templateCompositor';
 import { buildJsonPromptString } from './jsonPromptBuilder';
 import {
+  type GenerateIllustrationRequest,
+  type GenerateIllustrationResponse,
+} from '@/lib/covers/coverPromptBuilder';
+import {
   type ElementPositions,
   type AllElementPositions,
   DEFAULT_ELEMENT_POSITIONS,
@@ -102,6 +106,17 @@ const FORMAT_LABELS: Record<FormatType, string> = {
   instagram_post: 'Instagram Post',
   instagram_story: 'Instagram Story',
   facebook_post: 'Facebook Post',
+};
+
+// Mapping FormatType -> aspectRatio accepted by generate-illustration.
+// Mirrors FORMAT_DIMENSIONS so refines come back with dimensions consistent
+// with what the rest of the flow already generated. facebook_post (1200x630)
+// has no exact match in the allowed list — 16:9 is the closest value.
+const FORMAT_TO_ASPECT_RATIO: Record<FormatType, '1:1' | '4:3' | '3:4' | '16:9' | '9:16'> = {
+  ppt_4_3: '4:3',
+  instagram_post: '1:1',
+  instagram_story: '9:16',
+  facebook_post: '16:9',
 };
 
 type Phase = 'form' | 'prompt' | 'prompt-preview' | 'selecting' | 'adjusting' | 'format-select' | 'generating' | 'logo-adjust' | 'done';
@@ -364,6 +379,14 @@ export const GraphicsGeneratorV2 = () => {
   const [batchName, setBatchName] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchSaved, setBatchSaved] = useState(false);
+  // Persisted batch id, set after handleSaveBatch succeeds. Used by
+  // handleRefineGraphic to update the matching casa_graphics_items row.
+  const [savedBatchId, setSavedBatchId] = useState<string | null>(null);
+
+  // Phase 6 refine state — kept isolated from generation flow so they can't
+  // interfere with each other (mirrors the Portadas refine pattern).
+  const [isRefiningGraphic, setIsRefiningGraphic] = useState(false);
+  const [refineGraphicError, setRefineGraphicError] = useState<string | null>(null);
 
   // Illustration adjustment state - per format
   const [adjustFormat, setAdjustFormat] = useState<FormatType>('ppt_4_3');
@@ -866,6 +889,116 @@ export const GraphicsGeneratorV2 = () => {
     setPhase('done');
   };
 
+  // Phase 6 — refine an already-generated graphic in place using the user's
+  // free-text feedback. Sends the displayed image back to the same
+  // `generate-illustration` edge function via the `refine` path so the model
+  // preserves style, layout, and typography while applying only the requested
+  // changes.
+  //
+  // Schema notes (verified against
+  // supabase/migrations/20260105000000_graphics_batches.sql and
+  // src/integrations/supabase/types.ts):
+  // - `casa_graphics_items.image_url` is the canonical image column. It
+  //   stores a Supabase Storage URL — there is no inline base64 column —
+  //   so persisting a refined image requires uploading the new PNG to the
+  //   `casa-graphics` bucket before updating the row.
+  // - `casa_graphics_items` is one row per (batch_id, format), not per
+  //   variation. The unique key for the refine update is therefore
+  //   (batch_id, format).
+  // - The 'done' phase shows ONE card per format (multiple cards on screen).
+  //   `sourceImage` identifies which card is being refined; only that
+  //   format's row is updated. Sibling-format rows for the same batch
+  //   intentionally remain stale — re-flowing a refine to other formats is
+  //   out of scope here.
+  // - DB persistence is best-effort. When the batch hasn't been saved yet
+  //   (`savedBatchId === null`) we update local state only; the next save
+  //   will pick up the refined image. If the storage upload or DB update
+  //   fails after the local update succeeded, we keep the local update,
+  //   surface a destructive toast, and log the error.
+  const handleRefineGraphic = async (sourceImage: string, feedback: string) => {
+    setRefineGraphicError(null);
+
+    const targetIndex = generatedGraphics.findIndex((g) => g.base64 === sourceImage);
+    if (targetIndex < 0) {
+      setRefineGraphicError('No se encontró el gráfico a refinar.');
+      return;
+    }
+    const target = generatedGraphics[targetIndex];
+
+    setIsRefiningGraphic(true);
+    try {
+      const body: GenerateIllustrationRequest = {
+        eventType,
+        aspectRatio: FORMAT_TO_ASPECT_RATIO[target.format],
+        refine: { sourceImage, feedback },
+      };
+      const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+        'generate-illustration',
+        { body },
+      );
+      if (error) throw error;
+      const refined = data?.illustrations?.[0];
+      if (!refined) {
+        throw new Error('No se recibió la ilustración refinada.');
+      }
+
+      // Update local state in place. Width/height carry over from the
+      // source graphic so the rendered card layout doesn't shift.
+      setGeneratedGraphics((prev) => {
+        const idx = prev.findIndex((g) => g.base64 === sourceImage);
+        if (idx < 0) return prev;
+        const next = prev.slice();
+        next[idx] = { ...next[idx], base64: refined };
+        return next;
+      });
+
+      // Best-effort DB persistence. Only attempted when the batch is saved.
+      if (savedBatchId) {
+        try {
+          const byteCharacters = atob(refined);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/png' });
+          const filename = `${savedBatchId}/${target.format}_refine_${Date.now()}.png`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('casa-graphics')
+            .upload(filename, blob, { contentType: 'image/png', upsert: false });
+          if (uploadError) throw uploadError;
+
+          const { data: urlData } = supabase.storage
+            .from('casa-graphics')
+            .getPublicUrl(filename);
+
+          const { error: updateError } = await supabase
+            .from('casa_graphics_items')
+            .update({ image_url: urlData.publicUrl })
+            .eq('batch_id', savedBatchId)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches handleSaveBatch's enum cast
+            .eq('format', target.format as any);
+          if (updateError) throw updateError;
+        } catch (dbErr) {
+          console.error('[GraphicsGeneratorV2] Refine DB update failed:', dbErr);
+          toast({
+            title: 'Refinamiento parcial',
+            description:
+              'El gráfico se actualizó localmente pero no se pudo guardar en la base de datos.',
+            variant: 'destructive',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[GraphicsGeneratorV2] Error refining graphic:', err);
+      setRefineGraphicError(
+        err instanceof Error ? err.message : 'Error refinando el gráfico.',
+      );
+    } finally {
+      setIsRefiningGraphic(false);
+    }
+  };
+
   // Download single - use PPT title as base filename
   const handleDownload = (graphic: GeneratedGraphic) => {
     downloadGraphic(graphic, titles.ppt_4_3 || titles.instagram_post);
@@ -968,6 +1101,7 @@ export const GraphicsGeneratorV2 = () => {
       await Promise.all(uploadPromises);
 
       setBatchSaved(true);
+      setSavedBatchId(batch.id);
       setShowSaveDialog(false);
       toast({
         title: 'Batch guardado',
@@ -992,6 +1126,8 @@ export const GraphicsGeneratorV2 = () => {
     setSelectedIllustration(null);
     setGeneratedGraphics([]);
     setBatchSaved(false);
+    setSavedBatchId(null);
+    setRefineGraphicError(null);
     setBatchName('');
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));
