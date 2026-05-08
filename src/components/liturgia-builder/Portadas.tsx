@@ -30,6 +30,7 @@ import { UniversalSlide } from './UniversalSlide';
 import {
   buildLiturgyCoverPrompt,
   buildLiturgyReflectionCoverPrompt,
+  type GenerateIllustrationRequest,
   type GenerateIllustrationResponse,
 } from '@/lib/covers/coverPromptBuilder';
 import { useCasaLogo } from '@/lib/covers/useCasaLogo';
@@ -51,6 +52,12 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   const [isGeneratingReflection, setIsGeneratingReflection] = useState(false);
   const [previewType, setPreviewType] = useState<'main' | 'reflection'>('main');
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
+
+  // ---- Refine state (independent per cover so the two flows can't interfere) ----
+  const [isRefiningMain, setIsRefiningMain] = useState(false);
+  const [refineMainError, setRefineMainError] = useState<string | null>(null);
+  const [isRefiningReflection, setIsRefiningReflection] = useState(false);
+  const [refineReflectionError, setRefineReflectionError] = useState<string | null>(null);
 
   // ---- CASA logo as Gemini reference image ----
   const { logoBase64, failed: logoLoadFailed, retry: retryLogoLoad } = useCasaLogo(() => {
@@ -200,6 +207,88 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       generateReflectionCover(selectedMainCover);
     }
   };
+
+  // ---- Refine the selected MAIN cover (image + feedback → replace selected slot) ----
+  // Updates only the selected variation in mainVariations; never re-runs the
+  // reflection cover (refine is intentionally surgical).
+  const handleRefineMainCover = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      setRefineMainError(null);
+      setIsRefiningMain(true);
+      try {
+        const body: GenerateIllustrationRequest = {
+          aspectRatio: '4:3',
+          refine: { sourceImage, feedback },
+        };
+        const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+          'generate-illustration',
+          { body },
+        );
+        if (error) throw error;
+        const refined = data?.illustrations?.[0];
+        if (!refined) {
+          throw new Error('No se pudo refinar la portada principal');
+        }
+        setMainVariations((prev) => {
+          const idx = prev.findIndex((v) => v === sourceImage);
+          if (idx < 0) return prev;
+          const next = prev.slice();
+          next[idx] = refined;
+          return next;
+        });
+        setSelectedMainCover(refined);
+      } catch (err) {
+        console.error('[Portadas] Error refining main cover:', err);
+        setRefineMainError(
+          err instanceof Error ? err.message : 'Error refinando portada principal',
+        );
+      } finally {
+        setIsRefiningMain(false);
+      }
+    },
+    [],
+  );
+
+  // ---- Refine the REFLECTION cover (image + feedback → replace reflectionCover) ----
+  // Shares reflectionRequestIdRef with the generation flow: an in-flight refine
+  // will be discarded if the user switches main variations (which fires a new
+  // reflection generation), and a stale refine response will not overwrite the
+  // newer state.
+  const handleRefineReflectionCover = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      const requestId = ++reflectionRequestIdRef.current;
+      setRefineReflectionError(null);
+      setIsRefiningReflection(true);
+      try {
+        const body: GenerateIllustrationRequest = {
+          aspectRatio: '4:3',
+          refine: { sourceImage, feedback },
+        };
+        const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+          'generate-illustration',
+          { body },
+        );
+        if (reflectionRequestIdRef.current !== requestId) return;
+        if (error) throw error;
+        const refined = data?.illustrations?.[0];
+        if (!refined) {
+          throw new Error('No se pudo refinar la portada de reflexión');
+        }
+        setReflectionCover(refined);
+      } catch (err) {
+        if (reflectionRequestIdRef.current !== requestId) return;
+        console.error('[Portadas] Error refining reflection cover:', err);
+        setRefineReflectionError(
+          err instanceof Error ? err.message : 'Error refinando portada de reflexión',
+        );
+      } finally {
+        if (reflectionRequestIdRef.current === requestId) {
+          setIsRefiningReflection(false);
+        }
+      }
+    },
+    [],
+  );
 
   // Selecting a main variation auto-fires the reflection generation
   const selectMainVariation = (base64: string) => {
