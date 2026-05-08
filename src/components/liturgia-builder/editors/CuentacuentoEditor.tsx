@@ -67,6 +67,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Trash2 } from 'lucide-react';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 
 interface CuentacuentoEditorProps {
   context: LiturgyContext;
@@ -514,6 +515,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [generatingSceneIndex, setGeneratingSceneIndex] = useState<number | null>(null);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [generatingEnd, setGeneratingEnd] = useState(false);
+
+  // Estado de refinamiento de imágenes (Phase 7 scaffolding)
+  const [refiningCharId, setRefiningCharId] = useState<string | null>(null);
+  const [charRefineErrors, setCharRefineErrors] = useState<Record<string, string | null>>({});
+  const [refiningSceneNumber, setRefiningSceneNumber] = useState<number | null>(null);
+  const [sceneRefineErrors, setSceneRefineErrors] = useState<Record<number, string | null>>({});
+  const [isRefiningCover, setIsRefiningCover] = useState(false);
+  const [refineCoverError, setRefineCoverError] = useState<string | null>(null);
+  const [isRefiningEnd, setIsRefiningEnd] = useState(false);
+  const [refineEndError, setRefineEndError] = useState<string | null>(null);
 
   // Estado de selección de personajes
   const [characterSheetOptions, setCharacterSheetOptions] = useState<Record<string, string[]>>({});
