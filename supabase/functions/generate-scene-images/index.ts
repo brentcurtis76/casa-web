@@ -45,7 +45,7 @@ interface Refine {
 }
 
 const REFINE_INSTRUCTION_TEMPLATE =
-  'REFINE THE PROVIDED IMAGE according to this feedback: {feedback}. Preserve all unmentioned visual elements (composition, lighting, characters, style, color palette) exactly. The reference images that follow are character / landmark / prop references — keep them visually consistent with the source image.';
+  'REFINE THE PROVIDED IMAGE according to this feedback: `{feedback}`. Preserve all unmentioned visual elements (composition, lighting, characters, style, color palette) exactly. The reference images that follow are character / landmark / prop references — keep them visually consistent with the source image.';
 
 interface Landmark {
   name: string;
@@ -683,7 +683,9 @@ serve(async (req) => {
         // (Gemini 14-image ceiling, leave headroom for system parts).
         // In refine mode, slot 0 is reserved for refine.sourceImage so the budget for everything
         // else shrinks to 11. Trim order (lowest priority first):
-        // scene-style ref → props → landmarks. Never drop characters.
+        // scene-style ref → props → landmarks → characters (characters trimmed only in refine
+        // mode, since the refine source already encodes their appearance; non-refine preserves
+        // the historical behavior of never dropping characters).
         const HARD_CAP = 12;
         const MAX_PROCESSED = refine ? HARD_CAP - 1 : HARD_CAP;
         const willAddSceneRef = !!sceneReferenceImage;
@@ -696,6 +698,7 @@ serve(async (req) => {
         let droppedSceneRef = false;
         const droppedPropNames: string[] = [];
         const droppedLandmarkNames: string[] = [];
+        const droppedCharacterNames: string[] = [];
 
         if (initialTotal > MAX_PROCESSED) {
           let overflow = initialTotal - MAX_PROCESSED;
@@ -724,6 +727,16 @@ serve(async (req) => {
             overflow -= 1;
           }
 
+          if (refine) {
+            while (overflow > 0 && referenceImages.length > 0) {
+              referenceImages.pop();
+              const droppedDesc = characterDescriptions.pop() ?? '';
+              const charName = droppedDesc.split(':')[0]?.trim() || 'unknown character';
+              droppedCharacterNames.push(charName);
+              overflow -= 1;
+            }
+          }
+
           if (droppedPropNames.length > 0) {
             console.warn(
               `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedPropNames.join(', ')}`
@@ -732,6 +745,11 @@ serve(async (req) => {
           if (droppedLandmarkNames.length > 0) {
             console.warn(
               `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedLandmarkNames.join(', ')}`
+            );
+          }
+          if (droppedCharacterNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed character reference image(s) (refine mode) to stay under ${MAX_PROCESSED}-image cap: ${droppedCharacterNames.join(', ')}`
             );
           }
 
@@ -747,6 +765,7 @@ serve(async (req) => {
               droppedSceneRef,
               droppedProps: droppedPropNames.length,
               droppedLandmarks: droppedLandmarkNames.length,
+              droppedCharacters: droppedCharacterNames.length,
               finalCount,
               refine: !!refine,
             }
@@ -878,7 +897,9 @@ Instrucciones críticas:
 
         // Enforce cap: characters + props (+ cover-style + refine source) <= 12 (covers have no landmarks today).
         // In refine mode, slot 0 is reserved for refine.sourceImage so the budget shrinks to 11.
-        // Trim order: cover-style ref → props. Never drop characters.
+        // Trim order: cover-style ref → props → characters (characters trimmed only in refine
+        // mode, since the refine source already encodes their appearance; non-refine preserves
+        // the historical behavior of never dropping characters).
         const COVER_HARD_CAP = 12;
         const COVER_MAX_PROCESSED = refine ? COVER_HARD_CAP - 1 : COVER_HARD_CAP;
         const coverWillAddStyleRef = !!sceneReferenceImage;
@@ -887,6 +908,7 @@ Instrucciones críticas:
           referenceImages.length + coverPropRefImages.length + coverStyleRefBudgetCost;
         let coverDroppedStyleRef = false;
         const coverDroppedPropNames: string[] = [];
+        const coverDroppedCharacterNames: string[] = [];
 
         if (coverInitialTotal > COVER_MAX_PROCESSED) {
           let overflow = coverInitialTotal - COVER_MAX_PROCESSED;
@@ -907,9 +929,24 @@ Instrucciones críticas:
             overflow -= 1;
           }
 
+          if (refine) {
+            while (overflow > 0 && referenceImages.length > 0) {
+              referenceImages.pop();
+              const droppedDesc = characterDescriptions.pop() ?? '';
+              const charName = droppedDesc.split(':')[0]?.trim() || 'unknown character';
+              coverDroppedCharacterNames.push(charName);
+              overflow -= 1;
+            }
+          }
+
           if (coverDroppedPropNames.length > 0) {
             console.warn(
               `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${coverDroppedPropNames.join(', ')}`
+            );
+          }
+          if (coverDroppedCharacterNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed cover character reference image(s) (refine mode) to stay under ${COVER_MAX_PROCESSED}-image cap: ${coverDroppedCharacterNames.join(', ')}`
             );
           }
 
@@ -923,6 +960,7 @@ Instrucciones críticas:
               initialTotal: coverInitialTotal,
               droppedStyleRef: coverDroppedStyleRef,
               droppedProps: coverDroppedPropNames.length,
+              droppedCharacters: coverDroppedCharacterNames.length,
               droppedLandmarks: 0,
               finalCount,
               refine: !!refine,
