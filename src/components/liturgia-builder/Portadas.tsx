@@ -35,6 +35,7 @@ import {
 } from '@/lib/covers/coverPromptBuilder';
 import { useCasaLogo } from '@/lib/covers/useCasaLogo';
 import { IllustrationThemeInput } from '@/components/covers/IllustrationThemeInput';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 
 interface PortadasProps {
   context: LiturgyContext;
@@ -646,7 +647,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         <button
           type="button"
           onClick={generateMainVariations}
-          disabled={isGeneratingMain || !logoBase64}
+          disabled={isGeneratingMain || !logoBase64 || isRefiningMain}
           className="flex items-center gap-2 px-6 py-3 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: isGeneratingMain
@@ -685,7 +686,12 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           >
             Selecciona la portada principal. La portada de reflexión se generará a partir de ella.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div
+            className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${
+              isRefiningMain ? 'pointer-events-none opacity-60' : ''
+            }`}
+            aria-disabled={isRefiningMain || undefined}
+          >
             {mainVariations.map((variation, index) => {
               const isSelected = selectedMainCover === variation;
               return (
@@ -693,9 +699,10 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
                   key={index}
                   type="button"
                   onClick={() => selectMainVariation(variation)}
+                  disabled={isRefiningMain}
                   aria-label={`Seleccionar portada opción ${index + 1}`}
                   aria-pressed={isSelected}
-                  className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
+                  className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md disabled:cursor-not-allowed ${
                     isSelected ? 'ring-2 ring-offset-2' : ''
                   }`}
                   style={{
@@ -732,6 +739,26 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
               );
             })}
           </div>
+
+          {selectedMainCover && (
+            <div className="mt-4 max-w-2xl mx-auto">
+              <ImageRefineBox
+                onRefine={(feedback) => handleRefineMainCover(selectedMainCover, feedback)}
+                isRefining={isRefiningMain}
+                refineError={refineMainError}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {reflectionCover && (
+        <div className="max-w-2xl mx-auto">
+          <ImageRefineBox
+            onRefine={(feedback) => handleRefineReflectionCover(reflectionCover, feedback)}
+            isRefining={isRefiningReflection}
+            refineError={refineReflectionError}
+          />
         </div>
       )}
 
@@ -760,7 +787,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
               <button
                 type="button"
                 onClick={retryReflection}
-                className="text-sm px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+                disabled={isRefiningReflection}
+                className="text-sm px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: CASA_BRAND.fonts.body,
                   color: CASA_BRAND.colors.secondary.grayDark,
