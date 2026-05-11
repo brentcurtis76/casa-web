@@ -54,18 +54,20 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   const [previewType, setPreviewType] = useState<'main' | 'reflection'>('main');
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
 
-  // ---- Refine state (independent per cover so the two flows can't interfere) ----
+  // ---- Refine state ----
+  // Only the MAIN cover is refinable. The reflection cover is image-to-image
+  // recomposed from the main with a different text band (preacher name vs.
+  // season), so it shares the main illustration verbatim. After a main refine
+  // succeeds we auto-fire generateReflectionCover() against the refined image
+  // so the reflection inherits the change.
   const [isRefiningMain, setIsRefiningMain] = useState(false);
   const [refineMainError, setRefineMainError] = useState<string | null>(null);
-  const [isRefiningReflection, setIsRefiningReflection] = useState(false);
-  const [refineReflectionError, setRefineReflectionError] = useState<string | null>(null);
 
-  // Cache the prompts used at generation time. The refine handlers read from
-  // these instead of rebuilding from current inputs, so a user edit to the
-  // title / season / illustration theme AFTER generation but BEFORE refining
-  // does NOT desync the ORIGINAL BRIEF that anchors the model.
+  // Cache the prompt used at main generation time. The refine handler reads
+  // from this instead of rebuilding from current inputs, so a user edit to
+  // the title / season / illustration theme AFTER generation but BEFORE
+  // refining does NOT desync the ORIGINAL BRIEF that anchors the model.
   const [mainPromptUsed, setMainPromptUsed] = useState<string | null>(null);
-  const [reflectionPromptUsed, setReflectionPromptUsed] = useState<string | null>(null);
 
   // ---- CASA logo as Gemini reference image ----
   const { logoBase64, failed: logoLoadFailed, retry: retryLogoLoad } = useCasaLogo(() => {
@@ -109,7 +111,6 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
     setSelectedMainCover(null);
     setReflectionCover(null);
     setMainPromptUsed(null);
-    setReflectionPromptUsed(null);
 
     try {
       const jsonPrompt = buildLiturgyCoverPrompt({
@@ -168,7 +169,6 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       const requestId = ++reflectionRequestIdRef.current;
       setIsGeneratingReflection(true);
       setReflectionCover(null);
-      setReflectionPromptUsed(null);
       try {
         const referencePrompt = buildLiturgyReflectionCoverPrompt({
           title: context.title,
@@ -192,13 +192,6 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         if (valid.length === 0) {
           throw new Error('No se pudo generar la portada de reflexión');
         }
-        // Cache the reflection prompt used at generation time. Note: this is
-        // an image-to-image recomposition directive ("Recompose the provided
-        // reference image..."). It overlaps with the refine framing but is
-        // still the most faithful "brief" for the reflection — the model
-        // sees it as ORIGINAL BRIEF context, and the refine wrapper takes
-        // precedence at the directive level.
-        setReflectionPromptUsed(referencePrompt);
         setReflectionCover(valid[0]);
       } catch (err) {
         if (reflectionRequestIdRef.current !== requestId) return;
@@ -275,6 +268,14 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
           return next;
         });
         setSelectedMainCover(refined);
+        // Auto-regenerate the reflection cover from the refined main so the
+        // reflection inherits the new illustration. The reflection is just
+        // the main cover image-to-image-recomposed with a different text
+        // band, so refining the illustration belongs at the main-cover
+        // level only — there is no separate "refine reflection" path.
+        // Fire-and-forget: generateReflectionCover handles its own
+        // race-guard and spinner state.
+        void generateReflectionCover(refined);
       } catch (err) {
         console.error('[Portadas] Error refining main cover:', err);
         setRefineMainError(
@@ -285,58 +286,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       }
     },
     // Deps cover the fallback path; mainPromptUsed is the primary input.
-    [mainPromptUsed, context.title, seasonName, illustrationTheme],
-  );
-
-  // ---- Refine the REFLECTION cover (image + feedback → replace reflectionCover) ----
-  // Shares reflectionRequestIdRef with the generation flow: an in-flight refine
-  // will be discarded if the user switches main variations (which fires a new
-  // reflection generation), and a stale refine response will not overwrite the
-  // newer state.
-  // Reflection refine: we pass the reflection-cover prompt (the one used by
-  // generateReflectionCover) as customPrompt so the model knows it is editing
-  // a Liturgia Reflection cover, not a generic image.
-  const handleRefineReflectionCover = useCallback(
-    async (sourceImage: string, feedback: string) => {
-      const requestId = ++reflectionRequestIdRef.current;
-      setRefineReflectionError(null);
-      setIsRefiningReflection(true);
-      try {
-        // Read from the generation-time cache (see note in
-        // handleRefineMainCover); the fallback rebuild here is defensive.
-        const reflectionPrompt = reflectionPromptUsed ?? buildLiturgyReflectionCoverPrompt({
-          title: context.title,
-          preacher: context.preacher ?? '',
-        });
-        const body: GenerateIllustrationRequest = {
-          customPrompt: reflectionPrompt,
-          aspectRatio: '4:3',
-          refine: { sourceImage, feedback },
-        };
-        const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
-          'generate-illustration',
-          { body },
-        );
-        if (reflectionRequestIdRef.current !== requestId) return;
-        if (error) throw error;
-        const refined = data?.illustrations?.[0];
-        if (!refined) {
-          throw new Error('No se pudo refinar la portada de reflexión');
-        }
-        setReflectionCover(refined);
-      } catch (err) {
-        if (reflectionRequestIdRef.current !== requestId) return;
-        console.error('[Portadas] Error refining reflection cover:', err);
-        setRefineReflectionError(
-          err instanceof Error ? err.message : 'Error refinando portada de reflexión',
-        );
-      } finally {
-        if (reflectionRequestIdRef.current === requestId) {
-          setIsRefiningReflection(false);
-        }
-      }
-    },
-    [reflectionPromptUsed, context.title, context.preacher],
+    // generateReflectionCover is a stable useCallback ref.
+    [mainPromptUsed, context.title, seasonName, illustrationTheme, generateReflectionCover],
   );
 
   // Selecting a main variation auto-fires the reflection generation
@@ -800,16 +751,6 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         </div>
       )}
 
-      {reflectionCover && (
-        <div className="max-w-2xl mx-auto">
-          <ImageRefineBox
-            onRefine={(feedback) => handleRefineReflectionCover(reflectionCover, feedback)}
-            isRefining={isRefiningReflection}
-            refineError={refineReflectionError}
-          />
-        </div>
-      )}
-
       {/* Save section */}
       {(mainVariations.length > 0 || selectedMainCover) && (
         <div className="flex items-center justify-between pt-4 border-t border-gray-200">
@@ -835,8 +776,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
               <button
                 type="button"
                 onClick={retryReflection}
-                disabled={isRefiningReflection}
-                className="text-sm px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-sm px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
                 style={{
                   fontFamily: CASA_BRAND.fonts.body,
                   color: CASA_BRAND.colors.secondary.grayDark,

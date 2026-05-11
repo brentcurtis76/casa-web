@@ -125,21 +125,29 @@ describe('Portadas refine integration', () => {
         error: null,
       }),
     );
+    // 4th queued response = the auto-triggered reflection regen that fires
+    // after a successful main refine. Not asserted here (see the dedicated
+    // auto-regen test below), but queued so the call doesn't blow up the
+    // handler with "destructure of undefined".
+    invokeMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: { illustrations: ['iVBORw0KGgoNOOP'] }, error: null }),
+    );
 
-    // Two refine boxes are on screen (main + reflection). The first one in
-    // DOM order is the main refine — find both, take the first.
+    // After main selection, exactly ONE refine box is on screen (the main
+    // cover's). There is no separate reflection refine UI.
     const textareas = await screen.findAllByLabelText(/pide un cambio a la imagen/i);
-    expect(textareas.length).toBeGreaterThanOrEqual(1);
+    expect(textareas).toHaveLength(1);
     fireEvent.change(textareas[0], {
       target: { value: 'use less amber and add a mother with her son' },
     });
 
-    // Click the first "Enviar cambio" — same DOM ordering as textareas.
-    const submitButtons = screen.getAllByRole('button', { name: /enviar cambio/i });
-    fireEvent.click(submitButtons[0]);
+    fireEvent.click(screen.getByRole('button', { name: /enviar cambio/i }));
 
-    // The refine call is invocation #3.
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(3));
+    // The main refine is invocation #3. Wait for at least that many — the
+    // auto-regen may already have fired by the time this resolves.
+    await waitFor(() =>
+      expect(invokeMock.mock.calls.length).toBeGreaterThanOrEqual(3),
+    );
 
     const [fnName, { body }] = invokeMock.mock.calls[2];
     expect(fnName).toBe('generate-illustration');
@@ -160,44 +168,58 @@ describe('Portadas refine integration', () => {
     expect(body.jsonPrompt).toContain('Día de la Madre');
   });
 
-  it('sends customPrompt + refine body for REFLECTION cover refinement', async () => {
+  it('only renders ONE refine box (main); reflection has no separate refine UI', async () => {
     await generateAndSelectFirstMain();
 
-    // 3rd queued response = reflection refine.
+    // After generation + main selection, exactly one refine textarea should
+    // exist on the page (the main cover's). The reflection cover is
+    // image-to-image-recomposed from the main and shares its illustration —
+    // refining belongs only at the main-cover level.
+    const textareas = await screen.findAllByLabelText(/pide un cambio a la imagen/i);
+    expect(textareas).toHaveLength(1);
+  });
+
+  it('auto-regenerates the REFLECTION cover after a main refine succeeds', async () => {
+    await generateAndSelectFirstMain();
+
+    // 3rd queued response = main refine output.
     invokeMock.mockImplementationOnce(() =>
       Promise.resolve({
         data: { illustrations: [FAKE_REFINED] },
         error: null,
       }),
     );
+    // 4th queued response = auto-triggered reflection regen using the
+    // refined main as the new reference image.
+    const FAKE_REFLECTION_REGEN = 'iVBORw0KGgoREFL_REGEN';
+    invokeMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: { illustrations: [FAKE_REFLECTION_REGEN] },
+        error: null,
+      }),
+    );
 
-    // Both textareas are present (main + reflection). The reflection refine
-    // box is the second occurrence in DOM order.
-    const textareas = await screen.findAllByLabelText(/pide un cambio a la imagen/i);
-    expect(textareas.length).toBeGreaterThanOrEqual(2);
-    fireEvent.change(textareas[1], { target: { value: 'change the lighting' } });
+    const textarea = await screen.findByLabelText(/pide un cambio a la imagen/i);
+    fireEvent.change(textarea, { target: { value: 'use less amber' } });
+    fireEvent.click(screen.getByRole('button', { name: /enviar cambio/i }));
 
-    const submitButtons = screen.getAllByRole('button', { name: /enviar cambio/i });
-    fireEvent.click(submitButtons[1]);
+    // 1: main generation, 2: initial reflection, 3: main refine, 4: reflection auto-regen
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(4));
 
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(3));
-
-    const [fnName, { body }] = invokeMock.mock.calls[2];
-    expect(fnName).toBe('generate-illustration');
-    expect(body).toMatchObject({
-      customPrompt: expect.any(String),
+    // Invocation #4 must be a reflection generation seeded with the REFINED
+    // main image (not the original selection), so the reflection inherits
+    // the new illustration.
+    const [reflectionFnName, { body: reflectionBody }] = invokeMock.mock.calls[3];
+    expect(reflectionFnName).toBe('generate-illustration');
+    expect(reflectionBody).toMatchObject({
+      referenceImage: FAKE_REFINED,
+      count: 1,
       aspectRatio: '4:3',
-      refine: {
-        sourceImage: FAKE_REFLECTION,
-        feedback: 'change the lighting',
-      },
     });
-
-    // Mutual exclusivity: must NOT have jsonPrompt.
-    expect(body).not.toHaveProperty('jsonPrompt');
-
-    // Reflection-prompt content includes the liturgy title (carried in by
-    // buildLiturgyReflectionCoverPrompt).
-    expect(body.customPrompt).toContain('Día de la Madre');
+    // Reflection regen is the standard image-to-image recomposition path —
+    // must NOT carry a refine payload (this is generation, not editing).
+    expect(reflectionBody).not.toHaveProperty('refine');
+    // referencePrompt is the recomposition directive built from title + preacher.
+    expect(reflectionBody.referencePrompt).toEqual(expect.any(String));
   });
 });
