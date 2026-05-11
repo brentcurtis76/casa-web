@@ -391,6 +391,14 @@ export const GraphicsGeneratorV2 = () => {
   // Tracks which card's source image is actively being refined so the
   // active card can stay fully opaque while siblings dim.
   const [refiningSourceImage, setRefiningSourceImage] = useState<string | null>(null);
+  // Cache the prompt + mode used at generation time so refines anchor against
+  // the same brief that actually produced the source graphics, regardless of
+  // later edits to editablePrompt / customPrompt in earlier phases.
+  const [generationPromptUsed, setGenerationPromptUsed] = useState<
+    | { mode: 'jsonPrompt'; value: string }
+    | { mode: 'customPrompt'; value: string }
+    | null
+  >(null);
 
   // Illustration adjustment state - per format
   const [adjustFormat, setAdjustFormat] = useState<FormatType>('ppt_4_3');
@@ -562,6 +570,15 @@ export const GraphicsGeneratorV2 = () => {
       });
 
       if (error) throw error;
+
+      // Cache the prompt + mode that actually produced these graphics so
+      // refines anchor against the same brief. Set BEFORE downstream state
+      // updates so a concurrent refine can't read a stale cache.
+      setGenerationPromptUsed(
+        textBakedIn
+          ? { mode: 'jsonPrompt', value: editablePrompt }
+          : { mode: 'customPrompt', value: customPrompt },
+      );
 
       if (data?.illustrations && data.illustrations.length > 0) {
         const validIllustrations = data.illustrations.filter((i: string) => i && i.length > 0);
@@ -932,17 +949,21 @@ export const GraphicsGeneratorV2 = () => {
     setIsRefiningGraphic(true);
     setRefiningSourceImage(sourceImage);
     try {
-      // Pass the SAME prompt context that drove generation so the edge
-      // function can anchor the model with the original brief. Without that
-      // anchor the model treats the feedback as a fresh-generation request
-      // and can return something unrelated. textBakedIn mirrors the mode
-      // logic in handleGenerate above.
+      // Read from the generation-time cache so the brief matches what actually
+      // produced the source image — even if the user has since navigated back
+      // and edited editablePrompt / customPrompt. Falls back to current values
+      // only if the cache is somehow empty (defensive).
+      const promptForRefine = generationPromptUsed ?? (
+        textBakedIn
+          ? { mode: 'jsonPrompt' as const, value: editablePrompt }
+          : { mode: 'customPrompt' as const, value: customPrompt }
+      );
       const body: GenerateIllustrationRequest = {
         eventType,
         aspectRatio: FORMAT_TO_ASPECT_RATIO[target.format],
-        ...(textBakedIn
-          ? { jsonPrompt: editablePrompt }
-          : { customPrompt }),
+        ...(promptForRefine.mode === 'jsonPrompt'
+          ? { jsonPrompt: promptForRefine.value }
+          : { customPrompt: promptForRefine.value }),
         refine: { sourceImage, feedback },
       };
       const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
@@ -1142,6 +1163,7 @@ export const GraphicsGeneratorV2 = () => {
     setBatchSaved(false);
     setSavedBatchId(null);
     setRefineGraphicError(null);
+    setGenerationPromptUsed(null);
     setBatchName('');
     setIllustrationAdjustments({ ...DEFAULT_ILLUSTRATION_ADJUSTMENTS });
     setFieldPositionAdjustments(JSON.parse(JSON.stringify(DEFAULT_FIELD_POSITION_ADJUSTMENTS)));

@@ -60,6 +60,13 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   const [isRefiningReflection, setIsRefiningReflection] = useState(false);
   const [refineReflectionError, setRefineReflectionError] = useState<string | null>(null);
 
+  // Cache the prompts used at generation time. The refine handlers read from
+  // these instead of rebuilding from current inputs, so a user edit to the
+  // title / season / illustration theme AFTER generation but BEFORE refining
+  // does NOT desync the ORIGINAL BRIEF that anchors the model.
+  const [mainPromptUsed, setMainPromptUsed] = useState<string | null>(null);
+  const [reflectionPromptUsed, setReflectionPromptUsed] = useState<string | null>(null);
+
   // ---- CASA logo as Gemini reference image ----
   const { logoBase64, failed: logoLoadFailed, retry: retryLogoLoad } = useCasaLogo(() => {
     toast({
@@ -101,6 +108,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
     setMainVariations([]);
     setSelectedMainCover(null);
     setReflectionCover(null);
+    setMainPromptUsed(null);
+    setReflectionPromptUsed(null);
 
     try {
       const jsonPrompt = buildLiturgyCoverPrompt({
@@ -128,6 +137,9 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         throw new Error('No se pudieron generar portadas');
       }
 
+      // Cache the prompt that actually produced these variations so refines
+      // anchor against the same brief regardless of later input edits.
+      setMainPromptUsed(jsonPrompt);
       setMainVariations(valid);
       toast({
         title: 'Portadas generadas',
@@ -156,6 +168,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       const requestId = ++reflectionRequestIdRef.current;
       setIsGeneratingReflection(true);
       setReflectionCover(null);
+      setReflectionPromptUsed(null);
       try {
         const referencePrompt = buildLiturgyReflectionCoverPrompt({
           title: context.title,
@@ -179,6 +192,13 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         if (valid.length === 0) {
           throw new Error('No se pudo generar la portada de reflexión');
         }
+        // Cache the reflection prompt used at generation time. Note: this is
+        // an image-to-image recomposition directive ("Recompose the provided
+        // reference image..."). It overlaps with the refine framing but is
+        // still the most faithful "brief" for the reflection — the model
+        // sees it as ORIGINAL BRIEF context, and the refine wrapper takes
+        // precedence at the directive level.
+        setReflectionPromptUsed(referencePrompt);
         setReflectionCover(valid[0]);
       } catch (err) {
         if (reflectionRequestIdRef.current !== requestId) return;
@@ -199,7 +219,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         }
       }
     },
-    [context.preacher, toast],
+    [context.title, context.preacher, toast],
   );
 
   // Retry reflection generation manually if it fails
@@ -223,7 +243,12 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       setRefineMainError(null);
       setIsRefiningMain(true);
       try {
-        const jsonPrompt = buildLiturgyCoverPrompt({
+        // Read the prompt that produced the source image from the generation-
+        // time cache, not from current inputs. Avoids drift when the user
+        // edits title / season / illustrationTheme between generation and
+        // refine. Fallback rebuilds from current inputs only if the cache is
+        // somehow empty (defensive — shouldn't happen post-generation).
+        const jsonPrompt = mainPromptUsed ?? buildLiturgyCoverPrompt({
           title: context.title,
           season: seasonName,
           illustrationTheme,
@@ -259,7 +284,8 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         setIsRefiningMain(false);
       }
     },
-    [context.title, seasonName, illustrationTheme],
+    // Deps cover the fallback path; mainPromptUsed is the primary input.
+    [mainPromptUsed, context.title, seasonName, illustrationTheme],
   );
 
   // ---- Refine the REFLECTION cover (image + feedback → replace reflectionCover) ----
@@ -276,7 +302,9 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
       setRefineReflectionError(null);
       setIsRefiningReflection(true);
       try {
-        const reflectionPrompt = buildLiturgyReflectionCoverPrompt({
+        // Read from the generation-time cache (see note in
+        // handleRefineMainCover); the fallback rebuild here is defensive.
+        const reflectionPrompt = reflectionPromptUsed ?? buildLiturgyReflectionCoverPrompt({
           title: context.title,
           preacher: context.preacher ?? '',
         });
@@ -308,7 +336,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         }
       }
     },
-    [context.title, context.preacher],
+    [reflectionPromptUsed, context.title, context.preacher],
   );
 
   // Selecting a main variation auto-fires the reflection generation

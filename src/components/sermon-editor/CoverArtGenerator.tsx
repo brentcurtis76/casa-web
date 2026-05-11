@@ -87,6 +87,10 @@ export function CoverArtGenerator({
   const [generateButtonHover, setGenerateButtonHover] = useState(false);
   const [isRefiningCover, setIsRefiningCover] = useState(false);
   const [refineCoverError, setRefineCoverError] = useState<string | null>(null);
+  // Cache the prompt used at generation time. Refine reads from this instead
+  // of rebuilding from current metadata/theme, preventing drift if the user
+  // edits title / speaker / theme between generation and refine.
+  const [coverPromptUsed, setCoverPromptUsed] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load CASA logo (passed to Gemini as reference image so the logo renders
@@ -126,6 +130,7 @@ export function CoverArtGenerator({
     setIsGenerating(true);
     setCoverOptions([]);
     setSelectedCover(null);
+    setCoverPromptUsed(null);
 
     try {
       // Note: SermonMetadata exposes `speaker` (the canonical field in
@@ -158,6 +163,9 @@ export function CoverArtGenerator({
         throw new Error('No se pudieron generar portadas');
       }
 
+      // Cache the prompt so refines anchor against the same brief that
+      // produced these variations, regardless of later metadata edits.
+      setCoverPromptUsed(jsonPrompt);
       setCoverOptions(valid);
 
       toast.success(
@@ -210,7 +218,9 @@ export function CoverArtGenerator({
       setRefineCoverError(null);
       setIsRefiningCover(true);
       try {
-        const jsonPrompt = buildSermonCoverPrompt({
+        // Read from the generation-time cache; fallback rebuilds only if the
+        // cache is somehow empty (defensive — shouldn't happen post-gen).
+        const jsonPrompt = coverPromptUsed ?? buildSermonCoverPrompt({
           title: metadata.title,
           preacher: metadata.speaker,
           illustrationTheme,
@@ -246,7 +256,7 @@ export function CoverArtGenerator({
         setIsRefiningCover(false);
       }
     },
-    [metadata.title, metadata.speaker, illustrationTheme],
+    [coverPromptUsed, metadata.title, metadata.speaker, illustrationTheme],
   );
 
   // Handle custom image upload
