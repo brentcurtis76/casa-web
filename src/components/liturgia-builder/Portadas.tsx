@@ -212,12 +212,24 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   // ---- Refine the selected MAIN cover (image + feedback → replace selected slot) ----
   // Updates only the selected variation in mainVariations; never re-runs the
   // reflection cover (refine is intentionally surgical).
+  //
+  // We pass the SAME jsonPrompt that drove the original generation so the
+  // edge function can anchor the model with the original brief. Without that
+  // anchor the model treats the feedback as a fresh generation request and
+  // can return something unrelated (observed: church scene replacing
+  // "mothers at different stages" on a Día de la Madre cover).
   const handleRefineMainCover = useCallback(
     async (sourceImage: string, feedback: string) => {
       setRefineMainError(null);
       setIsRefiningMain(true);
       try {
+        const jsonPrompt = buildLiturgyCoverPrompt({
+          title: context.title,
+          season: seasonName,
+          illustrationTheme,
+        });
         const body: GenerateIllustrationRequest = {
+          jsonPrompt,
           aspectRatio: '4:3',
           refine: { sourceImage, feedback },
         };
@@ -247,7 +259,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         setIsRefiningMain(false);
       }
     },
-    [],
+    [context.title, seasonName, illustrationTheme],
   );
 
   // ---- Refine the REFLECTION cover (image + feedback → replace reflectionCover) ----
@@ -255,13 +267,21 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
   // will be discarded if the user switches main variations (which fires a new
   // reflection generation), and a stale refine response will not overwrite the
   // newer state.
+  // Reflection refine: we pass the reflection-cover prompt (the one used by
+  // generateReflectionCover) as customPrompt so the model knows it is editing
+  // a Liturgia Reflection cover, not a generic image.
   const handleRefineReflectionCover = useCallback(
     async (sourceImage: string, feedback: string) => {
       const requestId = ++reflectionRequestIdRef.current;
       setRefineReflectionError(null);
       setIsRefiningReflection(true);
       try {
+        const reflectionPrompt = buildLiturgyReflectionCoverPrompt({
+          title: context.title,
+          preacher: context.preacher ?? '',
+        });
         const body: GenerateIllustrationRequest = {
+          customPrompt: reflectionPrompt,
           aspectRatio: '4:3',
           refine: { sourceImage, feedback },
         };
@@ -288,7 +308,7 @@ const Portadas: React.FC<PortadasProps> = ({ context, onSlidesGenerated }) => {
         }
       }
     },
-    [],
+    [context.title, context.preacher],
   );
 
   // Selecting a main variation auto-fires the reflection generation

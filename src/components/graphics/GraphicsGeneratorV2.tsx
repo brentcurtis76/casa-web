@@ -932,9 +932,17 @@ export const GraphicsGeneratorV2 = () => {
     setIsRefiningGraphic(true);
     setRefiningSourceImage(sourceImage);
     try {
+      // Pass the SAME prompt context that drove generation so the edge
+      // function can anchor the model with the original brief. Without that
+      // anchor the model treats the feedback as a fresh-generation request
+      // and can return something unrelated. textBakedIn mirrors the mode
+      // logic in handleGenerate above.
       const body: GenerateIllustrationRequest = {
         eventType,
         aspectRatio: FORMAT_TO_ASPECT_RATIO[target.format],
+        ...(textBakedIn
+          ? { jsonPrompt: editablePrompt }
+          : { customPrompt }),
         refine: { sourceImage, feedback },
       };
       const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(

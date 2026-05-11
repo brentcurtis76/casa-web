@@ -201,10 +201,24 @@ serve(async (req) => {
     let prompt: string;
 
     if (isRefine) {
-      // Refine mode: lightweight single-pass edit driven by user feedback.
-      // Keep eventType context so the model knows what kind of graphic it is
-      // refining, but do not invoke the full cover prompt builders.
-      prompt = `REFINE THE PROVIDED IMAGE according to this feedback: "${refine.feedback}". Preserve the event type, color palette, composition, layout, typography, and any other unmentioned visual elements exactly. Only change what the feedback explicitly requests.\n\nEvent type context: ${eventType}`;
+      // Refine mode: image-EDIT, not regeneration. The source image is the
+      // anchor; we apply targeted modifications based on the user feedback.
+      //
+      // Critical: include any prompt context the caller passes (jsonPrompt or
+      // customPrompt) so the model knows what the source image was originally
+      // meant to be. Without that anchor, Gemini tends to over-interpret the
+      // feedback and produce something unrelated — observed empirically when
+      // a "use less amber + add a mother with her son" refine on a Día de la
+      // Madre cover came back as an unrelated church scene with crosses.
+      let contextPreamble = '';
+      if (jsonPrompt) {
+        const ctxText =
+          typeof jsonPrompt === 'string' ? jsonPrompt : JSON.stringify(jsonPrompt);
+        contextPreamble = `\n\nORIGINAL BRIEF (the source image was generated from this — preserve its intent unless the feedback overrides it):\n${ctxText}`;
+      } else if (customPrompt) {
+        contextPreamble = `\n\nORIGINAL BRIEF (the source image was generated from this — preserve its intent unless the feedback overrides it):\n${customPrompt}`;
+      }
+      prompt = `This is an IMAGE EDIT task, NOT a generation task. The image attached as the first inlineData part is the source. Your output MUST be the same image with only targeted modifications applied based on the user feedback below.\n\nUser feedback (modify the image accordingly):\n"${refine.feedback}"\n\nPreserve all unmentioned visual elements EXACTLY — subjects, composition, layout, lighting, typography, and color palette. Do NOT replace the image. Do NOT introduce new subjects unless the feedback explicitly requests them. Do NOT generate from scratch.${contextPreamble}`;
     } else if (referenceImage && referencePrompt) {
       // Image-to-image mode: recompose a reference image for a new aspect ratio
       prompt = referencePrompt;

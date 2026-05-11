@@ -202,12 +202,21 @@ export function CoverArtGenerator({
   // 4-option array in place and updates the selection. Refinement is
   // session-local — it does NOT persist to storage or fire onCoverChange.
   // The user must explicitly select/save again to commit a refined image.
+  // We pass the SAME jsonPrompt that drove generation so the edge function
+  // can anchor the model with the original brief. Without it the model can
+  // misinterpret the feedback and produce something unrelated.
   const handleRefineCover = useCallback(
     async (sourceImage: string, feedback: string) => {
       setRefineCoverError(null);
       setIsRefiningCover(true);
       try {
+        const jsonPrompt = buildSermonCoverPrompt({
+          title: metadata.title,
+          preacher: metadata.speaker,
+          illustrationTheme,
+        });
         const body: GenerateIllustrationRequest = {
+          jsonPrompt,
           aspectRatio: '4:3',
           refine: { sourceImage, feedback },
         };
@@ -237,7 +246,7 @@ export function CoverArtGenerator({
         setIsRefiningCover(false);
       }
     },
-    [],
+    [metadata.title, metadata.speaker, illustrationTheme],
   );
 
   // Handle custom image upload
