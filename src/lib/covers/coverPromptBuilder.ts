@@ -50,6 +50,58 @@ export interface GenerateIllustrationResponse {
   error?: string;
 }
 
+/**
+ * Refinamiento opcional de una ilustración: la imagen base se manda como
+ * base64 (sin prefijo data URI) junto con feedback en texto libre. Cuando
+ * está presente, el edge function fuerza count=1 y reemplaza el prompt
+ * estándar con instrucciones de refinamiento dirigidas a la imagen origen.
+ */
+export interface GenerateIllustrationRefine {
+  /** Imagen base codificada en base64, sin prefijo `data:image/...;base64,`. */
+  sourceImage: string;
+  /** Instrucciones de refinamiento en texto libre (ángulo, ropa, etc.). */
+  feedback: string;
+}
+
+/**
+ * Cuerpo de la petición a la edge function `generate-illustration`. Cubre
+ * los caminos actuales (custom prompt, JSON prompt, image-to-image con
+ * `referenceImage` + `referencePrompt`) y añade el campo opcional `refine`
+ * para enviar una imagen seleccionada de vuelta al modelo con feedback.
+ *
+ * Los campos son individualmente opcionales porque distintos callers
+ * (Portadas, GraphicsGeneratorV2, CoverArtGenerator) usan combinaciones
+ * diferentes — las validaciones quedan en el edge function.
+ */
+export interface GenerateIllustrationRequest {
+  /** Tipo de evento (afecta plantillas por defecto en el edge function). */
+  eventType?: string;
+  /** Cantidad de variantes a generar. Ignorado cuando `refine` está presente. */
+  count?: number;
+  /** Prompt en texto plano (camino legacy / custom). */
+  customPrompt?: string;
+  /** Modo de fondo (afecta el prompt por defecto). */
+  backgroundMode?: string;
+  /** Prompt estructurado en JSON (camino preferido). */
+  jsonPrompt?: unknown;
+  /**
+   * Imagen de referencia para image-to-image (recomposición automática
+   * de aspect ratio). Distinto de `refine.sourceImage`, que se usa para
+   * refinar una imagen ya elegida con feedback del usuario.
+   */
+  referenceImage?: string;
+  /** Prompt fijo que acompaña a `referenceImage` en el camino de recomposición. */
+  referencePrompt?: string;
+  /** Aspect ratio de salida (e.g. '4:3', '16:9'). */
+  aspectRatio?: string;
+  /**
+   * Refinamiento dirigido por el usuario. Cuando está presente, el edge
+   * function ignora `count` (fuerza 1) y construye el prompt a partir de
+   * `feedback`, manteniendo el estilo del `eventType` original.
+   */
+  refine?: GenerateIllustrationRefine;
+}
+
 interface CoverJsonPrompt {
   core: {
     subject: string;

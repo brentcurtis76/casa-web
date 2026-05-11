@@ -51,6 +51,10 @@ import type {
   OverlayPosition,
   OverlayColor,
   OverlaySize,
+  GenerateSceneImagesCharacterRequest,
+  GenerateSceneImagesSceneRequest,
+  GenerateSceneImagesCoverRequest,
+  GenerateSceneImagesEndRequest,
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
@@ -67,6 +71,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Trash2 } from 'lucide-react';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 
 interface CuentacuentoEditorProps {
   context: LiturgyContext;
@@ -514,6 +519,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [generatingSceneIndex, setGeneratingSceneIndex] = useState<number | null>(null);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [generatingEnd, setGeneratingEnd] = useState(false);
+
+  // Estado de refinamiento de imágenes (Phase 7 scaffolding)
+  const [refiningCharId, setRefiningCharId] = useState<string | null>(null);
+  const [charRefineErrors, setCharRefineErrors] = useState<Record<string, string | null>>({});
+  const [refiningSceneNumber, setRefiningSceneNumber] = useState<number | null>(null);
+  const [sceneRefineErrors, setSceneRefineErrors] = useState<Record<number, string | null>>({});
+  const [isRefiningCover, setIsRefiningCover] = useState(false);
+  const [refineCoverError, setRefineCoverError] = useState<string | null>(null);
+  const [isRefiningEnd, setIsRefiningEnd] = useState(false);
+  const [refineEndError, setRefineEndError] = useState<string | null>(null);
 
   // Estado de selección de personajes
   const [characterSheetOptions, setCharacterSheetOptions] = useState<Record<string, string[]>>({});
@@ -1855,6 +1870,345 @@ Instrucciones críticas:
     }
   }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets]);
 
+  // ===== Phase 7: refine handlers (character, scene, cover, end) =====
+  // Each refine mirrors its generate counterpart's request body and adds
+  // `refine: { sourceImage, feedback }`. On success the currently selected
+  // option in the relevant array is replaced in place; the selection index
+  // does not move. Cover/end refine never auto-fires sibling derivations.
+
+  const handleRefineCharacterSheet = useCallback(
+    async (characterId: string, sourceImage: string, feedback: string) => {
+      if (!story) return;
+      const character = story.characters.find((c) => c.id === characterId);
+      if (!character) return;
+
+      setCharRefineErrors((prev) => ({ ...prev, [characterId]: null }));
+      setRefiningCharId(characterId);
+
+      try {
+        const visualDescription =
+          editingCharacterPrompt[characterId] ?? character.visualDescription;
+
+        const body: GenerateSceneImagesCharacterRequest = {
+          type: 'character',
+          styleId: story.illustrationStyle,
+          character: {
+            name: character.name,
+            description: character.description,
+            visualDescription,
+          },
+          refine: { sourceImage, feedback },
+        };
+
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+
+        if (fnError) throw fnError;
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar el personaje');
+        }
+
+        const refined: string = data.images[0];
+
+        const existing = characterSheetOptions[characterId] || [];
+        const currentSelected = selectedCharacterSheets[characterId];
+        const slotIdx =
+          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
+            ? currentSelected
+            : existing.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return;
+
+        const updated = existing.slice();
+        updated[slotIdx] = refined;
+        const newOptions = { ...characterSheetOptions, [characterId]: updated };
+        const newSelection = { ...selectedCharacterSheets, [characterId]: slotIdx };
+        setCharacterSheetOptions(newOptions);
+        setSelectedCharacterSheets(newSelection);
+
+        await saveDraftNow({
+          currentStep,
+          characterSheetOptions: newOptions,
+          selectedCharacterSheets: newSelection,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Error refinando personaje';
+        setCharRefineErrors((prev) => ({ ...prev, [characterId]: message }));
+      } finally {
+        setRefiningCharId(null);
+      }
+    },
+    [
+      story,
+      editingCharacterPrompt,
+      characterSheetOptions,
+      selectedCharacterSheets,
+      currentStep,
+      saveDraftNow,
+    ],
+  );
+
+  const handleRefineSceneImage = useCallback(
+    async (sceneNumber: number, sourceImage: string, feedback: string) => {
+      if (!story) return;
+      const scene = story.scenes.find((s) => s.number === sceneNumber);
+      if (!scene) return;
+
+      setSceneRefineErrors((prev) => ({ ...prev, [sceneNumber]: null }));
+      setRefiningSceneNumber(sceneNumber);
+
+      try {
+        const excludedIds = sceneExcludedCharacters[scene.number] || [];
+        const includedIds = sceneIncludedCharacters[scene.number] || [];
+        const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
+        const charactersWithReferences = charactersWithRefs
+          .filter((c) => !c.isExcluded)
+          .map((c) => ({
+            name: c.name,
+            visualDescription: c.visualDescription,
+            referenceImage: c.referenceImage,
+          }));
+
+        const overridePrompt = editingScenePrompt[scene.number];
+        const sceneData = overridePrompt
+          ? { text: scene.text, visualDescription: overridePrompt }
+          : { text: scene.text, visualDescription: scene.visualDescription };
+
+        const sceneRefImage = sceneReferenceImages[scene.number];
+        const propsForScene = getPropsForScene(scene);
+
+        const body: GenerateSceneImagesSceneRequest = {
+          type: 'scene',
+          styleId: story.illustrationStyle,
+          scene: sceneData,
+          characters: charactersWithReferences,
+          location: story.location,
+          sceneReferenceImage: sceneRefImage,
+          // Edge function accepts 'pov' at runtime; shared type drift bridged here.
+          sceneReferenceMode: (sceneReferenceMode[scene.number] ??
+            'style') as GenerateSceneImagesSceneRequest['sceneReferenceMode'],
+          props: propsForScene.length > 0 ? propsForScene : undefined,
+          refine: { sourceImage, feedback },
+        };
+
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+
+        if (fnError) throw fnError;
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar la escena');
+        }
+
+        const refined: string = data.images[0];
+
+        const existing = sceneImageOptions[sceneNumber] || [];
+        const currentSelected = selectedSceneImages[sceneNumber];
+        const slotIdx =
+          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
+            ? currentSelected
+            : existing.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return;
+
+        const updated = existing.slice();
+        updated[slotIdx] = refined;
+        const newSceneOptions = { ...sceneImageOptions, [sceneNumber]: updated };
+        const newSelection = { ...selectedSceneImages, [sceneNumber]: slotIdx };
+        setSceneImageOptions(newSceneOptions);
+        setSelectedSceneImages(newSelection);
+
+        await saveDraftNow({
+          currentStep,
+          sceneImageOptions: newSceneOptions,
+          selectedSceneImages: newSelection,
+          sceneReferenceModes: sceneReferenceMode,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Error refinando imagen de escena';
+        setSceneRefineErrors((prev) => ({ ...prev, [sceneNumber]: message }));
+      } finally {
+        setRefiningSceneNumber(null);
+      }
+    },
+    [
+      story,
+      sceneExcludedCharacters,
+      sceneIncludedCharacters,
+      sceneReferenceImages,
+      sceneReferenceMode,
+      editingScenePrompt,
+      getCharactersWithReferences,
+      getPropsForScene,
+      sceneImageOptions,
+      selectedSceneImages,
+      currentStep,
+      saveDraftNow,
+    ],
+  );
+
+  const handleRefineCover = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      if (!story) return;
+
+      setRefineCoverError(null);
+      setIsRefiningCover(true);
+
+      try {
+        const excludedIds = coverExcludedCharacters;
+        const charactersWithReferences = story.characters
+          .filter((c) => !excludedIds.includes(c.id))
+          .map((c) => {
+            const options = characterSheetOptions[c.id];
+            const selectedIdx = selectedCharacterSheets[c.id];
+            const referenceImage =
+              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+            return {
+              name: c.name,
+              visualDescription: c.visualDescription,
+              referenceImage,
+            };
+          });
+
+        const protagonist =
+          story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
+        const primaryProps = getPrimaryProps();
+
+        const body: GenerateSceneImagesCoverRequest = {
+          type: 'cover',
+          styleId: story.illustrationStyle,
+          title: story.title,
+          protagonist: {
+            visualDescription: protagonist?.visualDescription || 'A friendly child character',
+          },
+          location: story.location,
+          characters: charactersWithReferences,
+          sceneReferenceImage: coverReferenceImage || undefined,
+          props: primaryProps.length > 0 ? primaryProps : undefined,
+          customPrompt: editingCoverPrompt || undefined,
+          refine: { sourceImage, feedback },
+        };
+
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+
+        if (fnError) throw fnError;
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar la portada');
+        }
+
+        const refined: string = data.images[0];
+
+        setCoverOptions((prev) => {
+          const slotIdx =
+            typeof selectedCover === 'number' && prev[selectedCover] === sourceImage
+              ? selectedCover
+              : prev.findIndex((opt) => opt === sourceImage);
+          if (slotIdx < 0) return prev;
+          const next = prev.slice();
+          next[slotIdx] = refined;
+          return next;
+        });
+        // Selection index intentionally preserved; no sibling derivation triggered.
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Error refinando portada';
+        setRefineCoverError(message);
+      } finally {
+        setIsRefiningCover(false);
+      }
+    },
+    [
+      story,
+      characterSheetOptions,
+      selectedCharacterSheets,
+      coverExcludedCharacters,
+      coverReferenceImage,
+      editingCoverPrompt,
+      getPrimaryProps,
+      selectedCover,
+    ],
+  );
+
+  const handleRefineEnd = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      if (!story) return;
+
+      setRefineEndError(null);
+      setIsRefiningEnd(true);
+
+      try {
+        const charactersWithReferences = story.characters
+          .filter((c) => endIncludedCharacters.includes(c.id))
+          .map((c) => {
+            const options = characterSheetOptions[c.id];
+            const selectedIdx = selectedCharacterSheets[c.id];
+            const referenceImage =
+              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+            return {
+              name: c.name,
+              visualDescription: c.visualDescription,
+              referenceImage,
+            };
+          });
+
+        const body: GenerateSceneImagesEndRequest = {
+          type: 'end',
+          styleId: story.illustrationStyle,
+          referenceImage: endReferenceImage || undefined,
+          characters:
+            charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
+          customPrompt: editingEndPrompt || undefined,
+          refine: { sourceImage, feedback },
+        };
+
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+
+        if (fnError) throw fnError;
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar la imagen final');
+        }
+
+        const refined: string = data.images[0];
+
+        setEndOptions((prev) => {
+          const slotIdx =
+            typeof selectedEnd === 'number' && prev[selectedEnd] === sourceImage
+              ? selectedEnd
+              : prev.findIndex((opt) => opt === sourceImage);
+          if (slotIdx < 0) return prev;
+          const next = prev.slice();
+          next[slotIdx] = refined;
+          return next;
+        });
+        // Selection index intentionally preserved; no sibling derivation triggered.
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Error refinando imagen final';
+        setRefineEndError(message);
+      } finally {
+        setIsRefiningEnd(false);
+      }
+    },
+    [
+      story,
+      endReferenceImage,
+      editingEndPrompt,
+      endIncludedCharacters,
+      characterSheetOptions,
+      selectedCharacterSheets,
+      selectedEnd,
+    ],
+  );
+
   // Subir imagen de personaje manualmente
   const handleUploadCharacterImage = useCallback((characterId: string, base64: string) => {
     // Calculate new index BEFORE updating state (current length = new index after adding)
@@ -3033,19 +3387,38 @@ Instrucciones críticas:
               />
             </div>
 
-            {characterSheetOptions[character.id]?.length > 0 && (
-              <ImageSelector
-                options={characterSheetOptions[character.id]}
-                selectedIndex={selectedCharacterSheets[character.id] ?? null}
-                onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
-                onSave={() => handleSaveCharacterImage(character.id)}
-                onRegenerate={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                isGenerating={generatingCharacterIndex === index}
-                isSaving={savingCharacter === character.id}
-                savedMessage={savedCharacterMessage[character.id]}
-                label="character sheet"
-              />
-            )}
+            {characterSheetOptions[character.id]?.length > 0 && (() => {
+              const charSelectedIdx = selectedCharacterSheets[character.id];
+              const charSelectedImage =
+                charSelectedIdx !== undefined
+                  ? characterSheetOptions[character.id]?.[charSelectedIdx]
+                  : undefined;
+              const isRefiningThisChar = refiningCharId === character.id;
+              return (
+                <>
+                  <div className={isRefiningThisChar ? 'opacity-60 pointer-events-none' : ''}>
+                    <ImageSelector
+                      options={characterSheetOptions[character.id]}
+                      selectedIndex={selectedCharacterSheets[character.id] ?? null}
+                      onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
+                      onSave={() => handleSaveCharacterImage(character.id)}
+                      onRegenerate={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
+                      isGenerating={generatingCharacterIndex === index}
+                      isSaving={savingCharacter === character.id}
+                      savedMessage={savedCharacterMessage[character.id]}
+                      label="character sheet"
+                    />
+                  </div>
+                  {charSelectedImage && (
+                    <ImageRefineBox
+                      onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
+                      isRefining={isRefiningThisChar}
+                      refineError={charRefineErrors[character.id]}
+                    />
+                  )}
+                </>
+              );
+            })()}
           </div>
         ))}
 
@@ -3718,21 +4091,38 @@ Instrucciones críticas:
                 )}
 
                 {/* Selector de imágenes */}
-                {sceneImageOptions[scene.number]?.length > 0 && (
-                  <div className="p-4 border-t" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
-                    <ImageSelector
-                      options={sceneImageOptions[scene.number]}
-                      selectedIndex={selectedSceneImages[scene.number] ?? null}
-                      onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
-                      onSave={() => handleSaveSceneImage(scene.number)}
-                      onRegenerate={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                      isGenerating={generatingSceneIndex === scene.number}
-                      isSaving={savingScene === scene.number}
-                      savedMessage={savedSceneMessage[scene.number]}
-                      label={`escena ${scene.number}`}
-                    />
-                  </div>
-                )}
+                {sceneImageOptions[scene.number]?.length > 0 && (() => {
+                  const sceneSelectedIdx = selectedSceneImages[scene.number];
+                  const sceneSelectedImage =
+                    sceneSelectedIdx !== undefined
+                      ? sceneImageOptions[scene.number]?.[sceneSelectedIdx]
+                      : undefined;
+                  const isRefiningThisScene = refiningSceneNumber === scene.number;
+                  return (
+                    <div className="p-4 border-t" style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+                      <div className={isRefiningThisScene ? 'opacity-60 pointer-events-none' : ''}>
+                        <ImageSelector
+                          options={sceneImageOptions[scene.number]}
+                          selectedIndex={selectedSceneImages[scene.number] ?? null}
+                          onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
+                          onSave={() => handleSaveSceneImage(scene.number)}
+                          onRegenerate={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
+                          isGenerating={generatingSceneIndex === scene.number}
+                          isSaving={savingScene === scene.number}
+                          savedMessage={savedSceneMessage[scene.number]}
+                          label={`escena ${scene.number}`}
+                        />
+                      </div>
+                      {sceneSelectedImage && (
+                        <ImageRefineBox
+                          onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
+                          isRefining={isRefiningThisScene}
+                          refineError={sceneRefineErrors[scene.number]}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -4328,17 +4718,28 @@ Instrucciones críticas:
             )}
 
             {coverOptions.length > 0 ? (
-              <ImageSelector
-                options={coverOptions}
-                selectedIndex={selectedCover}
-                onSelect={setSelectedCover}
-                onSave={handleSaveCover}
-                onRegenerate={() => handleGenerateCover()}
-                isGenerating={generatingCover}
-                isSaving={savingCover}
-                savedMessage={savedCoverMessage}
-                label="portada"
-              />
+              <>
+                <div className={isRefiningCover ? 'opacity-60 pointer-events-none' : ''}>
+                  <ImageSelector
+                    options={coverOptions}
+                    selectedIndex={selectedCover}
+                    onSelect={setSelectedCover}
+                    onSave={handleSaveCover}
+                    onRegenerate={() => handleGenerateCover()}
+                    isGenerating={generatingCover}
+                    isSaving={savingCover}
+                    savedMessage={savedCoverMessage}
+                    label="portada"
+                  />
+                </div>
+                {selectedCover !== null && coverOptions[selectedCover] && (
+                  <ImageRefineBox
+                    onRefine={(feedback) => handleRefineCover(coverOptions[selectedCover], feedback)}
+                    isRefining={isRefiningCover}
+                    refineError={refineCoverError}
+                  />
+                )}
+              </>
             ) : (
               <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
                 Genera o sube opciones de portada para seleccionar
@@ -4644,17 +5045,28 @@ Instrucciones críticas:
             )}
 
             {endOptions.length > 0 ? (
-              <ImageSelector
-                options={endOptions}
-                selectedIndex={selectedEnd}
-                onSelect={setSelectedEnd}
-                onSave={handleSaveEnd}
-                onRegenerate={() => handleGenerateEnd()}
-                isGenerating={generatingEnd}
-                isSaving={savingEnd}
-                savedMessage={savedEndMessage}
-                label="imagen final"
-              />
+              <>
+                <div className={isRefiningEnd ? 'opacity-60 pointer-events-none' : ''}>
+                  <ImageSelector
+                    options={endOptions}
+                    selectedIndex={selectedEnd}
+                    onSelect={setSelectedEnd}
+                    onSave={handleSaveEnd}
+                    onRegenerate={() => handleGenerateEnd()}
+                    isGenerating={generatingEnd}
+                    isSaving={savingEnd}
+                    savedMessage={savedEndMessage}
+                    label="imagen final"
+                  />
+                </div>
+                {selectedEnd !== null && endOptions[selectedEnd] && (
+                  <ImageRefineBox
+                    onRefine={(feedback) => handleRefineEnd(endOptions[selectedEnd], feedback)}
+                    isRefining={isRefiningEnd}
+                    refineError={refineEndError}
+                  />
+                )}
+              </>
             ) : (
               <div className="text-center py-8" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
                 Genera o sube opciones de imagen final para seleccionar

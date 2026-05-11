@@ -29,10 +29,12 @@ import { CoverCropTool } from './CoverCropTool';
 import type { SermonMetadata } from './MetadataForm';
 import {
   buildSermonCoverPrompt,
+  type GenerateIllustrationRequest,
   type GenerateIllustrationResponse,
 } from '@/lib/covers/coverPromptBuilder';
 import { useCasaLogo } from '@/lib/covers/useCasaLogo';
 import { IllustrationThemeInput } from '@/components/covers/IllustrationThemeInput';
+import ImageRefineBox from '@/components/shared/ImageRefineBox';
 import { CASA_BRAND } from '@/lib/brand-kit';
 
 // Gemini generates at 4:3 (1024x768). The custom-upload path still uses the
@@ -83,6 +85,12 @@ export function CoverArtGenerator({
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [illustrationTheme, setIllustrationTheme] = useState<string>('');
   const [generateButtonHover, setGenerateButtonHover] = useState(false);
+  const [isRefiningCover, setIsRefiningCover] = useState(false);
+  const [refineCoverError, setRefineCoverError] = useState<string | null>(null);
+  // Cache the prompt used at generation time. Refine reads from this instead
+  // of rebuilding from current metadata/theme, preventing drift if the user
+  // edits title / speaker / theme between generation and refine.
+  const [coverPromptUsed, setCoverPromptUsed] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load CASA logo (passed to Gemini as reference image so the logo renders
@@ -122,6 +130,7 @@ export function CoverArtGenerator({
     setIsGenerating(true);
     setCoverOptions([]);
     setSelectedCover(null);
+    setCoverPromptUsed(null);
 
     try {
       // Note: SermonMetadata exposes `speaker` (the canonical field in
@@ -154,6 +163,9 @@ export function CoverArtGenerator({
         throw new Error('No se pudieron generar portadas');
       }
 
+      // Cache the prompt so refines anchor against the same brief that
+      // produced these variations, regardless of later metadata edits.
+      setCoverPromptUsed(jsonPrompt);
       setCoverOptions(valid);
 
       toast.success(
@@ -191,6 +203,60 @@ export function CoverArtGenerator({
       }
     },
     [onCoverChange],
+  );
+
+  // Refine the selected cover via Gemini using user feedback. Mirrors the
+  // Portadas main-cover refine flow: replaces the matching image in the
+  // 4-option array in place and updates the selection. Refinement is
+  // session-local — it does NOT persist to storage or fire onCoverChange.
+  // The user must explicitly select/save again to commit a refined image.
+  // We pass the SAME jsonPrompt that drove generation so the edge function
+  // can anchor the model with the original brief. Without it the model can
+  // misinterpret the feedback and produce something unrelated.
+  const handleRefineCover = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      setRefineCoverError(null);
+      setIsRefiningCover(true);
+      try {
+        // Read from the generation-time cache; fallback rebuilds only if the
+        // cache is somehow empty (defensive — shouldn't happen post-gen).
+        const jsonPrompt = coverPromptUsed ?? buildSermonCoverPrompt({
+          title: metadata.title,
+          preacher: metadata.speaker,
+          illustrationTheme,
+        });
+        const body: GenerateIllustrationRequest = {
+          jsonPrompt,
+          aspectRatio: '4:3',
+          refine: { sourceImage, feedback },
+        };
+        const { data, error } = await supabase.functions.invoke<GenerateIllustrationResponse>(
+          'generate-illustration',
+          { body },
+        );
+        if (error) throw error;
+        const refined = data?.illustrations?.[0];
+        if (!refined) {
+          throw new Error('No se pudo refinar la portada');
+        }
+        setCoverOptions((prev) => {
+          const idx = prev.findIndex((v) => v === sourceImage);
+          if (idx < 0) return prev;
+          const next = prev.slice();
+          next[idx] = refined;
+          return next;
+        });
+        setSelectedCover(refined);
+      } catch (err) {
+        console.error('[CoverArtGenerator] Error refining cover:', err);
+        setRefineCoverError(
+          err instanceof Error ? err.message : 'Error refinando portada',
+        );
+      } finally {
+        setIsRefiningCover(false);
+      }
+    },
+    [coverPromptUsed, metadata.title, metadata.speaker, illustrationTheme],
   );
 
   // Handle custom image upload
@@ -279,8 +345,9 @@ export function CoverArtGenerator({
             />
             <button
               onClick={clearCover}
+              disabled={isRefiningCover}
               aria-label="Eliminar portada"
-              className="absolute top-2 right-2 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
+              className="absolute top-2 right-2 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Eliminar portada"
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -330,7 +397,7 @@ export function CoverArtGenerator({
       <IllustrationThemeInput
         value={illustrationTheme}
         onChange={setIllustrationTheme}
-        disabled={disabled || isGenerating}
+        disabled={disabled || isGenerating || isRefiningCover}
         helpText="Describe en español lo que quieres ver. Deja vacío para usar el título de la reflexión."
         variant="plain"
       />
@@ -373,7 +440,7 @@ export function CoverArtGenerator({
       <div className="flex flex-col gap-2">
         <Button
           onClick={generateCovers}
-          disabled={!canGenerate || isGenerating || !logoBase64}
+          disabled={!canGenerate || isGenerating || !logoBase64 || isRefiningCover}
           onMouseEnter={() => setGenerateButtonHover(true)}
           onMouseLeave={() => setGenerateButtonHover(false)}
           className="w-full"
@@ -409,7 +476,7 @@ export function CoverArtGenerator({
         <Button
           variant="outline"
           onClick={() => fileInputRef.current?.click()}
-          disabled={!canGenerate || isGenerating}
+          disabled={!canGenerate || isGenerating || isRefiningCover}
           className="w-full"
         >
           <Upload className="h-4 w-4 mr-2" />
@@ -438,17 +505,22 @@ export function CoverArtGenerator({
           <p className="text-sm text-muted-foreground text-center">
             Selecciona una portada:
           </p>
-          <div className="grid grid-cols-2 gap-2">
+          <div
+            className={`grid grid-cols-2 gap-2 ${
+              isRefiningCover ? 'pointer-events-none opacity-60' : ''
+            }`}
+            aria-disabled={isRefiningCover || undefined}
+          >
             {coverOptions.map((bg, index) => {
               const isSelected = selectedCover === bg;
               return (
                 <button
                   key={index}
                   onClick={() => selectCover(bg)}
-                  disabled={isGenerating || isSaving}
+                  disabled={isGenerating || isSaving || isRefiningCover}
                   aria-label={`Seleccionar portada opción ${index + 1}`}
                   aria-pressed={isSelected}
-                  className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
+                  className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all hover:shadow-md disabled:cursor-not-allowed ${
                     isSelected
                       ? 'border-amber-500 ring-2 ring-amber-500 ring-offset-2'
                       : 'border-transparent'
@@ -472,6 +544,16 @@ export function CoverArtGenerator({
               );
             })}
           </div>
+
+          {selectedCover && (
+            <div className="mt-4">
+              <ImageRefineBox
+                onRefine={(feedback) => handleRefineCover(selectedCover, feedback)}
+                isRefining={isRefiningCover}
+                refineError={refineCoverError}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

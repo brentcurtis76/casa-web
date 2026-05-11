@@ -241,6 +241,120 @@ export interface StoryPDFContent {
 }
 
 /**
+ * Refinamiento opcional de una imagen existente: la imagen base se manda
+ * como base64 (sin prefijo data URI) junto con feedback en texto libre que
+ * describe los cambios deseados. Cuando este campo está presente, el edge
+ * function fuerza count=1 y usa la imagen como input para Gemini, en lugar
+ * de generar variantes desde cero.
+ */
+export interface GenerateSceneImagesRefine {
+  /** Imagen base codificada en base64, sin prefijo `data:image/...;base64,`. */
+  sourceImage: string;
+  /** Instrucciones de refinamiento en texto libre (ángulo, ropa, etc.). */
+  feedback: string;
+}
+
+/** Personaje (con o sin imagen de referencia) usado en peticiones a `generate-scene-images`. */
+export interface GenerateSceneImagesCharacterRef {
+  name: string;
+  visualDescription: string;
+  /** Imagen de referencia del personaje, base64 o URL pública. */
+  referenceImage?: string;
+}
+
+/** Landmark con imágenes de referencia, usado en `scene` y `cover`. */
+export interface GenerateSceneImagesLandmarkRef {
+  name: string;
+  visualDescription: string;
+  referenceImages: string[];
+}
+
+/** Prop con imágenes de referencia, usado en `scene` y `cover`. */
+export interface GenerateSceneImagesPropRef {
+  name: string;
+  visualDescription: string;
+  referenceImages: string[];
+}
+
+/** Petición para regenerar el character sheet de un personaje. */
+export interface GenerateSceneImagesCharacterRequest {
+  type: 'character';
+  styleId: string;
+  character: {
+    name: string;
+    description: string;
+    visualDescription: string;
+  };
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/** Petición para (re)generar la imagen de una escena. */
+export interface GenerateSceneImagesSceneRequest {
+  type: 'scene';
+  styleId: string;
+  scene: {
+    text: string;
+    visualDescription: string;
+    landmarkVisible?: boolean;
+  };
+  characters?: GenerateSceneImagesCharacterRef[];
+  location: LocationInfo;
+  sceneReferenceImage?: string;
+  sceneReferenceMode?: 'style' | 'composition';
+  landmarks?: GenerateSceneImagesLandmarkRef[];
+  props?: GenerateSceneImagesPropRef[];
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/** Petición para (re)generar la portada del cuento. */
+export interface GenerateSceneImagesCoverRequest {
+  type: 'cover';
+  styleId: string;
+  title: string;
+  protagonist: {
+    visualDescription: string;
+    [key: string]: unknown;
+  };
+  location: LocationInfo;
+  characters?: GenerateSceneImagesCharacterRef[];
+  props?: GenerateSceneImagesPropRef[];
+  sceneReferenceImage?: string;
+  customPrompt?: string;
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/** Petición para (re)generar la imagen final ("FIN") del cuento. */
+export interface GenerateSceneImagesEndRequest {
+  type: 'end';
+  styleId: string;
+  customPrompt?: string;
+  characters?: GenerateSceneImagesCharacterRef[];
+  /**
+   * Imagen de referencia opcional (de estilo) para la tarjeta "FIN".
+   * Distinta de `refine.sourceImage`, que se usa para refinar una imagen ya
+   * elegida.
+   */
+  referenceImage?: string;
+  count?: number;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/**
+ * Cuerpo de la petición a la edge function `generate-scene-images`.
+ * Unión discriminada por `type` que cubre los cuatro casos: character, scene,
+ * cover y end. Todos aceptan opcionalmente `refine` para enviar la imagen
+ * seleccionada de vuelta al modelo con feedback en texto libre.
+ */
+export type GenerateSceneImagesRequest =
+  | GenerateSceneImagesCharacterRequest
+  | GenerateSceneImagesSceneRequest
+  | GenerateSceneImagesCoverRequest
+  | GenerateSceneImagesEndRequest;
+
+/**
  * Índice de cuentos guardados
  */
 export interface StoryIndexEntry {

@@ -24,6 +24,8 @@ import type {
   LocationInfo,
   StoryStatus,
   GeneratedStoryContent,
+  GenerateSceneImagesCharacterRequest,
+  GenerateSceneImagesSceneRequest,
 } from '@/types/shared/story';
 import { supabase } from '@/integrations/supabase/client';
 import StoryConfigForm from './StoryConfigForm';
@@ -71,6 +73,14 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
   // Regeneration loading state
   const [regeneratingCharacterId, setRegeneratingCharacterId] = useState<string | null>(null);
   const [regeneratingSceneNumber, setRegeneratingSceneNumber] = useState<number | null>(null);
+
+  // Per-character refine state
+  const [refiningCharIdx, setRefiningCharIdx] = useState<number | null>(null);
+  const [charRefineErrors, setCharRefineErrors] = useState<Record<number, string | null>>({});
+
+  // Per-scene refine state
+  const [refiningSceneIdx, setRefiningSceneIdx] = useState<number | null>(null);
+  const [sceneRefineErrors, setSceneRefineErrors] = useState<Record<number, string | null>>({});
 
   // Obtener índice del paso actual
   const currentStepIndex = STEPS.findIndex((s) => s.id === currentStep);
@@ -264,6 +274,67 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
     }
   };
 
+  // Refinar character sheet usando la imagen seleccionada + feedback en texto
+  const handleRefineCharacterSheet = async (
+    charIndex: number,
+    sourceImage: string,
+    feedback: string,
+  ) => {
+    if (!story) return;
+    const character = story.characters[charIndex];
+    if (!character) return;
+
+    setCharRefineErrors(prev => ({ ...prev, [charIndex]: null }));
+    setRefiningCharIdx(charIndex);
+
+    try {
+      const body: GenerateSceneImagesCharacterRequest = {
+        type: 'character',
+        styleId: story.illustrationStyle,
+        character: {
+          name: character.name,
+          description: character.description,
+          visualDescription: character.editedVisualDescription ?? character.visualDescription,
+        },
+        refine: { sourceImage, feedback },
+      };
+
+      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', { body });
+
+      if (fnError) throw fnError;
+      if (!data?.success || !data.images?.length) {
+        throw new Error(data?.error || 'No se pudo refinar la imagen');
+      }
+
+      const refinedImage = data.images[0];
+
+      setStory(prev => {
+        if (!prev) return prev;
+        const target = prev.characters[charIndex];
+        if (!target) return prev;
+        const options = target.characterSheetOptions || [];
+        const selectedIdx = options.findIndex(opt => opt === target.characterSheetUrl);
+        if (selectedIdx < 0) return prev;
+        const newOptions = options.slice();
+        newOptions[selectedIdx] = refinedImage;
+        return {
+          ...prev,
+          characters: prev.characters.map((c, i) =>
+            i === charIndex
+              ? { ...c, characterSheetOptions: newOptions, characterSheetUrl: refinedImage }
+              : c
+          ),
+          metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+        };
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error refinando character sheet';
+      setCharRefineErrors(prev => ({ ...prev, [charIndex]: message }));
+    } finally {
+      setRefiningCharIdx(null);
+    }
+  };
+
   // Regenerar imagen de escena
   const handleRegenerateSceneImage = async (scene: StoryScene) => {
     if (!story) return;
@@ -312,6 +383,71 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
       setError(err instanceof Error ? err.message : 'Error regenerando imagen de escena');
     } finally {
       setRegeneratingSceneNumber(null);
+    }
+  };
+
+  // Refinar imagen de escena usando la imagen seleccionada + feedback en texto
+  const handleRefineSceneImage = async (
+    sceneIndex: number,
+    sourceImage: string,
+    feedback: string,
+  ) => {
+    if (!story) return;
+    const scene = story.scenes[sceneIndex];
+    if (!scene) return;
+
+    setSceneRefineErrors(prev => ({ ...prev, [sceneIndex]: null }));
+    setRefiningSceneIdx(sceneIndex);
+
+    try {
+      const body: GenerateSceneImagesSceneRequest = {
+        type: 'scene',
+        styleId: story.illustrationStyle,
+        scene: { text: scene.text, visualDescription: scene.visualDescription },
+        characters: story.characters
+          .filter(c => c.characterSheetUrl)
+          .map(c => ({
+            name: c.name,
+            visualDescription: c.editedVisualDescription ?? c.visualDescription,
+            referenceImage: c.characterSheetUrl,
+          })),
+        location: story.location,
+        refine: { sourceImage, feedback },
+      };
+
+      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', { body });
+
+      if (fnError) throw fnError;
+      if (!data?.success || !data.images?.length) {
+        throw new Error(data?.error || 'No se pudo refinar la imagen');
+      }
+
+      const refinedImage = data.images[0];
+
+      setStory(prev => {
+        if (!prev) return prev;
+        const target = prev.scenes[sceneIndex];
+        if (!target) return prev;
+        const options = target.imageOptions || [];
+        const selectedIdx = options.findIndex(opt => opt === target.selectedImageUrl);
+        if (selectedIdx < 0) return prev;
+        const newOptions = options.slice();
+        newOptions[selectedIdx] = refinedImage;
+        return {
+          ...prev,
+          scenes: prev.scenes.map((s, i) =>
+            i === sceneIndex
+              ? { ...s, imageOptions: newOptions, selectedImageUrl: refinedImage }
+              : s
+          ),
+          metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+        };
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error refinando imagen de escena';
+      setSceneRefineErrors(prev => ({ ...prev, [sceneIndex]: message }));
+    } finally {
+      setRefiningSceneIdx(null);
     }
   };
 
@@ -630,7 +766,7 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
           </div>
 
           <div className="space-y-6">
-            {story.characters.map((character) => {
+            {story.characters.map((character, charIndex) => {
               const currentPrompt = character.editedVisualDescription ?? character.visualDescription;
               const isModified = character.editedVisualDescription !== undefined && character.editedVisualDescription !== character.visualDescription;
 
@@ -728,6 +864,9 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
                     onSelect={(url) => handleSelectCharacterSheet(character.id, url)}
                     onRegenerate={currentPrompt?.trim() ? () => handleRegenerateCharacterSheet(character) : undefined}
                     isRegenerating={regeneratingCharacterId === character.id}
+                    onRefine={(sourceImage, feedback) => handleRefineCharacterSheet(charIndex, sourceImage, feedback)}
+                    isRefining={refiningCharIdx === charIndex}
+                    refineError={charRefineErrors[charIndex] ?? null}
                   />
                 </div>
               );
@@ -789,7 +928,7 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
           </div>
 
           <div className="space-y-6">
-            {story.scenes.map((scene) => (
+            {story.scenes.map((scene, sceneIndex) => (
               <ImageSelector
                 key={scene.number}
                 title={`Escena ${scene.number}`}
@@ -799,6 +938,9 @@ const StoryCreator: React.FC<StoryCreatorProps> = ({
                 onSelect={(url) => handleSelectSceneImage(scene.number, url)}
                 onRegenerate={() => handleRegenerateSceneImage(scene)}
                 isRegenerating={regeneratingSceneNumber === scene.number}
+                onRefine={(sourceImage, feedback) => handleRefineSceneImage(sceneIndex, sourceImage, feedback)}
+                isRefining={refiningSceneIdx === sceneIndex}
+                refineError={sceneRefineErrors[sceneIndex] ?? null}
               />
             ))}
           </div>
