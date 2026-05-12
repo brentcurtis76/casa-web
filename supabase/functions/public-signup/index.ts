@@ -122,7 +122,7 @@ serve(async (req) => {
 
       if (
         settings.cutoff_at &&
-        Date.now() > new Date(settings.cutoff_at).getTime()
+        Date.now() >= new Date(settings.cutoff_at).getTime()
       ) {
         return jsonResponse({ success: false, error: closedMessage }, 403);
       }
@@ -135,7 +135,7 @@ serve(async (req) => {
           .from("church_signups")
           .select("id", { count: "exact", head: true })
           .eq("form_type", payload.form_type)
-          .in("status", ["pending", "confirmed"]);
+          .neq("status", "cancelled");
 
         if (!capacityError && (activeCount ?? 0) >= settings.max_capacity) {
           return jsonResponse({ success: false, error: closedMessage }, 403);

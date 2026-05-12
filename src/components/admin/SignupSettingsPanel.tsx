@@ -41,9 +41,10 @@ type SettingsClient = {
         maybeSingle: () => Promise<{ data: ChurchSignupSettings | null; error: unknown }>;
       };
     };
-    update: (values: Record<string, unknown>) => {
-      eq: (col: string, val: string) => Promise<{ error: unknown }>;
-    };
+    upsert: (
+      values: Record<string, unknown>,
+      options?: { onConflict?: string }
+    ) => Promise<{ error: unknown }>;
   };
 };
 
@@ -97,10 +98,10 @@ export default function SignupSettingsPanel({ formType, label }: SignupSettingsP
     let maxCapacity: number | null = null;
     if (maxCapacityStr.trim() !== '') {
       const parsed = Number(maxCapacityStr);
-      if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      if (!Number.isFinite(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
         toast({
           title: 'Capacidad inválida',
-          description: 'Ingresa un número entero positivo o deja el campo vacío.',
+          description: 'Ingresa un número entero mayor o igual a 1, o deja el campo vacío.',
           variant: 'destructive',
         });
         return;
@@ -113,15 +114,18 @@ export default function SignupSettingsPanel({ formType, label }: SignupSettingsP
     setSaving(true);
     const { error } = await settingsClient
       .from('church_signup_settings')
-      .update({
-        is_open: isOpen,
-        cutoff_at: cutoffIso,
-        max_capacity: maxCapacity,
-        closed_message: closedMessage.trim() ? closedMessage.trim() : null,
-        updated_at: new Date().toISOString(),
-        updated_by: user?.id ?? null,
-      })
-      .eq('form_type', formType);
+      .upsert(
+        {
+          form_type: formType,
+          is_open: isOpen,
+          cutoff_at: cutoffIso,
+          max_capacity: maxCapacity,
+          closed_message: closedMessage.trim() ? closedMessage.trim() : null,
+          updated_at: new Date().toISOString(),
+          updated_by: user?.id ?? null,
+        },
+        { onConflict: 'form_type' },
+      );
 
     if (error) {
       console.error('Error saving signup settings:', error);
@@ -203,7 +207,7 @@ export default function SignupSettingsPanel({ formType, label }: SignupSettingsP
                 <Input
                   id={`capacity-${formType}`}
                   type="number"
-                  min={0}
+                  min={1}
                   step={1}
                   inputMode="numeric"
                   value={maxCapacityStr}
