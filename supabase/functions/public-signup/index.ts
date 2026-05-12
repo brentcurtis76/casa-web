@@ -27,6 +27,9 @@ const RATE_LIMIT_MAX = 3;
 const RATE_LIMIT_WINDOW_HOURS = 1;
 const MIN_SUBMIT_TIME_MS = 3000;
 
+const DEFAULT_CLOSED_MESSAGE =
+  "Las inscripciones para este programa están cerradas.";
+
 interface SignupPayload {
   form_type: string;
   full_name: string;
@@ -62,6 +65,12 @@ serve(async (req) => {
     );
   }
 
+  // ── Supabase client (service role — bypasses RLS) ──────────────────────
+  const supabaseClient = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+
   try {
     const payload: SignupPayload = await req.json();
 
@@ -95,6 +104,43 @@ serve(async (req) => {
         { success: false, error: "Tipo de formulario no valido." },
         400
       );
+    }
+
+    // ── Closure check ────────────────────────────────────────────────────
+    const { data: settings } = await supabaseClient
+      .from("church_signup_settings")
+      .select("is_open, cutoff_at, max_capacity, closed_message")
+      .eq("form_type", payload.form_type)
+      .maybeSingle();
+
+    if (settings) {
+      const closedMessage = settings.closed_message ?? DEFAULT_CLOSED_MESSAGE;
+
+      if (settings.is_open === false) {
+        return jsonResponse({ success: false, error: closedMessage }, 403);
+      }
+
+      if (
+        settings.cutoff_at &&
+        Date.now() > new Date(settings.cutoff_at).getTime()
+      ) {
+        return jsonResponse({ success: false, error: closedMessage }, 403);
+      }
+
+      if (
+        typeof settings.max_capacity === "number" &&
+        settings.max_capacity > 0
+      ) {
+        const { count: activeCount, error: capacityError } = await supabaseClient
+          .from("church_signups")
+          .select("id", { count: "exact", head: true })
+          .eq("form_type", payload.form_type)
+          .in("status", ["pending", "confirmed"]);
+
+        if (!capacityError && (activeCount ?? 0) >= settings.max_capacity) {
+          return jsonResponse({ success: false, error: closedMessage }, 403);
+        }
+      }
     }
 
     // ── Validation: full_name ────────────────────────────────────────────
@@ -165,12 +211,6 @@ serve(async (req) => {
         );
       }
     }
-
-    // ── Supabase client (service role — bypasses RLS) ────────────────────
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    );
 
     // ── Anti-spam: rate limiting by IP ───────────────────────────────────
     const ip =

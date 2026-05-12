@@ -34,6 +34,17 @@ export interface ChurchSignup {
   updated_at: string;
 }
 
+/** Mirrors church_signup_settings table row — per-form-type closure controls */
+export interface ChurchSignupSettings {
+  form_type: SignupFormType;
+  is_open: boolean;
+  cutoff_at: string | null;
+  max_capacity: number | null;
+  closed_message: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
 /** Payload submitted by the public sign-up form */
 export interface SignupFormData {
   form_type: SignupFormType;
