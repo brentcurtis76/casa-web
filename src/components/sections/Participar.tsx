@@ -12,6 +12,9 @@ import { motion } from "framer-motion";
 import { SignupFormGrupos } from "../home/SignupFormGrupos";
 import { SignupFormLectura } from "../home/SignupFormLectura";
 import { SignupFormApoyo } from "../home/SignupFormApoyo";
+import { ClosedNotice } from "../home/ClosedNotice";
+import { useSignupSettings, getClosedReasonLabel } from "@/hooks/useSignupSettings";
+import type { SignupFormType } from "@/types/signups";
 
 // Animation variants
 const containerVariants = {
@@ -115,6 +118,37 @@ const SIGNUP_PARAM_MAP: Record<string, Exclude<DialogType, null>> = {
   lectura: 'lectura',
   apoyo: 'apoyo',
 };
+
+const FORM_TYPE_MAP: Record<Exclude<DialogType, null>, SignupFormType> = {
+  grupos: 'grupos_casa',
+  lectura: 'club_lectura',
+  apoyo: 'apoyo_psicoemocional',
+};
+
+interface SignupDialogBodyProps {
+  formType: SignupFormType;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+function SignupDialogBody({ formType, onClose, children }: SignupDialogBodyProps) {
+  const { settings, isClosed, closedReason, loading } = useSignupSettings(formType);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10" aria-label="Cargando">
+        <div className="w-8 h-8 rounded-full border-2 border-casa-200 border-t-casa-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (isClosed && closedReason) {
+    const message = settings?.closed_message?.trim() || getClosedReasonLabel(closedReason);
+    return <ClosedNotice message={message} onClose={onClose} />;
+  }
+
+  return <>{children}</>;
+}
 
 export function Participar() {
   const [openDialog, setOpenDialog] = useState<DialogType>(null);
@@ -246,7 +280,11 @@ export function Participar() {
               Completa el formulario para inscribirte en un grupo comunitario.
             </DialogDescription>
           </DialogHeader>
-          <SignupFormGrupos onSuccess={closeDialog} />
+          {openDialog === 'grupos' && (
+            <SignupDialogBody formType={FORM_TYPE_MAP.grupos} onClose={closeDialog}>
+              <SignupFormGrupos onSuccess={closeDialog} />
+            </SignupDialogBody>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -261,7 +299,11 @@ export function Participar() {
               ¿Y si Cristo fuera mucho más grande de lo que imaginamos? En <em>El Cristo Universal</em>, Richard Rohr nos invita a redescubrir una verdad olvidada: Dios se hace presente en toda la creación, en cada persona y en cada momento. Acompáñanos estos dos meses en un espacio online de lectura, conversación y descubrimiento espiritual.
             </DialogDescription>
           </DialogHeader>
-          <SignupFormLectura onSuccess={closeDialog} />
+          {openDialog === 'lectura' && (
+            <SignupDialogBody formType={FORM_TYPE_MAP.lectura} onClose={closeDialog}>
+              <SignupFormLectura onSuccess={closeDialog} />
+            </SignupDialogBody>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -276,7 +318,11 @@ export function Participar() {
               Selecciona tu horario preferido y completa el formulario.
             </DialogDescription>
           </DialogHeader>
-          <SignupFormApoyo onSuccess={closeDialog} />
+          {openDialog === 'apoyo' && (
+            <SignupDialogBody formType={FORM_TYPE_MAP.apoyo} onClose={closeDialog}>
+              <SignupFormApoyo onSuccess={closeDialog} />
+            </SignupDialogBody>
+          )}
         </DialogContent>
       </Dialog>
     </section>

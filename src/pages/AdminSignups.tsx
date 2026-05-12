@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { usePermissions } from '@/hooks/usePermissions';
+import SignupSettingsPanel from '@/components/admin/SignupSettingsPanel';
 import type { ChurchSignup, SignupFormType, SignupStatus } from '@/types/signups';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -454,38 +455,38 @@ const AdminSignupsPage: React.FC = () => {
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as SignupFormType)}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-              <TabsList>
-                {TAB_CONFIG.map((tab) => (
-                  <TabsTrigger key={tab.value} value={tab.value} className="gap-2">
-                    {tab.label}
-                    {pendingByTab[tab.value] > 0 && (
-                      <Badge variant="secondary" className="ml-1 bg-amber-100 text-amber-800 text-xs px-1.5 py-0">
-                        {pendingByTab[tab.value]}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-
-              <div className="flex items-center gap-2">
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Filtrar por estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pending">Pendientes</SelectItem>
-                    <SelectItem value="confirmed">Confirmados</SelectItem>
-                    <SelectItem value="cancelled">Cancelados</SelectItem>
-                  </SelectContent>
-                </Select>
-                {mutating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              </div>
-            </div>
+            <TabsList className="mb-4">
+              {TAB_CONFIG.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} className="gap-2">
+                  {tab.label}
+                  {pendingByTab[tab.value] > 0 && (
+                    <Badge variant="secondary" className="ml-1 bg-amber-100 text-amber-800 text-xs px-1.5 py-0">
+                      {pendingByTab[tab.value]}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
             {TAB_CONFIG.map((tab) => (
               <TabsContent key={tab.value} value={tab.value}>
+                <SignupSettingsPanel formType={tab.value} label={tab.label} />
+
+                <div className="flex items-center justify-end gap-2 mb-4">
+                  <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Filtrar por estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="pending">Pendientes</SelectItem>
+                      <SelectItem value="confirmed">Confirmados</SelectItem>
+                      <SelectItem value="cancelled">Cancelados</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {mutating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+
                 {renderBulkToolbar()}
                 {renderTable()}
               </TabsContent>
