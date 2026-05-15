@@ -28,6 +28,7 @@ import { exportLiturgy } from '@/lib/liturgia/exportService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
 import { exportChildrenLessonToPDF, type ChildrenLessonPdfData } from '@/lib/children-ministry/childrenLessonPdfExporter';
 import { getLesson } from '@/lib/children-ministry/lessonService';
+import { parseMaterials } from '@/lib/children-ministry/parseMaterials';
 import { publishCuentacuento, publishReflexion } from '@/lib/publishedResourcesService';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -449,10 +450,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
           console.warn('[ExportPanel] Could not parse lesson content JSON:', lesson.id);
         }
 
-        // Parse materials from comma-separated string
-        const materials = lesson.materials_needed
-          ? lesson.materials_needed.split(',').map((m: string) => m.trim()).filter(Boolean)
-          : [];
+        const materials = parseMaterials(lesson.materials_needed);
 
         const ageGroupLabel = lesson.age_group?.name || 'Grupo';
 

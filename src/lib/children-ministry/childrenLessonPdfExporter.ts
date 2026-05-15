@@ -347,6 +347,65 @@ function renderSectionHeader(pdf: jsPDF, title: string, y: number): number {
 
 // ─── Materials Section ──────────────────────────────────────────────────────
 
+const MATERIAL_LINE_HEIGHT = 4.5;
+const MATERIAL_ROW_GAP = 1.5;
+const MATERIAL_BOX_PAD_TOP = 3;
+const MATERIAL_BOX_PAD_BOTTOM = 5;
+
+interface MaterialRow {
+  left: string[];
+  right: string[] | null;
+  height: number;
+}
+
+function buildMaterialRows(
+  pdf: jsPDF,
+  materials: string[],
+  colWidth: number,
+): MaterialRow[] {
+  // Apply text styling so splitTextToSize wraps at the actual rendered width
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+
+  const wrapped = materials.map((m) =>
+    pdf.splitTextToSize(m, colWidth - 6) as string[],
+  );
+
+  const rows: MaterialRow[] = [];
+  for (let i = 0; i < wrapped.length; i += 2) {
+    const left = wrapped[i];
+    const right = wrapped[i + 1] ?? null;
+    const leftH = left.length * MATERIAL_LINE_HEIGHT;
+    const rightH = right ? right.length * MATERIAL_LINE_HEIGHT : 0;
+    rows.push({
+      left,
+      right,
+      height: Math.max(leftH, rightH) + MATERIAL_ROW_GAP,
+    });
+  }
+  return rows;
+}
+
+function drawMaterialColumn(
+  pdf: jsPDF,
+  x: number,
+  y: number,
+  lines: string[],
+): void {
+  pdf.setFillColor(AMBER);
+  pdf.circle(x + 1.2, y - 0.8, 0.8, 'F');
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  pdf.setTextColor(CARBON);
+
+  let lineY = y;
+  for (const line of lines) {
+    pdf.text(line, x + 4, lineY);
+    lineY += MATERIAL_LINE_HEIGHT;
+  }
+}
+
 function renderMaterialsSection(
   pdf: jsPDF,
   materials: string[],
@@ -363,42 +422,63 @@ function renderMaterialsSection(
     return y + 6;
   }
 
-  // Light background card for materials list
-  const rowHeight = 6;
-  const rows = Math.ceil(materials.length / 2);
-  const boxHeight = rows * rowHeight + 8;
-  y = checkNewPage(y, boxHeight + 4);
-
-  pdf.setFillColor('#FAFAFA');
-  pdf.setDrawColor(GRAY_LIGHT);
-  pdf.setLineWidth(0.2);
-  pdf.roundedRect(MARGIN, y - 2, CONTENT_WIDTH, boxHeight, 2, 2, 'FD');
-
   const colWidth = (CONTENT_WIDTH - 14) / 2;
   const leftX = MARGIN + 6;
   const rightX = MARGIN + 8 + colWidth;
 
-  let colY = y + 3;
+  const rows = buildMaterialRows(pdf, materials, colWidth);
+  const pageBottom = PAGE_HEIGHT - MARGIN - 10;
 
-  for (let i = 0; i < materials.length; i++) {
-    const x = i % 2 === 0 ? leftX : rightX;
+  let idx = 0;
+  while (idx < rows.length) {
+    // If the next row doesn't fit on the current page, break to a new one
+    const firstRowNeed =
+      rows[idx].height + MATERIAL_BOX_PAD_TOP + MATERIAL_BOX_PAD_BOTTOM;
+    y = checkNewPage(y, firstRowNeed + 4);
 
-    if (i % 2 === 0 && i > 0) {
-      colY += rowHeight;
+    // Pack as many rows as fit on this page
+    let chunkHeight = 0;
+    let end = idx;
+    const available =
+      pageBottom - y - MATERIAL_BOX_PAD_TOP - MATERIAL_BOX_PAD_BOTTOM;
+    while (end < rows.length && chunkHeight + rows[end].height <= available) {
+      chunkHeight += rows[end].height;
+      end++;
+    }
+    // Guarantee progress — always render at least one row, even if oversized
+    if (end === idx) {
+      chunkHeight = rows[idx].height;
+      end = idx + 1;
     }
 
-    // Amber bullet dot
-    pdf.setFillColor(AMBER);
-    pdf.circle(x + 1.2, colY - 0.8, 0.8, 'F');
+    const boxHeight =
+      chunkHeight -
+      MATERIAL_ROW_GAP +
+      MATERIAL_BOX_PAD_TOP +
+      MATERIAL_BOX_PAD_BOTTOM;
 
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
-    pdf.setTextColor(CARBON);
-    const matText = pdf.splitTextToSize(materials[i], colWidth - 6);
-    pdf.text(matText[0], x + 4, colY);
+    pdf.setFillColor('#FAFAFA');
+    pdf.setDrawColor(GRAY_LIGHT);
+    pdf.setLineWidth(0.2);
+    pdf.roundedRect(MARGIN, y - 2, CONTENT_WIDTH, boxHeight, 2, 2, 'FD');
+
+    let rowY = y + MATERIAL_BOX_PAD_TOP;
+    for (let r = idx; r < end; r++) {
+      const row = rows[r];
+      drawMaterialColumn(pdf, leftX, rowY, row.left);
+      if (row.right) drawMaterialColumn(pdf, rightX, rowY, row.right);
+      rowY += row.height;
+    }
+
+    y += boxHeight + 2;
+    idx = end;
+
+    // Force a page break when more rows remain
+    if (idx < rows.length) {
+      y = checkNewPage(y, PAGE_HEIGHT);
+    }
   }
 
-  y += boxHeight + 2;
   return y;
 }
 

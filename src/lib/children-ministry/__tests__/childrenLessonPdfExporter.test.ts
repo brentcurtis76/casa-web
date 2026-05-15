@@ -274,6 +274,110 @@ describe('childrenLessonPdfExporter', () => {
     expect(mockPdfInstance.circle.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('should render every wrapped line of a long material item', async () => {
+    const { exportChildrenLessonToPDF } = await import('../childrenLessonPdfExporter');
+
+    const longItem =
+      'cartulinas grandes de varios colores para que cada niño dibuje su propia escena del relato';
+    // Simulate jsPDF wrapping the long item into multiple lines
+    mockPdfInstance.splitTextToSize.mockImplementation(
+      (text: string, _width: number) => {
+        if (text === longItem) {
+          return [
+            'cartulinas grandes de varios colores',
+            'para que cada niño dibuje su propia',
+            'escena del relato',
+          ];
+        }
+        return [text];
+      },
+    );
+
+    await exportChildrenLessonToPDF([
+      buildSampleLesson({ materials: [longItem, 'crayones'] }),
+    ]);
+
+    const renderedLines = mockPdfInstance.text.mock.calls.map((c: unknown[]) =>
+      String(c[0]),
+    );
+    expect(renderedLines).toContain('cartulinas grandes de varios colores');
+    expect(renderedLines).toContain('para que cada niño dibuje su propia');
+    expect(renderedLines).toContain('escena del relato');
+  });
+
+  it('should keep parenthesized color list as one bullet and wrap (not truncate) long lines (regression)', async () => {
+    const { exportChildrenLessonToPDF } = await import('../childrenLessonPdfExporter');
+
+    // Simulate the user-reported case: this exact material was being cut off,
+    // and the comma list inside parens was sometimes split into separate bullets.
+    const longItem =
+      'Temperas o pinturas acrílicas de colores (rojo, amarillo, azul, verde, naranja, morado)';
+    const wrapped = [
+      'Temperas o pinturas acrílicas de colores',
+      '(rojo, amarillo, azul, verde, naranja,',
+      'morado)',
+    ];
+    mockPdfInstance.splitTextToSize.mockImplementation(
+      (text: string, _width: number) => (text === longItem ? wrapped : [text]),
+    );
+
+    await exportChildrenLessonToPDF([
+      buildSampleLesson({ materials: [longItem, 'Pinceles'] }),
+    ]);
+
+    const renderedLines = mockPdfInstance.text.mock.calls.map((c: unknown[]) =>
+      String(c[0]),
+    );
+    // All wrapped pieces — including the parenthesized comma list — must render
+    for (const line of wrapped) {
+      expect(renderedLines).toContain(line);
+    }
+    // Bullet count: 1 bullet per material item, not 1 per comma-piece.
+    // Sample lesson uses no other circles in the materials block; assert no
+    // extra bullets snuck in for the parenthesized colors.
+    // (circle() is also called for the cover-page decorative dot.)
+    const materialBulletCalls = mockPdfInstance.circle.mock.calls.length;
+    // 1 cover circle + 2 material bullets (longItem, Pinceles) = 3
+    expect(materialBulletCalls).toBeLessThanOrEqual(3);
+  });
+
+  it('should align two columns by the taller wrapped item in each row', async () => {
+    const { exportChildrenLessonToPDF } = await import('../childrenLessonPdfExporter');
+
+    const tallLeft = 'item-izq-largo';
+    const shortRight = 'item-der';
+    mockPdfInstance.splitTextToSize.mockImplementation(
+      (text: string, _width: number) => {
+        if (text === tallLeft) return ['linea-1', 'linea-2', 'linea-3'];
+        if (text === shortRight) return ['solo-una-linea'];
+        return [text];
+      },
+    );
+
+    await exportChildrenLessonToPDF([
+      buildSampleLesson({
+        materials: [tallLeft, shortRight, 'siguiente-fila'],
+      }),
+    ]);
+
+    // Find y-coords for the right-column short item and the next-row left item.
+    // Right column x is computed by exporter — locate by matching text.
+    const textCalls = mockPdfInstance.text.mock.calls;
+    const rightY = textCalls.find(
+      (c: unknown[]) => c[0] === 'solo-una-linea',
+    )?.[2] as number | undefined;
+    const nextRowY = textCalls.find(
+      (c: unknown[]) => c[0] === 'siguiente-fila',
+    )?.[2] as number | undefined;
+
+    expect(rightY).toBeDefined();
+    expect(nextRowY).toBeDefined();
+    // The next-row item must start below the bottom of the 3-line left column,
+    // not at rightY + single-line height. With 3 left lines and 4.5mm line
+    // height, next row should advance by at least ~14mm beyond rightY.
+    expect((nextRowY as number) - (rightY as number)).toBeGreaterThan(10);
+  });
+
   // ── Phases section ──────────────────────────────────────────────────────
 
   it('should render all three phase headers', async () => {

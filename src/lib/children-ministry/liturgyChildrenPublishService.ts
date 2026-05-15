@@ -36,6 +36,7 @@ import {
   createSession,
   updateSession,
 } from '@/lib/children-ministry/calendarService';
+import { parseMaterials, serializeMaterials } from '@/lib/children-ministry/parseMaterials';
 
 // ─── Age group mapping ──────────────────────────────────────────────────────
 
@@ -168,9 +169,7 @@ export async function publishChildrenActivities(
         volunteerPlan: generatedData.volunteerPlan,
       });
 
-      const materialsNeeded = generatedData.materials.length > 0
-        ? generatedData.materials.join(', ')
-        : null;
+      const materialsNeeded = serializeMaterials(generatedData.materials);
 
       if (existingLesson) {
         // Update existing lesson
@@ -365,9 +364,7 @@ export async function refineChildrenActivity(
     };
   }
 
-  const currentMaterials = lesson.materials_needed
-    ? lesson.materials_needed.split(',').map((m) => m.trim()).filter(Boolean)
-    : [];
+  const currentMaterials = parseMaterials(lesson.materials_needed);
 
   const currentLesson = {
     activityName: lesson.title,
@@ -426,7 +423,7 @@ export async function refineChildrenActivity(
     await updateLesson(lessonId, {
       title: refined.activityName,
       content: newContent,
-      materials_needed: refined.materials.length > 0 ? refined.materials.join(', ') : null,
+      materials_needed: serializeMaterials(refined.materials),
       duration_minutes: refined.estimatedTotalMinutes,
       status: 'ready',
     });
