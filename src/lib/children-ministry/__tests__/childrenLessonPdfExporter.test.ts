@@ -158,6 +158,71 @@ describe('childrenLessonPdfExporter', () => {
     expect(mockPdfInstance.addPage.mock.calls.length).toBeGreaterThanOrEqual(5);
   });
 
+  it('should keep all three group covers in a multi-group export (labels, titles, and cover dots)', async () => {
+    const { exportChildrenLessonToPDF } = await import('../childrenLessonPdfExporter');
+
+    await exportChildrenLessonToPDF([
+      buildSampleLesson({
+        ageGroupLabel: 'Pequeños',
+        activityName: 'Actividad Pequenos',
+      }),
+      buildSampleLesson({
+        ageGroupLabel: 'Medianos',
+        activityName: 'Actividad Medianos',
+      }),
+      buildSampleLesson({
+        ageGroupLabel: 'Grandes',
+        activityName: 'Actividad Grandes',
+      }),
+    ]);
+
+    const renderedText = getAllRenderedText();
+    // Each cover renders its age-group label uppercased and its activity name.
+    expect(renderedText).toContain('PEQUEÑOS');
+    expect(renderedText).toContain('MEDIANOS');
+    expect(renderedText).toContain('GRANDES');
+    expect(renderedText).toContain('Actividad Pequenos');
+    expect(renderedText).toContain('Actividad Medianos');
+    expect(renderedText).toContain('Actividad Grandes');
+
+    // The cover-page amber separator dot is drawn once per cover. Section
+    // headers do not call circle(), so this is a clean count of covers.
+    // Materials section also uses circle() bullets — sample has 4 materials
+    // per lesson → 4 bullets × 3 lessons = 12. Plus 3 cover dots = 15.
+    // We assert at least 3 cover dots (i.e. >= 3 total circle calls), and
+    // that the total matches the expected pattern of 3 covers + 12 bullets.
+    expect(mockPdfInstance.circle.mock.calls.length).toBeGreaterThanOrEqual(15);
+
+    // Each lesson's page footer is rendered with its specific group label.
+    const footerCalls = mockPdfInstance.text.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .filter((t) => t.includes('CASA') && t.includes('Actividad Infantil'));
+    expect(footerCalls.some((t) => t.includes('Pequeños'))).toBe(true);
+    expect(footerCalls.some((t) => t.includes('Medianos'))).toBe(true);
+    expect(footerCalls.some((t) => t.includes('Grandes'))).toBe(true);
+  });
+
+  it('should report progress per group with the matching label', async () => {
+    const { exportChildrenLessonToPDF } = await import('../childrenLessonPdfExporter');
+    const onProgress = vi.fn();
+
+    await exportChildrenLessonToPDF(
+      [
+        buildSampleLesson({ ageGroupLabel: 'Pequeños' }),
+        buildSampleLesson({ ageGroupLabel: 'Medianos' }),
+        buildSampleLesson({ ageGroupLabel: 'Grandes' }),
+      ],
+      onProgress,
+    );
+
+    const messages = onProgress.mock.calls.map((c) => String(c[1]));
+    expect(messages.some((m) => m.includes('Pequeños'))).toBe(true);
+    expect(messages.some((m) => m.includes('Medianos'))).toBe(true);
+    expect(messages.some((m) => m.includes('Grandes'))).toBe(true);
+    // Last message is the completion marker.
+    expect(messages[messages.length - 1]).toBe('¡PDF listo!');
+  });
+
   // ── Cover page ──────────────────────────────────────────────────────────
 
   it('should render the activity name on the cover', async () => {

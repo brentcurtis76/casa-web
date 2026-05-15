@@ -414,16 +414,36 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
 
   // Handle children activity PDF download
   const handleExportChildrenPDF = async () => {
-    if (childrenPublications.length === 0) return;
-
     setExportingChildrenPDF(true);
     setError(null);
 
     try {
+      // Re-fetch publications fresh from DB right before building the PDF.
+      // The in-component `childrenPublications` state may be stale if the
+      // user just generated activities in the dialog and the parent's
+      // reload hasn't yet propagated, so trust the DB here. Publications
+      // come back already sorted by age-group display_order.
+      let pubsToExport = childrenPublications;
+      if (liturgyContext?.id) {
+        try {
+          pubsToExport = await getPublicationsByLiturgyId(liturgyContext.id);
+          setChildrenPublications(pubsToExport);
+          setExistingChildrenPublication(pubsToExport[0] ?? null);
+        } catch (refreshErr) {
+          // Fall back to whatever we have in state — log but don't abort.
+          console.warn('[ExportPanel] Could not refresh children publications:', refreshErr);
+        }
+      }
+
+      if (pubsToExport.length === 0) {
+        setError('No se encontraron actividades para descargar');
+        return;
+      }
+
       // Fetch full lesson data for each publication
       const lessonDataList: ChildrenLessonPdfData[] = [];
 
-      for (const pub of childrenPublications) {
+      for (const pub of pubsToExport) {
         if (!pub.lesson_id) continue;
 
         const lesson = await getLesson(pub.lesson_id);
@@ -1018,9 +1038,14 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         <ChildrenActivityDialog
           isOpen={childrenActivityDialogOpen}
           onClose={() => setChildrenActivityDialogOpen(false)}
-          onSuccess={() => {
-            loadPublicationState();
-            setChildrenActivityDialogOpen(false);
+          onSuccess={async () => {
+            // Wait for the publication list to be reloaded from DB so that any
+            // subsequent action in the panel (e.g. exporting the PDF) sees the
+            // freshly persisted lessons rather than a stale React snapshot.
+            // We do NOT close the dialog here — the user needs to see the
+            // results view (and any partial-success/error rows) before
+            // dismissing it explicitly.
+            await loadPublicationState();
           }}
           liturgyId={liturgyContext.id}
           liturgyTitle={liturgyContext.title}
