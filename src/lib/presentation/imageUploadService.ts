@@ -25,6 +25,20 @@ export interface UploadImagesResult {
   failures: UploadFailure[];
 }
 
+const ACCEPTED_MIME_PREFIX = 'image/';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+
+function validateFile(file: File): string | null {
+  if (file.type && !file.type.startsWith(ACCEPTED_MIME_PREFIX)) {
+    return `Tipo no soportado (${file.type})`;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    return `Archivo demasiado grande (${sizeMb} MB, máx 50 MB)`;
+  }
+  return null;
+}
+
 function inferExtension(file: File): string {
   const fromName = file.name.includes('.')
     ? file.name.split('.').pop()!.toLowerCase()
@@ -90,6 +104,10 @@ export async function uploadImportedImage(
 /**
  * Sube múltiples imágenes en paralelo, devolviendo éxitos y fallas por separado.
  * Los fallos no abortan el proceso; cada archivo se reporta individualmente.
+ *
+ * Why: `uploaded` se devuelve en el ORDEN DE ENTRADA, no en orden de
+ * completación. El llamador inserta slides en la posición visual que el
+ * usuario seleccionó, así que el orden importa.
  */
 export async function uploadImportedImages(
   files: File[],
@@ -98,18 +116,35 @@ export async function uploadImportedImages(
 ): Promise<UploadImagesResult> {
   const total = files.length;
   let completed = 0;
-  const uploaded: UploadedImage[] = [];
-  const failures: UploadFailure[] = [];
 
-  const tasks = files.map(async (file) => {
+  type Slot =
+    | { kind: 'ok'; result: UploadedImage }
+    | { kind: 'fail'; failure: UploadFailure };
+  const results: Array<Slot | null> = files.map(() => null);
+
+  const tasks = files.map(async (file, idx) => {
+    const validationError = validateFile(file);
+    if (validationError) {
+      results[idx] = {
+        kind: 'fail',
+        failure: { originalName: file.name, error: validationError },
+      };
+      completed += 1;
+      onProgress?.(completed, total);
+      return;
+    }
+
     try {
       const result = await uploadImportedImage(file, liturgyId);
-      uploaded.push(result);
+      results[idx] = { kind: 'ok', result };
     } catch (err) {
-      failures.push({
-        originalName: file.name,
-        error: err instanceof Error ? err.message : 'Error desconocido',
-      });
+      results[idx] = {
+        kind: 'fail',
+        failure: {
+          originalName: file.name,
+          error: err instanceof Error ? err.message : 'Error desconocido',
+        },
+      };
     } finally {
       completed += 1;
       onProgress?.(completed, total);
@@ -117,5 +152,13 @@ export async function uploadImportedImages(
   });
 
   await Promise.all(tasks);
+
+  const uploaded: UploadedImage[] = [];
+  const failures: UploadFailure[] = [];
+  for (const slot of results) {
+    if (!slot) continue;
+    if (slot.kind === 'ok') uploaded.push(slot.result);
+    else failures.push(slot.failure);
+  }
   return { uploaded, failures };
 }
