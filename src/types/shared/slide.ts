@@ -21,7 +21,8 @@ export type SlideType =
   | 'blank'                // Slide en blanco / transición
   | 'video'                // Video slide
   | 'custom-text'          // Elemento personalizado (texto)
-  | 'custom-image';        // Elemento personalizado (imagen)
+  | 'custom-image'         // Elemento personalizado (imagen)
+  | 'custom-html';         // Elemento personalizado (HTML)
 
 /**
  * Configuración de reproducción de video
@@ -53,6 +54,7 @@ export interface Slide {
     imageUrl?: string;           // URL de imagen (para slides de tipo imagen)
     videoUrl?: string;           // URL de video (para slides de tipo video)
     videoSettings?: VideoSettings; // Configuración de reproducción de video
+    htmlContent?: string;          // Contenido HTML (para slides de tipo custom-html)
     imageConfig?: {
       opacity: number;    // 0-100
       scale: number;      // 50-200 (percentage)

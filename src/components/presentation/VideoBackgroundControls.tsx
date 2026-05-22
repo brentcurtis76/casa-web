@@ -30,6 +30,7 @@ import {
   Link,
   Repeat,
   VolumeX,
+  FileCode,
 } from 'lucide-react';
 import {
   Dialog,
@@ -51,6 +52,7 @@ import {
   DEFAULT_VIDEO_BACKGROUND_SETTINGS,
   DEFAULT_TEXT_READABILITY,
 } from '@/lib/presentation/types';
+import { validateHtmlFile, readHtmlFile } from '@/lib/presentation/htmlImport';
 import { ElementSelectorModal } from './ElementSelectorModal';
 
 interface VideoBackgroundControlsProps {
@@ -89,6 +91,7 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
   const [selectorOpen, setSelectorOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const htmlInputRef = useRef<HTMLInputElement>(null);
 
   // Track blob URL for cleanup
   const blobUrlRef = useRef<string | null>(null);
@@ -171,6 +174,42 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
     blobUrlRef.current = url;
     setVideoFile(file);
     setVideoPreviewUrl(url);
+  };
+
+  // Handle HTML file selection (creates an HTML background directly)
+  const handleHtmlFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset input so the same file can be reselected later
+    if (e.target) e.target.value = '';
+    if (!file) return;
+
+    const validation = validateHtmlFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    try {
+      const html = await readHtmlFile(file);
+      const newBackground: VideoBackground = {
+        id: `html-bg-${Date.now()}`,
+        settings: {
+          kind: 'html',
+          htmlContent: html,
+          videoUrl: '',
+          loop: true,
+          muted: true,
+          opacity: 1,
+          fitMode: 'cover',
+        },
+        scope: { type: 'all' },
+        visible: true,
+      };
+      onAdd(newBackground);
+      toast.success('Fondo HTML agregado');
+    } catch {
+      toast.error('Error al leer el archivo HTML');
+    }
   };
 
   // Handle URL change
@@ -288,6 +327,7 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
             const readabilityPreset = background.settings.textReadability?.preset || 'shadow';
             const readabilityIntensity = background.settings.textReadability?.intensity ?? 50;
             const textColor = background.settings.textReadability?.textColor || '#FFFFFF';
+            const isHtml = background.settings.kind === 'html';
 
             return (
               <div
@@ -303,22 +343,38 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
               >
                 {/* Top row: thumbnail + info + actions */}
                 <div className="flex items-start gap-3">
-                  {/* Video thumbnail/icon */}
+                  {/* Video / HTML thumbnail/icon */}
                   <div
-                    className="w-12 h-12 rounded overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:ring-2 transition-all"
-                    onClick={() => handleEditClick(background)}
-                    title="Editar video"
+                    className={`w-12 h-12 rounded overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isHtml ? '' : 'cursor-pointer hover:ring-2'}`}
+                    onClick={() => {
+                      if (!isHtml) handleEditClick(background);
+                    }}
+                    title={isHtml ? 'Fondo HTML' : 'Editar video'}
                     style={{
                       backgroundColor: CASA_BRAND.colors.secondary.grayDark,
                       // @ts-expect-error CSS custom property for hover ring
                       '--tw-ring-color': CASA_BRAND.colors.primary.amber + '80',
                     }}
                   >
-                    <Video size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                    {isHtml ? (
+                      <FileCode size={24} style={{ color: CASA_BRAND.colors.primary.amber }} />
+                    ) : (
+                      <Video size={24} style={{ color: CASA_BRAND.colors.secondary.grayMedium }} />
+                    )}
                   </div>
 
                   {/* Info column */}
                   <div className="flex-1 min-w-0">
+                    {/* Name row */}
+                    <div
+                      className="text-xs font-semibold truncate"
+                      style={{
+                        color: CASA_BRAND.colors.primary.white,
+                        fontFamily: CASA_BRAND.fonts.body,
+                      }}
+                    >
+                      {isHtml ? 'HTML' : 'Video'}
+                    </div>
                     {/* Settings row */}
                     <div className="flex items-center gap-2 text-xs" style={{ color: CASA_BRAND.colors.secondary.grayLight }}>
                       <span>{Math.round(background.settings.opacity * 100)}% opacidad</span>
@@ -576,8 +632,8 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
         </div>
       )}
 
-      {/* Add button */}
-      <div className="pt-2">
+      {/* Add buttons */}
+      <div className="pt-2 space-y-2">
         <Button
           onClick={handleAddClick}
           variant="outline"
@@ -591,6 +647,27 @@ export const VideoBackgroundControls: React.FC<VideoBackgroundControlsProps> = (
         >
           <Plus size={14} />
           Agregar Video
+        </Button>
+        <input
+          ref={htmlInputRef}
+          type="file"
+          accept=".html,text/html"
+          className="hidden"
+          onChange={handleHtmlFileSelect}
+        />
+        <Button
+          onClick={() => htmlInputRef.current?.click()}
+          variant="outline"
+          size="sm"
+          className="w-full gap-2 hover:bg-white/10"
+          style={{
+            borderColor: CASA_BRAND.colors.secondary.grayMedium,
+            backgroundColor: CASA_BRAND.colors.secondary.grayDark,
+            color: CASA_BRAND.colors.primary.white,
+          }}
+        >
+          <FileCode size={14} />
+          Importar HTML como fondo...
         </Button>
       </div>
 

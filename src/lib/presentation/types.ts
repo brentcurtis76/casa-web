@@ -397,6 +397,8 @@ export interface VideoBackgroundSettings {
   blur?: number;          // Optional blur in pixels
   fitMode: 'cover' | 'contain';  // Default: 'cover'
   textReadability?: TextReadabilitySettings; // Text readability enhancement
+  kind?: 'video' | 'html'; // Background kind (default: 'video')
+  htmlContent?: string;   // HTML content when kind === 'html'
 }
 
 /**

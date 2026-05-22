@@ -1,0 +1,110 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - button "Scroll to top":
+    - img
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e6]: Selecciona una liturgia para comenzar
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - img [ref=e10]
+          - generic [ref=e13]: 03:13:33 p. m.
+        - generic [ref=e14]:
+          - img [ref=e15]
+          - generic [ref=e18]: 00:00:00
+      - generic [ref=e19]:
+        - button "Abrir menú de archivo" [ref=e21] [cursor=pointer]:
+          - img
+        - button "Abrir proyector" [ref=e23] [cursor=pointer]:
+          - img
+        - button "Pantalla negra (B)" [disabled]:
+          - img
+        - button "Go Live" [disabled]:
+          - img
+          - text: Go Live
+    - generic [ref=e24]:
+      - generic [ref=e26]:
+        - heading "Orden del Servicio" [level=2] [ref=e28]
+        - paragraph [ref=e33]: No hay elementos en esta liturgia
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - button "Primer slide (Home)" [disabled]:
+              - img
+            - button "Diapositiva anterior" [disabled]:
+              - img
+          - generic "Vista previa" [ref=e38]: — / —
+          - generic [ref=e39]:
+            - button "Siguiente diapositiva" [disabled]:
+              - img
+            - button "Última diapositiva" [disabled]:
+              - img
+          - button "Publicar cambios al proyector" [disabled]:
+            - img
+            - generic: Sincronizado
+          - button "Desactivar modo seguimiento" [ref=e40] [cursor=pointer]:
+            - img
+            - generic [ref=e41]: Siguiendo
+          - button "Mostrar atajos de teclado" [ref=e42] [cursor=pointer]:
+            - img [ref=e43]
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]: STANDBY
+            - generic [ref=e49]: Slide 1 de 0
+          - paragraph [ref=e52]: Selecciona una liturgia para comenzar
+      - generic [ref=e59]:
+        - button "Colapsar" [ref=e61] [cursor=pointer]:
+          - img [ref=e62]
+          - text: Colapsar
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - button "Notas del Presentador" [ref=e67] [cursor=pointer]:
+              - generic [ref=e68]:
+                - img [ref=e70]
+                - generic [ref=e73]: Notas del Presentador
+              - img [ref=e75]
+            - paragraph [ref=e80]: Selecciona una liturgia para ver las notas
+          - generic [ref=e81]:
+            - button "Lower-Third" [ref=e82] [cursor=pointer]:
+              - generic [ref=e83]:
+                - img [ref=e85]
+                - generic [ref=e87]: Lower-Third
+              - img [ref=e89]
+            - generic [ref=e92]:
+              - generic [ref=e93]:
+                - button "Personalizado" [ref=e94] [cursor=pointer]
+                - button "Mover Auto" [ref=e95] [cursor=pointer]
+                - button "Llamada Urgente" [ref=e96] [cursor=pointer]
+              - generic [ref=e97]:
+                - textbox "Escribe tu mensaje..." [ref=e98]
+                - button "Enviar" [disabled]:
+                  - img
+                  - text: Enviar
+          - button "Logo CASA OFF" [ref=e100] [cursor=pointer]:
+            - generic [ref=e101]:
+              - img [ref=e103]
+              - generic [ref=e107]: Logo CASA
+              - generic [ref=e109]: "OFF"
+            - img [ref=e111]
+          - button "Textos" [ref=e114] [cursor=pointer]:
+            - generic [ref=e115]:
+              - img [ref=e117]
+              - generic [ref=e119]: Textos
+            - img [ref=e121]
+          - button "Imágenes" [ref=e124] [cursor=pointer]:
+            - generic [ref=e125]:
+              - img [ref=e127]
+              - generic [ref=e131]: Imágenes
+            - img [ref=e133]
+          - button "Video de Fondo" [ref=e136] [cursor=pointer]:
+            - generic [ref=e137]:
+              - img [ref=e139]
+              - generic [ref=e142]: Video de Fondo
+            - img [ref=e144]
+          - button "Estilos" [ref=e147] [cursor=pointer]:
+            - generic [ref=e148]:
+              - img [ref=e150]
+              - generic [ref=e156]: Estilos
+            - img [ref=e158]

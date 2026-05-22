@@ -1,0 +1,153 @@
+- generic:
+  - generic:
+    - list
+    - region "Notifications alt+T"
+    - button:
+      - img
+    - generic:
+      - generic:
+        - generic:
+          - generic: Selecciona una liturgia para comenzar
+        - generic:
+          - generic:
+            - generic:
+              - img
+              - generic: 03:13:41 p. m.
+            - generic:
+              - img
+              - generic: 00:00:00
+        - generic:
+          - generic:
+            - button [expanded]:
+              - img
+          - button:
+            - img
+          - button [disabled]:
+            - img
+          - button [disabled]:
+            - img
+            - text: Go Live
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - heading [level=2]: Orden del Servicio
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: No hay elementos en esta liturgia
+        - generic:
+          - generic:
+            - generic:
+              - button [disabled]:
+                - img
+              - button [disabled]:
+                - img
+            - generic:
+              - generic: — / —
+            - generic:
+              - button [disabled]:
+                - img
+              - button [disabled]:
+                - img
+            - button [disabled]:
+              - img
+              - generic: Sincronizado
+            - button:
+              - img
+              - generic: Siguiendo
+            - button:
+              - img
+          - generic:
+            - generic:
+              - generic:
+                - generic: STANDBY
+                - generic: Slide 1 de 0
+              - generic:
+                - generic:
+                  - paragraph: Selecciona una liturgia para comenzar
+        - generic:
+          - generic:
+            - button:
+              - img
+              - text: Colapsar
+          - generic:
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Notas del Presentador
+                - generic:
+                  - img
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: Selecciona una liturgia para ver las notas
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Lower-Third
+                - generic:
+                  - img
+              - generic:
+                - generic:
+                  - generic:
+                    - button: Personalizado
+                    - button: Mover Auto
+                    - button: Llamada Urgente
+                  - generic:
+                    - textbox:
+                      - /placeholder: Escribe tu mensaje...
+                    - button [disabled]:
+                      - img
+                      - text: Enviar
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Logo CASA
+                  - generic:
+                    - generic: "OFF"
+                - generic:
+                  - img
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Textos
+                - generic:
+                  - img
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Imágenes
+                - generic:
+                  - img
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Video de Fondo
+                - generic:
+                  - img
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Estilos
+                - generic:
+                  - img
+  - menu "Abrir menú de archivo" [active] [ref=e160]:
+    - menuitem "Seleccionar Liturgia..." [ref=e161] [cursor=pointer]:
+      - img [ref=e162]
+      - text: Seleccionar Liturgia...

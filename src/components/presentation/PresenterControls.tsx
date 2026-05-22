@@ -21,6 +21,7 @@ import {
   Upload,
   Database,
   ImagePlus,
+  FileCode,
   Loader2,
   RefreshCw,
 } from 'lucide-react';
@@ -57,6 +58,7 @@ interface PresenterControlsProps {
   onExport: () => void;
   onImport: () => void;
   onImportImages?: (files: FileList) => void;
+  onImportHtml?: (file: File) => void;
   // Handlers - Session operations
   onSaveSession: () => void;
   onLoadSession: () => void;
@@ -81,18 +83,28 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
   onExport,
   onImport,
   onImportImages,
+  onImportHtml,
   onSaveSession,
   onLoadSession,
   onUpdateSession,
   onSaveToLiturgy,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const htmlFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0 && onImportImages) {
       onImportImages(e.target.files);
       e.target.value = '';
     }
+  };
+
+  const handleHtmlFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onImportHtml) {
+      onImportHtml(file);
+    }
+    e.target.value = '';
   };
 
   return (
@@ -293,6 +305,17 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
                     </DropdownMenuItem>
                   )}
 
+                  {/* Import HTML */}
+                  {onImportHtml && (
+                    <DropdownMenuItem
+                      onClick={() => htmlFileInputRef.current?.click()}
+                      style={{ color: CASA_BRAND.colors.primary.white }}
+                    >
+                      <FileCode size={16} className="mr-2" />
+                      Importar HTML...
+                    </DropdownMenuItem>
+                  )}
+
                   {/* Export/Import presentation */}
                   <DropdownMenuItem
                     onClick={onExport}
@@ -396,6 +419,18 @@ export const PresenterControls: React.FC<PresenterControlsProps> = ({
           accept="image/*"
           multiple
           onChange={handleFileChange}
+          className="hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Hidden file input for HTML import */}
+      {onImportHtml && (
+        <input
+          ref={htmlFileInputRef}
+          type="file"
+          accept=".html,text/html"
+          onChange={handleHtmlFileChange}
           className="hidden"
           aria-hidden="true"
         />

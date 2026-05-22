@@ -39,6 +39,7 @@ import { useKeyboardShortcuts } from '@/hooks/presentation/useKeyboardShortcuts'
 import { useAutoSave, getSavedPresentationState, clearSavedPresentationState, type SavedPresentationState } from '@/hooks/presentation/useAutoSave';
 import { useNavigationWarning } from '@/hooks/presentation/useNavigationWarning';
 import { loadLiturgyForPresentation } from '@/lib/presentation/presentationService';
+import { validateHtmlFile, readHtmlFile } from '@/lib/presentation/htmlImport';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import type { SyncMessage, LowerThirdTemplate, LogoSettings, TempSlideEdit, TextOverlay, TextOverlayState, ImageOverlay, ImageOverlayState, VideoBackground, VideoBackgroundState, OverlayScope, LogoState, PublishPayload, SlideStyles, StyleScope, StyleState, VideoPlaybackState } from '@/lib/presentation/types';
 import { shouldShowLogo, getAllOverlaysForSlide, getAllImageOverlaysForSlide, getActiveVideoBackground, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, getResolvedStyles, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
@@ -117,6 +118,7 @@ export const PresenterView: React.FC = () => {
     duplicateSlide,
     deleteSlide,
     addImageSlides,
+    addHtmlSlide,
     insertSlide,
     insertSlides,
     addTextOverlay,
@@ -498,6 +500,35 @@ export const PresenterView: React.FC = () => {
     });
   }, [addImageSlides, send]);
 
+  // ============ HTML IMPORT HANDLER ============
+
+  const handleImportHtml = useCallback((file: File) => {
+    const validation = validateHtmlFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    const loadingToastId = toast.loading('Importando HTML...');
+    const insertAfterIndex = stateRef.current?.previewSlideIndex ?? 0;
+
+    readHtmlFile(file)
+      .then((html) => {
+        addHtmlSlide(html, file.name, insertAfterIndex);
+        toast.success('HTML importado correctamente', { id: loadingToastId });
+
+        setTimeout(() => {
+          const currentState = stateRef.current;
+          if (currentState?.data) {
+            send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+          }
+        }, 100);
+      })
+      .catch(() => {
+        toast.error('Error al leer el archivo HTML', { id: loadingToastId });
+      });
+  }, [addHtmlSlide, send]);
+
   // ============ QUICK ADD SLIDE HANDLER ============
 
   const handleCreateSlide = useCallback((slide: import('@/types/shared/slide').Slide, insertPosition: 'after' | 'end') => {
@@ -862,6 +893,7 @@ export const PresenterView: React.FC = () => {
         onExport={() => setExportDialogOpen(true)}
         onImport={() => setImportDialogOpen(true)}
         onImportImages={handleImportImages}
+        onImportHtml={handleImportHtml}
         onSaveSession={() => setSaveSessionDialogOpen(true)}
         onLoadSession={() => setLoadSessionDialogOpen(true)}
         onUpdateSession={handleUpdateCurrentSession}

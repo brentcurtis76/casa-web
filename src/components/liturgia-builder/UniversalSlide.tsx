@@ -1037,6 +1037,23 @@ export const UniversalSlide: React.FC<UniversalSlideProps> = ({
       );
     }
 
+    // Slides de HTML personalizado importados
+    if (type === 'custom-html') {
+      return (
+        <iframe
+          srcDoc={slide.content.htmlContent ?? ''}
+          sandbox="allow-scripts"
+          title="HTML slide"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            background: slide.style.backgroundColor,
+          }}
+        />
+      );
+    }
+
     // Slides en blanco / transición
     if (type === 'blank') {
       return <div className="h-full" />;

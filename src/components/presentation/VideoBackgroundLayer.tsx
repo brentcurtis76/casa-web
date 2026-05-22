@@ -33,9 +33,6 @@ export const VideoBackgroundLayer: React.FC<VideoBackgroundLayerProps> = ({
     }
   }, [playing]);
 
-  // No video URL, don't render
-  if (!settings.videoUrl) return null;
-
   const containerStyle: React.CSSProperties = {
     position: 'absolute',
     inset: 0,
@@ -43,6 +40,27 @@ export const VideoBackgroundLayer: React.FC<VideoBackgroundLayerProps> = ({
     overflow: 'hidden',
     pointerEvents: 'none',
   };
+
+  if (settings.kind === 'html') {
+    return (
+      <div style={containerStyle}>
+        <iframe
+          srcDoc={settings.htmlContent ?? ''}
+          sandbox="allow-scripts"
+          title="HTML background"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 0,
+            opacity: settings.opacity,
+          }}
+        />
+      </div>
+    );
+  }
+
+  // No video URL, don't render
+  if (!settings.videoUrl) return null;
 
   const videoStyle: React.CSSProperties = {
     position: 'absolute',

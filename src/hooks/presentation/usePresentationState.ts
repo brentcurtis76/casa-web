@@ -76,6 +76,7 @@ interface UsePresentationStateReturn {
   setTempEdits: (tempEdits: Record<string, TempSlideEdit>) => void;
   updateSlides: (slides: Slide[]) => void;
   addImageSlides: (imageUrls: string[], insertAfterIndex?: number) => void;
+  addHtmlSlide: (html: string, fileName: string, insertAfterIndex?: number) => void;
   insertSlide: (slide: Slide, insertAfterIndex: number) => void;
   insertSlides: (slides: Slide[], insertAfterIndex: number, elementInfo?: { type: string; title: string }) => void;
 
@@ -1131,6 +1132,50 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
+  // Agregar slide de HTML importado
+  const addHtmlSlide = useCallback((html: string, fileName: string, insertAfterIndex?: number) => {
+    setState((prev) => {
+      if (!prev.data) return prev;
+
+      const newSlide: Slide = {
+        id: `imported-html-${Date.now()}`,
+        type: 'custom-html',
+        content: {
+          primary: fileName,
+          htmlContent: html,
+        },
+        style: {
+          backgroundColor: '#000000',
+        },
+        metadata: {
+          sourceComponent: 'imported-html',
+          sourceId: `import-${Date.now()}`,
+          order: 0,
+          groupTotal: 1,
+        },
+      };
+
+      const insertIdx = insertAfterIndex !== undefined
+        ? insertAfterIndex + 1
+        : prev.data.slides.length;
+
+      const updatedSlides = [
+        ...prev.data.slides.slice(0, insertIdx),
+        newSlide,
+        ...prev.data.slides.slice(insertIdx),
+      ];
+
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          slides: updatedSlides,
+        },
+        hasUnpublishedChanges: true,
+      };
+    });
+  }, []);
+
   // ============ TEXT OVERLAY ACTIONS (SIMPLIFICADO) ============
 
   // Agregar nuevo text overlay (con scope incluido)
@@ -1519,6 +1564,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     setTempEdits,
     updateSlides,
     addImageSlides,
+    addHtmlSlide,
     insertSlide,
     insertSlides,
     // Text overlays (simplificado)
