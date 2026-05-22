@@ -106,6 +106,17 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
     opacity: isDragging ? 0.4 : 1,
   };
 
+  // Outer wrapper is the single interactive element (role="button"). The drag
+  // handle stops pointer propagation so dnd-kit owns the drag and the wrapper
+  // owns the click. This replaces the previous <button><div with listeners></button>
+  // nesting, which is invalid HTML and broke keyboard / screen-reader behavior.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       ref={(node) => {
@@ -114,10 +125,21 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
           (activeRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
         }
       }}
-      style={wrapperStyle}
-      className="relative flex-shrink-0"
+      role="button"
+      tabIndex={0}
+      aria-label={`Ir a diapositiva ${index + 1}`}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      onKeyDown={handleKeyDown}
+      style={{
+        ...wrapperStyle,
+        outline: outlineStyle,
+        outlineOffset: '2px',
+        opacity: isPreview || isLiveSlide ? 1 : 0.7,
+      }}
+      className="relative flex-shrink-0 rounded overflow-hidden transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
     >
-      {/* Drop indicator before */}
       {isDropBefore && (
         <div
           aria-hidden
@@ -125,7 +147,6 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
           style={{ backgroundColor: CASA_BRAND.colors.primary.amber, zIndex: 50 }}
         />
       )}
-      {/* Drop indicator after */}
       {isDropAfter && (
         <div
           aria-hidden
@@ -134,108 +155,94 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
         />
       )}
 
-      <button
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        onContextMenu={onContextMenu}
-        className="block rounded overflow-hidden transition-all"
-        style={{
-          outline: outlineStyle,
-          outlineOffset: '2px',
-          opacity: isPreview || isLiveSlide ? 1 : 0.7,
-        }}
+      <UniversalSlide slide={slide} scale={THUMBNAIL_SCALE} showIndicator={false} />
+
+      {/* Drag handle — pointer events stop here so the wrapper's click doesn't fire */}
+      <div
+        {...attributes}
+        {...listeners}
+        role="button"
+        tabIndex={-1}
+        aria-label={`Mover diapositiva ${index + 1}`}
+        className="absolute top-1 left-1/2 -translate-x-1/2 p-0.5 rounded cursor-grab active:cursor-grabbing opacity-70 hover:opacity-100"
+        style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <UniversalSlide
-          slide={slide}
-          scale={THUMBNAIL_SCALE}
-          showIndicator={false}
-        />
+        <GripVertical size={10} color={CASA_BRAND.colors.primary.white} />
+      </div>
 
-        {/* Drag handle */}
+      {hasEdit && (
         <div
-          {...attributes}
-          {...listeners}
-          aria-label={`Mover diapositiva ${index + 1}`}
-          className="absolute top-1 left-1/2 -translate-x-1/2 p-0.5 rounded cursor-grab active:cursor-grabbing opacity-70 hover:opacity-100"
-          style={{
-            backgroundColor: 'rgba(0,0,0,0.55)',
-          }}
-          onClick={(e) => e.stopPropagation()}
+          className="absolute top-1 left-1 p-0.5 rounded"
+          style={{ backgroundColor: '#22c55e' }}
+          title="Slide editado"
         >
-          <GripVertical size={10} color={CASA_BRAND.colors.primary.white} />
+          <Pencil size={8} color={CASA_BRAND.colors.primary.white} />
         </div>
+      )}
 
-        {hasEdit && (
-          <div
-            className="absolute top-1 left-1 p-0.5 rounded"
-            style={{ backgroundColor: '#22c55e' }}
-            title="Slide editado"
-          >
-            <Pencil size={8} color={CASA_BRAND.colors.primary.white} />
-          </div>
-        )}
-
-        {hasLogoOverride && (
-          <div
-            className="absolute top-1 right-1 p-0.5 rounded"
-            style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
-            title="Logo override activo"
-          >
-            <ImageIcon size={8} color={CASA_BRAND.colors.primary.black} />
-          </div>
-        )}
-
-        {hasTextOverlayOverride && (
-          <div
-            className="absolute top-1 p-0.5 rounded"
-            style={{
-              backgroundColor: '#3b82f6',
-              right: hasLogoOverride ? '24px' : '4px',
-            }}
-            title="Texto override activo"
-          >
-            <Type size={8} color={CASA_BRAND.colors.primary.white} />
-          </div>
-        )}
-
-        {isLiveSlide && isLive && (
-          <div
-            className="absolute top-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-xs"
-            style={{
-              backgroundColor: '#ef4444',
-              color: CASA_BRAND.colors.primary.white,
-              fontFamily: CASA_BRAND.fonts.body,
-              fontSize: '8px',
-              fontWeight: 700,
-            }}
-          >
-            LIVE
-          </div>
-        )}
-
-        {isTempSlide && (
-          <div
-            className="absolute bottom-1 left-1 p-0.5 rounded flex items-center gap-0.5"
-            style={{ backgroundColor: CASA_BRAND.colors.primary.amber + 'CC' }}
-            title="Diapositiva temporal (solo esta sesión)"
-          >
-            <Clock size={8} color={CASA_BRAND.colors.primary.black} />
-          </div>
-        )}
-
+      {hasLogoOverride && (
         <div
-          className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-xs"
+          className="absolute top-1 right-1 p-0.5 rounded"
+          style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+          title="Logo override activo"
+        >
+          <ImageIcon size={8} color={CASA_BRAND.colors.primary.black} />
+        </div>
+      )}
+
+      {hasTextOverlayOverride && (
+        <div
+          className="absolute top-1 p-0.5 rounded"
           style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            backgroundColor: '#3b82f6',
+            right: hasLogoOverride ? '24px' : '4px',
+          }}
+          title="Texto override activo"
+        >
+          <Type size={8} color={CASA_BRAND.colors.primary.white} />
+        </div>
+      )}
+
+      {isLiveSlide && isLive && (
+        <div
+          className="absolute top-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-xs"
+          style={{
+            backgroundColor: '#ef4444',
             color: CASA_BRAND.colors.primary.white,
             fontFamily: CASA_BRAND.fonts.body,
-            fontSize: '10px',
-            fontWeight: 600,
+            fontSize: '8px',
+            fontWeight: 700,
           }}
         >
-          {index + 1}
+          LIVE
         </div>
-      </button>
+      )}
+
+      {isTempSlide && (
+        <div
+          className="absolute bottom-1 left-1 p-0.5 rounded flex items-center gap-0.5"
+          style={{ backgroundColor: CASA_BRAND.colors.primary.amber + 'CC' }}
+          title="Diapositiva temporal (solo esta sesión)"
+        >
+          <Clock size={8} color={CASA_BRAND.colors.primary.black} />
+        </div>
+      )}
+
+      <div
+        className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-xs"
+        style={{
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          color: CASA_BRAND.colors.primary.white,
+          fontFamily: CASA_BRAND.fonts.body,
+          fontSize: '10px',
+          fontWeight: 600,
+        }}
+      >
+        {index + 1}
+      </div>
     </div>
   );
 };
