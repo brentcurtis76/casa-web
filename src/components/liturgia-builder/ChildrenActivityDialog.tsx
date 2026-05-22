@@ -76,7 +76,7 @@ function parseLessonPhases(content: string | null): LessonPhase[] {
 interface ChildrenActivityDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
   liturgyId: string;
   liturgyTitle: string;
   liturgySummary: string;
@@ -146,6 +146,30 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     liturgyIdRef.current = liturgyId;
   }, [liturgyId]);
 
+  // Fetch the latest existing lessons for this liturgy and rebuild the
+  // age-group → lesson map from DB. Returns the new map (or null on error)
+  // so callers can use it without waiting for setState to flush.
+  const fetchExistingActivities = async (
+    requestLiturgyId: string,
+  ): Promise<ExistingActivityMap | null> => {
+    const { data, error } = await supabase
+      .from('church_children_lessons')
+      .select('*')
+      .eq('liturgy_id', requestLiturgyId)
+      .order('updated_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando actividades existentes:', error);
+      return null;
+    }
+    const map: ExistingActivityMap = new Map();
+    for (const lesson of (data ?? []) as ChildrenLessonRow[]) {
+      if (lesson.age_group_id && !map.has(lesson.age_group_id)) {
+        map.set(lesson.age_group_id, lesson);
+      }
+    }
+    return map;
+  };
+
   // Load age groups + existing lessons for this liturgy on open.
   // Uses a `cancelled` flag so older requests (e.g. from a previous liturgyId)
   // cannot overwrite state for the newer one if they resolve out of order.
@@ -164,16 +188,10 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         if (cancelled) return;
         setAgeGroups(groups);
 
-        const { data: lessons, error: lessonsError } = await supabase
-          .from('church_children_lessons')
-          .select('*')
-          .eq('liturgy_id', liturgyId)
-          .order('updated_at', { ascending: false });
-
+        const map = await fetchExistingActivities(liturgyId);
         if (cancelled) return;
 
-        if (lessonsError) {
-          console.warn('Error cargando actividades existentes:', lessonsError);
+        if (map === null) {
           toast({
             title: 'Aviso',
             description: 'No se pudieron cargar las actividades existentes.',
@@ -182,14 +200,6 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           return;
         }
 
-        const map: ExistingActivityMap = new Map();
-        if (lessons) {
-          for (const lesson of lessons as ChildrenLessonRow[]) {
-            if (lesson.age_group_id && !map.has(lesson.age_group_id)) {
-              map.set(lesson.age_group_id, lesson);
-            }
-          }
-        }
         setExistingActivities(map);
       } catch (error) {
         if (cancelled) return;
@@ -249,26 +259,42 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
 
     if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
 
+    // Refresh the existing-activity map from DB so the dialog's "select"
+    // view, and the count shown to the user, reflect what was actually
+    // persisted — not a stale React snapshot. We base the inline summary
+    // on this map (intersected with the requested group ids), not on the
+    // in-memory result shape.
+    const refreshed = await fetchExistingActivities(requestLiturgyId);
+    if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
+    if (refreshed) {
+      setExistingActivities(refreshed);
+    }
+
+    const persistedCount = refreshed
+      ? groupIds.filter((id) => refreshed.has(id)).length
+      : result.totalActivitiesGenerated;
+    const attempted = groupIds.length;
+
     setResults(result.results);
     setViewState('results');
 
-    if (result.success && result.results.every((r) => r.success)) {
+    if (persistedCount === attempted && attempted > 0) {
       toast({
         title: 'Éxito',
-        description: `${result.totalActivitiesGenerated} actividad(es) generada(s) exitosamente`,
+        description: `${persistedCount} actividad(es) generada(s) exitosamente`,
       });
-      if (onSuccess) onSuccess();
-    } else if (result.totalActivitiesGenerated > 0) {
+      if (onSuccess) await onSuccess();
+    } else if (persistedCount > 0) {
       toast({
         title: 'Éxito parcial',
-        description: `Se generaron ${result.totalActivitiesGenerated} de ${groupIds.length} actividades.`,
+        description: `Se generaron ${persistedCount} de ${attempted} actividades. Revisa el detalle en el diálogo.`,
         variant: 'destructive',
       });
-      if (onSuccess) onSuccess();
+      if (onSuccess) await onSuccess();
     } else {
       toast({
         title: 'Error',
-        description: 'No se pudo generar ninguna actividad.',
+        description: 'No se pudo generar ninguna actividad. Revisa el detalle en el diálogo.',
         variant: 'destructive',
       });
     }
@@ -427,7 +453,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           description: `Se actualizó la actividad para ${result.ageGroupLabel}.`,
         });
 
-        if (onSuccess) onSuccess();
+        if (onSuccess) await onSuccess();
       } else {
         toast({
           title: 'Error',
@@ -726,15 +752,46 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           </div>
         )}
 
-        {viewState === 'results' && (
-          <div className="space-y-4 py-4">
-            <p className="text-sm font-medium">Resultados:</p>
-            <div
-              className="space-y-2 max-h-60 overflow-y-auto"
-              aria-live="polite"
-              aria-label="Resultados de actividades"
-            >
-              {results.map((result) => (
+        {viewState === 'results' && (() => {
+          const succeeded = results.filter((r) => r.success).length;
+          const totalAttempted = results.length;
+          const failedResults = results.filter((r) => !r.success);
+          const allSucceeded = totalAttempted > 0 && succeeded === totalAttempted;
+          return (
+            <div className="space-y-4 py-4">
+              <div
+                className="rounded-md border p-3 space-y-1"
+                role={allSucceeded ? 'status' : 'alert'}
+                style={{
+                  borderColor: allSucceeded
+                    ? '#16a34a40'
+                    : `${CASA_BRAND.colors.primary.amber}40`,
+                  backgroundColor: allSucceeded
+                    ? '#16a34a10'
+                    : `${CASA_BRAND.colors.primary.amber}15`,
+                }}
+              >
+                <p className="text-sm font-medium">
+                  {succeeded} de {totalAttempted} actividad(es) generada(s) y guardada(s)
+                </p>
+                {failedResults.length > 0 && (
+                  <p className="text-xs" style={{ color: '#b91c1c' }}>
+                    Con error: {failedResults.map((r) => r.ageGroupLabel).join(', ')}
+                  </p>
+                )}
+                {!allSucceeded && succeeded > 0 && (
+                  <p className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                    Éxito parcial — revisa los grupos con error antes de exportar.
+                  </p>
+                )}
+              </div>
+              <p className="text-sm font-medium">Detalle por grupo:</p>
+              <div
+                className="space-y-2 max-h-60 overflow-y-auto"
+                aria-live="polite"
+                aria-label="Resultados de actividades"
+              >
+                {results.map((result) => (
                 <div
                   key={result.ageGroupId}
                   className="flex items-center justify-between rounded-md border p-3"
@@ -756,10 +813,11 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
                     <X className="h-5 w-5 text-red-600" aria-hidden="true" />
                   )}
                 </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <DialogFooter>
           {viewState === 'select' && (

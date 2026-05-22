@@ -28,6 +28,7 @@ import {
   saveToLiturgy,
   calculateChangeSummary,
   type SaveToLiturgyChangeSummary,
+  type SavedPositionInfo,
 } from '@/lib/presentation/saveToLiturgyService';
 
 interface SaveToLiturgyDialogProps {
@@ -39,7 +40,15 @@ interface SaveToLiturgyDialogProps {
   styleState: StyleState;
   logoState: LogoState;
   textOverlayState: TextOverlayState;
-  onSaved?: () => void;
+  onSaved?: (info: { positions: SavedPositionInfo[]; tempSlideCount: number; reorderedElementCount: number }) => void;
+}
+
+function describePosition(p: SavedPositionInfo): string {
+  const label = p.isAllImage
+    ? `${p.count} ${p.count === 1 ? 'imagen' : 'imágenes'}`
+    : `${p.count} ${p.count === 1 ? 'diapositiva' : 'diapositivas'}`;
+  if (!p.afterTitle) return `${label} al inicio`;
+  return `${label} después de ${p.afterTitle}`;
 }
 
 export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
@@ -67,9 +76,10 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       logoState,
       textOverlayState,
       DEFAULT_LOGO_STATE,
-      DEFAULT_TEXT_OVERLAY_STATE
+      DEFAULT_TEXT_OVERLAY_STATE,
+      data?.elements ?? []
     );
-  }, [slides, styleState, logoState, textOverlayState]);
+  }, [slides, styleState, logoState, textOverlayState, data?.elements]);
 
   // Check if there are any changes to save
   const hasChanges = useMemo(() => {
@@ -104,7 +114,11 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       }
 
       setSaveSuccess(true);
-      onSaved?.();
+      onSaved?.({
+        positions: result.positions ?? [],
+        tempSlideCount: Object.keys(result.savedSlideIds ?? {}).length,
+        reorderedElementCount: result.reorderedElementCount ?? 0,
+      });
 
       // Close dialog after short delay to show success
       closeTimeoutRef.current = setTimeout(() => {
@@ -214,8 +228,26 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
                         {changeSummary.tempSlides.count} diapositiva
                         {changeSummary.tempSlides.count !== 1 ? 's' : ''} nueva
                         {changeSummary.tempSlides.count !== 1 ? 's' : ''}
+                        {changeSummary.positions.length > 1 && (
+                          <span style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                            {' '}en {changeSummary.positions.length} posiciones
+                          </span>
+                        )}
                       </span>
                     </div>
+                    {changeSummary.positions.length > 0 && (
+                      <ul className="ml-6 space-y-1 mb-2">
+                        {changeSummary.positions.map((p, i) => (
+                          <li
+                            key={i}
+                            className="text-xs"
+                            style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                          >
+                            {describePosition(p)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {changeSummary.tempSlides.items.length > 0 && (
                       <ul className="ml-6 space-y-1">
                         {changeSummary.tempSlides.items.slice(0, 5).map((item) => (

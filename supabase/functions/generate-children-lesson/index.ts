@@ -31,6 +31,8 @@ interface GenerateChildrenLessonRequest {
   childrenCountMin?: number;
   childrenCountMax?: number;
   previewPromptOnly?: boolean;
+  /** Optional client-supplied correlation id for log joining across the EF and the orchestrator */
+  requestId?: string;
 }
 
 interface LessonPhase {
@@ -266,8 +268,9 @@ serve(async (req) => {
       throw new Error('Se requiere liturgyId y storyData');
     }
 
+    const reqIdTag = requestData.requestId ? ` [req=${requestData.requestId}]` : '';
     console.log(
-      `[generate-children-lesson] Generando lección para: "${requestData.ageGroupLabel}" en "${requestData.liturgyTitle}"`
+      `[generate-children-lesson]${reqIdTag} Generando lección para: "${requestData.ageGroupLabel}" en "${requestData.liturgyTitle}"`
     );
 
     const systemPrompt = buildSystemPrompt();
@@ -400,7 +403,10 @@ serve(async (req) => {
       );
     }
 
-    console.log('[generate-children-lesson] Lección generada exitosamente:', lesson.activityName);
+    console.log(
+      `[generate-children-lesson]${reqIdTag} Lección generada exitosamente:`,
+      lesson.activityName,
+    );
 
     return new Response(
       JSON.stringify({
@@ -412,6 +418,7 @@ serve(async (req) => {
         volunteerPlan: lesson.volunteerPlan,
         estimatedTotalMinutes: lesson.estimatedTotalMinutes,
         model: MODEL,
+        requestId: requestData.requestId ?? null,
         usage: {
           input_tokens: data.usage?.input_tokens || 0,
           output_tokens: data.usage?.output_tokens || 0,

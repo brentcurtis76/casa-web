@@ -40,19 +40,33 @@ export async function getPublicationByLiturgyAndAgeGroup(
 }
 
 /**
- * Get all publications for a liturgy.
+ * Get all publications for a liturgy, ordered by age group display_order
+ * (so cover pages and exports come out in a predictable order: Pequeños,
+ * Medianos, Grandes, …). Falls back to published_at desc as a tiebreaker.
  */
 export async function getPublicationsByLiturgyId(
   liturgyId: string
 ): Promise<ChildrenPublicationStateRow[]> {
   const { data, error } = await supabase
     .from('church_children_publication_state')
-    .select('*')
-    .eq('liturgy_id', liturgyId)
-    .order('published_at', { ascending: false });
+    .select('*, age_group:church_children_age_groups(display_order)')
+    .eq('liturgy_id', liturgyId);
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as ChildrenPublicationStateRow[];
+
+  type RowWithEmbed = ChildrenPublicationStateRow & {
+    age_group?: { display_order: number | null } | null;
+  };
+  const rows = (data ?? []) as RowWithEmbed[];
+
+  rows.sort((a, b) => {
+    const ao = a.age_group?.display_order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.age_group?.display_order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return (b.published_at ?? '').localeCompare(a.published_at ?? '');
+  });
+
+  return rows.map(({ age_group: _ageGroup, ...rest }) => rest as ChildrenPublicationStateRow);
 }
 
 /**
