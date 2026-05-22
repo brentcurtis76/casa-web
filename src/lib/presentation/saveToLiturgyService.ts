@@ -495,8 +495,29 @@ async function saveSlidesWithPositions(
   }
   slots.sort((a, b) => a.sortKey - b.sortKey);
 
-  // 5) Apply UPDATEs (orden + slides changes) and INSERTs for new
+  // 5) Build UPDATE + INSERT payloads, then dispatch in ONE transactional RPC
+  //    call (save_liturgy_slides_positions). Why: previously this was a
+  //    for-loop with await per row — a mid-loop failure left earlier writes
+  //    committed while returning failure. The RPC runs all writes inside a
+  //    single PL/pgSQL function (implicit transaction), so either everything
+  //    sticks or nothing does.
+  type UpdateEntry = {
+    id: string;
+    orden?: number;
+    slides?: unknown;
+    edited_slides?: unknown;
+  };
+  type InsertEntry = {
+    orden: number;
+    tipo: string;
+    titulo: string;
+    slides: unknown;
+    status?: string;
+  };
+  const updates: UpdateEntry[] = [];
+  const inserts: InsertEntry[] = [];
   const positions: SavedPositionInfo[] = [];
+
   for (let idx = 0; idx < slots.length; idx++) {
     const slot = slots[idx].item;
     if (slot.kind === 'existing') {
@@ -506,8 +527,8 @@ async function saveSlidesWithPositions(
       const slidesChanged = !!newSlidesArr;
       if (!ordenChanged && !slidesChanged) continue;
 
-      const updatePayload: Record<string, unknown> = {};
-      if (ordenChanged) updatePayload.orden = idx;
+      const entry: UpdateEntry = { id: el.id };
+      if (ordenChanged) entry.orden = idx;
       if (slidesChanged) {
         // Preserve original SlideGroup structure where applicable
         if (
@@ -518,9 +539,9 @@ async function saveSlidesWithPositions(
           'slides' in (el.edited_slides as object)
         ) {
           const group = el.edited_slides as SlideGroup;
-          updatePayload.edited_slides = { ...group, slides: newSlidesArr };
+          entry.edited_slides = { ...group, slides: newSlidesArr };
         } else if (el.source === 'edited_slides' && Array.isArray(el.edited_slides)) {
-          updatePayload.edited_slides = newSlidesArr;
+          entry.edited_slides = newSlidesArr;
         } else if (
           el.slides &&
           typeof el.slides === 'object' &&
@@ -528,17 +549,12 @@ async function saveSlidesWithPositions(
           'slides' in (el.slides as object)
         ) {
           const group = el.slides as SlideGroup;
-          updatePayload.slides = { ...group, slides: newSlidesArr };
+          entry.slides = { ...group, slides: newSlidesArr };
         } else {
-          updatePayload.slides = newSlidesArr;
+          entry.slides = newSlidesArr;
         }
       }
-
-      const { error: updError } = await supabase
-        .from('liturgia_elementos')
-        .update(updatePayload)
-        .eq('id', el.id);
-      if (updError) return { success: false, error: updError.message };
+      updates.push(entry);
     } else {
       const group = slot.group;
       if (group.slides.length === 0) continue;
@@ -556,18 +572,13 @@ async function saveSlidesWithPositions(
           createdAt: new Date().toISOString(),
         },
       };
-      const { error: insError } = await supabase
-        .from('liturgia_elementos')
-        .insert({
-          liturgia_id: liturgyId,
-          tipo,
-          orden: idx,
-          titulo,
-          slides: slidesPayload,
-          status: 'completed',
-        });
-      if (insError) return { success: false, error: insError.message };
-
+      inserts.push({
+        orden: idx,
+        tipo,
+        titulo,
+        slides: slidesPayload,
+        status: 'completed',
+      });
       positions.push({
         afterTitle: group.afterTitle,
         count: group.slides.length,
@@ -575,6 +586,26 @@ async function saveSlidesWithPositions(
       });
     }
   }
+
+  // No writes needed? Skip the round-trip.
+  if (updates.length === 0 && inserts.length === 0) {
+    return {
+      success: true,
+      savedSlideIds,
+      positions,
+      reorderedElementCount: 0,
+    };
+  }
+
+  const { error: rpcError } = await supabase.rpc(
+    'save_liturgy_slides_positions',
+    {
+      p_liturgy_id: liturgyId,
+      p_updates: updates as unknown as Record<string, unknown>[],
+      p_inserts: inserts as unknown as Record<string, unknown>[],
+    },
+  );
+  if (rpcError) return { success: false, error: rpcError.message };
 
   return {
     success: true,
