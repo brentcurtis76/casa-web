@@ -46,6 +46,7 @@ import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video, Chev
 import type { ImportValidationResult } from '@/lib/presentation/types';
 import { applyImport } from '@/lib/presentation/exportImport';
 import { loadSession, updateSession, createSessionState, mergeTempSlides } from '@/lib/presentation/sessionService';
+import { uploadImportedImages } from '@/lib/presentation/imageUploadService';
 import { toast } from 'sonner';
 
 /**
@@ -119,6 +120,7 @@ export const PresenterView: React.FC = () => {
     addImageSlides,
     insertSlide,
     insertSlides,
+    reorderSlides,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
@@ -470,24 +472,67 @@ export const PresenterView: React.FC = () => {
     }, 50);
   }, [deleteSlide, send]);
 
+  // Drag-to-reorder slides (within element only)
+  const handleReorderSlides = useCallback((newSlides: import('@/types/shared/slide').Slide[], newCurrentIndex: number) => {
+    reorderSlides(newSlides, newCurrentIndex);
+
+    setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+      }
+    }, 50);
+  }, [reorderSlides, send]);
+
+  // Build slideId -> elementId map for drag restrictions
+  const slideElementMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!state.data) return map;
+    for (const el of state.data.elements) {
+      for (let i = el.startSlideIndex; i <= el.endSlideIndex; i++) {
+        const slide = state.data.slides[i];
+        if (slide) map[slide.id] = el.id;
+      }
+    }
+    return map;
+  }, [state.data]);
+
   // ============ IMAGE IMPORT HANDLER ============
 
-  const handleImportImages = useCallback((files: FileList) => {
+  const handleImportImages = useCallback(async (files: FileList) => {
     const fileArray = Array.from(files);
-    const imagePromises = fileArray.map((file) => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve(e.target?.result as string);
-        };
-        reader.readAsDataURL(file);
-      });
-    });
+    if (fileArray.length === 0) return;
+
+    const liturgyId = stateRef.current?.data?.liturgyId;
+    if (!liturgyId) {
+      toast.error('Carga una liturgia antes de importar imágenes');
+      return;
+    }
 
     const insertAfterIndex = stateRef.current?.previewSlideIndex ?? 0;
+    const toastId = toast.loading(
+      `Subiendo imágenes 0/${fileArray.length}...`,
+    );
 
-    Promise.all(imagePromises).then((imageUrls) => {
-      addImageSlides(imageUrls, insertAfterIndex);
+    try {
+      const { uploaded, failures } = await uploadImportedImages(
+        fileArray,
+        liturgyId,
+        (completed, total) => {
+          toast.loading(`Subiendo imágenes ${completed}/${total}...`, { id: toastId });
+        },
+      );
+
+      if (uploaded.length === 0) {
+        toast.error('No se pudo subir ninguna imagen', { id: toastId });
+        failures.forEach((f) => {
+          toast.error(`${f.originalName}: ${f.error}`);
+        });
+        return;
+      }
+
+      const urls = uploaded.map((u) => u.publicUrl);
+      addImageSlides(urls, insertAfterIndex);
 
       setTimeout(() => {
         const currentState = stateRef.current;
@@ -495,7 +540,26 @@ export const PresenterView: React.FC = () => {
           send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
         }
       }, 100);
-    });
+
+      if (failures.length > 0) {
+        toast.warning(
+          `${uploaded.length} imágenes importadas, ${failures.length} fallaron`,
+          { id: toastId },
+        );
+        failures.forEach((f) => {
+          toast.error(`${f.originalName}: ${f.error}`);
+        });
+      } else {
+        toast.success(`${uploaded.length} ${uploaded.length === 1 ? 'imagen importada' : 'imágenes importadas'}`, {
+          id: toastId,
+        });
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Error al subir imágenes',
+        { id: toastId },
+      );
+    }
   }, [addImageSlides, send]);
 
   // ============ QUICK ADD SLIDE HANDLER ============
@@ -931,6 +995,8 @@ export const PresenterView: React.FC = () => {
               liveIndex={state.liveSlideIndex}
               isLive={state.isLive}
               onSlideClick={handleGoToSlide}
+              slideElementMap={slideElementMap}
+              onReorder={handleReorderSlides}
               tempEdits={state.tempEdits}
               onEdit={handleEditSlide}
               onDuplicate={handleDuplicateSlide}
@@ -1314,8 +1380,30 @@ export const PresenterView: React.FC = () => {
         styleState={state.styleState}
         logoState={state.logoState}
         textOverlayState={state.textOverlayState}
-        onSaved={() => {
-          toast.success('Cambios guardados en la liturgia');
+        onSaved={(info) => {
+          const parts: string[] = [];
+          if (info.tempSlideCount > 0) {
+            const positionsCount = info.positions.length;
+            if (positionsCount > 1) {
+              parts.push(
+                `${info.tempSlideCount} ${info.tempSlideCount === 1 ? 'diapositiva guardada' : 'diapositivas guardadas'} en ${positionsCount} posiciones`,
+              );
+            } else {
+              parts.push(
+                `${info.tempSlideCount} ${info.tempSlideCount === 1 ? 'diapositiva guardada' : 'diapositivas guardadas'}`,
+              );
+            }
+          }
+          if (info.reorderedElementCount > 0) {
+            parts.push(
+              `${info.reorderedElementCount} ${info.reorderedElementCount === 1 ? 'elemento reordenado' : 'elementos reordenados'}`,
+            );
+          }
+          toast.success(
+            parts.length > 0
+              ? parts.join(' · ')
+              : 'Cambios guardados en la liturgia',
+          );
         }}
       />
     </div>

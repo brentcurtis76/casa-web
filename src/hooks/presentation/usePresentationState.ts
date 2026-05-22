@@ -78,6 +78,7 @@ interface UsePresentationStateReturn {
   addImageSlides: (imageUrls: string[], insertAfterIndex?: number) => void;
   insertSlide: (slide: Slide, insertAfterIndex: number) => void;
   insertSlides: (slides: Slide[], insertAfterIndex: number, elementInfo?: { type: string; title: string }) => void;
+  reorderSlides: (newSlides: Slide[], newCurrentIndex: number) => void;
 
   // Text overlays (SIMPLIFICADO)
   addTextOverlay: (overlay: TextOverlay) => void;
@@ -1087,6 +1088,28 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
+  // Reordenar slides (drag-to-reorder en SlideStrip)
+  // Solo actualiza el orden en memoria; los rangos de elementos no se ajustan aquí
+  // porque la restricción de UI es reordenar SOLO dentro de un mismo elemento, lo
+  // que no cambia startSlideIndex/endSlideIndex/slideCount de cada elemento.
+  const reorderSlides = useCallback((newSlides: Slide[], newCurrentIndex: number) => {
+    setState((prev) => {
+      if (!prev.data) return prev;
+      const safeIndex = Math.max(0, Math.min(newCurrentIndex, newSlides.length - 1));
+      const elementIndex = findElementForSlide(prev.data.elements, safeIndex);
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          slides: newSlides,
+        },
+        previewSlideIndex: safeIndex,
+        previewElementIndex: elementIndex,
+        hasUnpublishedChanges: true,
+      };
+    });
+  }, []);
+
   // Agregar slides de imagen (para importar imágenes al vuelo)
   const addImageSlides = useCallback((imageUrls: string[], insertAfterIndex?: number) => {
     setState((prev) => {
@@ -1521,6 +1544,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     addImageSlides,
     insertSlide,
     insertSlides,
+    reorderSlides,
     // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,
