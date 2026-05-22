@@ -46,6 +46,7 @@ import { Palette, FileText, MessageSquare, Image as ImageIcon, Type, Video, Chev
 import type { ImportValidationResult } from '@/lib/presentation/types';
 import { applyImport } from '@/lib/presentation/exportImport';
 import { loadSession, updateSession, createSessionState, mergeTempSlides } from '@/lib/presentation/sessionService';
+import { uploadImportedImages } from '@/lib/presentation/imageImportService';
 import { toast } from 'sonner';
 
 /**
@@ -472,22 +473,38 @@ export const PresenterView: React.FC = () => {
 
   // ============ IMAGE IMPORT HANDLER ============
 
-  const handleImportImages = useCallback((files: FileList) => {
+  const handleImportImages = useCallback(async (files: FileList) => {
     const fileArray = Array.from(files);
-    const imagePromises = fileArray.map((file) => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve(e.target?.result as string);
-        };
-        reader.readAsDataURL(file);
-      });
-    });
+    if (fileArray.length === 0) return;
+
+    const liturgyId = stateRef.current?.data?.liturgyId;
+    if (!liturgyId) {
+      toast.error('Carga una liturgia antes de importar imágenes.');
+      return;
+    }
 
     const insertAfterIndex = stateRef.current?.previewSlideIndex ?? 0;
 
-    Promise.all(imagePromises).then((imageUrls) => {
-      addImageSlides(imageUrls, insertAfterIndex);
+    const toastId = toast.loading(
+      fileArray.length === 1
+        ? 'Subiendo imagen...'
+        : `Subiendo 0/${fileArray.length} imágenes...`
+    );
+
+    const { uploaded, failed } = await uploadImportedImages(
+      fileArray,
+      liturgyId,
+      (done, total) => {
+        if (total === 1) {
+          toast.loading('Subiendo imagen...', { id: toastId });
+        } else {
+          toast.loading(`Subiendo ${done}/${total} imágenes...`, { id: toastId });
+        }
+      }
+    );
+
+    if (uploaded.length > 0) {
+      addImageSlides(uploaded.map((u) => u.publicUrl), insertAfterIndex);
 
       setTimeout(() => {
         const currentState = stateRef.current;
@@ -495,7 +512,30 @@ export const PresenterView: React.FC = () => {
           send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
         }
       }, 100);
-    });
+    }
+
+    if (failed.length === 0) {
+      toast.success(
+        uploaded.length === 1
+          ? 'Imagen importada'
+          : `${uploaded.length} imágenes importadas`,
+        { id: toastId }
+      );
+    } else if (uploaded.length === 0) {
+      toast.error(
+        fileArray.length === 1
+          ? `No se pudo subir la imagen: ${failed[0].error}`
+          : `No se pudo subir ninguna imagen (${failed.length} fallidas)`,
+        { id: toastId }
+      );
+    } else {
+      toast.warning(
+        `${uploaded.length} importadas, ${failed.length} fallidas: ${failed
+          .map((f) => f.file.name)
+          .join(', ')}`,
+        { id: toastId }
+      );
+    }
   }, [addImageSlides, send]);
 
   // ============ QUICK ADD SLIDE HANDLER ============
