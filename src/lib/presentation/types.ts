@@ -14,6 +14,14 @@ import type { PresentationTheme } from '@/lib/presentation/themes';
 
 /**
  * Elemento aplanado de la liturgia para navegación
+ *
+ * Identity fields para persistencia posterior:
+ * - `dbElementId`: id real del row en `liturgia_elementos`. Vacío para elementos
+ *   sintéticos creados en sesión (imágenes importadas, splits por insert).
+ * - `dbOrder`: valor `orden` original del row. Útil para detectar reordenamiento.
+ * - `isSynthetic`: true cuando el elemento no tiene un row persistido (creado
+ *   en memoria por insertar imágenes o por splits). El guardado posterior debe
+ *   crear un row nuevo o reescribir el original según la metadata.
  */
 export interface FlattenedElement {
   id: string;
@@ -23,6 +31,9 @@ export interface FlattenedElement {
   endSlideIndex: number;
   slideCount: number;
   notes?: string;
+  dbElementId?: string;
+  dbOrder?: number;
+  isSynthetic?: boolean;
 }
 
 /**

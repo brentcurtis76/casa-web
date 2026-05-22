@@ -5,8 +5,6 @@
  * - Diapositivas temporales como contenido permanente
  * - Estilos de presentación (fuentes, colores, fondos)
  * - Configuración del logo y textos superpuestos
- *
- * Phase 1.6: Presentation Persistence - Save to Liturgy (Option A)
  */
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -22,12 +20,20 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Save, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
-import type { PresentationData, StyleState, LogoState, TextOverlayState, TempSlideEdit } from '@/lib/presentation/types';
+import type {
+  PresentationData,
+  StyleState,
+  LogoState,
+  TextOverlayState,
+  TempSlideEdit,
+  FlattenedElement,
+} from '@/lib/presentation/types';
 import { DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE } from '@/lib/presentation/types';
 import {
   saveToLiturgy,
   calculateChangeSummary,
   type SaveToLiturgyChangeSummary,
+  type SaveToLiturgyResult,
 } from '@/lib/presentation/saveToLiturgyService';
 
 interface SaveToLiturgyDialogProps {
@@ -35,11 +41,12 @@ interface SaveToLiturgyDialogProps {
   onOpenChange: (open: boolean) => void;
   data: PresentationData | null;
   slides: import('@/types/shared/slide').Slide[];
+  elements: FlattenedElement[];
   tempEdits: Record<string, TempSlideEdit>;
   styleState: StyleState;
   logoState: LogoState;
   textOverlayState: TextOverlayState;
-  onSaved?: () => void;
+  onSaved?: (result: SaveToLiturgyResult) => void;
 }
 
 export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
@@ -47,6 +54,7 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
   onOpenChange,
   data,
   slides,
+  elements,
   tempEdits,
   styleState,
   logoState,
@@ -58,7 +66,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Calculate change summary
   const changeSummary = useMemo<SaveToLiturgyChangeSummary | null>(() => {
     if (!slides) return null;
     return calculateChangeSummary(
@@ -67,11 +74,11 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       logoState,
       textOverlayState,
       DEFAULT_LOGO_STATE,
-      DEFAULT_TEXT_OVERLAY_STATE
+      DEFAULT_TEXT_OVERLAY_STATE,
+      elements
     );
-  }, [slides, styleState, logoState, textOverlayState]);
+  }, [slides, styleState, logoState, textOverlayState, elements]);
 
-  // Check if there are any changes to save
   const hasChanges = useMemo(() => {
     if (!changeSummary) return false;
     return (
@@ -92,6 +99,7 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       const result = await saveToLiturgy(
         data.liturgyId,
         slides,
+        elements,
         styleState,
         logoState,
         textOverlayState,
@@ -104,9 +112,8 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       }
 
       setSaveSuccess(true);
-      onSaved?.();
+      onSaved?.(result);
 
-      // Close dialog after short delay to show success
       closeTimeoutRef.current = setTimeout(() => {
         onOpenChange(false);
       }, 1500);
@@ -119,7 +126,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
     }
   };
 
-  // Reset state when dialog opens and cleanup timeout on close/unmount
   useEffect(() => {
     if (open) {
       setSaveError(null);
@@ -132,6 +138,8 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
       }
     };
   }, [open]);
+
+  const positions = changeSummary?.tempSlides.positions ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -157,7 +165,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Warning about permanent changes */}
           <Alert
             className="border-amber-500/50"
             style={{
@@ -182,7 +189,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
             </AlertDescription>
           </Alert>
 
-          {/* Changes summary */}
           {changeSummary && hasChanges ? (
             <div
               className="rounded-lg p-4"
@@ -202,8 +208,8 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
                 className="text-sm space-y-2"
                 style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
               >
-                {/* Temp slides */}
-                {changeSummary.tempSlides.count > 0 && (
+                {/* Posiciones de slides temporales */}
+                {positions.length > 0 && (
                   <li>
                     <div className="flex items-center gap-2 mb-1">
                       <span
@@ -213,31 +219,36 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
                       <span style={{ color: CASA_BRAND.colors.primary.white }}>
                         {changeSummary.tempSlides.count} diapositiva
                         {changeSummary.tempSlides.count !== 1 ? 's' : ''} nueva
-                        {changeSummary.tempSlides.count !== 1 ? 's' : ''}
+                        {changeSummary.tempSlides.count !== 1 ? 's' : ''} en {positions.length} posición
+                        {positions.length !== 1 ? 'es' : ''}
                       </span>
                     </div>
-                    {changeSummary.tempSlides.items.length > 0 && (
-                      <ul className="ml-6 space-y-1">
-                        {changeSummary.tempSlides.items.slice(0, 5).map((item) => (
-                          <li
-                            key={item.id}
-                            className="text-xs truncate"
-                            style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-                          >
-                            {item.previewText}
-                            {item.previewText.length >= 50 && '...'}
-                          </li>
-                        ))}
-                        {changeSummary.tempSlides.items.length > 5 && (
-                          <li
-                            className="text-xs italic"
-                            style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
-                          >
-                            ... y {changeSummary.tempSlides.items.length - 5} más
-                          </li>
-                        )}
-                      </ul>
-                    )}
+                    <ul className="ml-6 space-y-1">
+                      {positions.map((p, idx) => (
+                        <li
+                          key={idx}
+                          className="text-xs"
+                          style={{ color: CASA_BRAND.colors.secondary.grayMedium }}
+                        >
+                          {p.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                )}
+
+                {/* Fallback si hay temp slides pero no se calcularon posiciones */}
+                {positions.length === 0 && changeSummary.tempSlides.count > 0 && (
+                  <li className="flex items-center gap-2">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: CASA_BRAND.colors.primary.amber }}
+                    />
+                    <span style={{ color: CASA_BRAND.colors.primary.white }}>
+                      {changeSummary.tempSlides.count} diapositiva
+                      {changeSummary.tempSlides.count !== 1 ? 's' : ''} nueva
+                      {changeSummary.tempSlides.count !== 1 ? 's' : ''}
+                    </span>
                   </li>
                 )}
 
@@ -295,7 +306,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
             </div>
           )}
 
-          {/* Error message */}
           {saveError && (
             <Alert variant="destructive">
               <AlertTriangle size={16} />
@@ -303,7 +313,6 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
             </Alert>
           )}
 
-          {/* Success message */}
           {saveSuccess && (
             <Alert
               className="border-green-500/50"

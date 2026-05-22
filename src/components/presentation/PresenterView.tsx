@@ -120,6 +120,7 @@ export const PresenterView: React.FC = () => {
     addImageSlides,
     insertSlide,
     insertSlides,
+    reorderSlide,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
@@ -470,6 +471,17 @@ export const PresenterView: React.FC = () => {
       }
     }, 50);
   }, [deleteSlide, send]);
+
+  const handleReorderSlide = useCallback((fromIndex: number, toIndex: number) => {
+    reorderSlide(fromIndex, toIndex);
+
+    setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+      }
+    }, 50);
+  }, [reorderSlide, send]);
 
   // ============ IMAGE IMPORT HANDLER ============
 
@@ -975,6 +987,7 @@ export const PresenterView: React.FC = () => {
               onEdit={handleEditSlide}
               onDuplicate={handleDuplicateSlide}
               onDelete={handleDeleteSlide}
+              onReorder={handleReorderSlide}
             />
           </div>
         </div>
@@ -1350,12 +1363,23 @@ export const PresenterView: React.FC = () => {
         onOpenChange={setSaveToLiturgyDialogOpen}
         data={state.data}
         slides={state.data?.slides || []}
+        elements={state.data?.elements || []}
         tempEdits={state.tempEdits}
         styleState={state.styleState}
         logoState={state.logoState}
         textOverlayState={state.textOverlayState}
-        onSaved={() => {
-          toast.success('Cambios guardados en la liturgia');
+        onSaved={(result) => {
+          const slidesCount = result.slidesSavedCount ?? 0;
+          const positions = result.positionsSavedCount ?? 0;
+          if (slidesCount > 0 && positions > 0) {
+            const noun = slidesCount === 1 ? 'diapositiva' : 'diapositivas';
+            const posNoun = positions === 1 ? 'posición' : 'posiciones';
+            toast.success(
+              `Se guardaron ${slidesCount} ${noun} en ${positions} ${posNoun} de la liturgia`
+            );
+          } else {
+            toast.success('Cambios guardados en la liturgia');
+          }
         }}
       />
     </div>

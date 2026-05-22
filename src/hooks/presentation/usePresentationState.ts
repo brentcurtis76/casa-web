@@ -33,6 +33,13 @@ import type { LiturgyElementType } from '@/types/shared/liturgy';
 import { INITIAL_PRESENTATION_STATE, DEFAULT_LOGO_STATE, DEFAULT_TEXT_OVERLAY_STATE, DEFAULT_TEXT_OVERLAY_STYLE, DEFAULT_IMAGE_OVERLAY_STATE, DEFAULT_VIDEO_BACKGROUND_STATE, DEFAULT_STYLE_STATE } from '@/lib/presentation/types';
 import type { Slide } from '@/types/shared/slide';
 import { findElementForSlide } from '@/lib/presentation/presentationService';
+import {
+  buildOwnershipMap,
+  rebuildElementsFromOwnership,
+  insertSyntheticRun,
+  makeSyntheticElement,
+  resolveMovedSlideOwner,
+} from '@/lib/presentation/elementOps';
 
 interface UsePresentationStateReturn {
   state: PresentationState;
@@ -78,6 +85,7 @@ interface UsePresentationStateReturn {
   addImageSlides: (imageUrls: string[], insertAfterIndex?: number) => void;
   insertSlide: (slide: Slide, insertAfterIndex: number) => void;
   insertSlides: (slides: Slide[], insertAfterIndex: number, elementInfo?: { type: string; title: string }) => void;
+  reorderSlide: (fromIndex: number, toIndex: number) => void;
 
   // Text overlays (SIMPLIFICADO)
   addTextOverlay: (overlay: TextOverlay) => void;
@@ -1088,12 +1096,23 @@ export function usePresentationState(): UsePresentationStateReturn {
   }, []);
 
   // Agregar slides de imagen (para importar imágenes al vuelo)
+  // Crea un elemento sintético para el run insertado y, si el insert cae
+  // estrictamente dentro de un elemento existente, parte ese elemento en dos
+  // para preservar la membresía sin perder slides.
   const addImageSlides = useCallback((imageUrls: string[], insertAfterIndex?: number) => {
     setState((prev) => {
-      if (!prev.data) return prev;
+      if (!prev.data || imageUrls.length === 0) return prev;
+
+      const ts = Date.now();
+      const currentSlides = prev.data.slides;
+      const currentElements = prev.data.elements;
+
+      const insertIdx = insertAfterIndex !== undefined
+        ? Math.max(0, Math.min(insertAfterIndex + 1, currentSlides.length))
+        : currentSlides.length;
 
       const newSlides: Slide[] = imageUrls.map((url, i) => ({
-        id: `imported-${Date.now()}-${i}`,
+        id: `imported-${ts}-${i}`,
         type: 'announcement-image' as const,
         content: {
           primary: '',
@@ -1104,28 +1123,97 @@ export function usePresentationState(): UsePresentationStateReturn {
         },
         metadata: {
           sourceComponent: 'imported-image',
-          sourceId: `import-${Date.now()}`,
+          sourceId: `import-${ts}`,
           order: i,
           groupTotal: imageUrls.length,
         },
       }));
 
-      const insertIdx = insertAfterIndex !== undefined
-        ? insertAfterIndex + 1
-        : prev.data.slides.length;
-
       const updatedSlides = [
-        ...prev.data.slides.slice(0, insertIdx),
+        ...currentSlides.slice(0, insertIdx),
         ...newSlides,
-        ...prev.data.slides.slice(insertIdx),
+        ...currentSlides.slice(insertIdx),
       ];
+
+      const baseOwnership = buildOwnershipMap(currentSlides.length, currentElements);
+      const syntheticId = `synthetic-images-${ts}`;
+      const syntheticTemplate = makeSyntheticElement({
+        id: syntheticId,
+        title: 'Imágenes importadas',
+        startSlideIndex: insertIdx,
+        slideCount: imageUrls.length,
+      });
+
+      const { ownership, templates, insertedElementId } = insertSyntheticRun({
+        baseOwnership,
+        baseElements: currentElements,
+        insertIdx,
+        runLength: imageUrls.length,
+        syntheticId,
+        syntheticTemplate,
+        splitIdSuffix: String(ts),
+      });
+
+      const newElements = rebuildElementsFromOwnership(ownership, templates);
+      const newElementIndex = newElements.findIndex((e) => e.id === insertedElementId);
 
       return {
         ...prev,
         data: {
           ...prev.data,
           slides: updatedSlides,
+          elements: newElements,
         },
+        previewSlideIndex: insertIdx,
+        previewElementIndex: newElementIndex >= 0 ? newElementIndex : prev.previewElementIndex,
+        hasUnpublishedChanges: true,
+      };
+    });
+  }, []);
+
+  // Reordenar un slide in-memory desde fromIndex hasta toIndex.
+  // Recomputa rangos, ajusta membresía si el slide cruza un límite, y deja
+  // el slide movido como seleccionado en preview.
+  const reorderSlide = useCallback((fromIndex: number, toIndex: number) => {
+    setState((prev) => {
+      if (!prev.data) return prev;
+      const slides = prev.data.slides;
+      if (fromIndex < 0 || fromIndex >= slides.length) return prev;
+      const clampedTo = Math.max(0, Math.min(toIndex, slides.length - 1));
+      if (clampedTo === fromIndex) return prev;
+
+      const currentElements = prev.data.elements;
+      const ownership = buildOwnershipMap(slides.length, currentElements);
+      const originalOwner = ownership[fromIndex];
+
+      const newSlides = [...slides];
+      const [movedSlide] = newSlides.splice(fromIndex, 1);
+      newSlides.splice(clampedTo, 0, movedSlide);
+
+      const ownershipWithoutMoved = [...ownership];
+      ownershipWithoutMoved.splice(fromIndex, 1);
+
+      const newOwner = resolveMovedSlideOwner(ownershipWithoutMoved, clampedTo, originalOwner);
+      const newOwnership = [...ownershipWithoutMoved];
+      newOwnership.splice(clampedTo, 0, newOwner);
+
+      const templates: Record<string, FlattenedElement> = {};
+      for (const el of currentElements) templates[el.id] = el;
+
+      const newElements = rebuildElementsFromOwnership(newOwnership, templates);
+      const newElementIndex = newElements.findIndex(
+        (e) => clampedTo >= e.startSlideIndex && clampedTo <= e.endSlideIndex
+      );
+
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          slides: newSlides,
+          elements: newElements,
+        },
+        previewSlideIndex: clampedTo,
+        previewElementIndex: newElementIndex >= 0 ? newElementIndex : prev.previewElementIndex,
         hasUnpublishedChanges: true,
       };
     });
@@ -1521,6 +1609,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     addImageSlides,
     insertSlide,
     insertSlides,
+    reorderSlide,
     // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,

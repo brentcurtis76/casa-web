@@ -306,6 +306,9 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
           endSlideIndex: slides.length - 1,
           slideCount: slideArray.length,
           notes: undefined, // TODO: agregar notas cuando se implementen
+          dbElementId: elemento.id,
+          dbOrder: elemento.orden,
+          isSynthetic: false,
         });
       }
     }
