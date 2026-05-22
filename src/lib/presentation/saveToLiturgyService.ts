@@ -138,8 +138,12 @@ const SLIDE_TYPE_TO_ELEMENT_TYPE: Record<string, string> = {
   'blessing': 'bendicion-adicional',
 };
 
-function generateUniqueTipo(prefix: string): string {
-  return `${CUSTOM_TIPO_PREFIX}${prefix}-${crypto.randomUUID()}`;
+// liturgia_elementos.tipo is varchar(50). 'custom-' (7) + UUID (36) = 43 — fits.
+// We dropped the human-readable middle segment (imagenes-/contenido-) because
+// the same info is already on titulo, and the older `${prefix}-${uuid}` form
+// (52-53 chars) overflowed the column.
+function generateUniqueTipo(): string {
+  return `${CUSTOM_TIPO_PREFIX}${crypto.randomUUID()}`;
 }
 
 // ============================================
@@ -561,7 +565,7 @@ async function saveSlidesWithPositions(
       const slideTypes = new Set(group.slides.map((s) => s.type));
       const isAllImage = slideTypes.size === 1 && slideTypes.has('announcement-image');
       const titulo = isAllImage ? 'Imágenes' : 'Contenido guardado';
-      const tipo = generateUniqueTipo(isAllImage ? 'imagenes' : 'contenido');
+      const tipo = generateUniqueTipo();
       const slidesPayload = {
         id: crypto.randomUUID(),
         type: 'saved-content',

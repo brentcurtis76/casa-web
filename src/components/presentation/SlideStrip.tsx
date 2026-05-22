@@ -157,7 +157,10 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
 
       <UniversalSlide slide={slide} scale={THUMBNAIL_SCALE} showIndicator={false} />
 
-      {/* Drag handle — pointer events stop here so the wrapper's click doesn't fire */}
+      {/* Drag handle — only stopPropagation on click. Don't override onPointerDown
+          or onMouseDown: {...listeners} from dnd-kit already attaches those, and
+          a same-named explicit prop after the spread would silently replace them,
+          killing the drag entirely. */}
       <div
         {...attributes}
         {...listeners}
@@ -167,8 +170,6 @@ const SortableSlideItem: React.FC<SortableSlideItemProps> = ({
         className="absolute top-1 left-1/2 -translate-x-1/2 p-0.5 rounded cursor-grab active:cursor-grabbing opacity-70 hover:opacity-100"
         style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <GripVertical size={10} color={CASA_BRAND.colors.primary.white} />
       </div>
