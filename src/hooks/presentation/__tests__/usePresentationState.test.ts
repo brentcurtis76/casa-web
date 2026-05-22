@@ -24,6 +24,7 @@ function makeLiturgyData(liturgyId: string): PresentationData {
     elements: [
       {
         id: `elem-${liturgyId}-1`,
+        dbRowId: `elem-${liturgyId}-1`,
         type: 'portada-principal',
         title: 'Portada',
         startSlideIndex: 0,

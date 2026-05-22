@@ -300,6 +300,7 @@ export async function loadLiturgyForPresentation(liturgyId: string): Promise<Pre
         const decodedType = (elemento.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? 'custom' : elemento.tipo) as LiturgyElementType;
         elements.push({
           id: elemento.tipo.startsWith(CUSTOM_TIPO_PREFIX) ? elemento.tipo.slice(CUSTOM_TIPO_PREFIX.length) : elemento.id,
+          dbRowId: elemento.id,
           type: decodedType,
           title: elemento.titulo || getElementLabel(decodedType),
           startSlideIndex: startIndex,

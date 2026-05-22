@@ -364,7 +364,11 @@ interface TempGroup {
 async function saveSlidesWithPositions(
   liturgyId: string,
   allSlides: Slide[],
-  tempEdits: Record<string, TempSlideEdit>
+  tempEdits: Record<string, TempSlideEdit>,
+  /** In-memory element order. Used so that drags in the ServiceNavigator
+   *  sidebar (which reorder elements) persist as new `orden` values. When
+   *  omitted, falls back to DB orden (current saved-state order). */
+  inMemoryElements?: FlattenedElement[],
 ): Promise<SaveToLiturgyResult> {
   const tempSlideIdsInOrder = allSlides.filter(s => isTempSlideId(s.id));
   if (tempSlideIdsInOrder.length === 0 && allSlides.length === 0) {
@@ -484,17 +488,44 @@ async function saveSlidesWithPositions(
     }
   }
 
-  // 4) Build slot list and assign new orden
+  // 4) Build slot list and assign new orden.
+  //    sortKey priority: in-memory element position (if provided) over DB orden,
+  //    so a sidebar reorder gets persisted. New groups still anchor to their
+  //    "afterOrden" neighbor; we read that neighbor's NEW position from the
+  //    in-memory map so a new group ends up next to its anchor after the move.
   type Slot =
     | { kind: 'existing'; el: ParsedDbElement }
     | { kind: 'new'; group: (typeof convertedGroups)[number] };
 
+  // Map dbRowId -> in-memory position. Elements not in the map fall back to
+  // their DB orden (with a large offset so they appear after known ones).
+  const inMemoryPos = new Map<string, number>();
+  if (inMemoryElements) {
+    inMemoryElements.forEach((el, idx) => {
+      inMemoryPos.set(el.dbRowId, idx);
+    });
+  }
+  const positionFor = (el: ParsedDbElement): number => {
+    const inMem = inMemoryPos.get(el.id);
+    if (inMem !== undefined) return inMem;
+    // Element not seen in memory — fall back to DB order, offset to land after
+    // all in-memory-known elements.
+    return (inMemoryElements ? inMemoryElements.length : 0) + el.orden;
+  };
+  const positionForAnchor = (anchorOrden: number | null, anchorDbId: string | null): number => {
+    if (anchorDbId !== null) {
+      const inMem = inMemoryPos.get(anchorDbId);
+      if (inMem !== undefined) return inMem;
+    }
+    return anchorOrden ?? -1;
+  };
+
   const slots: { item: Slot; sortKey: number }[] = [];
   for (const el of parsedElements) {
-    slots.push({ item: { kind: 'existing', el }, sortKey: el.orden * 2 });
+    slots.push({ item: { kind: 'existing', el }, sortKey: positionFor(el) * 2 });
   }
   for (const g of convertedGroups) {
-    const base = g.afterOrden === null ? -1 : g.afterOrden;
+    const base = positionForAnchor(g.afterOrden, g.afterDbElementId);
     slots.push({ item: { kind: 'new', group: g }, sortKey: base * 2 + 1 });
   }
   slots.sort((a, b) => a.sortKey - b.sortKey);
@@ -634,7 +665,10 @@ export async function saveToLiturgy(
   styleState: StyleState,
   logoState: LogoState,
   textOverlayState: TextOverlayState,
-  tempEdits: Record<string, TempSlideEdit>
+  tempEdits: Record<string, TempSlideEdit>,
+  /** In-memory element order, so sidebar reorders persist. Optional —
+   *  when omitted the save preserves the current DB element order. */
+  inMemoryElements?: FlattenedElement[],
 ): Promise<SaveToLiturgyResult> {
   const canSave = await canSaveToLiturgy();
   if (!canSave) {
@@ -650,7 +684,7 @@ export async function saveToLiturgy(
   };
 
   // STEP 1: Save slides with position preservation + reorder persistence
-  const slidesResult = await saveSlidesWithPositions(liturgyId, slides, tempEdits);
+  const slidesResult = await saveSlidesWithPositions(liturgyId, slides, tempEdits, inMemoryElements);
   if (!slidesResult.success) {
     return { success: false, error: `Error al guardar diapositivas: ${slidesResult.error}` };
   }

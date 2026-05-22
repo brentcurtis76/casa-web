@@ -79,6 +79,7 @@ interface UsePresentationStateReturn {
   insertSlide: (slide: Slide, insertAfterIndex: number) => void;
   insertSlides: (slides: Slide[], insertAfterIndex: number, elementInfo?: { type: string; title: string }) => void;
   reorderSlides: (newSlides: Slide[], newCurrentIndex: number) => void;
+  reorderElements: (newElements: FlattenedElement[]) => void;
 
   // Text overlays (SIMPLIFICADO)
   addTextOverlay: (overlay: TextOverlay) => void;
@@ -1110,6 +1111,76 @@ export function usePresentationState(): UsePresentationStateReturn {
     });
   }, []);
 
+  // Reordenar ELEMENTOS completos en el sidebar (Orden del Servicio).
+  // Recibe el nuevo orden de elementos y reconstruye el array plano de slides
+  // concatenando los slides de cada elemento en el nuevo orden. Los rangos
+  // (startSlideIndex / endSlideIndex / slideCount) se recalculan; el slide
+  // actualmente en preview sigue al usuario por su id.
+  const reorderElements = useCallback((newElements: FlattenedElement[]) => {
+    setState((prev) => {
+      if (!prev.data) return prev;
+      const oldElements = prev.data.elements;
+      const oldSlides = prev.data.slides;
+
+      // Capture the currently-previewed slide id so we can re-find it post-shuffle.
+      const previewedSlideId = oldSlides[prev.previewSlideIndex]?.id;
+
+      // Build new slides[] by concatenating each element's existing slide range
+      // (taken from the OLD positions). Then assign fresh start/end indexes.
+      const newSlides: Slide[] = [];
+      const updatedElements: FlattenedElement[] = [];
+
+      for (const el of newElements) {
+        // Find the same element in the OLD list to get its source range.
+        const oldEl = oldElements.find((e) => e.dbRowId === el.dbRowId);
+        if (!oldEl) {
+          // Shouldn't happen — defensive: keep element with empty range.
+          updatedElements.push({
+            ...el,
+            startSlideIndex: newSlides.length,
+            endSlideIndex: newSlides.length - 1,
+            slideCount: 0,
+          });
+          continue;
+        }
+        const start = newSlides.length;
+        const elementSlides = oldSlides.slice(
+          oldEl.startSlideIndex,
+          oldEl.endSlideIndex + 1,
+        );
+        newSlides.push(...elementSlides);
+        updatedElements.push({
+          ...el,
+          startSlideIndex: start,
+          endSlideIndex: newSlides.length - 1,
+          slideCount: elementSlides.length,
+        });
+      }
+
+      const newPreviewSlideIndex = previewedSlideId
+        ? newSlides.findIndex((s) => s.id === previewedSlideId)
+        : -1;
+      const safePreviewIndex =
+        newPreviewSlideIndex >= 0 ? newPreviewSlideIndex : 0;
+      const newPreviewElementIndex = findElementForSlide(
+        updatedElements,
+        safePreviewIndex,
+      );
+
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          slides: newSlides,
+          elements: updatedElements,
+        },
+        previewSlideIndex: safePreviewIndex,
+        previewElementIndex: newPreviewElementIndex,
+        hasUnpublishedChanges: true,
+      };
+    });
+  }, []);
+
   // Agregar slides de imagen (para importar imágenes al vuelo)
   const addImageSlides = useCallback((imageUrls: string[], insertAfterIndex?: number) => {
     setState((prev) => {
@@ -1545,6 +1616,7 @@ export function usePresentationState(): UsePresentationStateReturn {
     insertSlide,
     insertSlides,
     reorderSlides,
+    reorderElements,
     // Text overlays (simplificado)
     addTextOverlay,
     updateTextOverlay,

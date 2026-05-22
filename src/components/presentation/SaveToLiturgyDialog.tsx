@@ -105,7 +105,8 @@ export const SaveToLiturgyDialog: React.FC<SaveToLiturgyDialogProps> = ({
         styleState,
         logoState,
         textOverlayState,
-        tempEdits
+        tempEdits,
+        data.elements,
       );
 
       if (!result.success) {

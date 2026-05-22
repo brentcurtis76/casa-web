@@ -121,6 +121,7 @@ export const PresenterView: React.FC = () => {
     insertSlide,
     insertSlides,
     reorderSlides,
+    reorderElements,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
@@ -483,6 +484,18 @@ export const PresenterView: React.FC = () => {
       }
     }, 50);
   }, [reorderSlides, send]);
+
+  // Drag-to-reorder elements (in the ServiceNavigator sidebar)
+  const handleReorderElements = useCallback((newElements: import('@/lib/presentation/types').FlattenedElement[]) => {
+    reorderElements(newElements);
+
+    setTimeout(() => {
+      const currentState = stateRef.current;
+      if (currentState?.data) {
+        send({ type: 'SLIDES_UPDATE', slides: currentState.data.slides, tempEdits: currentState.tempEdits });
+      }
+    }, 50);
+  }, [reorderElements, send]);
 
   // Build slideId -> elementId map for drag restrictions
   const slideElementMap = React.useMemo(() => {
@@ -940,6 +953,7 @@ export const PresenterView: React.FC = () => {
             elements={state.data?.elements || []}
             currentElementIndex={state.previewElementIndex}
             onElementClick={handleGoToElement}
+            onReorder={handleReorderElements}
           />
         </div>
 
