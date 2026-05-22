@@ -14,9 +14,14 @@ import type { PresentationTheme } from '@/lib/presentation/themes';
 
 /**
  * Elemento aplanado de la liturgia para navegación
+ *
+ * `id` is the "logical" id (DB row id for non-custom elements, custom subtype
+ * for custom elements). `dbRowId` is the actual liturgia_elementos.id and is
+ * what we use to address a row when persisting reorders.
  */
 export interface FlattenedElement {
   id: string;
+  dbRowId: string;
   type: LiturgyElementType;
   title: string;
   startSlideIndex: number;
