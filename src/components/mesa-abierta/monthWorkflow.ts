@@ -32,6 +32,8 @@ export function canMarkCompleted(
 ): boolean {
   if (month.status !== 'matched') return false;
   if (!month.dinner_date) return false;
-  const endOfDinnerDay = new Date(month.dinner_date + 'T23:59:59').getTime();
+  // Parse as UTC end-of-day to stay consistent with registration_deadline (also UTC).
+  // Trade-off: button appears up to ~3h after Chilean end-of-day, which is acceptable.
+  const endOfDinnerDay = new Date(month.dinner_date + 'T23:59:59Z').getTime();
   return endOfDinnerDay < now.getTime();
 }

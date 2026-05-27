@@ -50,6 +50,8 @@ describe('canRunMatching', () => {
 });
 
 describe('canMarkCompleted', () => {
+  // All times are explicit UTC instants; dinner_date is interpreted as UTC end-of-day,
+  // so these assertions hold regardless of the developer's local timezone.
   const now = new Date('2026-05-27T12:00:00Z');
 
   it('returns true for matched month with past dinner_date', () => {
@@ -70,13 +72,24 @@ describe('canMarkCompleted', () => {
     ).toBe(false);
   });
 
-  it('returns false for matched month with dinner_date today (not yet end of day)', () => {
+  it('returns false for matched month with dinner_date today (not yet end of UTC day)', () => {
     expect(
       canMarkCompleted(
         { status: 'matched', dinner_date: '2026-05-27' },
         now
       )
     ).toBe(false);
+  });
+
+  it('returns true exactly after end-of-UTC-day of dinner_date', () => {
+    // dinner_date 2026-05-27 → endOfDinnerDay = 2026-05-27T23:59:59Z
+    const justAfter = new Date('2026-05-28T00:00:00Z');
+    expect(
+      canMarkCompleted(
+        { status: 'matched', dinner_date: '2026-05-27' },
+        justAfter
+      )
+    ).toBe(true);
   });
 
   it('returns false when status is open', () => {

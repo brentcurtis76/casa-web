@@ -203,7 +203,7 @@ export const MesaAbiertaAdmin = () => {
     }
   }, [selectedMonth]);
 
-  const fetchMonths = async () => {
+  const fetchMonths = async (): Promise<Month[] | null> => {
     const { data, error } = await supabase
       .from('mesa_abierta_months')
       .select('*')
@@ -214,7 +214,9 @@ export const MesaAbiertaAdmin = () => {
       if (data.length > 0 && !selectedMonth) {
         setSelectedMonth(data[0]);
       }
+      return data;
     }
+    return null;
   };
 
   const fetchParticipants = async (monthId: string) => {
@@ -648,13 +650,8 @@ export const MesaAbiertaAdmin = () => {
         description: 'El mes ha sido marcado como completado.',
       });
 
-      await fetchMonths();
-      const { data: updatedMonth } = await supabase
-        .from('mesa_abierta_months')
-        .select('*')
-        .eq('id', selectedMonth.id)
-        .single();
-
+      const updatedMonths = await fetchMonths();
+      const updatedMonth = updatedMonths?.find(m => m.id === selectedMonth.id);
       if (updatedMonth) {
         setSelectedMonth(updatedMonth);
       }
