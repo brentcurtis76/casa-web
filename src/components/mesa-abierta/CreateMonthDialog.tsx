@@ -22,7 +22,7 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
     dinnerDate: "",
     dinnerTime: "19:00",
     registrationDeadline: "",
-    status: "open" as "open" | "closed" | "matched",
+    status: "open" as "open" | "matching" | "matched" | "completed",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -142,7 +142,7 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
             <Label htmlFor="status">Estado</Label>
             <Select
               value={formData.status}
-              onValueChange={(value: "open" | "closed" | "matched") =>
+              onValueChange={(value: "open" | "matching" | "matched" | "completed") =>
                 setFormData({ ...formData, status: value })
               }
             >
@@ -151,8 +151,9 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="open">Abierto (permite inscripciones)</SelectItem>
-                <SelectItem value="closed">Cerrado</SelectItem>
+                <SelectItem value="matching">Cerrado (en proceso de matching)</SelectItem>
                 <SelectItem value="matched">Emparejado</SelectItem>
+                <SelectItem value="completed">Completado</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
