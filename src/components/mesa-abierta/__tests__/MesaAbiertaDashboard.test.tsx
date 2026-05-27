@@ -16,11 +16,9 @@ vi.mock('@/hooks/use-toast', () => ({
   })
 }));
 
-// Create a variable to hold the current test data
 let mockParticipantData: any = null;
 let mockParticipantError: any = null;
 
-// Mock Supabase with a simpler approach
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
@@ -28,23 +26,27 @@ vi.mock('@/integrations/supabase/client', () => ({
         return {
           select: () => ({
             eq: () => ({
-              gte: () => ({
-                order: () => ({
-                  limit: () => ({
-                    single: () => Promise.resolve({
-                      data: mockParticipantData,
-                      error: mockParticipantError
-                    })
-                  })
-                })
-              })
+              neq: () => {
+                const result = {
+                  data: mockParticipantData ? [mockParticipantData] : [],
+                  error: mockParticipantError
+                };
+                process.stderr.write('DBG-NEQ-CALLED data.length=' + result.data.length + '\n');
+                return Promise.resolve(result);
+              }
             })
           })
         };
       } else if (table === 'mesa_abierta_assignments') {
+        const assignment = mockParticipantData?.mesa_abierta_assignments?.[0] ?? null;
         return {
           select: () => ({
-            eq: () => Promise.resolve({ data: [], error: null })
+            eq: () => ({
+              single: () => Promise.resolve({
+                data: assignment,
+                error: assignment ? null : { code: 'PGRST116' }
+              })
+            })
           })
         };
       }
@@ -53,17 +55,26 @@ vi.mock('@/integrations/supabase/client', () => ({
   }
 }));
 
+const futureMonth = {
+  dinner_date: '2099-12-13',
+  month_date: '2099-12-01'
+};
+
+const futureMatch = {
+  id: 'match-id',
+  dinner_date: '2099-12-13',
+  dinner_time: '19:00'
+};
+
 describe('MesaAbiertaDashboard', () => {
   beforeEach(() => {
-    // Reset mock data before each test
     mockParticipantData = null;
     mockParticipantError = null;
   });
 
   it('shows empty state when user has no participation', async () => {
-    // Set up mock data for this test
     mockParticipantData = null;
-    mockParticipantError = { code: 'PGRST116' };
+    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -74,7 +85,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('shows pending status for unassigned participant', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'guest',
@@ -83,13 +93,9 @@ describe('MesaAbiertaDashboard', () => {
       status: 'pending',
       host_address: null,
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: []
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -100,7 +106,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('shows assignment details for assigned guest', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'guest',
@@ -109,23 +114,15 @@ describe('MesaAbiertaDashboard', () => {
       status: 'confirmed',
       host_address: null,
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
-          id: 'match-id',
-          dinner_date: '2025-12-13',
-          dinner_time: '19:00',
-          host_participant: {
-            host_address: '123 Main St, City'
-          }
+          ...futureMatch,
+          host_participant: { host_address: '123 Main St, City' }
         }
       }]
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -137,7 +134,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('shows assignment details for assigned host', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'host',
@@ -146,23 +142,15 @@ describe('MesaAbiertaDashboard', () => {
       status: 'confirmed',
       host_address: '456 Oak Ave',
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: [{
         food_assignment: 'none',
         mesa_abierta_matches: {
-          id: 'match-id',
-          dinner_date: '2025-12-13',
-          dinner_time: '19:00',
-          host_participant: {
-            host_address: '456 Oak Ave'
-          }
+          ...futureMatch,
+          host_participant: { host_address: '456 Oak Ave' }
         }
       }]
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -173,7 +161,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('displays calendar button for assigned participants', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'guest',
@@ -182,23 +169,15 @@ describe('MesaAbiertaDashboard', () => {
       status: 'confirmed',
       host_address: null,
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
-          id: 'match-id',
-          dinner_date: '2025-12-13',
-          dinner_time: '19:00',
-          host_participant: {
-            host_address: '123 Main St'
-          }
+          ...futureMatch,
+          host_participant: { host_address: '123 Main St' }
         }
       }]
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -208,7 +187,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('shows cancel button for non-cancelled participants', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'guest',
@@ -217,13 +195,9 @@ describe('MesaAbiertaDashboard', () => {
       status: 'pending',
       host_address: null,
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: []
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -233,7 +207,6 @@ describe('MesaAbiertaDashboard', () => {
   });
 
   it('displays mystery reminder for assigned participants', async () => {
-    // Set up mock data (use a future date)
     mockParticipantData = {
       id: 'participant-id',
       role_preference: 'guest',
@@ -242,23 +215,15 @@ describe('MesaAbiertaDashboard', () => {
       status: 'confirmed',
       host_address: null,
       phone_number: null,
-      mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
-      },
+      mesa_abierta_months: futureMonth,
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
-          id: 'match-id',
-          dinner_date: '2025-12-13',
-          dinner_time: '19:00',
-          host_participant: {
-            host_address: '123 Main St'
-          }
+          ...futureMatch,
+          host_participant: { host_address: '123 Main St' }
         }
       }]
     };
-    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
