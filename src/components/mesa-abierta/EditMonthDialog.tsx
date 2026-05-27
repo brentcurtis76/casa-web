@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -32,7 +31,6 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
     dinnerDate: "",
     dinnerTime: "19:00",
     registrationDeadline: "",
-    status: "open" as "open" | "matching" | "matched" | "completed",
   });
 
   // Initialize form data when month changes
@@ -47,7 +45,6 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
         dinnerDate: month.dinner_date || "",
         dinnerTime: month.dinner_time || "19:00",
         registrationDeadline: deadline,
-        status: (month.status as "open" | "matching" | "matched" | "completed") || "open",
       });
     }
   }, [month]);
@@ -90,7 +87,6 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
           dinner_date: formData.dinnerDate,
           dinner_time: formData.dinnerTime,
           registration_deadline: formData.registrationDeadline,
-          status: formData.status,
         })
         .eq("id", month.id);
 
@@ -121,7 +117,10 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
             Editar Mes
           </DialogTitle>
           <DialogDescription>
-            Modifica la configuración del mes para La Mesa Abierta.
+            Modifica la configuración del mes para La Mesa Abierta. Para cerrar la
+            inscripción antes de tiempo, baja la fecha límite. Las transiciones de
+            estado (matching, emparejado, completado) se manejan desde los botones
+            de flujo de trabajo.
           </DialogDescription>
         </DialogHeader>
 
@@ -164,30 +163,8 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
               required
             />
             <p className="text-xs text-muted-foreground">
-              Recomendado: Lunes antes de la cena, 23:59
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="status">Estado</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value: "open" | "matching" | "matched" | "completed") =>
-                setFormData({ ...formData, status: value })
-              }
-            >
-              <SelectTrigger id="status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="open">Abierto (permite inscripciones)</SelectItem>
-                <SelectItem value="matching">Cerrado (en proceso de matching)</SelectItem>
-                <SelectItem value="matched">Emparejado</SelectItem>
-                <SelectItem value="completed">Completado</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Cambiar el estado afectará las inscripciones y el proceso de matching
+              Recomendado: Lunes antes de la cena, 23:59. Para cerrar la inscripción
+              antes de tiempo, pon esta fecha en el pasado.
             </p>
           </div>
 

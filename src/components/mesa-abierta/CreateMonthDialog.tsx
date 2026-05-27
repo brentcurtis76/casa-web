@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -22,7 +21,6 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
     dinnerDate: "",
     dinnerTime: "19:00",
     registrationDeadline: "",
-    status: "open" as "open" | "matching" | "matched" | "completed",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,7 +59,7 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
         dinner_date: formData.dinnerDate,
         dinner_time: formData.dinnerTime,
         registration_deadline: formData.registrationDeadline,
-        status: formData.status,
+        status: "open",
       });
 
       if (error) throw error;
@@ -91,7 +89,9 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
             Crear Nuevo Mes
           </DialogTitle>
           <DialogDescription>
-            Configura un nuevo mes para La Mesa Abierta. Los participantes podrán inscribirse después de crear el mes.
+            Configura un nuevo mes para La Mesa Abierta. El mes se crea como
+            "Abierto" — las transiciones posteriores (matching, emparejado,
+            completado) se manejan desde los botones de flujo de trabajo.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,29 +135,6 @@ export function CreateMonthDialog({ open, onClose, onSuccess }: CreateMonthDialo
             />
             <p className="text-xs text-muted-foreground">
               Recomendado: Lunes antes de la cena, 23:59
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="status">Estado</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value: "open" | "matching" | "matched" | "completed") =>
-                setFormData({ ...formData, status: value })
-              }
-            >
-              <SelectTrigger id="status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="open">Abierto (permite inscripciones)</SelectItem>
-                <SelectItem value="matching">Cerrado (en proceso de matching)</SelectItem>
-                <SelectItem value="matched">Emparejado</SelectItem>
-                <SelectItem value="completed">Completado</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Normalmente se inicia como "Abierto" para aceptar inscripciones
             </p>
           </div>
 
