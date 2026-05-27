@@ -52,6 +52,19 @@ serve(async (req) => {
       );
     }
 
+    if (month.registration_deadline) {
+      const deadlineMs = new Date(month.registration_deadline).getTime();
+      if (deadlineMs > Date.now()) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `La inscripción aún está abierta hasta ${month.registration_deadline}. Baja la fecha límite primero si quieres cerrar antes.`,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // IDEMPOTENCY CHECK: Verify no matches already exist for this month
     const { data: existingMatches, error: existingMatchesError } = await supabase
       .from("mesa_abierta_matches")
