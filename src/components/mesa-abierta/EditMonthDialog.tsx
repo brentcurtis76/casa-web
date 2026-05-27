@@ -32,7 +32,7 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
     dinnerDate: "",
     dinnerTime: "19:00",
     registrationDeadline: "",
-    status: "open" as "open" | "closed" | "matched",
+    status: "open" as "open" | "matching" | "matched" | "completed",
   });
 
   // Initialize form data when month changes
@@ -47,7 +47,7 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
         dinnerDate: month.dinner_date || "",
         dinnerTime: month.dinner_time || "19:00",
         registrationDeadline: deadline,
-        status: (month.status as "open" | "closed" | "matched") || "open",
+        status: (month.status as "open" | "matching" | "matched" | "completed") || "open",
       });
     }
   }, [month]);
@@ -172,7 +172,7 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
             <Label htmlFor="status">Estado</Label>
             <Select
               value={formData.status}
-              onValueChange={(value: "open" | "closed" | "matched") =>
+              onValueChange={(value: "open" | "matching" | "matched" | "completed") =>
                 setFormData({ ...formData, status: value })
               }
             >
@@ -181,8 +181,9 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="open">Abierto (permite inscripciones)</SelectItem>
-                <SelectItem value="closed">Cerrado</SelectItem>
+                <SelectItem value="matching">Cerrado (en proceso de matching)</SelectItem>
                 <SelectItem value="matched">Emparejado</SelectItem>
+                <SelectItem value="completed">Completado</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
