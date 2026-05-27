@@ -24,6 +24,16 @@ interface Month {
   status: string;
 }
 
+const MONTH_STATUS_LABELS: Record<string, string> = {
+  open: 'Abierto',
+  matching: 'En matching',
+  matched: 'Emparejado',
+  completed: 'Completado',
+};
+
+const monthStatusLabel = (status: string): string =>
+  MONTH_STATUS_LABELS[status] ?? status;
+
 interface DietaryRestriction {
   id: string;
   restriction_type: string;
@@ -471,7 +481,7 @@ export const MesaAbiertaAdmin = () => {
     if (selectedMonth.status !== 'open') {
       toast({
         title: 'Error',
-        description: `El mes debe estar en estado 'open'. Estado actual: ${selectedMonth.status}`,
+        description: `El mes debe estar en estado "Abierto". Estado actual: ${monthStatusLabel(selectedMonth.status)}`,
         variant: 'destructive',
       });
       return;
@@ -1462,7 +1472,7 @@ export const MesaAbiertaAdmin = () => {
                       variant={month.status === 'open' ? 'default' : 'secondary'}
                       className={`mt-2 ${selectedMonth?.id === month.id ? 'bg-primary-foreground text-primary' : ''}`}
                     >
-                      {month.status}
+                      {monthStatusLabel(month.status)}
                     </Badge>
                   </div>
                   {/* Edit and Delete buttons */}
@@ -1567,7 +1577,7 @@ export const MesaAbiertaAdmin = () => {
                     </Button>
                   )}
                   <Badge variant={selectedMonth.status === 'open' ? 'default' : 'secondary'}>
-                    Estado: {selectedMonth.status}
+                    Estado: {monthStatusLabel(selectedMonth.status)}
                   </Badge>
                 </div>
 
