@@ -118,9 +118,9 @@ export function EditMonthDialog({ open, month, onClose, onSuccess }: EditMonthDi
           </DialogTitle>
           <DialogDescription>
             Modifica la configuración del mes para La Mesa Abierta. Para cerrar la
-            inscripción antes de tiempo, baja la fecha límite. Las transiciones de
-            estado (matching, emparejado, completado) se manejan desde los botones
-            de flujo de trabajo.
+            inscripción antes de tiempo, baja la fecha límite. Después de la fecha
+            límite podrás ejecutar el matching desde la pestaña Matching. Cuando
+            termine la cena, marca el mes como completado desde la pestaña Matching.
           </DialogDescription>
         </DialogHeader>
 

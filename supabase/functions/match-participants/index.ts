@@ -86,7 +86,7 @@ const handler = async (req: Request): Promise<Response> => {
     // ===================================
     const { data: monthData, error: monthError } = await supabase
       .from("mesa_abierta_months")
-      .select("id, month_date, dinner_date, dinner_time, status")
+      .select("id, month_date, dinner_date, dinner_time, status, registration_deadline")
       .eq("id", monthId)
       .single();
 
@@ -96,6 +96,15 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (monthData.status !== "open") {
       throw new Error(`El mes ya fue procesado (estado: ${monthData.status})`);
+    }
+
+    if (monthData.registration_deadline) {
+      const deadlineMs = new Date(monthData.registration_deadline).getTime();
+      if (deadlineMs > Date.now()) {
+        throw new Error(
+          `La inscripción aún está abierta hasta ${monthData.registration_deadline}. Baja la fecha límite primero si quieres cerrar antes.`
+        );
+      }
     }
 
     console.log(`Mes encontrado: ${monthData.month_date}, cena el ${monthData.dinner_date}`);

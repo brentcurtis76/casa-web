@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed, UserPlus, ArrowRightLeft, MoveRight } from 'lucide-react';
+import { AlertCircle, Play, Users, Calendar, TrendingUp, Mail, Send, MessageCircle, Pencil, Trash2, RotateCcw, Home, UtensilsCrossed, UserPlus, ArrowRightLeft, MoveRight, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,6 +14,7 @@ import { CreateMonthDialog } from './CreateMonthDialog';
 import { EditMonthDialog } from './EditMonthDialog';
 import { AddParticipantDialog } from './AddParticipantDialog';
 import { EditParticipantDialog } from './EditParticipantDialog';
+import { canMarkCompleted, canRunMatching } from './monthWorkflow';
 
 interface Month {
   id: string;
@@ -120,6 +121,7 @@ export const MesaAbiertaAdmin = () => {
   const [deleting, setDeleting] = useState(false);
   const [showUnmatchConfirm, setShowUnmatchConfirm] = useState(false);
   const [unmatching, setUnmatching] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [dinnerMatches, setDinnerMatches] = useState<DinnerMatch[]>([]);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [editParticipant, setEditParticipant] = useState<Participant | null>(null);
@@ -201,7 +203,7 @@ export const MesaAbiertaAdmin = () => {
     }
   }, [selectedMonth]);
 
-  const fetchMonths = async () => {
+  const fetchMonths = async (): Promise<Month[] | null> => {
     const { data, error } = await supabase
       .from('mesa_abierta_months')
       .select('*')
@@ -212,7 +214,9 @@ export const MesaAbiertaAdmin = () => {
       if (data.length > 0 && !selectedMonth) {
         setSelectedMonth(data[0]);
       }
+      return data;
     }
+    return null;
   };
 
   const fetchParticipants = async (monthId: string) => {
@@ -478,12 +482,25 @@ export const MesaAbiertaAdmin = () => {
       return;
     }
 
-    if (selectedMonth.status !== 'open') {
-      toast({
-        title: 'Error',
-        description: `El mes debe estar en estado "Abierto". Estado actual: ${monthStatusLabel(selectedMonth.status)}`,
-        variant: 'destructive',
-      });
+    const gate = canRunMatching(selectedMonth);
+    if (!gate.ok) {
+      if (gate.reason === 'wrong-status') {
+        toast({
+          title: 'Error',
+          description: `El mes debe estar en estado "Abierto". Estado actual: ${monthStatusLabel(selectedMonth.status)}`,
+          variant: 'destructive',
+        });
+      } else if (gate.reason === 'deadline-not-passed' && gate.deadline) {
+        const formatted = gate.deadline.toLocaleString('es-ES', {
+          dateStyle: 'long',
+          timeStyle: 'short',
+        });
+        toast({
+          title: 'Inscripción aún abierta',
+          description: `La inscripción aún está abierta hasta ${formatted}. Baja la fecha límite primero si quieres cerrar antes.`,
+          variant: 'destructive',
+        });
+      }
       return;
     }
 
@@ -612,6 +629,41 @@ export const MesaAbiertaAdmin = () => {
     } finally {
       setUnmatching(false);
       setShowUnmatchConfirm(false);
+    }
+  };
+
+  const handleMarkCompleted = async () => {
+    if (!selectedMonth) return;
+
+    setCompleting(true);
+    try {
+      const { error } = await supabase
+        .from('mesa_abierta_months')
+        .update({ status: 'completed' })
+        .eq('id', selectedMonth.id)
+        .eq('status', 'matched');
+
+      if (error) throw error;
+
+      toast({
+        title: 'Mes completado',
+        description: 'El mes ha sido marcado como completado.',
+      });
+
+      const updatedMonths = await fetchMonths();
+      const updatedMonth = updatedMonths?.find(m => m.id === selectedMonth.id);
+      if (updatedMonth) {
+        setSelectedMonth(updatedMonth);
+      }
+    } catch (error: any) {
+      console.error('Error marking month completed:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al marcar el mes como completado',
+        variant: 'destructive',
+      });
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -1574,6 +1626,18 @@ export const MesaAbiertaAdmin = () => {
                     >
                       <RotateCcw className="h-4 w-4 mr-2" />
                       {unmatching ? 'Deshaciendo...' : 'Deshacer Matching'}
+                    </Button>
+                  )}
+                  {canMarkCompleted(selectedMonth) && (
+                    <Button
+                      onClick={handleMarkCompleted}
+                      disabled={completing}
+                      size="lg"
+                      variant="outline"
+                      className="border-green-600 text-green-700 hover:bg-green-50"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      {completing ? 'Guardando...' : 'Marcar como Completado'}
                     </Button>
                   )}
                   <Badge variant={selectedMonth.status === 'open' ? 'default' : 'secondary'}>
