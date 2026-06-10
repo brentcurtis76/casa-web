@@ -126,6 +126,7 @@ export function Sermones() {
                   date={sermon.date}
                   spotifyLink={sermon.spotifyLink}
                   image={sermon.image}
+                  audioUrl={sermon.audioUrl}
                 />
               </motion.div>
             ))

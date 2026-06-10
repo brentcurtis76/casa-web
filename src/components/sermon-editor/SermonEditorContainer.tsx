@@ -489,6 +489,7 @@ export function SermonEditorContainer() {
               coverImage={state.coverImage}
               metadata={state.metadata}
               validation={spotifyValidation}
+              durationSeconds={finalDuration}
               disabled={state.isExporting}
             />
           </CardContent>

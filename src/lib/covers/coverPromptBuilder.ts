@@ -128,7 +128,7 @@ interface CoverJsonPrompt {
     layout: string;
     textPlacement: string;
     balance: string;
-    aspectRatio: '4:3';
+    aspectRatio: '4:3' | '1:1';
   };
   colors: {
     foundation: string;
@@ -209,7 +209,8 @@ function commonPromptParts() {
 }
 
 function jsonPromptToString(prompt: CoverJsonPrompt): string {
-  return `Generate a finished 4:3 cover design based on the following structured specification.
+  const aspect = prompt.composition.aspectRatio;
+  return `Generate a finished ${aspect} cover design based on the following structured specification.
 
 CRITICAL INSTRUCTIONS:
 1. The illustration MUST be Henri Matisse / Pablo Picasso one-line continuous line art — flowing gray (#666666) lines with warm amber/gold (${CASA_BRAND.colors.primary.amber}) accents on a warm cream (${CASA_BRAND.colors.primary.white}) background. Signature visual style, non-negotiable.
@@ -221,6 +222,7 @@ CRITICAL INSTRUCTIONS:
 7. Follow the typography direction — elegant serif for titles, clean sans-serif for subtitles.
 8. Use ONLY the exact text content provided in the specification. No placeholder text.
 9. The final result must look like an editorial magazine cover — illustration and typography as a unified design.
+10. Aspect ratio is ${aspect} — compose for this format. Do not letterbox or pillarbox.
 
 DESIGN SPECIFICATION:
 ${JSON.stringify(prompt, null, 2)}`;
@@ -320,14 +322,21 @@ export function buildSermonCoverPrompt(args: {
   title: string;
   preacher: string;
   illustrationTheme?: string;
+  aspect?: '4:3' | '1:1';
 }): string {
   const { title, illustrationTheme } = args;
+  const aspect: '4:3' | '1:1' = args.aspect ?? '4:3';
   const preacher = sanitizeHumanName(args.preacher);
   const common = commonPromptParts();
   const themeOverride = illustrationTheme?.trim();
   const illustrationSubject = themeOverride
     ? themeOverride
     : `Abstract, contemplative scene evoking the theme of "${title}" — avoid literal depictions, keep it suggestive and reflective`;
+
+  const textPlacement =
+    aspect === '1:1'
+      ? 'Square podcast-cover composition. Title hero in the lower half of the canvas (large serif), with the preacher name as a small caption directly beneath, preceded by a small amber dot accent. Illustration occupies the upper half — line-art forms breathing into the negative space above the title. Logo in the top-right corner per logo spec. Avoid any element near the absolute edges that could be cropped by podcast players.'
+      : 'Title as hero in the lower-left or lower-center, with generous negative space above. Preacher name as a small caption directly beneath the title, with a small amber dot accent before the name. Illustration occupies the upper portion or frames the title. Logo in top-right corner per logo spec.';
 
   const prompt: CoverJsonPrompt = {
     core: {
@@ -351,8 +360,8 @@ export function buildSermonCoverPrompt(args: {
     logo: common.logo,
     composition: {
       ...common.composition,
-      textPlacement:
-        'Title as hero in the lower-left or lower-center, with generous negative space above. Preacher name as a small caption directly beneath the title, with a small amber dot accent before the name. Illustration occupies the upper portion or frames the title. Logo in top-right corner per logo spec.',
+      aspectRatio: aspect,
+      textPlacement,
     },
     colors: common.colors,
     typography: common.typography,

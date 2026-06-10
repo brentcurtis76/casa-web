@@ -679,6 +679,70 @@ export type Database = {
         }
         Relationships: []
       }
+      // Podcast episodes (self-hosted RSS — Publicación Rápida Phase A)
+      church_podcast_episodes: {
+        Row: {
+          id: string
+          liturgy_id: string | null
+          title: string
+          description: string | null
+          speaker: string | null
+          episode_date: string
+          audio_url: string | null
+          audio_size_bytes: number | null
+          duration_seconds: number | null
+          mime_type: string
+          cover_url: string | null
+          guid: string
+          episode_number: number | null
+          status: 'draft' | 'published'
+          published_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          liturgy_id?: string | null
+          title: string
+          description?: string | null
+          speaker?: string | null
+          episode_date: string
+          audio_url?: string | null
+          audio_size_bytes?: number | null
+          duration_seconds?: number | null
+          mime_type?: string
+          cover_url?: string | null
+          guid?: string
+          episode_number?: number | null
+          status?: 'draft' | 'published'
+          published_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          liturgy_id?: string | null
+          title?: string
+          description?: string | null
+          speaker?: string | null
+          episode_date?: string
+          audio_url?: string | null
+          audio_size_bytes?: number | null
+          duration_seconds?: number | null
+          mime_type?: string
+          cover_url?: string | null
+          guid?: string
+          episode_number?: number | null
+          status?: 'draft' | 'published'
+          published_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       // PROMPT_004: Sermon music tracks table
       sermon_music_tracks: {
         Row: {

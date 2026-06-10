@@ -16,3 +16,5 @@ export { CoverArtGenerator } from './CoverArtGenerator';
 export { CoverCropTool } from './CoverCropTool';
 // PROMPT_006: Distribution components
 export { DistributionPanel } from './DistributionPanel';
+// Publicación Rápida (Phase B)
+export { QuickPublishContainer } from './quick/QuickPublishContainer';
