@@ -13,7 +13,7 @@ const SHOW_TITLE = "CASA";
 const SHOW_DESCRIPTION =
   "Reflexiones de la Comunidad Anglicana San Andrés Santiago, Chile";
 const SHOW_AUTHOR = "Comunidad Anglicana San Andrés";
-const SHOW_LINK = "https://iglesia-casa.cl";
+const SHOW_LINK = "https://anglicanasanandres.cl";
 // TODO(Brent): confirm before Spotify cutover; publicly visible in feed
 const OWNER_EMAIL = "brentcurtis76@gmail.com";
 const LANGUAGE = "es";
