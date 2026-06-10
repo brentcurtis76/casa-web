@@ -1,1 +1,4 @@
 project_id = "mulsqxfhxxdsadxsljss"
+
+[functions.podcast-rss]
+verify_jwt = false
