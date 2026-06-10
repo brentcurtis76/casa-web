@@ -409,7 +409,6 @@ export async function saveLiturgy(
       celebrante: liturgy.context.celebrant || null,
       predicador: liturgy.context.preacher || null,
       reflexion_texto: liturgy.context.reflexionText || null,
-      reflexion_pdf_url: liturgy.context.reflexionPdfUrl || null,
       estado: liturgy.status === 'ready' ? 'listo' : 'en-progreso',
       porcentaje_completado: porcentaje,
       created_by: user.id,
@@ -420,6 +419,14 @@ export async function saveLiturgy(
     // Solo actualizar la URL de imagen si se subió una nueva
     if (imageUrl) {
       upsertData.portada_imagen_url = imageUrl;
+    }
+
+    // Only write reflexion_pdf_url when an in-memory value is present.
+    // Omitting the column on save preserves any previously stored URL when
+    // the builder rebuilds context without it (e.g. pendingContextChanges
+    // flows where the form fields don't carry the PDF URL forward).
+    if (liturgy.context.reflexionPdfUrl) {
+      upsertData.reflexion_pdf_url = liturgy.context.reflexionPdfUrl;
     }
 
     // Note: `portadas_config` column is intentionally NOT written. Baked-in

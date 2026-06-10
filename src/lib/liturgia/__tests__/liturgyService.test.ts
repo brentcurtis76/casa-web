@@ -200,6 +200,77 @@ describe('saveLiturgy custom element encoding', () => {
   });
 });
 
+describe('saveLiturgy reflexion_pdf_url preservation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupCaptureMocks(): {
+    captured: { upsertData: Record<string, unknown> | null };
+  } {
+    const captured: { upsertData: Record<string, unknown> | null } = { upsertData: null };
+
+    supabaseMock.auth.getUser = vi.fn(async () => ({
+      data: { user: { id: 'user-1' } },
+      error: null,
+    }));
+
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'liturgias') {
+        return {
+          upsert: (data: Record<string, unknown>) => {
+            captured.upsertData = data;
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: { id: 'lit-1', fecha: '2026-02-01' },
+                  error: null,
+                }),
+              }),
+            };
+          },
+        };
+      }
+      if (table === 'liturgia_elementos') {
+        return {
+          upsert: async () => ({ error: null }),
+          delete: () => ({ eq: () => ({ not: async () => ({ error: null }) }) }),
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    return { captured };
+  }
+
+  it('omits reflexion_pdf_url from upsert when context lacks it (preserves stored value)', async () => {
+    const { captured } = setupCaptureMocks();
+
+    const liturgy = createTestLiturgy();
+    // No reflexionPdfUrl set on context — simulates rebuild from form fields
+    // that don't carry the persisted URL forward.
+    expect(liturgy.context.reflexionPdfUrl).toBeUndefined();
+
+    const result = await saveLiturgy(liturgy);
+
+    expect(result.success).toBe(true);
+    expect(captured.upsertData).not.toBeNull();
+    expect(captured.upsertData!).not.toHaveProperty('reflexion_pdf_url');
+  });
+
+  it('writes reflexion_pdf_url to upsert when context provides a value', async () => {
+    const { captured } = setupCaptureMocks();
+
+    const liturgy = createTestLiturgy();
+    liturgy.context.reflexionPdfUrl = 'https://example.com/reflexion.pdf';
+
+    const result = await saveLiturgy(liturgy);
+
+    expect(result.success).toBe(true);
+    expect(captured.upsertData!.reflexion_pdf_url).toBe('https://example.com/reflexion.pdf');
+  });
+});
+
 describe('loadLiturgy custom element decoding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
