@@ -17,8 +17,8 @@ const SHOW_LINK = "https://iglesia-casa.cl";
 // TODO(Brent): confirm before Spotify cutover; publicly visible in feed
 const OWNER_EMAIL = "brentcurtis76@gmail.com";
 const LANGUAGE = "es";
-// Top-level iTunes category. The "&" is escaped because it goes straight into XML.
-const CATEGORY = "Religion &amp; Spirituality";
+// Top-level iTunes category. Stored raw — interpolated via escapeXml() below.
+const CATEGORY = "Religion & Spirituality";
 const SUBCATEGORY = "Christianity";
 const EXPLICIT = false;
 const SHOW_COVER_URL =
@@ -119,7 +119,7 @@ function renderFeed(episodes: EpisodeRow[]): string {
 <itunes:author>${escapeXml(SHOW_AUTHOR)}</itunes:author>
 <itunes:owner><itunes:name>${escapeXml(SHOW_AUTHOR)}</itunes:name><itunes:email>${escapeXml(OWNER_EMAIL)}</itunes:email></itunes:owner>
 <itunes:image href="${escapeXml(SHOW_COVER_URL)}" />
-<itunes:category text="${CATEGORY}"><itunes:category text="${escapeXml(SUBCATEGORY)}" /></itunes:category>
+<itunes:category text="${escapeXml(CATEGORY)}"><itunes:category text="${escapeXml(SUBCATEGORY)}" /></itunes:category>
 <itunes:explicit>${EXPLICIT ? "true" : "false"}</itunes:explicit>
 <itunes:type>episodic</itunes:type>
 <atom:link href="${escapeXml(FEED_SELF_URL)}" rel="self" type="application/rss+xml" />
@@ -141,9 +141,11 @@ serve(async (req) => {
   }
 
   try {
+    // Use anon key — RLS already exposes only published rows.
+    // Defense-in-depth: public endpoint should not run with service role.
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
     );
 
     const { data, error } = await supabaseClient

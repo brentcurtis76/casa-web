@@ -15,6 +15,10 @@ import type { Database } from '@/integrations/supabase/types';
 
 const PODCAST_BUCKET = 'podcast-media';
 
+// Match the podcast-media bucket's per-object size limit (200 MB).
+// Keep in sync with supabase/migrations/20260610090001_podcast_media_storage.sql.
+const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
+
 export const PODCAST_FEED_URL =
   'https://mulsqxfhxxdsadxsljss.supabase.co/functions/v1/podcast-rss';
 
@@ -183,6 +187,14 @@ export async function publishEpisode(args: PublishArgs): Promise<PublishResult> 
   // ── Stage 2: upload audio ──────────────────────────────────────────────
   onStage?.('uploading-audio');
 
+  if (mp3Blob.size > MAX_AUDIO_BYTES) {
+    throw new PublishError(
+      'El archivo supera 200 MB',
+      'uploading-audio',
+      episodeId,
+    );
+  }
+
   const audioPath = `episodes/${episodeId}/audio.mp3`;
 
   const { error: audioUploadError } = await supabase.storage
@@ -264,8 +276,17 @@ export async function publishEpisode(args: PublishArgs): Promise<PublishResult> 
 
   let result = await tryPublish(episodeNumber);
 
-  if (result.error && isUniqueViolation(result.error) && existingEpisodeNumber === null) {
-    // Race against another publish — retry once with a fresh max+1.
+  // Race against another publish — retry up to 3 times with a fresh max+1.
+  // Only meaningful when assigning a new number (existingEpisodeNumber === null);
+  // re-publishing a known number cannot race against itself.
+  let retriesLeft = 3;
+  while (
+    result.error &&
+    isUniqueViolation(result.error) &&
+    existingEpisodeNumber === null &&
+    retriesLeft > 0
+  ) {
+    retriesLeft -= 1;
     episodeNumber = await getNextEpisodeNumber();
     result = await tryPublish(episodeNumber);
   }
