@@ -400,6 +400,61 @@ export async function publishChildrenActivities(
     groupCount,
   });
 
+  // Fail fast if the liturgy row doesn't exist. church_children_lessons and
+  // church_children_publication_state both FK liturgy_id → liturgias(id), so
+  // every group would otherwise burn a ~60s generation call and then die at
+  // upsert_lesson with a raw FK violation. This happens when the Constructor
+  // liturgy was never saved (the id only exists in memory).
+  const verifyStartedAt = Date.now();
+  logPublish({ liturgyId, groupCount, step: 'verify_liturgy', status: 'start' });
+  const { data: liturgyRow, error: liturgyLookupError } = await supabase
+    .from('liturgias')
+    .select('id')
+    .eq('id', liturgyId)
+    .maybeSingle();
+
+  const verifyDurationMs = Date.now() - verifyStartedAt;
+  const verifyError = liturgyLookupError
+    ? `No se pudo verificar la liturgia: ${liturgyLookupError.message}`
+    : !liturgyRow
+      ? 'La liturgia no está guardada en la base de datos. Guarda la liturgia en el Constructor y vuelve a intentarlo.'
+      : null;
+
+  if (verifyError) {
+    logPublish({
+      liturgyId,
+      groupCount,
+      step: 'verify_liturgy',
+      status: 'error',
+      durationMs: verifyDurationMs,
+      error: verifyError,
+    });
+    const failedResults: GroupGenerationResult[] = selectedAgeGroupIds.map((ageGroupId) => ({
+      ageGroupId,
+      ageGroupLabel: ageGroups.find((ag) => ag.id === ageGroupId)?.name ?? 'Unknown',
+      success: false,
+      error: verifyError,
+    }));
+    logPublish({ liturgyId, step: 'run_complete', status: 'error', groupCount });
+    return {
+      success: false,
+      publicationCount: 0,
+      results: failedResults,
+      totalActivitiesGenerated: 0,
+      warnings: failedResults.map(
+        (r) => `Error generando actividad para ${r.ageGroupLabel}: ${verifyError}`,
+      ),
+    };
+  }
+
+  logPublish({
+    liturgyId,
+    groupCount,
+    step: 'verify_liturgy',
+    status: 'ok',
+    durationMs: verifyDurationMs,
+  });
+
   for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
     const ageGroupId = selectedAgeGroupIds[groupIndex];
     const ageGroup = ageGroups.find((ag) => ag.id === ageGroupId);

@@ -39,6 +39,16 @@ const invokeMock = vi.fn();
 const getUserMock = vi.fn();
 const getSessionMock = vi.fn();
 const refreshSessionMock = vi.fn();
+// Backs supabase.from('liturgias').select('id').eq('id', ...).maybeSingle()
+// used by the verify_liturgy fail-fast step.
+const maybeSingleMock = vi.fn();
+const fromMock = vi.fn(() => ({
+  select: vi.fn(() => ({
+    eq: vi.fn(() => ({
+      maybeSingle: (...args: unknown[]) => maybeSingleMock(...args),
+    })),
+  })),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -50,6 +60,7 @@ vi.mock('@/integrations/supabase/client', () => ({
     functions: {
       invoke: (...args: unknown[]) => invokeMock(...args),
     },
+    from: (...args: unknown[]) => fromMock(...args),
   },
 }));
 
@@ -141,6 +152,9 @@ function makeGeneratedResponse(
 
 function installHappyPath() {
   getUserMock.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+
+  // The liturgy row exists by default so the verify_liturgy guard passes.
+  maybeSingleMock.mockResolvedValue({ data: { id: 'lit-1' }, error: null });
   getSessionMock.mockResolvedValue({
     data: { session: { expires_at: Math.floor(Date.now() / 1000) + 3600 } },
     error: null,
@@ -381,5 +395,46 @@ describe('publishChildrenActivities — session handling', () => {
     });
 
     expect(refreshSessionMock).toHaveBeenCalled();
+  });
+});
+
+describe('publishChildrenActivities — liturgy existence guard', () => {
+  it('fails every group fast, without invoking the EF, when the liturgy row does not exist', async () => {
+    maybeSingleMock.mockResolvedValue({ data: null, error: null });
+
+    const result = await publishChildrenActivities(buildPublishParams());
+
+    // No generation work and no writes were attempted.
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(vi.mocked(createLesson)).not.toHaveBeenCalled();
+    expect(vi.mocked(createSession)).not.toHaveBeenCalled();
+    expect(vi.mocked(createPublication)).not.toHaveBeenCalled();
+
+    expect(result.success).toBe(false);
+    expect(result.publicationCount).toBe(0);
+    expect(result.results).toHaveLength(3);
+    expect(result.results.every((r) => !r.success)).toBe(true);
+    expect(result.results[0].error).toMatch(/no está guardada/);
+    // Labels still resolve so the dialog's per-group detail stays readable.
+    expect(result.results.map((r) => r.ageGroupLabel)).toEqual(['Pequenos', 'Medianos', 'Grandes']);
+  });
+
+  it('fails fast with a lookup message when the verification query itself errors', async () => {
+    maybeSingleMock.mockResolvedValue({ data: null, error: { message: 'permission denied' } });
+
+    const result = await publishChildrenActivities(buildPublishParams());
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.results.every((r) => !r.success)).toBe(true);
+    expect(result.results[0].error).toMatch(/No se pudo verificar la liturgia: permission denied/);
+  });
+
+  it('verifies the liturgy exactly once and proceeds when the row exists', async () => {
+    const result = await publishChildrenActivities(buildPublishParams());
+
+    expect(maybeSingleMock).toHaveBeenCalledTimes(1);
+    expect(fromMock).toHaveBeenCalledWith('liturgias');
+    expect(result.success).toBe(true);
   });
 });
