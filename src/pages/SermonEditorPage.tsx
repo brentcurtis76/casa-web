@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Mic2, Loader2 } from 'lucide-react';
+import { Mic2, Loader2, Rss } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +14,16 @@ import {
   SermonEditorContainer,
 } from '@/components/sermon-editor';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { BackfillPanel } from '@/components/sermon-editor/admin/BackfillPanel';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -141,12 +151,33 @@ const SermonEditorPage: React.FC = () => {
       />
 
       <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-        <Tabs value={mode} onValueChange={handleModeChange}>
-          <TabsList>
-            <TabsTrigger value="quick">Publicación rápida</TabsTrigger>
-            <TabsTrigger value="advanced">Editor avanzado</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Tabs value={mode} onValueChange={handleModeChange}>
+            <TabsList>
+              <TabsTrigger value="quick">Publicación rápida</TabsTrigger>
+              <TabsTrigger value="advanced">Editor avanzado</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Rss className="mr-2 h-4 w-4" />
+                Importar episodios antiguos
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Importar episodios antiguos</DialogTitle>
+                <DialogDescription>
+                  Copia los episodios ya publicados en Spotify al nuevo
+                  alojamiento del podcast (paso único antes de la migración).
+                </DialogDescription>
+              </DialogHeader>
+              <BackfillPanel />
+            </DialogContent>
+          </Dialog>
+        </div>
 
         {mode === 'quick' ? (
           <QuickPublishContainer key={`quick-${containerGen}`} />

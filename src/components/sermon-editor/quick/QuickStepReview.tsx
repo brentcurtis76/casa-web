@@ -5,7 +5,7 @@
  * Intentionally does NOT reuse MetadataForm — that form drags in its own
  * liturgy select and a hardcoded preacher suggestions list.
  */
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   AlertTriangle,
@@ -74,26 +74,20 @@ export function QuickStepReview(props: QuickStepReviewProps) {
     onPublish,
   } = props;
 
-  const audioUrlRef = useRef<string | null>(null);
-  const audioUrl = useMemo(() => {
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
-    }
-    if (!processedMp3) return null;
-    const url = URL.createObjectURL(processedMp3);
-    audioUrlRef.current = url;
-    return url;
-  }, [processedMp3]);
-
+  // Object URL lifecycle lives in an effect (not useMemo): effects only run
+  // for committed renders, and the cleanup revokes exactly the URL it created.
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   useEffect(() => {
+    if (!processedMp3) {
+      setAudioUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(processedMp3);
+    setAudioUrl(url);
     return () => {
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-        audioUrlRef.current = null;
-      }
+      URL.revokeObjectURL(url);
     };
-  }, []);
+  }, [processedMp3]);
 
   const linkedLiturgy = useMemo(() => {
     if (!metadata.liturgyId) return null;

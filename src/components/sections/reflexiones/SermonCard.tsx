@@ -10,9 +10,11 @@ export interface SermonProps {
   spotifyLink: string;
   image: string;
   description?: string;
+  /** Audio autoalojado — habilita el reproductor integrado en la tarjeta. */
+  audioUrl?: string;
 }
 
-export function SermonCard({ title, speaker, date, spotifyLink, image }: SermonProps) {
+export function SermonCard({ title, speaker, date, spotifyLink, image, audioUrl }: SermonProps) {
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow">
       <div className="aspect-video relative bg-muted overflow-hidden">
@@ -31,7 +33,13 @@ export function SermonCard({ title, speaker, date, spotifyLink, image }: SermonP
           {speaker} • {date}
         </CardDescription>
       </CardHeader>
-      <CardFooter>
+      <CardFooter className="flex-col gap-2">
+        {audioUrl && (
+          // preload="none": no descargar megas de MP3 al cargar la portada.
+          <audio controls preload="none" src={audioUrl} className="w-full">
+            Tu navegador no soporta el reproductor de audio.
+          </audio>
+        )}
         <Button asChild variant="outline" size="sm" className="w-full">
           <a href={spotifyLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
             <span>Escuchar en Spotify</span>

@@ -156,6 +156,9 @@ export function useQuickPublish() {
 
   const sourceBufferRef = useRef<AudioBuffer | null>(null);
   const coverPreviewUrlRef = useRef<string | null>(null);
+  // Monotonic id: a finished generation only applies its result if no newer
+  // generation (or custom upload) started in the meantime.
+  const coverGenIdRef = useRef(0);
 
   // Release the cover preview URL whenever it changes or on unmount.
   useEffect(() => {
@@ -365,6 +368,7 @@ export function useQuickPublish() {
         return;
       }
 
+      const genId = ++coverGenIdRef.current;
       setCover({ status: 'generating' });
 
       try {
@@ -397,9 +401,11 @@ export function useQuickPublish() {
         }
 
         const blob = await base64ToSpotifyCover(valid[0]);
+        if (genId !== coverGenIdRef.current) return; // superseded
         setCoverBlob(blob);
       } catch (err) {
         console.error('[useQuickPublish] cover generation failed', err);
+        if (genId !== coverGenIdRef.current) return; // superseded
         setCover({
           status: 'error',
           error:
@@ -414,6 +420,8 @@ export function useQuickPublish() {
 
   const setCustomCover = useCallback(
     (blob: Blob) => {
+      // A custom upload supersedes any in-flight generation.
+      coverGenIdRef.current += 1;
       setCoverBlob(blob);
     },
     [setCoverBlob],
