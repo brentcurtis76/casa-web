@@ -951,7 +951,11 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     }
 
     return {
-      id: initialLiturgy?.id || uuidv4(),
+      // For new liturgies the row id MUST equal the context id: ExportPanel
+      // keys every publish flow (children, música, publication state) on
+      // liturgyContext.id, so a divergent row id leaves those flows pointing
+      // at a liturgia that doesn't exist (FK violations on publish).
+      id: initialLiturgy?.id || contextToUse.id,
       context: contextToUse,
       elements: sortedElements,
       status: completionStats.percentage === 100 ? 'ready' : 'in-progress',
