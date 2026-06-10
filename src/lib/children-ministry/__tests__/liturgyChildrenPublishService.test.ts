@@ -40,14 +40,17 @@ const getUserMock = vi.fn();
 const getSessionMock = vi.fn();
 const refreshSessionMock = vi.fn();
 // Backs supabase.from('liturgias').select('id').eq('id', ...).maybeSingle()
-// used by the verify_liturgy fail-fast step.
+// used by the verify_liturgy fail-fast step. Each link is module-scoped so
+// tests can assert the query targets the right column and liturgy id.
 const maybeSingleMock = vi.fn();
+const eqMock = vi.fn(() => ({
+  maybeSingle: (...args: unknown[]) => maybeSingleMock(...args),
+}));
+const selectMock = vi.fn(() => ({
+  eq: (...args: unknown[]) => eqMock(...args),
+}));
 const fromMock = vi.fn(() => ({
-  select: vi.fn(() => ({
-    eq: vi.fn(() => ({
-      maybeSingle: (...args: unknown[]) => maybeSingleMock(...args),
-    })),
-  })),
+  select: (...args: unknown[]) => selectMock(...args),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -412,11 +415,15 @@ describe('publishChildrenActivities — liturgy existence guard', () => {
 
     expect(result.success).toBe(false);
     expect(result.publicationCount).toBe(0);
+    expect(result.totalActivitiesGenerated).toBe(0);
     expect(result.results).toHaveLength(3);
     expect(result.results.every((r) => !r.success)).toBe(true);
     expect(result.results[0].error).toMatch(/no está guardada/);
     // Labels still resolve so the dialog's per-group detail stays readable.
     expect(result.results.map((r) => r.ageGroupLabel)).toEqual(['Pequenos', 'Medianos', 'Grandes']);
+    // One warning per group, carrying the same actionable message.
+    expect(result.warnings).toHaveLength(3);
+    expect(result.warnings[0]).toMatch(/Pequenos.*no está guardada/);
   });
 
   it('fails fast with a lookup message when the verification query itself errors', async () => {
@@ -430,11 +437,14 @@ describe('publishChildrenActivities — liturgy existence guard', () => {
     expect(result.results[0].error).toMatch(/No se pudo verificar la liturgia: permission denied/);
   });
 
-  it('verifies the liturgy exactly once and proceeds when the row exists', async () => {
+  it('verifies the liturgy exactly once, by id, and proceeds when the row exists', async () => {
     const result = await publishChildrenActivities(buildPublishParams());
 
     expect(maybeSingleMock).toHaveBeenCalledTimes(1);
     expect(fromMock).toHaveBeenCalledWith('liturgias');
+    expect(selectMock).toHaveBeenCalledWith('id');
+    // The guard must filter on the id column with the caller-supplied liturgy id.
+    expect(eqMock).toHaveBeenCalledWith('id', 'lit-1');
     expect(result.success).toBe(true);
   });
 });
