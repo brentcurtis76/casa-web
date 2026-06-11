@@ -18,16 +18,30 @@ import type {
 } from '@/types/musicPlanning';
 
 // =====================================================
+// UUID detection
+// =====================================================
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUUID(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+// =====================================================
 // PUBLICATION STATE — CRUD
 // =====================================================
 
 /**
- * Get publication state by liturgy_id (TEXT).
+ * Get publication state by liturgy_id (UUID, FK a liturgias.id).
  * Returns the most recent publication for a given liturgy.
  */
 export async function getPublicationByLiturgyId(
   liturgyId: string
 ): Promise<MusicPublicationStateRow | null> {
+  // liturgy_id is uuid in Postgres; filtering with a non-UUID string (legacy
+  // local ids) would raise 22P02 instead of returning an empty result.
+  if (!isUUID(liturgyId)) return null;
+
   const { data, error } = await supabase
     .from('music_publication_state')
     .select('*')
@@ -47,6 +61,8 @@ export async function getPublicationByLiturgyAndServiceDate(
   liturgyId: string,
   serviceDateId: string
 ): Promise<MusicPublicationStateRow | null> {
+  if (!isUUID(liturgyId)) return null;
+
   const { data, error } = await supabase
     .from('music_publication_state')
     .select('*')

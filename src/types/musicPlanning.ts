@@ -725,7 +725,8 @@ export type PublishMode = 'add' | 'replace';
 
 export interface MusicPublicationStateRow {
   id: string;
-  liturgy_id: string;
+  /** uuid FK to liturgias.id; null when the liturgia was deleted (ON DELETE SET NULL) */
+  liturgy_id: string | null;
   service_date_id: string;
   setlist_id: string;
   publish_version: number;
@@ -739,6 +740,7 @@ export interface MusicPublicationStateRow {
 
 export interface MusicPublicationStateInsert {
   id?: string;
+  /** Must reference a PERSISTED liturgias.id — the column is a uuid FK */
   liturgy_id: string;
   service_date_id: string;
   setlist_id: string;
@@ -812,6 +814,8 @@ export interface PublishResult {
   serviceDateId?: string;
   publicationId?: string;
   publishVersion?: number;
+  /** User-facing (Spanish) reason when success is false */
+  errorMessage?: string;
   warnings: PreflightWarnings;
   songsPublished: number;
 }

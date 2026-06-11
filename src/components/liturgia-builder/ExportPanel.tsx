@@ -283,7 +283,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         setPublishDialogOpen(false);
         await loadPublicationState();
       } else {
-        setError('No se encontraron canciones para publicar');
+        setError(result.errorMessage ?? 'No se encontraron canciones para publicar');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al publicar musica');
