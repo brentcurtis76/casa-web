@@ -29,6 +29,7 @@ import {
   getPublicationByLiturgyAndServiceDate,
   createPublication,
   incrementPublishVersion,
+  isUUID,
 } from '@/lib/music-planning/publicationStateService';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -48,14 +49,6 @@ const LITURGICAL_MOMENT_MAP: Record<string, string> = {
   'cancion-gratitud': 'Gratitud',
   'cancion-santa-cena': 'Santa Cena',
 };
-
-// ─── UUID detection ─────────────────────────────────────────────────────────
-
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isUUID(value: string): boolean {
-  return UUID_REGEX.test(value);
-}
 
 // ─── Song resolution ────────────────────────────────────────────────────────
 
@@ -248,6 +241,11 @@ export async function checkExistingSetlist(
 // ─── Main orchestration ─────────────────────────────────────────────────────
 
 export interface PublishLiturgyMusicParams {
+  /**
+   * Id of a PERSISTED liturgias row. music_publication_state.liturgy_id is a
+   * uuid FK (ON DELETE SET NULL), so an unsaved Constructor liturgy (id only
+   * in memory) is rejected by the fail-fast guard before any writes.
+   */
   liturgyId: string;
   elements: Map<LiturgyElementType, LiturgyElement>;
   elementOrder: LiturgyElementType[];
@@ -279,6 +277,38 @@ export async function publishLiturgyMusic(
     missingAssets: {},
     songCount: 0,
   };
+
+  // 0. Fail fast if the liturgy row doesn't exist. music_publication_state
+  // FKs liturgy_id → liturgias(id), so createPublication would otherwise die
+  // with a raw FK violation AFTER the service-date/setlist writes (the flow
+  // is not transactional — in 'replace' mode the old setlist items would
+  // already be gone). This happens when the Constructor liturgy was never
+  // saved (the id only exists in memory). Mirrors the verify_liturgy guard
+  // in liturgyChildrenPublishService.
+  const LITURGY_NOT_SAVED =
+    'La liturgia no está guardada en la base de datos. Guarda la liturgia en el Constructor y vuelve a intentarlo.';
+
+  if (!isUUID(liturgyId)) {
+    return { success: false, errorMessage: LITURGY_NOT_SAVED, warnings, songsPublished: 0 };
+  }
+
+  const { data: liturgyRow, error: liturgyLookupError } = await supabase
+    .from('liturgias')
+    .select('id')
+    .eq('id', liturgyId)
+    .maybeSingle();
+
+  if (liturgyLookupError) {
+    return {
+      success: false,
+      errorMessage: `No se pudo verificar la liturgia: ${liturgyLookupError.message}`,
+      warnings,
+      songsPublished: 0,
+    };
+  }
+  if (!liturgyRow) {
+    return { success: false, errorMessage: LITURGY_NOT_SAVED, warnings, songsPublished: 0 };
+  }
 
   // 1. Extract song elements from liturgy in element order
   const songElements: LiturgyElement[] = [];
