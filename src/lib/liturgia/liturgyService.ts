@@ -421,11 +421,11 @@ export async function saveLiturgy(
       upsertData.portada_imagen_url = imageUrl;
     }
 
-    // Only write reflexion_pdf_url when an in-memory value is present.
-    // Omitting the column on save preserves any previously stored URL when
-    // the builder rebuilds context without it (e.g. pendingContextChanges
-    // flows where the form fields don't carry the PDF URL forward).
-    if (liturgy.context.reflexionPdfUrl) {
+    // reflexion_pdf_url es de tres estados: un string escribe la nueva URL,
+    // null (el usuario eliminó el PDF en el formulario) borra la columna, y
+    // undefined la omite para que un guardado que no trae el valor no pierda
+    // la URL almacenada.
+    if (liturgy.context.reflexionPdfUrl !== undefined) {
       upsertData.reflexion_pdf_url = liturgy.context.reflexionPdfUrl;
     }
 

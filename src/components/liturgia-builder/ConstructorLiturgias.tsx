@@ -567,7 +567,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       celebrant: input.celebrant,
       preacher: input.preacher,
       reflexionText: input.reflexionText,
-      reflexionPdfUrl: liturgyContext?.reflexionPdfUrl,
+      reflexionPdfUrl: input.clearReflexionPdf ? null : liturgyContext?.reflexionPdfUrl,
       createdAt: liturgyContext?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -864,7 +864,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
         celebrant: pendingContextChanges.celebrant,
         preacher: pendingContextChanges.preacher,
         reflexionText: pendingContextChanges.reflexionText,
-        reflexionPdfUrl: liturgyContext?.reflexionPdfUrl,
+        reflexionPdfUrl: pendingContextChanges.clearReflexionPdf ? null : liturgyContext?.reflexionPdfUrl,
         createdAt: liturgyContext?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

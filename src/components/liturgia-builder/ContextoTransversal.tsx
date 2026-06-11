@@ -85,6 +85,9 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
   // Original PDF file for publishing
   const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
 
+  // El usuario eliminó el PDF — al guardar, borrar la URL almacenada
+  const [pdfCleared, setPdfCleared] = useState(false);
+
   // Sincronizar todos los estados cuando cambie el ID del contexto
   // IMPORTANTE: Solo sincronizar cuando cambie el ID, no cuando cambie el contenido
   // Esto evita sobrescribir los cambios que el usuario ha hecho en el formulario
@@ -115,6 +118,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       if (initialContext.reflexionText) {
         setReflexionText(initialContext.reflexionText);
       }
+      setPdfCleared(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContextId]); // Solo depende del ID, no del contenido completo
@@ -145,10 +149,11 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       preacher: preacher.trim() || undefined,
       reflexionText: reflexionText.trim() || undefined,
       originalPdfFile: originalPdfFile || undefined,
+      clearReflexionPdf: pdfCleared || undefined,
     };
 
     onFormChange(contextInput);
-  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, onFormChange]);
+  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, pdfCleared, onFormChange]);
 
   // Get next Sunday date
   function getNextSunday(): string {
@@ -290,6 +295,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
 
     // Store original file for potential publishing
     setOriginalPdfFile(file);
+    setPdfCleared(false);
 
     try {
       // Convert file to base64
@@ -349,6 +355,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     setSummary('');
     setShowReflexionPreview(false);
     setOriginalPdfFile(null);
+    setPdfCleared(true);
   };
 
   // Validate form
@@ -391,6 +398,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       preacher: preacher.trim() || undefined,
       reflexionText: reflexionText.trim() || undefined,
       originalPdfFile: originalPdfFile || undefined,
+      clearReflexionPdf: pdfCleared || undefined,
     };
 
     console.log('[ContextoTransversal] handleSubmit - contextInput.date:', contextInput.date);

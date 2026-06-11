@@ -269,6 +269,21 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
     expect(result.success).toBe(true);
     expect(captured.upsertData!.reflexion_pdf_url).toBe('https://example.com/reflexion.pdf');
   });
+
+  it('writes reflexion_pdf_url as null when context explicitly clears it', async () => {
+    const { captured } = setupCaptureMocks();
+
+    const liturgy = createTestLiturgy();
+    // null = the user removed the PDF in the form (clearReflexionPdf);
+    // distinct from undefined, which preserves the stored value.
+    liturgy.context.reflexionPdfUrl = null;
+
+    const result = await saveLiturgy(liturgy);
+
+    expect(result.success).toBe(true);
+    expect(captured.upsertData!).toHaveProperty('reflexion_pdf_url');
+    expect(captured.upsertData!.reflexion_pdf_url).toBeNull();
+  });
 });
 
 describe('loadLiturgy custom element decoding', () => {

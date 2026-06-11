@@ -21,7 +21,7 @@ export interface LiturgyContext {
   celebrant?: string;               // Nombre del celebrante (opcional)
   preacher?: string;                // Nombre del predicador (opcional)
   reflexionText?: string;           // Texto completo extraído del PDF de reflexión
-  reflexionPdfUrl?: string;         // URL del PDF original en Supabase Storage
+  reflexionPdfUrl?: string | null;  // URL del PDF en Storage (null = eliminado explícitamente, undefined = conservar valor guardado)
   createdAt: string;
   updatedAt: string;
 }
@@ -165,6 +165,7 @@ export interface LiturgyContextInput {
   preacher?: string;
   reflexionText?: string;           // Texto completo extraído del PDF de reflexión
   originalPdfFile?: File;           // Archivo PDF original para publicación
+  clearReflexionPdf?: boolean;      // El usuario eliminó el PDF — borrar la URL guardada al guardar
 }
 
 /**
