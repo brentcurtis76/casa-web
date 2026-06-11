@@ -7,6 +7,7 @@ import type { Liturgy, LiturgyElement, PortadasConfig } from '@/types/shared/lit
 import { CUSTOM_TIPO_PREFIX } from '@/types/shared/liturgy';
 import { format } from 'date-fns';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
+import { unpublishReflexionForLiturgy } from '@/lib/publishedResourcesService';
 
 /**
  * Sube una imagen base64 a Supabase Storage y retorna la URL pública
@@ -416,7 +417,9 @@ export async function saveLiturgy(
 
     console.log('[saveLiturgy] CRITICAL - fecha being saved to DB:', fecha);
 
-    // Solo actualizar la URL de imagen si se subió una nueva
+    // Solo actualizar la URL de imagen si se subió una nueva. Esta columna
+    // hoy no se puede borrar; si se agrega un flujo de "eliminar portada",
+    // usar el mismo esquema de tres estados de reflexion_pdf_url (abajo).
     if (imageUrl) {
       upsertData.portada_imagen_url = imageUrl;
     }
@@ -450,6 +453,20 @@ export async function saveLiturgy(
     console.log('[saveLiturgy] Liturgia saved successfully:', liturgiaData?.id);
     console.log('[saveLiturgy] VERIFY - fecha in DB after save:', liturgiaData?.fecha);
     const liturgiaId = liturgiaData.id;
+
+    // Eliminación explícita del PDF: borrar el archivo del bucket (es público
+    // y seguiría accesible por su URL) y despublicar la reflexión activa de
+    // esta liturgia. Best-effort — la columna ya quedó en NULL con el upsert.
+    if (liturgy.context.reflexionPdfUrl === null) {
+      try {
+        await supabase.storage
+          .from('liturgy-published')
+          .remove([`liturgias/${liturgy.id}/reflexion.pdf`]);
+        await unpublishReflexionForLiturgy(liturgy.id);
+      } catch (err) {
+        console.error('[saveLiturgy] Error limpiando el PDF de reflexión eliminado:', err);
+      }
+    }
 
     // Guardar lecturas bíblicas
     if (liturgy.context.readings && liturgy.context.readings.length > 0) {

@@ -8,6 +8,9 @@ type SupabaseMock = {
   auth: {
     getUser?: ReturnType<typeof vi.fn>;
   };
+  storage: {
+    from: ReturnType<typeof vi.fn>;
+  };
 };
 
 const supabaseMock = supabase as unknown as SupabaseMock;
@@ -207,6 +210,8 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
 
   function setupCaptureMocks(): {
     captured: { upsertData: Record<string, unknown> | null };
+    storageRemoveSpy: ReturnType<typeof vi.fn>;
+    unpublishSpy: ReturnType<typeof vi.fn>;
   } {
     const captured: { upsertData: Record<string, unknown> | null } = { upsertData: null };
 
@@ -214,6 +219,11 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
       data: { user: { id: 'user-1' } },
       error: null,
     }));
+
+    const storageRemoveSpy = vi.fn(async () => ({ data: null, error: null }));
+    supabaseMock.storage.from.mockImplementation(() => ({ remove: storageRemoveSpy }));
+
+    const unpublishSpy = vi.fn(async () => ({ error: null }));
 
     supabaseMock.from.mockImplementation((table: string) => {
       if (table === 'liturgias') {
@@ -237,14 +247,21 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
           delete: () => ({ eq: () => ({ not: async () => ({ error: null }) }) }),
         };
       }
+      if (table === 'published_resources') {
+        return {
+          update: () => ({
+            eq: () => ({ eq: () => ({ eq: unpublishSpy }) }),
+          }),
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     });
 
-    return { captured };
+    return { captured, storageRemoveSpy, unpublishSpy };
   }
 
   it('omits reflexion_pdf_url from upsert when context lacks it (preserves stored value)', async () => {
-    const { captured } = setupCaptureMocks();
+    const { captured, storageRemoveSpy, unpublishSpy } = setupCaptureMocks();
 
     const liturgy = createTestLiturgy();
     // No reflexionPdfUrl set on context — simulates rebuild from form fields
@@ -256,10 +273,12 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
     expect(result.success).toBe(true);
     expect(captured.upsertData).not.toBeNull();
     expect(captured.upsertData!).not.toHaveProperty('reflexion_pdf_url');
+    expect(storageRemoveSpy).not.toHaveBeenCalled();
+    expect(unpublishSpy).not.toHaveBeenCalled();
   });
 
   it('writes reflexion_pdf_url to upsert when context provides a value', async () => {
-    const { captured } = setupCaptureMocks();
+    const { captured, storageRemoveSpy, unpublishSpy } = setupCaptureMocks();
 
     const liturgy = createTestLiturgy();
     liturgy.context.reflexionPdfUrl = 'https://example.com/reflexion.pdf';
@@ -268,13 +287,15 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
 
     expect(result.success).toBe(true);
     expect(captured.upsertData!.reflexion_pdf_url).toBe('https://example.com/reflexion.pdf');
+    expect(storageRemoveSpy).not.toHaveBeenCalled();
+    expect(unpublishSpy).not.toHaveBeenCalled();
   });
 
-  it('writes reflexion_pdf_url as null when context explicitly clears it', async () => {
-    const { captured } = setupCaptureMocks();
+  it('writes reflexion_pdf_url as null and cleans up storage/publication when context explicitly clears it', async () => {
+    const { captured, storageRemoveSpy, unpublishSpy } = setupCaptureMocks();
 
     const liturgy = createTestLiturgy();
-    // null = the user removed the PDF in the form (clearReflexionPdf);
+    // null = the user removed the PDF in the form ("Eliminar PDF");
     // distinct from undefined, which preserves the stored value.
     liturgy.context.reflexionPdfUrl = null;
 
@@ -283,6 +304,10 @@ describe('saveLiturgy reflexion_pdf_url preservation', () => {
     expect(result.success).toBe(true);
     expect(captured.upsertData!).toHaveProperty('reflexion_pdf_url');
     expect(captured.upsertData!.reflexion_pdf_url).toBeNull();
+    // The orphaned file is removed from the public bucket and the active
+    // published reflexion for this liturgy is deactivated.
+    expect(storageRemoveSpy).toHaveBeenCalledWith(['liturgias/lit-1/reflexion.pdf']);
+    expect(unpublishSpy).toHaveBeenCalled();
   });
 });
 

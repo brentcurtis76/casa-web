@@ -176,6 +176,23 @@ export async function publishReflexion(params: {
 }
 
 /**
+ * Deactivate the active published reflexion for a liturgy.
+ * Used when the source PDF is removed in the builder, so the home page stops
+ * offering a reflexion whose original was deleted. Archived (inactive) rows
+ * are kept, matching the archive semantics of publishReflexion.
+ */
+export async function unpublishReflexionForLiturgy(liturgyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('published_resources')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('resource_type', 'reflexion')
+    .eq('liturgy_id', liturgyId)
+    .eq('is_active', true);
+
+  if (error) throw new Error(`Error al despublicar la reflexión: ${error.message}`);
+}
+
+/**
  * Unpublish a resource (deactivate it)
  */
 export async function unpublishResource(resourceId: string): Promise<void> {

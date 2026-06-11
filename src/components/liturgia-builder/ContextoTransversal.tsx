@@ -3,7 +3,7 @@
  * Paso inicial del Constructor de Liturgias
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CASA_BRAND } from '@/lib/brand-kit';
@@ -16,6 +16,7 @@ interface ContextoTransversalProps {
   initialContext?: Partial<LiturgyContext>;
   onSave: (context: LiturgyContextInput) => void;
   onFormChange?: (context: LiturgyContextInput | null) => void;
+  onClearPdf?: () => void;
   isLoading?: boolean;
 }
 
@@ -39,6 +40,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
   initialContext,
   onSave,
   onFormChange,
+  onClearPdf,
   isLoading = false,
 }) => {
   const { toast } = useToast();
@@ -85,9 +87,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
   // Original PDF file for publishing
   const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
 
-  // El usuario eliminó el PDF — al guardar, borrar la URL almacenada
-  const [pdfCleared, setPdfCleared] = useState(false);
-
   // Sincronizar todos los estados cuando cambie el ID del contexto
   // IMPORTANTE: Solo sincronizar cuando cambie el ID, no cuando cambie el contenido
   // Esto evita sobrescribir los cambios que el usuario ha hecho en el formulario
@@ -118,10 +117,29 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       if (initialContext.reflexionText) {
         setReflexionText(initialContext.reflexionText);
       }
-      setPdfCleared(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContextId]); // Solo depende del ID, no del contenido completo
+
+  // Construcción única del input del contexto, compartida por la notificación
+  // de cambios y el submit, para que ambos payloads no puedan divergir.
+  // parseISO evita problemas de zona horaria con el formato yyyy-MM-dd.
+  const buildContextInput = useCallback((): LiturgyContextInput => ({
+    date: parseISO(date),
+    title: title.trim(),
+    summary: summary.trim(),
+    readings: readings
+      .filter(r => r.reference.trim() && r.text.trim())
+      .map(r => ({
+        reference: r.reference,
+        text: r.text,
+        version: r.versionCode,
+      })),
+    celebrant: celebrant.trim() || undefined,
+    preacher: preacher.trim() || undefined,
+    reflexionText: reflexionText.trim() || undefined,
+    originalPdfFile: originalPdfFile || undefined,
+  }), [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile]);
 
   // Notificar al padre de cambios en el formulario para que pueda guardar correctamente
   useEffect(() => {
@@ -134,26 +152,8 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
       return;
     }
 
-    const contextInput: LiturgyContextInput = {
-      date: parseISO(date),
-      title: title.trim(),
-      summary: summary.trim(),
-      readings: readings
-        .filter(r => r.reference.trim() && r.text.trim())
-        .map(r => ({
-          reference: r.reference,
-          text: r.text,
-          version: r.versionCode,
-        })),
-      celebrant: celebrant.trim() || undefined,
-      preacher: preacher.trim() || undefined,
-      reflexionText: reflexionText.trim() || undefined,
-      originalPdfFile: originalPdfFile || undefined,
-      clearReflexionPdf: pdfCleared || undefined,
-    };
-
-    onFormChange(contextInput);
-  }, [date, title, summary, readings, celebrant, preacher, reflexionText, originalPdfFile, pdfCleared, onFormChange]);
+    onFormChange(buildContextInput());
+  }, [date, title, summary, readings, buildContextInput, onFormChange]);
 
   // Get next Sunday date
   function getNextSunday(): string {
@@ -295,7 +295,6 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
 
     // Store original file for potential publishing
     setOriginalPdfFile(file);
-    setPdfCleared(false);
 
     try {
       // Convert file to base64
@@ -355,7 +354,9 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     setSummary('');
     setShowReflexionPreview(false);
     setOriginalPdfFile(null);
-    setPdfCleared(true);
+    // El padre registra la eliminación en el contexto de inmediato, para que
+    // sobreviva aunque el formulario quede inválido o se cambie de paso.
+    onClearPdf?.();
   };
 
   // Validate form
@@ -379,28 +380,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
     }
 
     console.log('[ContextoTransversal] handleSubmit - date state value:', date);
-    const parsedDate = parseISO(date);
-    console.log('[ContextoTransversal] handleSubmit - parsedDate:', parsedDate.toISOString());
-
-    const contextInput: LiturgyContextInput = {
-      // Use parseISO to avoid timezone issues with yyyy-MM-dd format
-      date: parsedDate,
-      title: title.trim(),
-      summary: summary.trim(),
-      readings: readings
-        .filter(r => r.reference.trim() && r.text.trim())
-        .map(r => ({
-          reference: r.reference,
-          text: r.text,
-          version: r.versionCode,
-        })),
-      celebrant: celebrant.trim() || undefined,
-      preacher: preacher.trim() || undefined,
-      reflexionText: reflexionText.trim() || undefined,
-      originalPdfFile: originalPdfFile || undefined,
-      clearReflexionPdf: pdfCleared || undefined,
-    };
-
+    const contextInput = buildContextInput();
     console.log('[ContextoTransversal] handleSubmit - contextInput.date:', contextInput.date);
     onSave(contextInput);
   };

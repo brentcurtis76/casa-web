@@ -165,7 +165,6 @@ export interface LiturgyContextInput {
   preacher?: string;
   reflexionText?: string;           // Texto completo extraído del PDF de reflexión
   originalPdfFile?: File;           // Archivo PDF original para publicación
-  clearReflexionPdf?: boolean;      // El usuario eliminó el PDF — borrar la URL guardada al guardar
 }
 
 /**

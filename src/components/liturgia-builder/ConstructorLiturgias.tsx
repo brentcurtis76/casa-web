@@ -543,6 +543,44 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLiturgyId]); // Solo depende del ID, no del contenido completo
 
+  // Construye el LiturgyContext desde el input del formulario — usado por
+  // handleContextSave (Continuar) y buildLiturgy (Guardar) para que las dos
+  // rutas de guardado no puedan divergir campo a campo. Los campos persistidos
+  // que el formulario no posee (reflexionPdfUrl) se conservan desde el
+  // contexto existente; null ahí significa "eliminado explícitamente".
+  const buildContextFromInput = (input: LiturgyContextInput): LiturgyContext => ({
+    id: liturgyContext?.id || uuidv4(),
+    date: input.date,
+    title: input.title,
+    summary: input.summary,
+    readings: input.readings.map((r) => ({
+      reference: r.reference,
+      text: r.text || '',
+      version: r.version || 'NVI',
+      versionCode: r.version || 'NVI',
+    })),
+    celebrant: input.celebrant,
+    preacher: input.preacher,
+    reflexionText: input.reflexionText,
+    reflexionPdfUrl: liturgyContext?.reflexionPdfUrl,
+    createdAt: liturgyContext?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  // "Eliminar PDF": registrar la eliminación en el contexto de inmediato.
+  // Vivir en el estado del padre (no en el formulario) hace que la intención
+  // sobreviva formularios inválidos y navegación entre pasos; el próximo
+  // guardado persiste null como NULL en la BD.
+  const handleClearReflexionPdf = useCallback(() => {
+    setLiturgyContext((prev) =>
+      prev
+        ? { ...prev, reflexionPdfUrl: null, reflexionText: undefined, updatedAt: new Date().toISOString() }
+        : prev
+    );
+    setReflexionPdfFile(null);
+    setIsDirty(true);
+  }, []);
+
   // Handle context save
   const handleContextSave = async (input: LiturgyContextInput) => {
     console.log('[handleContextSave] Input received:', {
@@ -551,26 +589,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       dateISO: input.date instanceof Date ? input.date.toISOString() : input.date
     });
 
-    const contextId = liturgyContext?.id || uuidv4();
-
-    const context: LiturgyContext = {
-      id: contextId,
-      date: input.date,
-      title: input.title,
-      summary: input.summary,
-      readings: input.readings.map((r) => ({
-        reference: r.reference,
-        text: r.text || '',
-        version: r.version || 'NVI',
-        versionCode: r.version || 'NVI',
-      })),
-      celebrant: input.celebrant,
-      preacher: input.preacher,
-      reflexionText: input.reflexionText,
-      reflexionPdfUrl: input.clearReflexionPdf ? null : liturgyContext?.reflexionPdfUrl,
-      createdAt: liturgyContext?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const context = buildContextFromInput(input);
 
     console.log('[handleContextSave] Context created:', {
       contextDate: context.date,
@@ -579,7 +598,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
 
     // Upload reflexion PDF to storage if provided
     if (input.originalPdfFile) {
-      const pdfUrl = await uploadReflexionPdf(contextId, input.originalPdfFile);
+      const pdfUrl = await uploadReflexionPdf(context.id, input.originalPdfFile);
       if (pdfUrl) {
         context.reflexionPdfUrl = pdfUrl;
       }
@@ -850,24 +869,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
 
     if (pendingContextChanges) {
       console.log('[buildLiturgy] Using pending context changes (celebrant:', pendingContextChanges.celebrant, ')');
-      contextToUse = {
-        id: liturgyContext?.id || uuidv4(),
-        date: pendingContextChanges.date,
-        title: pendingContextChanges.title,
-        summary: pendingContextChanges.summary,
-        readings: pendingContextChanges.readings.map((r) => ({
-          reference: r.reference,
-          text: r.text || '',
-          version: r.version || 'NVI',
-          versionCode: r.version || 'NVI',
-        })),
-        celebrant: pendingContextChanges.celebrant,
-        preacher: pendingContextChanges.preacher,
-        reflexionText: pendingContextChanges.reflexionText,
-        reflexionPdfUrl: pendingContextChanges.clearReflexionPdf ? null : liturgyContext?.reflexionPdfUrl,
-        createdAt: liturgyContext?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      contextToUse = buildContextFromInput(pendingContextChanges);
     }
 
     if (!contextToUse) throw new Error('No context');
@@ -1184,6 +1186,7 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
             initialContext={liturgyContext || undefined}
             onSave={handleContextSave}
             onFormChange={setPendingContextChanges}
+            onClearPdf={handleClearReflexionPdf}
           />
         );
 
