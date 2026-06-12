@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { requireMesaAdmin } from "../_shared/adminAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +16,12 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const authResult = await requireMesaAdmin(req, supabase, corsHeaders);
+    if (!authResult.ok) return authResult.response;
 
     const { monthId } = await req.json();
 
@@ -141,19 +147,17 @@ serve(async (req) => {
     const shuffledHosts = shuffle([...hosts]);
     const shuffledGuests = shuffle([...guests]);
 
-    // Calculate total capacity (accounting for host's own +1 if applicable)
-    const totalCapacity = shuffledHosts.reduce((sum, host) => {
-      const maxGuests = host.host_max_guests || 5;
-      const hostPlusOne = host.has_plus_one ? 1 : 0;
-      return sum + Math.max(0, maxGuests - hostPlusOne);
-    }, 0);
+    // Host capacity counts guest SIGNUPS (units), not people. The signup form
+    // promises hosts "Con acompañantes, podrían ser hasta {maxGuests * 2} personas",
+    // so a guest with +1 consumes one slot, not two.
+    const totalCapacity = shuffledHosts.reduce((sum, host) => sum + (host.host_max_guests || 5), 0);
 
     // Calculate total guest count (including plus ones)
     const totalGuestCount = shuffledGuests.reduce((sum, guest) => sum + (guest.has_plus_one ? 2 : 1), 0);
 
-    console.log(`Total Host Capacity: ${totalCapacity}, Total Guests (with +1s): ${totalGuestCount}`);
+    console.log(`Total Host Capacity: ${totalCapacity} guest slots, Total Guests: ${shuffledGuests.length} units (${totalGuestCount} people with +1s)`);
 
-    if (totalCapacity < totalGuestCount) {
+    if (totalCapacity < shuffledGuests.length) {
       console.warn("Warning: Not enough host capacity for all guests!");
     }
 
@@ -164,16 +168,17 @@ serve(async (req) => {
     // This creates fewer, fuller dinners rather than many small ones
     const TARGET_GUEST_SIDE_FOR_DINNER = 6;
 
-    // Initialize host tracking (account for host's +1 in capacity)
+    // Initialize host tracking. Capacity is in guest units (signups); the host's
+    // own +1 sits on the host side and does not consume a guest slot.
     const hostStatus = shuffledHosts.map(host => {
-      const maxGuests = host.host_max_guests || 5;
       const hostPlusOne = host.has_plus_one ? 1 : 0;
       // Host side people = host (1) + host's +1 if applicable
       const hostSidePeople = 1 + hostPlusOne;
       return {
         ...host,
-        currentGuests: 0, // Count of guest-side people (guests + their +1s)
-        maxGuests: Math.max(0, maxGuests - hostPlusOne),
+        currentGuests: 0, // Count of guest units (signups) assigned
+        currentGuestPeople: 0, // Count of guest-side people (guests + their +1s)
+        maxGuests: host.host_max_guests || 5,
         hostSidePeople, // How many people on the host side (1 or 2)
         assignedGuests: [] as typeof guests
       };
@@ -200,15 +205,17 @@ serve(async (req) => {
 
     for (let numHosts = hostStatus.length; numHosts >= 1; numHosts--) {
       // If we use numHosts hosts, the remaining hosts become guests
-      const convertedHostsAsGuests = hostStatus.slice(numHosts).reduce((sum, h) => sum + (h.has_plus_one ? 2 : 1), 0);
-      const totalGuestsAvailable = totalGuestCount + convertedHostsAsGuests;
-      const guestsNeededForMinimum = numHosts * MIN_GUESTS_PER_DINNER;
-      const activeHostCapacity = hostStatus.slice(0, numHosts).reduce((sum, h) => sum + h.maxGuests, 0);
+      const converted = hostStatus.slice(numHosts);
+      const convertedPeople = converted.reduce((sum, h) => sum + (h.has_plus_one ? 2 : 1), 0);
+      const guestPeopleAvailable = totalGuestCount + convertedPeople;
+      const guestUnitsAvailable = shuffledGuests.length + converted.length;
+      const guestsNeededForMinimum = numHosts * MIN_GUESTS_PER_DINNER; // in people
+      const activeHostCapacity = hostStatus.slice(0, numHosts).reduce((sum, h) => sum + h.maxGuests, 0); // in units
 
-      console.log(`Testing ${numHosts} hosts: need ${guestsNeededForMinimum} guests for minimum, have ${totalGuestsAvailable}, capacity=${activeHostCapacity}`);
+      console.log(`Testing ${numHosts} hosts: need ${guestsNeededForMinimum} guest-side people for minimum, have ${guestPeopleAvailable}; capacity ${activeHostCapacity} slots for ${guestUnitsAvailable} guest units`);
 
-      // Check both: enough guests for minimum AND enough capacity
-      if (totalGuestsAvailable >= guestsNeededForMinimum && activeHostCapacity >= totalGuestsAvailable) {
+      // Check both: enough guest-side people for minimum AND enough slots for all guest units
+      if (guestPeopleAvailable >= guestsNeededForMinimum && activeHostCapacity >= guestUnitsAvailable) {
         hostsToUse = numHosts;
         break;
       }
@@ -241,18 +248,20 @@ serve(async (req) => {
     let guestsAssignedCount = 0;
 
     for (const guest of allGuests) {
-      const guestSize = guest.has_plus_one ? 2 : 1;
+      const guestPeople = guest.has_plus_one ? 2 : 1;
       let assigned = false;
 
       // Sort active hosts by % full to distribute evenly
       activeHosts.sort((a, b) => (a.currentGuests / a.maxGuests) - (b.currentGuests / b.maxGuests));
 
       for (const host of activeHosts) {
-        if (host.currentGuests + guestSize <= host.maxGuests) {
+        // One signup = one slot, regardless of +1
+        if (host.currentGuests + 1 <= host.maxGuests) {
           host.assignedGuests.push(guest);
-          host.currentGuests += guestSize;
+          host.currentGuests += 1;
+          host.currentGuestPeople += guestPeople;
           assigned = true;
-          guestsAssignedCount += guestSize;
+          guestsAssignedCount += guestPeople;
           break;
         }
       }
@@ -270,7 +279,7 @@ serve(async (req) => {
     const hostsWithEnough: typeof activeHosts = [];
 
     for (const host of activeHosts) {
-      const totalPeople = host.hostSidePeople + host.currentGuests;
+      const totalPeople = host.hostSidePeople + host.currentGuestPeople;
       if (host.assignedGuests.length > 0 && totalPeople < MIN_PEOPLE_PER_DINNER) {
         hostsWithTooFew.push(host);
       } else if (host.assignedGuests.length > 0) {
@@ -284,39 +293,34 @@ serve(async (req) => {
     for (const smallHost of hostsWithTooFew) {
       // Try to move all guests from this small dinner to other dinners
       const guestsToRedistribute = [...smallHost.assignedGuests];
-      let allRedistributed = true;
 
       for (const guest of guestsToRedistribute) {
-        const guestSize = guest.has_plus_one ? 2 : 1;
-        let redistributed = false;
+        const guestPeople = guest.has_plus_one ? 2 : 1;
 
-        // Sort hosts with enough people by available capacity (most capacity first)
+        // Sort hosts with enough people by available slots (most free slots first)
         hostsWithEnough.sort((a, b) => (b.maxGuests - b.currentGuests) - (a.maxGuests - a.currentGuests));
 
         for (const targetHost of hostsWithEnough) {
-          if (targetHost.currentGuests + guestSize <= targetHost.maxGuests) {
-            // Move guest to target host
+          if (targetHost.currentGuests + 1 <= targetHost.maxGuests) {
+            // Move guest to target host — and remove from the small host immediately,
+            // so a partial redistribution never leaves a guest in two dinners
             targetHost.assignedGuests.push(guest);
-            targetHost.currentGuests += guestSize;
-            redistributed = true;
+            targetHost.currentGuests += 1;
+            targetHost.currentGuestPeople += guestPeople;
+            smallHost.assignedGuests = smallHost.assignedGuests.filter(g => g.id !== guest.id);
+            smallHost.currentGuests -= 1;
+            smallHost.currentGuestPeople -= guestPeople;
             break;
           }
         }
-
-        if (!redistributed) {
-          allRedistributed = false;
-        }
       }
 
-      if (allRedistributed) {
-        // Successfully moved all guests, clear this host
-        smallHost.assignedGuests = [];
-        smallHost.currentGuests = 0;
+      if (smallHost.assignedGuests.length === 0) {
         console.log(`Redistributed all guests from host ${smallHost.id} to other dinners`);
       } else {
         // Could not redistribute all guests - this becomes the "leftover" dinner
-        // Keep the original assignments (allowed exception for last dinner)
-        console.log(`Host ${smallHost.id} keeps ${smallHost.assignedGuests.length} guests as leftover dinner (${smallHost.hostSidePeople + smallHost.currentGuests} total people)`);
+        // Keep the remaining assignments (allowed exception for last dinner)
+        console.log(`Host ${smallHost.id} keeps ${smallHost.assignedGuests.length} guests as leftover dinner (${smallHost.hostSidePeople + smallHost.currentGuestPeople} total people)`);
       }
     }
 
@@ -325,10 +329,11 @@ serve(async (req) => {
     for (const host of waitlistHosts) {
       host.assignedGuests = [];
       host.currentGuests = 0;
+      host.currentGuestPeople = 0;
     }
 
     // Recalculate totals after redistribution
-    guestsAssignedCount = activeHosts.reduce((sum, h) => sum + h.currentGuests, 0);
+    guestsAssignedCount = activeHosts.reduce((sum, h) => sum + h.currentGuestPeople, 0);
     console.log(`After redistribution: Assigned ${guestsAssignedCount} guest-side people.`);
 
     // Track created matches for potential rollback
@@ -365,7 +370,7 @@ serve(async (req) => {
         }
 
         createdMatchIds.push(match.id);
-        console.log(`Created match ${match.id} with host ${host.id} and ${host.assignedGuests.length} guest units (${host.currentGuests} people)`);
+        console.log(`Created match ${match.id} with host ${host.id} and ${host.assignedGuests.length} guest units (${host.currentGuestPeople} people)`);
 
         // Batch create assignments for this match
         const shuffledFoodAssignments = shuffle([...foodAssignments]);
@@ -387,7 +392,7 @@ serve(async (req) => {
           matchId: match.id,
           hostId: host.id,
           guestCount: host.assignedGuests.length,
-          totalPeople: host.currentGuests,
+          totalPeople: host.hostSidePeople + host.currentGuestPeople,
           guests: host.assignedGuests.map(g => g.id),
         });
       }
