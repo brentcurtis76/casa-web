@@ -550,9 +550,19 @@ export const MesaAbiertaAdmin = () => {
       }
     } catch (error: any) {
       console.error('Error:', error);
+      // FunctionsHttpError hides the function's JSON body behind error.context
+      let description = error.message || 'Error al ejecutar matching';
+      if (error?.context && typeof error.context.json === 'function') {
+        try {
+          const body = await error.context.json();
+          if (body?.error) description = body.error;
+        } catch {
+          // keep generic message
+        }
+      }
       toast({
         title: 'Error',
-        description: error.message || 'Error al ejecutar matching',
+        description,
         variant: 'destructive',
       });
     } finally {
