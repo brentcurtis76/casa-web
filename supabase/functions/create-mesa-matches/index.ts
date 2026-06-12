@@ -85,12 +85,15 @@ serve(async (req) => {
       );
     }
 
-    // Get all pending participants (users sign up with 'pending' status)
+    // Get all participants awaiting matching. Users sign up as 'pending', but
+    // admins can manually set 'confirmed' in the edit dialog before matching runs.
+    // Including 'confirmed' is safe: the idempotency check above guarantees no
+    // matches exist for this month, so none of them are seated yet.
     const { data: participants, error: participantsError } = await supabase
       .from("mesa_abierta_participants")
       .select("*")
       .eq("month_id", monthId)
-      .eq("status", "pending");
+      .in("status", ["pending", "confirmed"]);
 
     if (participantsError) {
       throw new Error(`Failed to fetch participants: ${participantsError.message}`);
@@ -100,7 +103,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "No pending participants found for this month",
+          error: "No participants available for matching this month (statuses 'pending' or 'confirmed')",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
