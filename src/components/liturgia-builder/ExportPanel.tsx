@@ -65,6 +65,7 @@ import {
   generateMusicPacket,
 } from '@/lib/music-planning/packetGenerationService';
 import { getPublicationsByLiturgyId } from '@/lib/children-ministry/childrenPublicationStateService';
+import { describePacketSendResult, type PacketSendResult } from '@/lib/whatsapp';
 import { supabase } from '@/integrations/supabase/client';
 import { SERVICE_TYPE_LABELS } from '@/lib/music-planning/musicianLabels';
 import { ChildrenActivityDialog } from './ChildrenActivityDialog';
@@ -348,7 +349,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         throw new Error(response.error.message || 'Error al enviar paquete');
       }
 
-      const result = response.data as { success: boolean; sent: number; failed: number; errors: string[]; error?: string };
+      const result = response.data as PacketSendResult;
 
       if (result.error && !result.success) {
         throw new Error(result.error);
@@ -356,7 +357,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
 
       toast({
         title: 'Paquete enviado',
-        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}${result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''}`,
+        description: describePacketSendResult(result),
       });
 
       setSendDialogOpen(false);

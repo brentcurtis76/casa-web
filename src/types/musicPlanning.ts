@@ -270,6 +270,9 @@ export type MusicSongUsageLogUpdate = Partial<MusicSongUsageLogInsert>;
 
 // --- 2.1 music_musicians ---
 
+/** How WhatsApp opt-in consent was recorded (Ley 21.719 / Meta opt-in policy). */
+export type WhatsAppOptInMethod = 'formulario' | 'verbal-coordinador' | 'en-app';
+
 export interface MusicMusicianRow {
   id: string;
   user_id: string | null;
@@ -277,6 +280,9 @@ export interface MusicMusicianRow {
   email: string | null;
   phone: string | null;
   whatsapp_enabled: boolean;
+  whatsapp_opt_in_at: string | null;
+  whatsapp_opt_in_method: WhatsAppOptInMethod | null;
+  whatsapp_suppressed: boolean;
   is_active: boolean;
   notes: string | null;
   created_at: string;
@@ -290,6 +296,9 @@ export interface MusicMusicianInsert {
   email?: string | null;
   phone?: string | null;
   whatsapp_enabled?: boolean;
+  whatsapp_opt_in_at?: string | null;
+  whatsapp_opt_in_method?: WhatsAppOptInMethod | null;
+  whatsapp_suppressed?: boolean;
   is_active?: boolean;
   notes?: string | null;
   created_at?: string;

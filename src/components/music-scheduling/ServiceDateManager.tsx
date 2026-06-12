@@ -59,6 +59,7 @@ import { format, startOfMonth, endOfMonth, isSameDay, parseISO, isSameMonth } fr
 import { es } from 'date-fns/locale';
 import type { ServiceType, ServiceDateStatus, MusicServiceDateRow, PublicationWithDeliverySummary } from '@/types/musicPlanning';
 import { getPublicationWithDeliverySummary } from '@/lib/music-planning/publicationStateService';
+import { describePacketSendResult, type PacketSendResult } from '@/lib/whatsapp';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -139,7 +140,7 @@ const ServiceDateManager = () => {
         throw new Error(response.error.message);
       }
 
-      const result = response.data as { success: boolean; sent: number; failed: number; error?: string };
+      const result = response.data as PacketSendResult;
 
       if (result.error && !result.success) {
         throw new Error(result.error);
@@ -147,7 +148,7 @@ const ServiceDateManager = () => {
 
       toast({
         title: 'Paquete reenviado',
-        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}`,
+        description: describePacketSendResult(result),
       });
 
       // Reload publication info to update delivery summary
@@ -480,20 +481,35 @@ const ServiceDateManager = () => {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {assignmentsForSelected.map((assignment) => (
-                      <div
-                        key={assignment.id}
-                        className="flex items-center justify-between p-3 rounded-lg border"
-                        style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
-                      >
-                        <span className="text-sm font-medium">
-                          {assignment.music_musicians.display_name}
-                        </span>
-                        <Badge variant="outline">
-                          {INSTRUMENT_LABELS[assignment.assigned_instrument as keyof typeof INSTRUMENT_LABELS] ?? assignment.assigned_instrument}
-                        </Badge>
-                      </div>
-                    ))}
+                    {assignmentsForSelected.map((assignment) => {
+                      // Tri-state from existing fields: confirmed=true → confirmado;
+                      // confirmed=false with confirmed_at set → declined (via WhatsApp
+                      // u otro canal); otherwise still pending.
+                      const declined = !assignment.confirmed && assignment.confirmed_at !== null;
+                      return (
+                        <div
+                          key={assignment.id}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                          style={{ borderColor: CASA_BRAND.colors.secondary.grayLight }}
+                        >
+                          <span className="text-sm font-medium">
+                            {assignment.music_musicians.display_name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              {INSTRUMENT_LABELS[assignment.assigned_instrument as keyof typeof INSTRUMENT_LABELS] ?? assignment.assigned_instrument}
+                            </Badge>
+                            {assignment.confirmed ? (
+                              <Badge variant="default">Confirmado</Badge>
+                            ) : declined ? (
+                              <Badge variant="destructive">Rechazó — buscar reemplazo</Badge>
+                            ) : (
+                              <Badge variant="secondary">Pendiente</Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
