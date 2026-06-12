@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { requireMesaAdmin } from "../_shared/adminAuth.ts";
 
 const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
 const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
@@ -29,6 +30,16 @@ serve(async (req) => {
       throw new Error("Twilio credentials not configured");
     }
 
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const authResult = await requireMesaAdmin(req, supabase, corsHeaders);
+    if (!authResult.ok) return authResult.response;
+
     // Parse request
     const { monthId }: NotificationRequest = await req.json();
 
@@ -38,11 +49,6 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get month details
     const { data: month, error: monthError } = await supabase

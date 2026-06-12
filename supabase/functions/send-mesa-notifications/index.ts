@@ -4,10 +4,17 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { requireMesaAdmin } from "../_shared/adminAuth.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "onboarding@resend.dev";
 const FROM_NAME = Deno.env.get("FROM_NAME") || "CASA - La Mesa Abierta";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 interface NotificationRequest {
   monthId: string;
@@ -17,13 +24,7 @@ serve(async (req) => {
   try {
     // CORS headers
     if (req.method === "OPTIONS") {
-      return new Response("ok", {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST",
-          "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-        },
-      });
+      return new Response("ok", { headers: corsHeaders });
     }
 
     // Validate Resend is configured
@@ -31,20 +32,25 @@ serve(async (req) => {
       throw new Error("Resend API key not configured");
     }
 
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const authResult = await requireMesaAdmin(req, supabase, corsHeaders);
+    if (!authResult.ok) return authResult.response;
+
     // Parse request
     const { monthId }: NotificationRequest = await req.json();
 
     if (!monthId) {
       return new Response(
         JSON.stringify({ success: false, error: "monthId is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get month details
     const { data: month, error: monthError } = await supabase

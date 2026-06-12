@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { requireMesaAdmin } from "../_shared/adminAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,14 +64,6 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { monthId }: MatchRequest = await req.json();
-
-    if (!monthId) {
-      throw new Error("Se requiere el ID del mes");
-    }
-
-    console.log(`Iniciando matching para el mes: ${monthId}`);
-
     // Initialize Supabase client with service role key
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -79,7 +72,20 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Configuración de Supabase no disponible");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const authResult = await requireMesaAdmin(req, supabase, corsHeaders);
+    if (!authResult.ok) return authResult.response;
+
+    const { monthId }: MatchRequest = await req.json();
+
+    if (!monthId) {
+      throw new Error("Se requiere el ID del mes");
+    }
+
+    console.log(`Iniciando matching para el mes: ${monthId}`);
 
     // ===================================
     // STEP 1: Fetch month and validate
