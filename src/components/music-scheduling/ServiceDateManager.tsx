@@ -59,6 +59,10 @@ import { format, startOfMonth, endOfMonth, isSameDay, parseISO, isSameMonth } fr
 import { es } from 'date-fns/locale';
 import type { ServiceType, ServiceDateStatus, MusicServiceDateRow, PublicationWithDeliverySummary } from '@/types/musicPlanning';
 import { getPublicationWithDeliverySummary } from '@/lib/music-planning/publicationStateService';
+import {
+  fanoutMusicAssignmentWhatsApp,
+  describeWhatsAppFanout,
+} from '@/lib/music-planning/whatsappPublishService';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -145,9 +149,18 @@ const ServiceDateManager = () => {
         throw new Error(result.error);
       }
 
+      // Best-effort WhatsApp fan-out alongside the email packet.
+      let waLine = '';
+      try {
+        const wa = await fanoutMusicAssignmentWhatsApp(publicationInfo.service_date_id);
+        waLine = ` · ${describeWhatsAppFanout(wa)}`;
+      } catch (waErr) {
+        console.error('WhatsApp fan-out error (non-blocking):', waErr);
+      }
+
       toast({
         title: 'Paquete reenviado',
-        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}`,
+        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}${waLine}`,
       });
 
       // Reload publication info to update delivery summary

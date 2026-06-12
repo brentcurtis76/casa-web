@@ -25,6 +25,10 @@ import type { Story } from '@/types/shared/story';
 import type { ServiceType, PublishMode, MusicPublicationStateRow } from '@/types/musicPlanning';
 import type { ChildrenPublicationStateRow } from '@/types/childrenPublicationState';
 import { exportLiturgy } from '@/lib/liturgia/exportService';
+import {
+  fanoutMusicAssignmentWhatsApp,
+  describeWhatsAppFanout,
+} from '@/lib/music-planning/whatsappPublishService';
 import { exportStoryToPDF } from '@/lib/cuentacuentos/storyPdfExporter';
 import { exportChildrenLessonToPDF, type ChildrenLessonPdfData } from '@/lib/children-ministry/childrenLessonPdfExporter';
 import { getLesson } from '@/lib/children-ministry/lessonService';
@@ -354,9 +358,17 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
         throw new Error(result.error);
       }
 
+      let waLine = '';
+      try {
+        const wa = await fanoutMusicAssignmentWhatsApp(existingPublication.service_date_id);
+        waLine = ` · ${describeWhatsAppFanout(wa)}`;
+      } catch (waErr) {
+        console.error('WhatsApp fan-out error (non-blocking):', waErr);
+      }
+
       toast({
         title: 'Paquete enviado',
-        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}${result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''}`,
+        description: `${result.sent} correo${result.sent !== 1 ? 's' : ''} enviado${result.sent !== 1 ? 's' : ''}${result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''}${waLine}`,
       });
 
       setSendDialogOpen(false);
