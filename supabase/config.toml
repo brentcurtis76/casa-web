@@ -2,3 +2,11 @@ project_id = "mulsqxfhxxdsadxsljss"
 
 [functions.podcast-rss]
 verify_jwt = false
+
+# Meta calls this endpoint directly (signature-verified in code, not JWT)
+[functions.wa-webhook]
+verify_jwt = false
+
+# pg_cron calls with WA_REMINDERS_CRON_SECRET, which is not a platform JWT
+[functions.wa-reminders]
+verify_jwt = false

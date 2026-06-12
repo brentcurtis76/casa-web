@@ -4,6 +4,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import {
+  loadGraphCreds,
+  sendWhatsAppOne,
+} from "../_shared/whatsapp/send-core.ts";
+import { buildPayload } from "../_shared/whatsapp/payload.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "onboarding@resend.dev";
@@ -13,11 +18,19 @@ interface PacketRequest {
   publicationId: string;
 }
 
+interface WhatsAppFanout {
+  sent: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+}
+
 interface SendResult {
   success: boolean;
   sent: number;
   failed: number;
   errors: string[];
+  whatsapp: WhatsAppFanout;
 }
 
 serve(async (req) => {
@@ -201,7 +214,9 @@ serve(async (req) => {
     // Fetch assigned musicians for this service date
     const { data: assignments, error: assignError } = await supabase
       .from("music_service_assignments")
-      .select("*, music_musicians(id, display_name, email)")
+      .select(
+        "*, music_musicians(id, display_name, email, phone, whatsapp_enabled, whatsapp_suppressed)"
+      )
       .eq("service_date_id", publication.service_date_id);
 
     if (assignError) {
@@ -233,15 +248,44 @@ serve(async (req) => {
       }
     }
 
-    if (musiciansToNotify.length === 0) {
+    // WhatsApp fan-out candidates: one message per musician (first assignment
+    // carries the confirm/decline payload), gated by opt-in + suppression.
+    const waCandidates: {
+      assignmentId: string;
+      musicianId: string;
+      displayName: string;
+      rol: string;
+    }[] = [];
+    let waSkipped = 0;
+    const seenWaMusicians = new Set<string>();
+
+    for (const assignment of assignments || []) {
+      const musician = assignment.music_musicians;
+      if (!musician || seenWaMusicians.has(musician.id)) continue;
+      seenWaMusicians.add(musician.id);
+
+      if (musician.whatsapp_enabled && !musician.whatsapp_suppressed && musician.phone) {
+        waCandidates.push({
+          assignmentId: assignment.id,
+          musicianId: musician.id,
+          displayName: musician.display_name,
+          rol: assignment.assigned_instrument || assignment.assigned_role || "música",
+        });
+      } else {
+        waSkipped++;
+      }
+    }
+
+    if (musiciansToNotify.length === 0 && waCandidates.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
           error:
-            "No hay musicos asignados con correo electronico valido para esta fecha",
+            "No hay musicos asignados con correo electronico valido ni WhatsApp habilitado para esta fecha",
           sent: 0,
           failed: 0,
           errors: [],
+          whatsapp: { sent: 0, failed: 0, skipped: waSkipped, errors: [] },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -357,6 +401,7 @@ serve(async (req) => {
       sent: 0,
       failed: 0,
       errors: [],
+      whatsapp: { sent: 0, failed: 0, skipped: waSkipped, errors: [] },
     };
 
     for (const musician of musiciansToNotify) {
@@ -495,6 +540,48 @@ serve(async (req) => {
       // Rate limiting: 500ms between emails
       if (musiciansToNotify.indexOf(musician) < musiciansToNotify.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    // WhatsApp fan-out — best-effort: failures here never block the email path.
+    if (waCandidates.length > 0) {
+      const credsOrErr = loadGraphCreds();
+      if ("error" in credsOrErr) {
+        result.whatsapp.skipped += waCandidates.length;
+        result.whatsapp.errors.push(credsOrErr.error);
+      } else {
+        for (const candidate of waCandidates) {
+          try {
+            const outcome = await sendWhatsAppOne(supabase, credsOrErr, {
+              recipientType: "musician",
+              recipientId: candidate.musicianId,
+              templateName: "asignacion_servicio",
+              notificationType: "assignment",
+              variables: [candidate.displayName, formattedDate, candidate.rol],
+              buttons: [
+                {
+                  index: 0,
+                  payload: buildPayload("confirm", "music", candidate.assignmentId),
+                },
+                {
+                  index: 1,
+                  payload: buildPayload("decline", "music", candidate.assignmentId),
+                },
+              ],
+            });
+            if (outcome.sent) {
+              result.whatsapp.sent++;
+            } else {
+              result.whatsapp.failed++;
+              result.whatsapp.errors.push(`${candidate.displayName}: ${outcome.reason}`);
+            }
+          } catch (error) {
+            result.whatsapp.failed++;
+            result.whatsapp.errors.push(
+              `${candidate.displayName}: ${error instanceof Error ? error.message : "error desconocido"}`
+            );
+          }
+        }
       }
     }
 

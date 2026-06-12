@@ -22,7 +22,23 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CASA_BRAND } from '@/lib/brand-kit';
+import { normalizeChilePhone } from '@/lib/whatsapp';
+import type { MusicMusicianInsert, WhatsAppOptInMethod } from '@/types/musicPlanning';
+
+const OPT_IN_METHOD_LABELS: Record<WhatsAppOptInMethod, string> = {
+  'en-app': 'En la app',
+  'formulario': 'Formulario de inscripción',
+  'verbal-coordinador': 'Consentimiento verbal (coordinador)',
+};
 
 interface MusicianEditDialogProps {
   musicianId: string | null;
@@ -41,6 +57,7 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [optInMethod, setOptInMethod] = useState<WhatsAppOptInMethod>('en-app');
   const [isActive, setIsActive] = useState(true);
   const [notes, setNotes] = useState('');
 
@@ -49,6 +66,7 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
     setEmail('');
     setPhone('');
     setWhatsappEnabled(false);
+    setOptInMethod('en-app');
     setIsActive(true);
     setNotes('');
   }, []);
@@ -60,6 +78,7 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
       setEmail(existingMusician.email ?? '');
       setPhone(existingMusician.phone ?? '');
       setWhatsappEnabled(existingMusician.whatsapp_enabled);
+      setOptInMethod(existingMusician.whatsapp_opt_in_method ?? 'en-app');
       setIsActive(existingMusician.is_active);
       setNotes(existingMusician.notes ?? '');
     } else if (!isEditing) {
@@ -67,8 +86,11 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
     }
   }, [isEditing, existingMusician, resetForm]);
 
+  const phoneCheck = phone.trim() ? normalizeChilePhone(phone) : null;
+  const isSuppressed = existingMusician?.whatsapp_suppressed ?? false;
+
   const handleSubmit = () => {
-    const musicianData = {
+    const musicianData: MusicMusicianInsert = {
       display_name: displayName.trim(),
       email: email.trim() || null,
       phone: phone.trim() || null,
@@ -76,6 +98,20 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
       is_active: isActive,
       notes: notes.trim() || null,
     };
+
+    // Record consent when WhatsApp is (re)activated: first opt-in, or
+    // re-consent after a BAJA. Saving with the switch on clears suppression.
+    const needsConsentRecord =
+      whatsappEnabled &&
+      (!existingMusician?.whatsapp_enabled ||
+        !existingMusician?.whatsapp_opt_in_at ||
+        isSuppressed);
+
+    if (needsConsentRecord) {
+      musicianData.whatsapp_opt_in_at = new Date().toISOString();
+      musicianData.whatsapp_opt_in_method = optInMethod;
+      musicianData.whatsapp_suppressed = false;
+    }
 
     if (isEditing && musicianId) {
       updateMusician.mutate(
@@ -151,7 +187,29 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+56 9 xxxx xxxx"
                 />
+                {phoneCheck && (
+                  phoneCheck.ok ? (
+                    <p className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Se enviará a {phoneCheck.display}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      {phoneCheck.reason} — sin un móvil chileno válido, este músico
+                      recibirá solo correos.
+                    </p>
+                  )
+                )}
               </div>
+
+              {isSuppressed && (
+                <Alert>
+                  <AlertDescription>
+                    Este músico pidió no recibir más mensajes (respondió BAJA).
+                    Si reactivas WhatsApp con su consentimiento y guardas, se
+                    quitará esa marca.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <div className="flex items-center justify-between">
                 <Label htmlFor="whatsapp">WhatsApp habilitado</Label>
@@ -161,6 +219,40 @@ const MusicianEditDialog = ({ musicianId, open, onOpenChange }: MusicianEditDial
                   onCheckedChange={setWhatsappEnabled}
                 />
               </div>
+
+              {whatsappEnabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="optInMethod">Cómo se registró el consentimiento</Label>
+                  <Select
+                    value={optInMethod}
+                    onValueChange={(v) => setOptInMethod(v as WhatsAppOptInMethod)}
+                  >
+                    <SelectTrigger id="optInMethod">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(OPT_IN_METHOD_LABELS) as WhatsAppOptInMethod[]).map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {OPT_IN_METHOD_LABELS[m]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {existingMusician?.whatsapp_opt_in_at && !isSuppressed ? (
+                    <p className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Consentimiento registrado el{' '}
+                      {new Date(existingMusician.whatsapp_opt_in_at).toLocaleDateString('es-CL')}
+                      {existingMusician.whatsapp_opt_in_method
+                        ? ` (${OPT_IN_METHOD_LABELS[existingMusician.whatsapp_opt_in_method]})`
+                        : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Al guardar se registrará la fecha y el método de consentimiento.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {isEditing && (
                 <div className="flex items-center justify-between">
