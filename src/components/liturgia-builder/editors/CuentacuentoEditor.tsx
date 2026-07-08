@@ -116,6 +116,28 @@ const ILLUSTRATION_STYLES = [
 // Escape a string so it can be safely embedded in a RegExp.
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * Reemplaza opciones base64 en memoria por las URLs públicas devueltas por el
+ * guardado del draft. Solo intercambia una key cuando la cantidad de URLs
+ * coincide con la cantidad de opciones (mismo orden garantizado por el hook);
+ * si algún upload falló se conserva el base64 para no perder candidatas.
+ */
+function swapOptionsWithUploadedUrls<K extends string | number>(
+  current: Record<K, string[]>,
+  uploaded: Record<K, string[]>
+): Record<K, string[]> {
+  let changed = false;
+  const next = { ...current };
+  for (const [key, urls] of Object.entries(uploaded) as Array<[K, string[]]>) {
+    const options = next[key];
+    if (Array.isArray(options) && Array.isArray(urls) && urls.length > 0 && urls.length === options.length) {
+      next[key] = urls;
+      changed = true;
+    }
+  }
+  return changed ? next : current;
+}
+
 // Pasos del flujo de creación
 type CreationStep =
   | 'config'           // Configurar lugar, personajes, estilo
@@ -1457,11 +1479,18 @@ Instrucciones críticas:
   }, [deleteStoryImages, onStoryDeleted]);
 
   // Generar character sheet para un personaje
-  const handleGenerateCharacterSheet = useCallback(async (character: StoryCharacter, index: number, customPrompt?: string) => {
+  const handleGenerateCharacterSheet = useCallback(async (
+    character: StoryCharacter,
+    index: number,
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
 
     const effectivePrompt = customPrompt ?? character.visualDescription;
     if (!effectivePrompt.trim()) return;
+
+    const append = generateOptions?.append ?? false;
 
     setGeneratingCharacterIndex(index);
     setError(null);
@@ -1476,7 +1505,8 @@ Instrucciones críticas:
             description: character.description,
             visualDescription: effectivePrompt,
           },
-          count: 4,
+          count: 2,
+          modelTier: 'flash',
         },
       });
 
@@ -1486,21 +1516,38 @@ Instrucciones críticas:
         throw new Error(data?.error || 'No se pudieron generar imágenes');
       }
 
-      // Actualizar estado local
+      // Actualizar estado local. En modo "append" se conservan las opciones existentes.
+      const existingOptions = append ? (characterSheetOptions[character.id] || []) : [];
       const newCharacterSheetOptions = {
         ...characterSheetOptions,
-        [character.id]: data.images,
+        [character.id]: [...existingOptions, ...data.images],
       };
       setCharacterSheetOptions(newCharacterSheetOptions);
 
+      // Al reemplazar todas las opciones, la selección anterior queda inválida
+      // (puede apuntar a un índice que ya no existe): el usuario debe re-elegir.
+      let newSelectedCharacterSheets = selectedCharacterSheets;
+      if (!append && selectedCharacterSheets[character.id] !== undefined) {
+        newSelectedCharacterSheets = { ...selectedCharacterSheets };
+        delete newSelectedCharacterSheets[character.id];
+        setSelectedCharacterSheets(newSelectedCharacterSheets);
+      }
+
       // Guardar inmediatamente al storage (sin esperar debounce)
       console.log(`[CuentacuentoEditor] Saving character ${character.name} images immediately...`);
-      await saveDraftNow({
+      const saveResult = await saveDraftNow({
         currentStep,
         characterSheetOptions: newCharacterSheetOptions,
-        selectedCharacterSheets,
+        selectedCharacterSheets: newSelectedCharacterSheets,
       });
       console.log(`[CuentacuentoEditor] Character ${character.name} images saved!`);
+
+      // Reemplazar base64 en memoria por URLs de storage: los próximos guardados
+      // ya no re-suben estas imágenes
+      const uploadedSheetUrls = saveResult.uploadedUrls?.characterSheetUrls;
+      if (uploadedSheetUrls) {
+        setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando character sheet');
@@ -1510,8 +1557,14 @@ Instrucciones críticas:
   }, [story, characterSheetOptions, selectedCharacterSheets, currentStep, saveDraftNow]);
 
   // Generar imagen para una escena
-  const handleGenerateSceneImage = useCallback(async (scene: StoryScene, customPrompt?: string) => {
+  const handleGenerateSceneImage = useCallback(async (
+    scene: StoryScene,
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
+
+    const append = generateOptions?.append ?? false;
 
     // Auto-guardar texto editado antes de generar, para que la API use la versión nueva
     const editedText = editingSceneText[scene.number];
@@ -1595,7 +1648,8 @@ Instrucciones críticas:
           sceneReferenceImage: sceneRefImage, // Imagen de referencia manual
           sceneReferenceMode: sceneReferenceMode[scene.number] ?? 'style',
           props: propsForScene.length > 0 ? propsForScene : undefined,
-          count: 4,
+          count: 2,
+          modelTier: 'flash',
         },
       });
 
@@ -1618,22 +1672,39 @@ Instrucciones críticas:
         console.log(`[CuentacuentoEditor] Escena ${scene.number} - Personajes detectados:`, data.charactersDetected);
       }
 
-      // Actualizar estado local
+      // Actualizar estado local. En modo "append" se conservan las opciones existentes.
+      const existingSceneOptions = append ? (sceneImageOptions[scene.number] || []) : [];
       const newSceneImageOptions = {
         ...sceneImageOptions,
-        [scene.number]: data.images,
+        [scene.number]: [...existingSceneOptions, ...data.images],
       };
       setSceneImageOptions(newSceneImageOptions);
 
+      // Al reemplazar todas las opciones, la selección anterior queda inválida
+      // (puede apuntar a un índice que ya no existe): el usuario debe re-elegir.
+      let newSelectedSceneImages = selectedSceneImages;
+      if (!append && selectedSceneImages[scene.number] !== undefined) {
+        newSelectedSceneImages = { ...selectedSceneImages };
+        delete newSelectedSceneImages[scene.number];
+        setSelectedSceneImages(newSelectedSceneImages);
+      }
+
       // Guardar inmediatamente al storage (sin esperar debounce)
       console.log(`[CuentacuentoEditor] Saving scene ${scene.number} images immediately...`);
-      await saveDraftNow({
+      const saveResult = await saveDraftNow({
         currentStep,
         sceneImageOptions: newSceneImageOptions,
-        selectedSceneImages,
+        selectedSceneImages: newSelectedSceneImages,
         sceneReferenceModes: sceneReferenceMode,
       });
       console.log(`[CuentacuentoEditor] Scene ${scene.number} images saved!`);
+
+      // Reemplazar base64 en memoria por URLs de storage: los próximos guardados
+      // ya no re-suben estas imágenes
+      const uploadedSceneUrls = saveResult.uploadedUrls?.sceneImageUrls;
+      if (uploadedSceneUrls) {
+        setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen de escena');
@@ -1747,6 +1818,7 @@ Instrucciones críticas:
           props: primaryProps.length > 0 ? primaryProps : undefined,
           customPrompt: customPrompt || editingCoverPrompt || undefined,
           count: 4,
+          modelTier: 'pro',
         },
       });
 
@@ -1842,6 +1914,7 @@ Instrucciones críticas:
         // Prompt personalizado
         customPrompt: customPrompt || editingEndPrompt || undefined,
         count: 4,
+        modelTier: 'pro',
       };
 
       console.log('[CuentacuentoEditor] End image generation request:', {
@@ -1897,6 +1970,7 @@ Instrucciones críticas:
             description: character.description,
             visualDescription,
           },
+          modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
 
@@ -1927,11 +2001,15 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        await saveDraftNow({
+        const saveResult = await saveDraftNow({
           currentStep,
           characterSheetOptions: newOptions,
           selectedCharacterSheets: newSelection,
         });
+        const uploadedSheetUrls = saveResult.uploadedUrls?.characterSheetUrls;
+        if (uploadedSheetUrls) {
+          setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando personaje';
@@ -1990,6 +2068,7 @@ Instrucciones críticas:
           sceneReferenceMode: (sceneReferenceMode[scene.number] ??
             'style') as GenerateSceneImagesSceneRequest['sceneReferenceMode'],
           props: propsForScene.length > 0 ? propsForScene : undefined,
+          modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
 
@@ -2020,12 +2099,16 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        await saveDraftNow({
+        const saveResult = await saveDraftNow({
           currentStep,
           sceneImageOptions: newSceneOptions,
           selectedSceneImages: newSelection,
           sceneReferenceModes: sceneReferenceMode,
         });
+        const uploadedSceneUrls = saveResult.uploadedUrls?.sceneImageUrls;
+        if (uploadedSceneUrls) {
+          setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando imagen de escena';
@@ -2089,6 +2172,7 @@ Instrucciones críticas:
           sceneReferenceImage: coverReferenceImage || undefined,
           props: primaryProps.length > 0 ? primaryProps : undefined,
           customPrompt: editingCoverPrompt || undefined,
+          modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
 
@@ -2164,6 +2248,7 @@ Instrucciones críticas:
           characters:
             charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
           customPrompt: editingEndPrompt || undefined,
+          modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
 
@@ -3331,7 +3416,7 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                  disabled={generatingCharacterIndex !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  disabled={generatingCharacterIndex !== null || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -3343,10 +3428,22 @@ Instrucciones críticas:
                     <><Camera size={14} /> Generar</>
                   )}
                 </button>
+                {(characterSheetOptions[character.id]?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id], { append: true })}
+                    disabled={generatingCharacterIndex !== null || refiningCharId !== null}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
+                    title="Genera 2 opciones adicionales sin descartar las existentes"
+                  >
+                    <Sparkles size={14} /> 2 más
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={(base64) => handleUploadCharacterImage(character.id, base64)}
                   label="imagen"
-                  disabled={generatingCharacterIndex !== null}
+                  disabled={generatingCharacterIndex !== null || refiningCharId !== null}
                 />
               </div>
             </div>
@@ -3402,7 +3499,10 @@ Instrucciones críticas:
                       selectedIndex={selectedCharacterSheets[character.id] ?? null}
                       onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
                       onSave={() => handleSaveCharacterImage(character.id)}
-                      onRegenerate={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
+                      onRegenerate={() => {
+                        if (refiningCharId !== null) return;
+                        handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id]);
+                      }}
                       isGenerating={generatingCharacterIndex === index}
                       isSaving={savingCharacter === character.id}
                       savedMessage={savedCharacterMessage[character.id]}
@@ -3410,11 +3510,13 @@ Instrucciones críticas:
                     />
                   </div>
                   {charSelectedImage && (
-                    <ImageRefineBox
-                      onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
-                      isRefining={isRefiningThisChar}
-                      refineError={charRefineErrors[character.id]}
-                    />
+                    <div className={generatingCharacterIndex !== null ? 'opacity-60 pointer-events-none' : ''}>
+                      <ImageRefineBox
+                        onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
+                        isRefining={isRefiningThisChar}
+                        refineError={charRefineErrors[character.id]}
+                      />
+                    </div>
                   )}
                 </>
               );
@@ -3605,7 +3707,7 @@ Instrucciones críticas:
                       <button
                         type="button"
                         onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                        disabled={generatingSceneIndex !== null}
+                        disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
@@ -3617,11 +3719,24 @@ Instrucciones críticas:
                           <><Camera size={14} /> Generar</>
                         )}
                       </button>
+                      {/* Botón "2 más": agrega opciones sin descartar las existentes */}
+                      {(sceneImageOptions[scene.number]?.length ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number], { append: true })}
+                          disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                          style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
+                          title="Genera 2 opciones adicionales sin descartar las existentes"
+                        >
+                          <Sparkles size={14} /> 2 más
+                        </button>
+                      )}
                       {/* Botón subir imagen */}
                       <ImageUploadButton
                         onUpload={(base64) => handleUploadSceneImage(scene.number, base64)}
                         label="imagen"
-                        disabled={generatingSceneIndex !== null}
+                        disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
                       />
                     </div>
                   </div>
@@ -4106,7 +4221,10 @@ Instrucciones críticas:
                           selectedIndex={selectedSceneImages[scene.number] ?? null}
                           onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
                           onSave={() => handleSaveSceneImage(scene.number)}
-                          onRegenerate={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
+                          onRegenerate={() => {
+                            if (refiningSceneNumber !== null) return;
+                            handleGenerateSceneImage(scene, editingScenePrompt[scene.number]);
+                          }}
                           isGenerating={generatingSceneIndex === scene.number}
                           isSaving={savingScene === scene.number}
                           savedMessage={savedSceneMessage[scene.number]}
@@ -4114,11 +4232,13 @@ Instrucciones críticas:
                         />
                       </div>
                       {sceneSelectedImage && (
-                        <ImageRefineBox
-                          onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
-                          isRefining={isRefiningThisScene}
-                          refineError={sceneRefineErrors[scene.number]}
-                        />
+                        <div className={generatingSceneIndex !== null ? 'opacity-60 pointer-events-none' : ''}>
+                          <ImageRefineBox
+                            onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
+                            isRefining={isRefiningThisScene}
+                            refineError={sceneRefineErrors[scene.number]}
+                          />
+                        </div>
                       )}
                     </div>
                   );

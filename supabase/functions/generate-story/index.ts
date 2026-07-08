@@ -12,6 +12,44 @@ const MODEL = 'claude-opus-4-5-20251101';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 /**
+ * Un intento de reintento en 429/5xx/timeout con backoff corto (respeta Retry-After).
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    try {
+      const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+
+      if ((response.status === 429 || response.status >= 500) && attempt === 0) {
+        const retryAfter = Number(response.headers.get('retry-after'));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 15_000)
+          : 2_000 + Math.random() * 3_000;
+        console.warn(`[generate-story] ${label}: ${response.status}, reintentando en ${Math.round(delayMs)}ms`);
+        await response.body?.cancel();
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
+      return response;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 0) {
+        console.warn(`[generate-story] ${label}: error de red/timeout, reintentando:`, err instanceof Error ? err.message : err);
+        await new Promise((r) => setTimeout(r, 2_000 + Math.random() * 3_000));
+        continue;
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/**
  * Investiga información visual sobre una ubicación en Chile usando Gemini
  */
 async function researchLocation(location: string): Promise<string> {
@@ -33,7 +71,7 @@ Por favor proporciona:
 Responde en español, de forma concisa pero detallada (máximo 300 palabras). Solo información visual útil para ilustraciones.`;
 
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
       {
         method: 'POST',
@@ -42,7 +80,9 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
           contents: [{ parts: [{ text: researchPrompt }] }],
           generationConfig: { maxOutputTokens: 500 },
         }),
-      }
+      },
+      30_000,
+      'investigación de ubicación'
     );
 
     if (!response.ok) {
@@ -171,7 +211,7 @@ async function analyzeImagesForVisualDescription(params: {
 
     console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images for "${name}"`);
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_AI_API_KEY}`,
       {
         method: 'POST',
@@ -180,7 +220,9 @@ async function analyzeImagesForVisualDescription(params: {
           contents: [{ parts }],
           generationConfig: { maxOutputTokens: 400 },
         }),
-      }
+      },
+      45_000,
+      `análisis visual de "${name}"`
     );
 
     if (!response.ok) {
@@ -287,6 +329,48 @@ Donde:
   - charactersInScene: nombres de personajes en la escena
   - landmarkVisible: boolean, true si el landmark/edificio debe aparecer visible en la ilustración de esta escena
 - spiritualConnection: conexión con el Evangelio`;
+
+/**
+ * Schema del tool `emit_story`: fuerza salida estructurada de Claude y elimina
+ * el parsing frágil de JSON embebido en texto.
+ */
+const STORY_TOOL_SCHEMA = {
+  type: 'object',
+  required: ['title', 'summary', 'characters', 'scenes', 'spiritualConnection'],
+  properties: {
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    characters: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['name', 'role', 'description', 'visualDescription'],
+        properties: {
+          name: { type: 'string' },
+          role: { type: 'string', enum: ['protagonist', 'secondary', 'minor'] },
+          description: { type: 'string' },
+          visualDescription: { type: 'string' },
+          appearsInScenes: { type: 'array', items: { type: 'number' } },
+        },
+      },
+    },
+    scenes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['number', 'text', 'visualDescription'],
+        properties: {
+          number: { type: 'number' },
+          text: { type: 'string' },
+          visualDescription: { type: 'string' },
+          charactersInScene: { type: 'array', items: { type: 'string' } },
+          landmarkVisible: { type: 'boolean' },
+        },
+      },
+    },
+    spiritualConnection: { type: 'string' },
+  },
+} as const;
 
 /**
  * Construye el prompt del usuario con la información de la liturgia y preferencias
@@ -451,54 +535,47 @@ serve(async (req) => {
     console.log(`[generate-story] Landmarks: ${landmarks?.length || 0}, Props: ${props?.length || 0}`);
     console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
-    // Investigar la ubicación real usando Gemini
-    console.log(`[generate-story] Investigando ubicación: ${location}...`);
-    const locationResearch = await researchLocation(location);
+    // Investigación de ubicación + análisis de fotos de landmarks/props en paralelo:
+    // son llamadas independientes a Gemini y ninguna lanza excepciones (devuelven '' en error).
+    const landmarkList: Array<{ name: string; narrativeRole: string; referenceImages?: string[]; role?: string }> =
+      Array.isArray(landmarks) ? landmarks : [];
+    const propList: Array<{ id: string; name: string; kind?: string; narrativeRole?: string; referenceImages?: string[]; role?: string }> =
+      Array.isArray(props) ? props : [];
 
-    // Analyze landmark reference images if provided
-    const landmarkAnalyses: Array<{ name: string; narrativeRole: string; visualDescription: string; role: string }> = [];
-    if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
-      for (const lm of landmarks) {
-        console.log(`[generate-story] Analyzing landmark: "${lm.name}" with ${lm.referenceImages?.length || 0} images`);
-        const visualDescription = await analyzeImagesForVisualDescription({
+    console.log(`[generate-story] Investigando ubicación "${location}" y analizando ${landmarkList.length} landmarks + ${propList.length} props en paralelo...`);
+
+    const [locationResearch, landmarkAnalyses, propAnalyses] = await Promise.all([
+      researchLocation(location),
+      Promise.all(landmarkList.map(async (lm) => ({
+        name: lm.name,
+        narrativeRole: lm.narrativeRole,
+        visualDescription: await analyzeImagesForVisualDescription({
           name: lm.name,
           narrativeRole: lm.narrativeRole,
           referenceImages: lm.referenceImages || [],
           kind: 'landmark',
-        });
-        landmarkAnalyses.push({
-          name: lm.name,
-          narrativeRole: lm.narrativeRole,
-          visualDescription,
-          role: lm.role || 'primary',
-        });
-      }
-    }
-
-    // Analyze prop reference images if provided (lugares u objetos recurrentes).
-    // Each incoming prop must include `id` so the visual description can be merged
-    // back to the originating prop without relying on array order or duplicate names.
-    const propAnalyses: Array<{ id: string; name: string; kind: string; narrativeRole: string; visualDescription: string; role: string }> = [];
-    if (props && Array.isArray(props) && props.length > 0) {
-      for (const p of props) {
+        }),
+        role: lm.role || 'primary',
+      }))),
+      // Each incoming prop must include `id` so the visual description can be merged
+      // back to the originating prop without relying on array order or duplicate names.
+      Promise.all(propList.map(async (p) => {
         const propKind: 'location' | 'prop' = p.kind === 'location' ? 'location' : 'prop';
-        console.log(`[generate-story] Analyzing ${propKind}: "${p.name}" (id=${p.id}) with ${p.referenceImages?.length || 0} images`);
-        const visualDescription = await analyzeImagesForVisualDescription({
-          name: p.name,
-          narrativeRole: p.narrativeRole || '',
-          referenceImages: p.referenceImages || [],
-          kind: propKind,
-        });
-        propAnalyses.push({
+        return {
           id: p.id,
           name: p.name,
           kind: propKind,
           narrativeRole: p.narrativeRole || '',
-          visualDescription,
+          visualDescription: await analyzeImagesForVisualDescription({
+            name: p.name,
+            narrativeRole: p.narrativeRole || '',
+            referenceImages: p.referenceImages || [],
+            kind: propKind,
+          }),
           role: p.role || 'secondary',
-        });
-      }
-    }
+        };
+      })),
+    ]);
 
     // Si solo quieren ver el prompt, devolverlo sin generar
     if (previewPromptOnly) {
@@ -538,26 +615,39 @@ serve(async (req) => {
       additionalNotes: additionalNotes || ''
     });
 
-    // Llamar a Claude API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+    // Llamar a Claude API con tool forzado para salida estructurada
+    const response = await fetchWithRetry(
+      'https://api.anthropic.com/v1/messages',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: 'user',
+              content: userPrompt,
+            },
+          ],
+          tools: [
+            {
+              name: 'emit_story',
+              description: 'Emite el cuento infantil completo en formato estructurado',
+              input_schema: STORY_TOOL_SCHEMA,
+            },
+          ],
+          tool_choice: { type: 'tool', name: 'emit_story' },
+        }),
       },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      }),
-    });
+      120_000,
+      'Claude'
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -567,86 +657,43 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    if (!data.content || !data.content[0] || !data.content[0].text) {
-      throw new Error('La API no retornó contenido');
+    // Con tool_choice forzado el cuento llega como bloque tool_use ya parseado.
+    interface StoryOutput {
+      title: string;
+      summary: string;
+      characters: Array<Record<string, unknown>>;
+      scenes: Array<{ number: number; text: string; visualDescription: string; landmarkVisible?: boolean }>;
+      spiritualConnection: string;
     }
 
-    // Extraer el JSON de la respuesta
-    let jsonText = data.content[0].text;
-    console.log('[generate-story] Respuesta cruda (primeros 500 chars):', jsonText.slice(0, 500));
+    const contentBlocks: Array<{ type?: string; name?: string; text?: string; input?: unknown }> =
+      Array.isArray(data.content) ? data.content : [];
 
-    // Intentar encontrar el JSON en la respuesta
-    // Primero buscar si hay un bloque de código JSON
-    let jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
-    } else {
-      // Buscar el JSON directamente (objeto que empiece con { y termine con })
-      jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error('[generate-story] No se encontró JSON en:', jsonText);
+    let story = contentBlocks.find(
+      (b) => b.type === 'tool_use' && b.name === 'emit_story'
+    )?.input as StoryOutput | undefined;
+
+    if (!story) {
+      // Fallback: extraer JSON del texto (respuestas sin bloque tool_use)
+      const textBlock = contentBlocks.find((b) => b.type === 'text' && typeof b.text === 'string');
+      if (!textBlock?.text) {
+        console.error('[generate-story] Sin tool_use ni texto. stop_reason:', data.stop_reason);
+        throw new Error('La API no retornó contenido');
+      }
+
+      console.warn('[generate-story] Sin bloque tool_use, extrayendo JSON del texto (fallback)');
+      const rawText = textBlock.text;
+      const fenced = rawText.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonText = (fenced ? fenced[1] : rawText.match(/\{[\s\S]*\}/)?.[0])
+        ?.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+        .trim();
+
+      if (!jsonText) {
+        console.error('[generate-story] No se encontró JSON en:', rawText.slice(0, 500));
         throw new Error('No se encontró JSON válido en la respuesta');
       }
-      jsonText = jsonMatch[0];
-    }
 
-    // Limpiar caracteres problemáticos que pueden causar errores de parsing
-    jsonText = jsonText
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '') // Caracteres de control (excepto \t \n \r)
-      .trim();
-
-    console.log('[generate-story] JSON limpio (primeros 1000 chars):', jsonText.slice(0, 1000));
-
-    // Parsear JSON con múltiples intentos de limpieza
-    let story;
-    const parseAttempts = [
-      // Intento 1: JSON tal cual
-      () => JSON.parse(jsonText),
-      // Intento 2: Limpiar saltos de línea dentro de strings
-      () => {
-        const cleaned = jsonText.replace(/("(?:[^"\\]|\\.)*")|[\n\r\t]/g, (match, group) => {
-          if (group) return group; // Mantener strings intactos
-          return ' '; // Reemplazar whitespace fuera de strings
-        });
-        return JSON.parse(cleaned);
-      },
-      // Intento 3: Limpieza agresiva de comillas y whitespace
-      () => {
-        const cleaned = jsonText
-          .replace(/'/g, "'")
-          .replace(/"/g, '"')
-          .replace(/"/g, '"')
-          .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']');
-        return JSON.parse(cleaned);
-      },
-      // Intento 4: Eliminar todo whitespace extra
-      () => {
-        const cleaned = jsonText
-          .replace(/\s+/g, ' ')
-          .replace(/"\s*:\s*/g, '":')
-          .replace(/,\s*/g, ',')
-          .replace(/\[\s*/g, '[')
-          .replace(/\s*\]/g, ']')
-          .replace(/\{\s*/g, '{')
-          .replace(/\s*\}/g, '}');
-        return JSON.parse(cleaned);
-      }
-    ];
-
-    for (let i = 0; i < parseAttempts.length; i++) {
-      try {
-        story = parseAttempts[i]();
-        console.log(`[generate-story] Parseado exitoso en intento ${i + 1}`);
-        break;
-      } catch (err) {
-        console.log(`[generate-story] Intento ${i + 1} falló:`, err instanceof Error ? err.message : 'Error');
-        if (i === parseAttempts.length - 1) {
-          console.error('[generate-story] Todos los intentos de parsing fallaron');
-          console.error('[generate-story] JSON que falló (últimos 500 chars):', jsonText.slice(-500));
-          throw new Error('Error parseando la respuesta de Claude - JSON inválido');
-        }
-      }
+      story = JSON.parse(jsonText) as StoryOutput;
     }
 
     // Validar estructura

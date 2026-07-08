@@ -276,6 +276,13 @@ export interface GenerateSceneImagesPropRef {
   referenceImages: string[];
 }
 
+/**
+ * Modelo de imagen a usar en `generate-scene-images`:
+ * 'flash' (default) = rápido/barato para borradores y escenas;
+ * 'pro' = mayor calidad para portada, fin y refinamientos.
+ */
+export type GenerateSceneImagesModelTier = 'flash' | 'pro';
+
 /** Petición para regenerar el character sheet de un personaje. */
 export interface GenerateSceneImagesCharacterRequest {
   type: 'character';
@@ -286,6 +293,7 @@ export interface GenerateSceneImagesCharacterRequest {
     visualDescription: string;
   };
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -305,6 +313,7 @@ export interface GenerateSceneImagesSceneRequest {
   landmarks?: GenerateSceneImagesLandmarkRef[];
   props?: GenerateSceneImagesPropRef[];
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -323,6 +332,7 @@ export interface GenerateSceneImagesCoverRequest {
   sceneReferenceImage?: string;
   customPrompt?: string;
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -339,6 +349,7 @@ export interface GenerateSceneImagesEndRequest {
    */
   referenceImage?: string;
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 

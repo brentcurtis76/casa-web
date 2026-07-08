@@ -1,13 +1,75 @@
 /**
  * CASA Scene Image Generator Edge Function
- * Genera imágenes para escenas de cuentos usando Nano Banana Pro (gemini-3-pro-image-preview)
- * Soporta imágenes de referencia para consistencia de personajes
+ * Genera imágenes para escenas de cuentos usando la familia Gemini Image:
+ *  - flash (default): gemini-3.1-flash-image (Nano Banana 2) — borradores/escenas
+ *  - pro: gemini-3-pro-image (Nano Banana Pro) — portada/fin/refinamientos
+ * Soporta imágenes de referencia para consistencia de personajes, lugares y objetos
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const GEMINI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
-const IMAGE_MODEL = 'gemini-3-pro-image-preview';
+// Overrides por env var para poder cambiar de modelo sin redesplegar clientes
+const FLASH_MODEL = Deno.env.get('GEMINI_IMAGE_MODEL_FLASH') ?? 'gemini-3.1-flash-image';
+const PRO_MODEL = Deno.env.get('GEMINI_IMAGE_MODEL_PRO') ?? 'gemini-3-pro-image';
+
+type ModelTier = 'flash' | 'pro';
+
+function resolveModel(tier: ModelTier): string {
+  return tier === 'pro' ? PRO_MODEL : FLASH_MODEL;
+}
+
+const MODEL_TIMEOUT_MS: Record<ModelTier, number> = {
+  flash: 60_000,
+  pro: 150_000,
+};
+
+// ~6MB binarios ≈ 8M caracteres base64 por imagen de referencia
+const MAX_REF_IMAGE_B64_CHARS = 8_000_000;
+// Límite total del body de la petición
+const MAX_REQUEST_BYTES = 15_000_000;
+
+/**
+ * Un intento de reintento en 429/5xx/timeout con backoff corto (respeta Retry-After).
+ */
+async function fetchGeminiWithRetry(
+  apiUrl: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if ((response.status === 429 || response.status >= 500) && attempt === 0) {
+        const retryAfter = Number(response.headers.get('retry-after'));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 15_000)
+          : 2_000 + Math.random() * 3_000;
+        console.warn(`[generate-scene-images] Gemini ${response.status}, reintentando en ${Math.round(delayMs)}ms`);
+        await response.body?.cancel();
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
+      return response;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 0) {
+        console.warn(`[generate-scene-images] Error de red/timeout, reintentando:`, err instanceof Error ? err.message : err);
+        await new Promise((r) => setTimeout(r, 2_000 + Math.random() * 3_000));
+        continue;
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 // Estilos de ilustración con sus prompts
 const ILLUSTRATION_STYLES: Record<string, string> = {
@@ -272,11 +334,14 @@ async function downloadImageToBase64(url: string): Promise<string> {
 
     const uint8Array = new Uint8Array(arrayBuffer);
 
-    let binary = '';
-    for (let i = 0; i < uint8Array.length; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
+    // Conversión por bloques: la concatenación byte a byte quema el presupuesto
+    // de CPU del edge function con imágenes de varios MB
+    const CHUNK = 0x8000;
+    const pieces: string[] = [];
+    for (let i = 0; i < uint8Array.length; i += CHUNK) {
+      pieces.push(String.fromCharCode(...uint8Array.subarray(i, i + CHUNK)));
     }
-    const base64 = btoa(binary);
+    const base64 = btoa(pieces.join(''));
 
     console.log(`[generate-scene-images] Converted to base64: length=${base64.length}, prefix=${base64.slice(0, 30)}`);
 
@@ -297,6 +362,10 @@ async function processReferenceImage(imageData: string): Promise<string> {
   if (!imageData) {
     console.log(`[generate-scene-images] processReferenceImage: no imageData provided`);
     return '';
+  }
+
+  if (!isUrl(imageData) && imageData.length > MAX_REF_IMAGE_B64_CHARS) {
+    throw new Error('Imagen de referencia demasiado grande (máx 6MB). Reduce la resolución de la foto.');
   }
 
   console.log(`[generate-scene-images] processReferenceImage: input type=${isUrl(imageData) ? 'URL' : 'base64'}, length=${imageData.length}, prefix=${imageData.slice(0, 60)}`);
@@ -330,9 +399,11 @@ async function generateImage(
   variation: number = 0,
   referenceImages: string[] = [],
   characterDescriptions: string[] = [],
-  refine?: Refine
+  refine?: Refine,
+  modelTier: ModelTier = 'flash'
 ): Promise<string> {
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const model = resolveModel(modelTier);
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
@@ -475,12 +546,9 @@ ${prompt}`;
     const imageParts = parts.filter(p => p.inlineData).length;
     console.log(`[generateImage] Sending request to Gemini with ${parts.length} total parts: ${textParts} text, ${imageParts} images`);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const response = await fetchGeminiWithRetry(
+      apiUrl,
+      {
         contents: [{
           parts
         }],
@@ -490,8 +558,9 @@ ${prompt}`;
             aspectRatio: '4:3',
           },
         },
-      }),
-    });
+      },
+      MODEL_TIMEOUT_MS[modelTier]
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -558,8 +627,24 @@ serve(async (req) => {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
+    const contentLength = Number(req.headers.get('content-length'));
+    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Petición demasiado grande (máx 15MB). Reduce el tamaño de las imágenes de referencia.',
+          images: [],
+        }),
+        {
+          status: 413,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     const requestData = await req.json();
-    const { type, styleId, count = 4 } = requestData;
+    const { type, styleId, count = 2 } = requestData;
+    const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
     const refine: Refine | undefined =
       requestData.refine && typeof requestData.refine === 'object'
         && typeof requestData.refine.sourceImage === 'string'
@@ -570,7 +655,7 @@ serve(async (req) => {
     const effectiveCount = refine ? 1 : count;
 
     console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-    console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}`);
+    console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier)}`);
 
     if (type === 'scene') {
       const { sceneReferenceImage, sceneReferenceMode = 'style', characters } = requestData;
@@ -1107,7 +1192,7 @@ Instrucciones críticas:
 
     const promises = [];
     for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
-      promises.push(generateImage(prompt, i, referenceImages, characterDescriptions, refine));
+      promises.push(generateImage(prompt, i, referenceImages, characterDescriptions, refine, modelTier));
     }
 
     const settledResults = await Promise.allSettled(promises);
@@ -1153,6 +1238,8 @@ Instrucciones críticas:
         images,
         validCount: images.length,
         requestedCount: count,
+        model: resolveModel(modelTier),
+        modelTier,
         prompt: prompt.slice(0, 500),
         referenceImagesCount: referenceImages.length,
         errors: errors.length > 0 ? errors : undefined,
