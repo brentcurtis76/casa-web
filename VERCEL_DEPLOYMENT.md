@@ -20,9 +20,10 @@ This guide will help you deploy the CASA website to Vercel.
 3. **Configure Environment Variables**
    - In the project settings, add these environment variables:
      ```
-     VITE_SUPABASE_URL=https://mulsqxfhxxdsadxsljss.supabase.co
-     VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11bHNxeGZoeHhkc2FkeHNsanNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM0NzE2ODAsImV4cCI6MjA1OTA0NzY4MH0.K4KKonF8Sd_PbFZtunMTuAAf2rFCGjvuecW3Hn46Cb8
+     VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+     VITE_SUPABASE_ANON_KEY=<your-anon-key>
      ```
+   - Get both values from the Supabase dashboard: Project Settings → API. Never commit the real values to the repository.
 
 4. **Deploy**
    - Click "Deploy"

@@ -15,11 +15,11 @@ serve(async (req) => {
   }
 
   try {
-    // Usar el token proporcionado directamente en lugar de obtenerlo de las variables de entorno
-    const accessToken = "EAAXMjb2gO4gBOykKV5lG0PvwY0cXDrih7kKM5wlAdswdiwJK0w2XWHD7JiDuPVjfVwPWhIF1ls3QDAfZCxfsvw319UZC7DZAWMINQriQYh0vJTZAd1RZCnvIJ3D5cA0XkI1O9tzrmwk4xAwmsy1jJoQDZALBFRd7MHzsQUxrpExadlMz1KnhqzdwZDZD";
-    
+    // El token vive en los secretos de Supabase: supabase secrets set INSTAGRAM_ACCESS_TOKEN=...
+    const accessToken = Deno.env.get("INSTAGRAM_ACCESS_TOKEN");
+
     if (!accessToken) {
-      throw new Error("Falta el token de acceso de Instagram");
+      throw new Error("Falta el token de acceso de Instagram (INSTAGRAM_ACCESS_TOKEN)");
     }
     
     console.log("Obteniendo datos de Instagram con nuevo token...");
