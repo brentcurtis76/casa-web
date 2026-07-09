@@ -51,6 +51,15 @@ interface ParticipantData {
   }>;
 }
 
+interface DietaryAssignmentRow {
+  mesa_abierta_participants: {
+    mesa_abierta_dietary_restrictions?: Array<{
+      restriction_type: string;
+      description: string | null;
+    }>;
+  };
+}
+
 interface DinnerGroupDietary {
   restriction_type: string;
   count: number;
@@ -103,13 +112,13 @@ export function MesaAbiertaDashboard() {
       const now = new Date().toISOString();
       const futureParticipants = participants?.filter(p =>
         p.mesa_abierta_months &&
-        (p.mesa_abierta_months as any).dinner_date >= now
+        (p.mesa_abierta_months as unknown as { dinner_date: string }).dinner_date >= now
       ) || [];
 
       // Sort by dinner_date ascending and get the first one
       futureParticipants.sort((a, b) => {
-        const dateA = (a.mesa_abierta_months as any)?.dinner_date || '';
-        const dateB = (b.mesa_abierta_months as any)?.dinner_date || '';
+        const dateA = (a.mesa_abierta_months as unknown as { dinner_date?: string } | null)?.dinner_date || '';
+        const dateB = (b.mesa_abierta_months as unknown as { dinner_date?: string } | null)?.dinner_date || '';
         return dateA.localeCompare(dateB);
       });
 
@@ -150,9 +159,9 @@ export function MesaAbiertaDashboard() {
         mesa_abierta_assignments: assignmentData ? [assignmentData] : []
       };
 
-      setParticipantData(completeParticipant as any);
+      setParticipantData(completeParticipant as unknown as ParticipantData);
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching participant data:', error);
       toast({
         title: "Error",
@@ -183,8 +192,8 @@ export function MesaAbiertaDashboard() {
 
       // Count dietary restrictions
       const restrictionCounts: { [key: string]: number } = {};
-      assignments?.forEach((assignment: any) => {
-        assignment.mesa_abierta_participants.mesa_abierta_dietary_restrictions?.forEach((restriction: any) => {
+      (assignments as unknown as DietaryAssignmentRow[] | null)?.forEach((assignment) => {
+        assignment.mesa_abierta_participants.mesa_abierta_dietary_restrictions?.forEach((restriction) => {
           const type = restriction.restriction_type;
           restrictionCounts[type] = (restrictionCounts[type] || 0) + 1;
         });
@@ -220,7 +229,7 @@ export function MesaAbiertaDashboard() {
 
       setParticipantData({ ...participantData, status: 'cancelled' });
 
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
         description: "No se pudo cancelar la participación",

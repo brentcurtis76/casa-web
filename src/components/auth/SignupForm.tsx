@@ -59,8 +59,9 @@ export function SignupForm({ onSignupSuccess }: SignupFormProps) {
       // Don't call onSignupSuccess - user needs to confirm email first
       // Show them they need to check their email
       form.reset();
-    } catch (error: any) {
-      const errorMessage = error.message === 'User already registered'
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = rawMessage === 'User already registered'
         ? 'Este correo electrónico ya está registrado. Intenta iniciar sesión.'
         : 'No se pudo crear la cuenta. Por favor, intenta de nuevo.';
 

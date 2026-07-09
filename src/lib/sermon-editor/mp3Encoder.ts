@@ -101,7 +101,7 @@ function floatTo16BitPCM(float32Array: Float32Array): Int16Array {
 
   for (let i = 0; i < float32Array.length; i++) {
     // Clamp value to valid range
-    let sample = Math.max(-1, Math.min(1, float32Array[i]));
+    const sample = Math.max(-1, Math.min(1, float32Array[i]));
     // Convert to 16-bit integer
     int16Array[i] = sample < 0
       ? Math.round(sample * 32768)

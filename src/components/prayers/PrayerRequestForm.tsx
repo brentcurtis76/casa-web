@@ -75,12 +75,13 @@ export function PrayerRequestForm() {
       });
       
       form.reset();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error al enviar petición de oración:', error);
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'No se pudo enviar tu petición. Por favor, intenta de nuevo.',
+        description: message || 'No se pudo enviar tu petición. Por favor, intenta de nuevo.',
       });
     } finally {
       setIsLoading(false);

@@ -71,8 +71,8 @@ describe('DietaryRestrictionsForm', () => {
 
     const lastCall = mockOnRestrictionsChange.mock.calls[mockOnRestrictionsChange.mock.calls.length - 1][0];
     expect(lastCall).toHaveLength(2);
-    expect(lastCall.map((r: any) => r.type)).toContain('vegetarian');
-    expect(lastCall.map((r: any) => r.type)).toContain('gluten_free');
+    expect(lastCall.map((r: { type: string }) => r.type)).toContain('vegetarian');
+    expect(lastCall.map((r: { type: string }) => r.type)).toContain('gluten_free');
   });
 
   it('displays allergy warning icons for severe restrictions', () => {

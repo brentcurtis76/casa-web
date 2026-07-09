@@ -51,11 +51,12 @@ export function ForgotPasswordForm({ onBack, onSuccess }: ForgotPasswordFormProp
       if (onSuccess) {
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'No se pudo enviar el correo de recuperación.',
+        description: message || 'No se pudo enviar el correo de recuperación.',
       });
     } finally {
       setIsLoading(false);

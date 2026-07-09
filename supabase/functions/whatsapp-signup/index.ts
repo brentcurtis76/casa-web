@@ -98,14 +98,14 @@ const handler = async (req: Request): Promise<Response> => {
           },
         }
       );
-    } catch (emailError: any) {
+    } catch (emailError) {
       console.error("Error al enviar el email:", emailError);
       
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Error al enviar el email: ${emailError.message || "Error desconocido"}`,
-          stack: emailError.stack
+          error: `Error al enviar el email: ${emailError instanceof Error ? emailError.message : "Error desconocido"}`,
+          stack: emailError instanceof Error ? emailError.stack : undefined
         }),
         {
           status: 500,
@@ -116,14 +116,14 @@ const handler = async (req: Request): Promise<Response> => {
         }
       );
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error en la función whatsapp-signup:", error);
     
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message || "Error desconocido",
-        stack: error.stack
+        error: error instanceof Error ? error.message : "Error desconocido",
+        stack: error instanceof Error ? error.stack : undefined
       }),
       {
         status: 500,

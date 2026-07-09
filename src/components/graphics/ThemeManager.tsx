@@ -266,10 +266,10 @@ export const ThemeManager = () => {
 
       setDialogOpen(false);
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo guardar el tema.',
+        description: error instanceof Error ? error.message : 'No se pudo guardar el tema.',
         variant: 'destructive',
       });
     } finally {
@@ -293,10 +293,10 @@ export const ThemeManager = () => {
       });
 
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo eliminar el tema.',
+        description: error instanceof Error ? error.message : 'No se pudo eliminar el tema.',
         variant: 'destructive',
       });
     }
@@ -318,10 +318,10 @@ export const ThemeManager = () => {
       });
 
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo actualizar el tema.',
+        description: error instanceof Error ? error.message : 'No se pudo actualizar el tema.',
         variant: 'destructive',
       });
     }

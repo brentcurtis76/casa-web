@@ -7,10 +7,25 @@ interface AdminAuthUser {
   email?: string;
 }
 
-// Use `any` for the client to stay compatible with multiple
-// @supabase/supabase-js versions imported across edge functions.
-// deno-lint-ignore no-explicit-any
-type SupabaseAdminLike = any;
+// Minimal structural view of the client so this helper stays compatible
+// with the multiple @supabase/supabase-js versions imported across edge
+// functions (SupabaseClient has private members, so cross-version class
+// types are not assignable to each other).
+interface SupabaseAdminLike {
+  auth: {
+    getUser(token: string): Promise<{
+      data: { user: AdminAuthUser | null };
+      error: unknown;
+    }>;
+  };
+  from(table: string): {
+    select(columns: string): {
+      eq(column: string, value: string): {
+        single(): Promise<{ data: unknown }>;
+      };
+    };
+  };
+}
 
 export interface AdminAuthOk {
   ok: true;

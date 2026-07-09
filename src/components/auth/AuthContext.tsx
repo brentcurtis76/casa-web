@@ -5,7 +5,7 @@ import { User, Session } from '@supabase/supabase-js';
 import type { RoleName, PermissionAction, UserPermission } from '@/types/rbac';
 import { ROLE_NAMES } from '@/types/rbac';
 
-type UserProfile = {
+export type UserProfile = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
@@ -253,9 +253,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error('Login error:', error.message);
-      throw new Error(error.message || 'Error al iniciar sesión');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Login error:', message);
+      throw new Error(message || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
     }
@@ -275,9 +276,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error('Signup error:', error.message);
-      throw new Error(error.message || 'Error al registrar usuario');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Signup error:', message);
+      throw new Error(message || 'Error al registrar usuario');
     } finally {
       setLoading(false);
     }
@@ -305,9 +307,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error('Reset password error:', error.message);
-      throw new Error(error.message || 'Error al enviar el correo de recuperación');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Reset password error:', message);
+      throw new Error(message || 'Error al enviar el correo de recuperación');
     }
   };
 
@@ -318,9 +321,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error('Update password error:', error.message);
-      throw new Error(error.message || 'Error al actualizar la contraseña');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Update password error:', message);
+      throw new Error(message || 'Error al actualizar la contraseña');
     }
   };
 

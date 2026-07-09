@@ -280,7 +280,7 @@ async function renderDynamicStatement(
   // Title First (Massive)
   if (content.title.visible) {
     ctx.textAlign = 'left';
-    let fontSize = w * 0.16;
+    const fontSize = w * 0.16;
     setFont(ctx, 'title', fontSize);
 
     const lines = wrapText(ctx, content.title.text, safeW);

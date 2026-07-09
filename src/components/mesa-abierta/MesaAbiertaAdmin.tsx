@@ -276,7 +276,7 @@ export const MesaAbiertaAdmin = () => {
         };
       });
 
-      setParticipants(participantsWithDetails as any);
+      setParticipants(participantsWithDetails as Participant[]);
     }
   };
 
@@ -459,11 +459,11 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh months list
       await fetchMonths();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting month:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al eliminar el mes',
+        description: error instanceof Error ? error.message : 'Error al eliminar el mes',
         variant: 'destructive',
       });
     } finally {
@@ -548,10 +548,10 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       // FunctionsHttpError hides the function's JSON body behind error.context
-      let description = error.message || 'Error al ejecutar matching';
+      let description = error instanceof Error ? error.message : 'Error al ejecutar matching';
       if (error?.context && typeof error.context.json === 'function') {
         try {
           const body = await error.context.json();
@@ -629,11 +629,11 @@ export const MesaAbiertaAdmin = () => {
       await fetchParticipants(selectedMonth.id);
       setMatchResult(null);
       setDinnerMatches([]);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error unmatching:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al deshacer el matching',
+        description: error instanceof Error ? error.message : 'Error al deshacer el matching',
         variant: 'destructive',
       });
     } finally {
@@ -665,11 +665,11 @@ export const MesaAbiertaAdmin = () => {
       if (updatedMonth) {
         setSelectedMonth(updatedMonth);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error marking month completed:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al marcar el mes como completado',
+        description: error instanceof Error ? error.message : 'Error al marcar el mes como completado',
         variant: 'destructive',
       });
     } finally {
@@ -732,11 +732,11 @@ export const MesaAbiertaAdmin = () => {
       if (selectedMonth) {
         fetchParticipants(selectedMonth.id);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting participant:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo eliminar el participante',
+        description: error instanceof Error ? error.message : 'No se pudo eliminar el participante',
         variant: 'destructive',
       });
     } finally {
@@ -819,11 +819,11 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error moving guest:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo mover el invitado',
+        description: error instanceof Error ? error.message : 'No se pudo mover el invitado',
         variant: 'destructive',
       });
     } finally {
@@ -858,11 +858,11 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error changing food assignment:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo cambiar la asignación',
+        description: error instanceof Error ? error.message : 'No se pudo cambiar la asignación',
         variant: 'destructive',
       });
     } finally {
@@ -896,11 +896,11 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error changing host food assignment:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo cambiar la asignación del anfitrión',
+        description: error instanceof Error ? error.message : 'No se pudo cambiar la asignación del anfitrión',
         variant: 'destructive',
       });
     } finally {
@@ -976,11 +976,11 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error converting host to guest:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo convertir el anfitrión',
+        description: error instanceof Error ? error.message : 'No se pudo convertir el anfitrión',
         variant: 'destructive',
       });
     } finally {
@@ -1033,11 +1033,11 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al enviar notificaciones',
+        description: error instanceof Error ? error.message : 'Error al enviar notificaciones',
         variant: 'destructive',
       });
     } finally {
@@ -1087,11 +1087,11 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al enviar mensajes de WhatsApp',
+        description: error instanceof Error ? error.message : 'Error al enviar mensajes de WhatsApp',
         variant: 'destructive',
       });
     } finally {

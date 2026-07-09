@@ -145,11 +145,11 @@ export function AddParticipantDialog({ open, onClose, onSuccess, monthId }: AddP
       resetForm();
       onSuccess();
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error adding participant:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo agregar el participante',
+        description: error instanceof Error ? error.message : 'No se pudo agregar el participante',
         variant: 'destructive',
       });
     } finally {

@@ -1367,14 +1367,14 @@ Instrucciones críticas:
         title: data.story.title,
         summary: data.story.summary,
         spiritualConnection: data.story.spiritualConnection,
-        characters: data.story.characters.map((c: any, i: number) => ({
+        characters: data.story.characters.map((c: { name: string; role: string; description: string; visualDescription?: string }, i: number) => ({
           ...story.characters[i], // Preservar ID y character sheet
           name: c.name,
           role: c.role,
           description: c.description,
           visualDescription: c.visualDescription,
         })),
-        scenes: data.story.scenes.map((s: any, i: number) => ({
+        scenes: data.story.scenes.map((s: { number: number; text: string; visualDescription: string }, i: number) => ({
           ...story.scenes[i], // Preservar ID y selectedImageUrl
           number: s.number,
           text: s.text,

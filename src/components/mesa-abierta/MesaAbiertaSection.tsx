@@ -163,7 +163,7 @@ export function MesaAbiertaSection() {
 
       // For now, use placeholder data for the nested relations
       // This can be enhanced later with separate queries if needed
-      const transformedData = data?.map((item: any) => ({
+      const transformedData = data?.map((item) => ({
         id: item.id,
         testimonial_text: item.testimonial_text,
         rating: item.rating,
@@ -203,7 +203,7 @@ export function MesaAbiertaSection() {
       console.log('checkActiveParticipation - now:', now);
 
       const hasActive = participants?.some(p => {
-        const dinnerDate = p.mesa_abierta_months && (p.mesa_abierta_months as any).dinner_date;
+        const dinnerDate = p.mesa_abierta_months && (p.mesa_abierta_months as unknown as { dinner_date: string }).dinner_date;
         console.log('checkActiveParticipation - checking participant:', p.id, 'dinner_date:', dinnerDate, 'isFuture:', dinnerDate >= now);
         return p.mesa_abierta_months && dinnerDate >= now;
       }) || false;

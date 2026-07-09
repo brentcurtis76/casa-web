@@ -52,13 +52,14 @@ export function LoginForm({ onLoginSuccess, onForgotPassword }: LoginFormProps) 
       if (onLoginSuccess) {
         onLoginSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error);
       let errorMessage = 'Credenciales inválidas. Por favor, intenta de nuevo.';
 
       // Check for specific error messages
-      if (error.message === 'Email not confirmed') {
+      if (rawMessage === 'Email not confirmed') {
         errorMessage = 'Debes confirmar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.';
-      } else if (error.message === 'Invalid login credentials') {
+      } else if (rawMessage === 'Invalid login credentials') {
         errorMessage = 'Correo o contraseña incorrectos. Por favor, intenta de nuevo.';
       }
 

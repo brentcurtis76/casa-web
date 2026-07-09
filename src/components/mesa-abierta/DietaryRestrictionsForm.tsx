@@ -110,7 +110,7 @@ export function DietaryRestrictionsForm({
     const mainRestrictions: DietaryRestriction[] = Array.from(selected).map(type => {
       const option = dietaryOptions.find(o => o.id === type);
       return {
-        type: type as any,
+        type: type as DietaryRestriction['type'],
         description: type === 'other' ? other : undefined,
         severity: option?.severity || 'preference',
       };
@@ -124,7 +124,7 @@ export function DietaryRestrictionsForm({
         restrictions: Array.from(plusOneRestrictionSet).map(type => {
           const option = dietaryOptions.find(o => o.id === type);
           return {
-            type: type as any,
+            type: type as DietaryRestriction['type'],
             description: type === 'other' ? plusOneOther : undefined,
             severity: option?.severity || 'preference',
           };

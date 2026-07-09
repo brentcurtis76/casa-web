@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -616,7 +617,7 @@ export const GraphicsGeneratorV2 = () => {
       } else {
         throw new Error('No se recibieron ilustraciones');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error generando ilustraciones:', err);
 
       // MODO DE PRUEBA: Si la Edge Function no está disponible,
@@ -851,7 +852,7 @@ export const GraphicsGeneratorV2 = () => {
           description: `Se han creado ${graphics.length} formatos listos para descargar.`,
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error generando formatos:', err);
       toast({
         title: 'Error',
@@ -1010,8 +1011,7 @@ export const GraphicsGeneratorV2 = () => {
             .from('casa_graphics_items')
             .update({ image_url: urlData.publicUrl })
             .eq('batch_id', savedBatchId)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches handleSaveBatch's enum cast
-            .eq('format', target.format as any);
+            .eq('format', target.format);
           if (updateError) throw updateError;
         } catch (dbErr) {
           console.error('[GraphicsGeneratorV2] Refine DB update failed:', dbErr);
@@ -1067,7 +1067,7 @@ export const GraphicsGeneratorV2 = () => {
         .from('casa_graphics_batches')
         .insert({
           name: batchName.trim(),
-          event_type: eventType as any,
+          event_type: eventType as Database['public']['Enums']['graphics_event_type'],
           event_date: formatDateRange(dateRange),
           event_time: time,
           event_location: location,
@@ -1121,7 +1121,7 @@ export const GraphicsGeneratorV2 = () => {
           .from('casa_graphics_items')
           .insert({
             batch_id: batch.id,
-            format: graphic.format as any,
+            format: graphic.format,
             title: titles[graphic.format],
             image_url: urlData.publicUrl,
             width: graphic.width,
@@ -1142,11 +1142,11 @@ export const GraphicsGeneratorV2 = () => {
         title: 'Batch guardado',
         description: `"${batchName}" se ha guardado para uso futuro.`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error saving batch:', err);
       toast({
         title: 'Error al guardar',
-        description: err.message || 'No se pudo guardar el batch.',
+        description: err instanceof Error ? err.message : 'No se pudo guardar el batch.',
         variant: 'destructive',
       });
     } finally {

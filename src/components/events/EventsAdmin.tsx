@@ -112,11 +112,12 @@ export const EventsAdmin = () => {
       });
 
       await fetchEvents();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting event:', error);
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al eliminar el evento',
+        description: message || 'Error al eliminar el evento',
         variant: 'destructive',
       });
     } finally {

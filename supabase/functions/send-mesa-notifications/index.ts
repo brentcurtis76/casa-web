@@ -20,6 +20,37 @@ interface NotificationRequest {
   monthId: string;
 }
 
+interface MesaParticipant {
+  id: string;
+  user_id: string;
+  has_plus_one: boolean;
+  host_address?: string | null;
+  phone_number?: string | null;
+}
+
+interface MesaAssignment {
+  id: string;
+  match_id: string;
+  guest_participant_id: string;
+  food_assignment: string;
+}
+
+interface MesaUser {
+  id: string;
+  email?: string;
+  raw_user_meta_data?: { full_name?: string };
+}
+
+interface EmailLogEntry {
+  month_id: string;
+  participant_id: string;
+  email_type: string;
+  recipient_email: string;
+  subject: string;
+  status: string;
+  sendgrid_message_id?: string;
+}
+
 serve(async (req) => {
   try {
     // CORS headers
@@ -98,7 +129,7 @@ serve(async (req) => {
     console.log(`Found ${participants?.length || 0} participants`);
 
     // Create a map of participant_id => participant
-    const participantMap = new Map();
+    const participantMap = new Map<string, MesaParticipant>();
     for (const participant of participants || []) {
       participantMap.set(participant.id, participant);
     }
@@ -117,7 +148,7 @@ serve(async (req) => {
     console.log(`Found ${assignments?.length || 0} assignments`);
 
     // Group assignments by match_id
-    const assignmentsByMatch = new Map();
+    const assignmentsByMatch = new Map<string, MesaAssignment[]>();
     for (const assignment of assignments || []) {
       if (!assignmentsByMatch.has(assignment.match_id)) {
         assignmentsByMatch.set(assignment.match_id, []);
@@ -154,7 +185,7 @@ serve(async (req) => {
     }
 
     // Create user map from results
-    const userMap = new Map();
+    const userMap = new Map<string, MesaUser>();
     for (const user of users || []) {
       userMap.set(user.id, user);
     }
@@ -163,7 +194,7 @@ serve(async (req) => {
 
     let emailsSent = 0;
     let emailsFailed = 0;
-    const emailLogs: any[] = [];
+    const emailLogs: EmailLogEntry[] = [];
 
     console.log(`Processing ${matches?.length || 0} matches`);
 
@@ -199,7 +230,7 @@ serve(async (req) => {
       const matchAssignments = assignmentsByMatch.get(match.id) || [];
 
       // Prepare guest list for host email (NO NAMES - keep anonymous!)
-      const guestList = matchAssignments.map((assignment: any, index: number) => {
+      const guestList = matchAssignments.map((assignment: MesaAssignment, index: number) => {
         const guestParticipant = participantMap.get(assignment.guest_participant_id);
         const plusOne = guestParticipant?.has_plus_one ? " (+1 acompañante)" : "";
         const food = assignment.food_assignment !== "none" ? `${translateFoodAssignment(assignment.food_assignment)}` : "Sin asignación";
@@ -329,12 +360,12 @@ serve(async (req) => {
         },
       }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error:", error);
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || "Internal server error",
+        error: error instanceof Error ? error.message : "Internal server error",
       }),
       {
         status: 500,
@@ -371,8 +402,8 @@ async function sendEmail(to: string, subject: string, html: string): Promise<{ s
     }
 
     return { success: true, messageId: data.id };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

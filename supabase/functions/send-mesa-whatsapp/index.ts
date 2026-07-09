@@ -14,6 +14,28 @@ interface NotificationRequest {
   monthId: string;
 }
 
+interface MesaParticipant {
+  id: string;
+  user_id: string;
+  has_plus_one: boolean;
+  host_address?: string | null;
+  phone_number?: string | null;
+  whatsapp_enabled?: boolean;
+}
+
+interface MesaAssignment {
+  id: string;
+  match_id: string;
+  guest_participant_id: string;
+  food_assignment: string;
+}
+
+interface MesaUser {
+  id: string;
+  email?: string;
+  raw_user_meta_data?: { full_name?: string };
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -96,7 +118,7 @@ serve(async (req) => {
     console.log(`Found ${participants?.length || 0} participants`);
 
     // Create a map of participant_id => participant
-    const participantMap = new Map();
+    const participantMap = new Map<string, MesaParticipant>();
     for (const participant of participants || []) {
       participantMap.set(participant.id, participant);
     }
@@ -115,7 +137,7 @@ serve(async (req) => {
     console.log(`Found ${assignments?.length || 0} assignments`);
 
     // Group assignments by match_id
-    const assignmentsByMatch = new Map();
+    const assignmentsByMatch = new Map<string, MesaAssignment[]>();
     for (const assignment of assignments || []) {
       if (!assignmentsByMatch.has(assignment.match_id)) {
         assignmentsByMatch.set(assignment.match_id, []);
@@ -146,7 +168,7 @@ serve(async (req) => {
     }
 
     // Create user map from results
-    const userMap = new Map();
+    const userMap = new Map<string, MesaUser>();
     for (const user of users || []) {
       userMap.set(user.id, user);
     }
@@ -184,7 +206,7 @@ serve(async (req) => {
       const matchAssignments = assignmentsByMatch.get(match.id) || [];
 
       // Prepare guest list for host message (NO NAMES - keep anonymous!)
-      const guestList = matchAssignments.map((assignment: any, index: number) => {
+      const guestList = matchAssignments.map((assignment: MesaAssignment, index: number) => {
         const guestParticipant = participantMap.get(assignment.guest_participant_id);
         const plusOne = guestParticipant?.has_plus_one ? " (+1 acompañante)" : "";
         const food = assignment.food_assignment !== "none" ? `${translateFoodAssignment(assignment.food_assignment)}` : "Sin asignación";
@@ -287,12 +309,12 @@ serve(async (req) => {
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error:", error);
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || "Internal server error",
+        error: error instanceof Error ? error.message : "Internal server error",
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -330,8 +352,8 @@ async function sendWhatsAppMessage(data: {
     }
 
     return { success: true, messageSid: result.sid };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

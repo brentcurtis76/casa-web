@@ -145,7 +145,7 @@ function getTextReadabilityStyles(settings: TextReadabilitySettings | undefined,
         `,
       };
 
-    case 'outline':
+    case 'outline': {
       const outlineWidth = Math.max(1, 2 * scale * intensity);
       return {
         textShadow: `
@@ -156,6 +156,7 @@ function getTextReadabilityStyles(settings: TextReadabilitySettings | undefined,
           0 0 ${10 * scale * intensity}px rgba(0, 0, 0, ${0.5 * intensity})
         `,
       };
+    }
 
     case 'box':
     case 'gradient':

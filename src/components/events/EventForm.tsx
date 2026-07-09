@@ -174,11 +174,12 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
         title: 'Imagen subida',
         description: 'La imagen se ha subido correctamente',
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error uploading image:', error);
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al subir la imagen',
+        description: message || 'Error al subir la imagen',
         variant: 'destructive',
       });
     } finally {
@@ -286,11 +287,12 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
       }
 
       onSuccess();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error saving event:', error);
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: 'Error',
-        description: error.message || 'Error al guardar el evento',
+        description: message || 'Error al guardar el evento',
         variant: 'destructive',
       });
     } finally {

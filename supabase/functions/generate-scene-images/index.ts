@@ -582,7 +582,7 @@ serve(async (req) => {
         console.log(`[generate-scene-images] REQUEST CHECK - isURL: ${sceneReferenceImage.startsWith('http')}`);
       }
       console.log(`[generate-scene-images] REQUEST CHECK - characters count: ${characters?.length || 0}`);
-      console.log(`[generate-scene-images] REQUEST CHECK - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+      console.log(`[generate-scene-images] REQUEST CHECK - characters with refs: ${characters?.filter((c: Character) => c.referenceImage)?.length || 0}`);
     }
 
     let prompt: string;
@@ -815,7 +815,7 @@ serve(async (req) => {
         const propsInCover: Prop[] = props || [];
 
         console.log(`[generate-scene-images] COVER - characters count: ${characters?.length || 0}`);
-        console.log(`[generate-scene-images] COVER - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+        console.log(`[generate-scene-images] COVER - characters with refs: ${characters?.filter((c: Character) => c.referenceImage)?.length || 0}`);
         console.log(`[generate-scene-images] COVER - props count: ${propsInCover.length}`);
         console.log(`[generate-scene-images] COVER - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
 

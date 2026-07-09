@@ -2,14 +2,30 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { User, LayoutDashboard } from 'lucide-react';
+import { User, LayoutDashboard, type LucideIcon } from 'lucide-react';
 import { useAuth } from "@/components/auth/AuthContext";
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import type { UserProfile } from '@/components/auth/AuthContext';
+
+interface NavigationSubItem {
+    title: string;
+    link: string;
+    description: string;
+    icon: LucideIcon;
+}
+
+interface NavigationItem {
+    title: string;
+    link: string;
+    icon: LucideIcon;
+    subItems?: NavigationSubItem[];
+}
 
 interface MobileMenuProps {
     isOpen: boolean;
-    navigationItems: any[];
-    user: any;
-    profile: any;
+    navigationItems: NavigationItem[];
+    user: SupabaseUser | null;
+    profile: UserProfile | null;
     logout: () => void;
     openAuthModal: () => void;
     openContactModal: () => void;

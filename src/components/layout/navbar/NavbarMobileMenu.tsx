@@ -2,10 +2,11 @@
 import { useNavigate } from 'react-router-dom';
 import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface NavbarMobileMenuProps {
   isMenuOpen: boolean;
-  user: any;
+  user: SupabaseUser | null;
   setIsAuthModalOpen: (isOpen: boolean) => void;
   setIsMenuOpen: (isOpen: boolean) => void;
   logout: () => void;

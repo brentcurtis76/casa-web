@@ -123,11 +123,11 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
 
       onSuccess();
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating participant:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo actualizar el participante',
+        description: error instanceof Error ? error.message : 'No se pudo actualizar el participante',
         variant: 'destructive',
       });
     } finally {

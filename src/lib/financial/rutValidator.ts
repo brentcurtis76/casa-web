@@ -15,7 +15,7 @@
  * e.g., "12.345.678-5" → "123456785"
  */
 export function cleanRut(rut: string): string {
-  return rut.replace(/[.\-]/g, '').trim().toUpperCase();
+  return rut.replace(/[.-]/g, '').trim().toUpperCase();
 }
 
 /**

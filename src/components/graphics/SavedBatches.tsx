@@ -91,7 +91,7 @@ export const SavedBatches = () => {
 
         if (error) throw error;
         setBatches(data || []);
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error loading batches:', err);
         toast({
           title: 'Error',
@@ -122,7 +122,7 @@ export const SavedBatches = () => {
           b.id === batchId ? { ...b, items: data || [] } : b
         )
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading batch items:', err);
     }
   };
@@ -215,7 +215,7 @@ export const SavedBatches = () => {
         title: 'Eliminado',
         description: `"${batchToDelete.name}" ha sido eliminado.`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error deleting batch:', err);
       toast({
         title: 'Error',

@@ -418,7 +418,7 @@ export function useSermonEditor(): [SermonEditorState, SermonEditorActions] {
 
     try {
       // Get the media element - in WebAudio mode, this is a WebAudioPlayer
-      const mediaElement = ws.getMediaElement() as any;
+      const mediaElement = ws.getMediaElement() as unknown as { getGainNode?: () => GainNode };
 
       // Check if it has getGainNode (WebAudioPlayer)
       if (typeof mediaElement?.getGainNode !== 'function') {
@@ -535,7 +535,7 @@ export function useSermonEditor(): [SermonEditorState, SermonEditorActions] {
       // Create enhancement nodes for real-time preview (PROMPT_008)
       // Get the AudioContext from WaveSurfer's WebAudioPlayer
       try {
-        const mediaElement = ws.getMediaElement() as any;
+        const mediaElement = ws.getMediaElement() as unknown as { getGainNode?: () => GainNode };
         if (mediaElement?.getGainNode) {
           const gainNode = mediaElement.getGainNode() as GainNode;
           const context = gainNode.context as AudioContext;
@@ -1034,7 +1034,7 @@ export function useSermonEditor(): [SermonEditorState, SermonEditorActions] {
     const outroOverlap = hasOutro ? Math.min(CROSSFADE_DURATION, outroDuration / 2, sermonDuration / 2) : 0;
     const sermonStartDelay = hasIntro ? (introDuration - introOverlap) * 1000 : 0; // ms
 
-    let startTime = Date.now();
+    const startTime = Date.now();
     let outroStarted = false;
 
     // Update preview time display
@@ -1374,7 +1374,7 @@ export function useSermonEditor(): [SermonEditorState, SermonEditorActions] {
       const lastEntry = prev.editHistory[prev.editHistory.length - 1];
       const newHistory = prev.editHistory.slice(0, -1);
 
-      let newState: Partial<SermonEditorState> = {
+      const newState: Partial<SermonEditorState> = {
         editHistory: newHistory,
         canUndo: newHistory.length > 0,
       };

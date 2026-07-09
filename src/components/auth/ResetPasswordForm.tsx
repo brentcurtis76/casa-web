@@ -55,11 +55,12 @@ export function ResetPasswordForm({ onSuccess }: ResetPasswordFormProps) {
       if (onSuccess) {
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'No se pudo actualizar la contraseña.',
+        description: message || 'No se pudo actualizar la contraseña.',
       });
     } finally {
       setIsLoading(false);

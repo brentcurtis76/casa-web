@@ -180,6 +180,7 @@ Por favor, refina el cuento según este feedback. Mantén la estructura JSON exa
 
     // Limpiar y parsear
     jsonText = jsonText
+      // eslint-disable-next-line no-control-regex -- limpieza intencional de caracteres de control en JSON del LLM
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
       .trim();
 

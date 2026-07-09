@@ -17,8 +17,8 @@ vi.mock('@/hooks/use-toast', () => ({
 }));
 
 // Create a variable to hold the current test data
-let mockParticipantData: any = null;
-let mockParticipantError: any = null;
+let mockParticipantData: Record<string, unknown> | null = null;
+let mockParticipantError: { code: string } | null = null;
 
 // Mock Supabase with a simpler approach
 vi.mock('@/integrations/supabase/client', () => ({
