@@ -357,14 +357,22 @@ async function saveImagesToStorage(
   );
 
   // Subir imágenes de referencia de props
-  // Fuente primaria: draft.propReferenceImages (indexado por propId)
-  // Fuente secundaria: draft.story.props[].referenceImages (si el story ya fue generado)
-  const propSources: Record<string, string[]> = { ...(draft.propReferenceImages || {}) };
+  // Fuente primaria: draft.story.props[].referenceImages — es el estado VIVO que
+  // el editor actualiza al elegir hojas generadas o subir fotos nuevas.
+  // Fuente secundaria: draft.propReferenceImages (poblado al cargar el draft);
+  // si tuviera precedencia, taparía los cambios post-recarga y la referencia
+  // de un prop quedaría congelada para siempre en su primer valor persistido.
+  const propSources: Record<string, string[]> = {};
   if (draft.story?.props) {
     for (const prop of draft.story.props) {
-      if (prop?.id && !propSources[prop.id] && Array.isArray(prop.referenceImages)) {
+      if (prop?.id && Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
         propSources[prop.id] = prop.referenceImages;
       }
+    }
+  }
+  for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
+    if (!propSources[propId] && Array.isArray(images) && images.length > 0) {
+      propSources[propId] = images;
     }
   }
 
@@ -618,6 +626,17 @@ async function saveDraftToSupabase(
         ...s,
         selectedImageUrl: undefined,
         imageOptions: undefined,
+      })),
+      // Las imágenes de props ya se subieron a Storage (propImagePaths) y se
+      // restauran desde ahí al cargar: no inflar el JSON del story con base64.
+      props: draft.story.props?.map(p => ({
+        ...p,
+        referenceImages: (p.referenceImages || []).filter(
+          img => typeof img === 'string' && img.startsWith('http')
+        ),
+        selectedReferenceUrl: p.selectedReferenceUrl?.startsWith('http')
+          ? p.selectedReferenceUrl
+          : undefined,
       })),
       coverImageUrl: undefined,
       coverImageOptions: undefined,

@@ -294,6 +294,26 @@ Escribir un cuento breve para el momento del "Cuentacuento" durante la liturgia 
 NO uses estos nombres porque pertenecen a niños de la comunidad:
 ${FORBIDDEN_NAMES.join(', ')}
 
+## IMPORTANTE: Lugares y Objetos Recurrentes (array "props")
+
+Además de los personajes, debes listar en el array "props" TODO lugar u objeto
+que aparezca en 2 o más escenas y que deba verse IGUAL en todas ellas:
+- Objetos: un auto, un bote, un sombrero, un tesoro, una carreta, etc.
+- Lugares/edificios específicos: una iglesia, una casa, un faro, una plaza, etc.
+
+Para cada uno entrega:
+- name: nombre corto y estable (ej: "el auto rojo del abuelo")
+- kind: "location" para lugares/edificios, "prop" para objetos
+- narrativeRole: su rol en la historia en una frase
+- visualDescription: descripción visual CANÓNICA y muy detallada (forma,
+  colores exactos, materiales, proporciones, detalles distintivos). Esta
+  descripción se copiará textualmente en cada ilustración donde aparezca,
+  así que debe ser autocontenida y repetible.
+- sceneNumbers: números de las escenas donde aparece
+
+NO incluyas en "props": personas o animales (van en "characters"), ni el
+paisaje general del lugar (eso va en la ambientación de cada escena).
+
 ## IMPORTANTE: Lista de Personajes
 
 Debes incluir en el array "characters" ABSOLUTAMENTE TODOS los personajes que aparecen en el cuento, incluyendo:
@@ -368,7 +388,24 @@ const STORY_TOOL_SCHEMA = {
         },
       },
     },
+    // spiritualConnection va ANTES de props: si el output alcanza max_tokens,
+    // el corte cae en props (opcional) y no en un campo requerido.
     spiritualConnection: { type: 'string' },
+    props: {
+      type: 'array',
+      description: 'Lugares y objetos que aparecen en 2+ escenas y deben verse idénticos entre ilustraciones',
+      items: {
+        type: 'object',
+        required: ['name', 'kind', 'narrativeRole', 'visualDescription', 'sceneNumbers'],
+        properties: {
+          name: { type: 'string' },
+          kind: { type: 'string', enum: ['location', 'prop'] },
+          narrativeRole: { type: 'string' },
+          visualDescription: { type: 'string' },
+          sceneNumbers: { type: 'array', items: { type: 'number' } },
+        },
+      },
+    },
   },
 } as const;
 
@@ -627,7 +664,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: SYSTEM_PROMPT,
           messages: [
             {
@@ -657,12 +694,24 @@ serve(async (req) => {
 
     const data = await response.json();
 
+    if (data.stop_reason === 'max_tokens') {
+      console.error('[generate-story] Output truncado por max_tokens');
+      throw new Error('El cuento generado es demasiado largo y quedó incompleto. Intenta con menos escenas o notas más breves.');
+    }
+
     // Con tool_choice forzado el cuento llega como bloque tool_use ya parseado.
     interface StoryOutput {
       title: string;
       summary: string;
       characters: Array<Record<string, unknown>>;
       scenes: Array<{ number: number; text: string; visualDescription: string; landmarkVisible?: boolean }>;
+      props?: Array<{
+        name: string;
+        kind: 'location' | 'prop';
+        narrativeRole: string;
+        visualDescription: string;
+        sceneNumbers: number[];
+      }>;
       spiritualConnection: string;
     }
 
@@ -703,7 +752,17 @@ serve(async (req) => {
     }
 
     console.log('[generate-story] Cuento generado exitosamente:', story.title);
-    console.log(`[generate-story] Escenas: ${story.scenes?.length || 0}, Personajes: ${story.characters?.length || 0}`);
+    console.log(`[generate-story] Escenas: ${story.scenes?.length || 0}, Personajes: ${story.characters?.length || 0}, Props sugeridos: ${story.props?.length || 0}`);
+
+    // Props sugeridos por el modelo (lugares/objetos recurrentes inventados por
+    // el cuento). Se excluyen los que el usuario ya definió con fotos propias
+    // (match por nombre, sin distinguir mayúsculas ni artículos iniciales).
+    const normalizePropName = (n: string) =>
+      n.toLowerCase().trim().replace(/^(el|la|los|las|un|una|unos|unas)\s+/i, '').trim();
+    const userPropNames = new Set(propList.map((p) => normalizePropName(p.name || '')));
+    const suggestedProps = (story.props || []).filter(
+      (p) => p?.name && p.visualDescription && !userPropNames.has(normalizePropName(p.name))
+    );
 
     // Construir el contenido como texto plano para compatibilidad
     const contentText = Array.isArray(story.scenes)
@@ -724,6 +783,9 @@ serve(async (req) => {
         // Prop analysis results (visual descriptions from Gemini) for recurring elements.
         // Returned as `[{ id, visualDescription }]` so the caller can merge by id.
         propAnalyses: propAnalyses.map(({ id, visualDescription }) => ({ id, visualDescription })),
+        // Lugares/objetos recurrentes propuestos por el modelo (sin id: el
+        // cliente los crea como StoryProp con id propio y hoja generada).
+        suggestedProps: suggestedProps.length > 0 ? suggestedProps : undefined,
         // Compatibilidad con formato anterior
         content: contentText,
         story: contentText,

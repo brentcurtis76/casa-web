@@ -55,6 +55,7 @@ import type {
   GenerateSceneImagesSceneRequest,
   GenerateSceneImagesCoverRequest,
   GenerateSceneImagesEndRequest,
+  SuggestedStoryProp,
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
@@ -73,6 +74,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Trash2 } from 'lucide-react';
 import ImageRefineBox from '@/components/shared/ImageRefineBox';
+import PropSheetSection from './PropSheetSection';
 
 interface CuentacuentoEditorProps {
   context: LiturgyContext;
@@ -583,6 +585,13 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [sceneImageOptions, setSceneImageOptions] = useState<Record<number, string[]>>({});
   const [selectedSceneImages, setSelectedSceneImages] = useState<Record<number, number>>({});
 
+  // Hojas de referencia generadas para lugares/objetos recurrentes.
+  // Las candidatas son efímeras (no se persisten); la elegida se guarda
+  // como primera referenceImage del prop y viaja a cada escena.
+  const [propSheetOptions, setPropSheetOptions] = useState<Record<string, string[]>>({});
+  const [selectedPropSheets, setSelectedPropSheets] = useState<Record<string, number>>({});
+  const [generatingPropId, setGeneratingPropId] = useState<string | null>(null);
+
   // Estado de portada/fin
   const [coverOptions, setCoverOptions] = useState<string[]>([]);
   const [selectedCover, setSelectedCover] = useState<number | null>(null);
@@ -665,8 +674,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const sceneImageOptionsRef = useRef<Record<number, string[]>>({});
   const selectedSceneImagesRef = useRef<Record<number, number>>({});
   const sceneReferenceModeRef = useRef<Record<number, 'style' | 'pov'>>({});
+  const propSheetOptionsRef = useRef<Record<string, string[]>>({});
   const currentStepRef = useRef<CreationStep>(currentStep);
 
+  useEffect(() => { propSheetOptionsRef.current = propSheetOptions; }, [propSheetOptions]);
   useEffect(() => { characterSheetOptionsRef.current = characterSheetOptions; }, [characterSheetOptions]);
   useEffect(() => { selectedCharacterSheetsRef.current = selectedCharacterSheets; }, [selectedCharacterSheets]);
   useEffect(() => { sceneImageOptionsRef.current = sceneImageOptions; }, [sceneImageOptions]);
@@ -1358,15 +1369,33 @@ Instrucciones críticas:
         // mezclando los datos de configuración originales (kind, role, referenceImages, sceneNumbers).
         // Se mezcla por id (no por nombre ni por índice) para evitar colisiones cuando
         // hay props con nombres repetidos o cuando el orden cambia.
+        // Además se agregan los lugares/objetos recurrentes PROPUESTOS por el modelo
+        // (suggestedProps): nacen sin fotos y reciben una hoja de referencia generada.
         props: (() => {
           const analyses: Array<{ id: string; visualDescription: string }> =
             Array.isArray(data.propAnalyses) ? data.propAnalyses : [];
-          if (storyProps.length === 0 && analyses.length === 0) return undefined;
-          return storyProps.map((p) => ({
+          const suggested: SuggestedStoryProp[] =
+            Array.isArray(data.suggestedProps) ? data.suggestedProps : [];
+          if (storyProps.length === 0 && analyses.length === 0 && suggested.length === 0) return undefined;
+
+          const userProps = storyProps.map((p) => ({
             ...p,
             visualDescription:
               analyses.find((a) => a.id === p.id)?.visualDescription ?? p.visualDescription,
           }));
+
+          const suggestedProps: StoryProp[] = suggested.map((s, i) => ({
+            id: `prop-sug-${Date.now()}-${i}`,
+            kind: s.kind === 'location' ? 'location' as const : 'prop' as const,
+            name: s.name,
+            narrativeRole: s.narrativeRole || '',
+            visualDescription: s.visualDescription,
+            referenceImages: [],
+            role: (s.sceneNumbers?.length ?? 0) >= 3 ? 'primary' as const : 'secondary' as const,
+            sceneNumbers: Array.isArray(s.sceneNumbers) ? s.sceneNumbers : [],
+          }));
+
+          return [...userProps, ...suggestedProps];
         })(),
         spiritualConnection: data.spiritualConnection || data.moral || '',
         metadata: {
@@ -1669,6 +1698,161 @@ Instrucciones críticas:
       setGeneratingCharacterIndex(null);
     }
   }, [story, generateCharacterSheetCore]);
+
+  // ===== Lugares y objetos recurrentes (props) =====
+  // Aplica una transformación a los props en storyProps + story.props y
+  // persiste el story actualizado en el draft.
+  const applyPropsUpdate = useCallback(async (updater: (props: StoryProp[]) => StoryProp[]) => {
+    const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
+    const nextProps = updater(baseProps);
+    setStoryProps(nextProps);
+    let nextStory: Story | null = story;
+    if (story) {
+      nextStory = {
+        ...story,
+        props: nextProps,
+        metadata: { ...story.metadata, updatedAt: new Date().toISOString() },
+      };
+      setStory(nextStory);
+    }
+    await saveDraftNow({ story: nextStory });
+    return nextProps;
+  }, [story, storyProps, saveDraftNow]);
+
+  // Núcleo de generación de hoja de referencia de lugar/objeto. Igual patrón
+  // que los character sheets: candidatas a memoria (efímeras), elección humana.
+  const generatePropSheetCore = useCallback(async (prop: StoryProp): Promise<void> => {
+    if (!story) throw new Error('No hay cuento activo');
+    const storyIdAtStart = story.id;
+
+    if (!prop.visualDescription?.trim()) {
+      throw new Error(`"${prop.name}" no tiene descripción visual`);
+    }
+
+    // Fotos del usuario (URL o base64 recién subido) como referencia adicional
+    // del modelo. Se excluyen las candidatas de esta sesión y la hoja generada
+    // previamente elegida (referenceImages[0] cuando sheetGenerated).
+    const sessionCandidates = new Set(propSheetOptionsRef.current[prop.id] || []);
+    const photoRefs = (prop.referenceImages || [])
+      .slice(prop.sheetGenerated ? 1 : 0)
+      .filter(img => !sessionCandidates.has(img))
+      .slice(0, 2);
+
+    const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
+      body: {
+        type: 'prop',
+        styleId: story.illustrationStyle,
+        prop: {
+          name: prop.name,
+          kind: prop.kind,
+          visualDescription: prop.visualDescription,
+          referenceImages: photoRefs.length > 0 ? photoRefs : undefined,
+        },
+        count: 2,
+        modelTier: 'flash',
+      },
+    });
+
+    if (fnError) throw await extractInvokeError(fnError);
+    if (!data?.success || !data.images?.length) {
+      throw new Error(data?.error || 'No se pudieron generar imágenes');
+    }
+
+    if (storyIdRef.current !== storyIdAtStart) {
+      console.warn(`[CuentacuentoEditor] Descartando hoja de "${prop.name}": el cuento cambió durante la generación`);
+      return;
+    }
+
+    const base = propSheetOptionsRef.current;
+    const merged = { ...base, [prop.id]: data.images as string[] };
+    propSheetOptionsRef.current = merged;
+    setPropSheetOptions(merged);
+
+    // Regenerar invalida la selección previa de candidata
+    setSelectedPropSheets(prev => {
+      if (prev[prop.id] === undefined) return prev;
+      const next = { ...prev };
+      delete next[prop.id];
+      return next;
+    });
+
+    markPipelineResolved(`prop-${prop.id}`);
+  }, [story, markPipelineResolved]);
+
+  const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
+    if (!story) return;
+    setGeneratingPropId(prop.id);
+    setError(null);
+    try {
+      await generatePropSheetCore(prop);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error generando hoja de referencia');
+    } finally {
+      setGeneratingPropId(null);
+    }
+  }, [story, generatePropSheetCore]);
+
+  // Elegir una candidata: pasa a ser la PRIMERA referenceImage del prop
+  // (getPropsForScene la envía primero y el edge function la usa como
+  // referencia principal). Las demás candidatas de la sesión se descartan.
+  const handleSelectPropSheet = useCallback(async (propId: string, index: number) => {
+    const options = propSheetOptionsRef.current[propId] || [];
+    const chosen = options[index];
+    if (!chosen) return;
+
+    setSelectedPropSheets(prev => ({ ...prev, [propId]: index }));
+
+    await applyPropsUpdate(props => props.map(p => {
+      if (p.id !== propId) return p;
+      // La hoja anterior (posición 0 cuando sheetGenerated) se reemplaza; las
+      // fotos del usuario y candidatas de esta sesión no se acumulan.
+      const previousRefs = (p.referenceImages || [])
+        .slice(p.sheetGenerated ? 1 : 0)
+        .filter(img => !options.includes(img));
+      return {
+        ...p,
+        selectedReferenceUrl: undefined,
+        sheetGenerated: true,
+        referenceImages: [chosen, ...previousRefs],
+      };
+    }));
+  }, [applyPropsUpdate]);
+
+  const handleUploadPropPhoto = useCallback(async (propId: string, base64: string) => {
+    await applyPropsUpdate(props => props.map(p => p.id === propId
+      ? { ...p, referenceImages: [...(p.referenceImages || []), base64] }
+      : p));
+  }, [applyPropsUpdate]);
+
+  const handleRemoveProp = useCallback(async (propId: string) => {
+    setPropSheetOptions(prev => {
+      const next = { ...prev };
+      delete next[propId];
+      propSheetOptionsRef.current = next;
+      return next;
+    });
+    await applyPropsUpdate(props => props.filter(p => p.id !== propId));
+  }, [applyPropsUpdate]);
+
+  const handleAddProp = useCallback(async (draft: { name: string; kind: StoryProp['kind']; narrativeRole: string; visualDescription: string }) => {
+    const newProp: StoryProp = {
+      id: `prop-man-${Date.now()}`,
+      kind: draft.kind,
+      name: draft.name,
+      narrativeRole: draft.narrativeRole,
+      visualDescription: draft.visualDescription,
+      referenceImages: [],
+      role: 'secondary',
+    };
+    await applyPropsUpdate(props => [...props, newProp]);
+  }, [applyPropsUpdate]);
+
+  const handleUpdatePropDescription = useCallback((propId: string, visualDescription: string) => {
+    // Solo estado local mientras se escribe; se persiste con el próximo guardado
+    const update = (props: StoryProp[]) => props.map(p => p.id === propId ? { ...p, visualDescription } : p);
+    setStoryProps(prev => update(prev));
+    setStory(prev => prev ? { ...prev, props: update(prev.props || []) } : prev);
+  }, []);
 
   // Núcleo de generación de imagen de escena, compartido por el botón manual y
   // el pipeline automático. Actualiza ref+estado y encola el guardado. Lanza
@@ -2054,19 +2238,39 @@ Instrucciones críticas:
   // false si el pipeline estaba ocupado y no se pudo arrancar.
   const runCharacterSheetBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
+
     const pendingChars = story.characters.filter(
       c => !(characterSheetOptionsRef.current[c.id]?.length) && (editingCharacterPrompt[c.id] ?? c.visualDescription)?.trim()
     );
-    if (pendingChars.length === 0) return true;
-    const tasks: PipelineTask[] = pendingChars.map((c) => ({
-      id: `sheet-${c.id}`,
-      kind: 'sheet',
-      label: c.name,
-      run: () => generateCharacterSheetCore(c, editingCharacterPrompt[c.id]),
-    }));
+
+    // Lugares/objetos sin referencia visual alguna: sin fotos del usuario,
+    // sin hoja generada pendiente de elegir → generarles candidatas.
+    const activeProps = (story.props && story.props.length > 0) ? story.props : storyProps;
+    const pendingProps = activeProps.filter(
+      p => p.visualDescription?.trim()
+        && (p.referenceImages?.length ?? 0) === 0
+        && !(propSheetOptionsRef.current[p.id]?.length)
+    );
+
+    if (pendingChars.length === 0 && pendingProps.length === 0) return true;
+
+    const tasks: PipelineTask[] = [
+      ...pendingChars.map((c): PipelineTask => ({
+        id: `sheet-${c.id}`,
+        kind: 'sheet',
+        label: c.name,
+        run: () => generateCharacterSheetCore(c, editingCharacterPrompt[c.id]),
+      })),
+      ...pendingProps.map((p): PipelineTask => ({
+        id: `prop-${p.id}`,
+        kind: 'prop',
+        label: p.name,
+        run: () => generatePropSheetCore(p),
+      })),
+    ];
     void pipeline.runAll(tasks);
     return true;
-  }, [story, pipeline, generateCharacterSheetCore, editingCharacterPrompt]);
+  }, [story, storyProps, pipeline, generateCharacterSheetCore, generatePropSheetCore, editingCharacterPrompt]);
 
   const runSceneBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
@@ -3583,8 +3787,14 @@ Instrucciones críticas:
     const allCharactersHaveSheets = story.characters.every(c => characterSheetOptions[c.id]?.length > 0);
     const allCharactersSelected = story.characters.every(c => selectedCharacterSheets[c.id] !== undefined);
 
-    const pendingSheetCount = story.characters.filter(c => !(characterSheetOptions[c.id]?.length)).length;
-    const sheetItems = pipeline.items.filter(i => i.kind === 'sheet');
+    const activeProps = (story.props && story.props.length > 0) ? story.props : storyProps;
+    // Un prop está resuelto cuando tiene una referencia PERSISTIDA (hoja elegida
+    // o foto). Candidatas sin elegir NO cuentan: son efímeras y se pierden al
+    // recargar, y sin elección las escenas no reciben ancla visual.
+    const pendingPropCount = activeProps.filter(p => (p.referenceImages?.length ?? 0) === 0).length;
+    const allPropsResolved = pendingPropCount === 0;
+    const pendingSheetCount = story.characters.filter(c => !(characterSheetOptions[c.id]?.length)).length + pendingPropCount;
+    const sheetItems = pipeline.items.filter(i => i.kind === 'sheet' || i.kind === 'prop');
     const sheetDone = sheetItems.filter(i => i.status === 'done').length;
     const sheetErrors = sheetItems.filter(i => i.status === 'error').length;
     const sheetBatchActive = pipeline.isRunning && sheetItems.length > 0;
@@ -3602,11 +3812,11 @@ Instrucciones críticas:
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sheetBatchActive ? (
-                <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando personajes… {sheetDone} de {sheetItems.length} listos</>
+                <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando referencias… {sheetDone} de {sheetItems.length} listas</>
               ) : sheetErrors > 0 ? (
-                <span style={{ color: '#DC2626' }}>{sheetErrors} {sheetErrors === 1 ? 'personaje falló' : 'personajes fallaron'}</span>
+                <span style={{ color: '#DC2626' }}>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</span>
               ) : (
-                <>{pendingSheetCount} {pendingSheetCount === 1 ? 'personaje sin imagen' : 'personajes sin imagen'}</>
+                <>{pendingSheetCount} {pendingSheetCount === 1 ? 'elemento sin imagen de referencia' : 'elementos sin imagen de referencia'}</>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -3773,6 +3983,23 @@ Instrucciones críticas:
           </div>
         ))}
 
+        {/* Lugares y objetos recurrentes: mismo tratamiento de consistencia
+            visual que los personajes (hoja de referencia canónica) */}
+        <PropSheetSection
+          storyProps={activeProps}
+          sheetOptions={propSheetOptions}
+          selectedSheets={selectedPropSheets}
+          generatingPropId={generatingPropId}
+          pipelineBusy={pipeline.isRunning}
+          statusOf={pipeline.statusOf}
+          onGenerate={handleGeneratePropSheet}
+          onSelect={handleSelectPropSheet}
+          onUploadPhoto={handleUploadPropPhoto}
+          onRemove={handleRemoveProp}
+          onAdd={handleAddProp}
+          onUpdateDescription={handleUpdatePropDescription}
+        />
+
         {/* Error */}
         {error && (
           <div className="p-3 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
@@ -3795,7 +4022,8 @@ Instrucciones críticas:
           <button
             type="button"
             onClick={handleApproveCharacters}
-            disabled={pipeline.isRunning || !allCharactersHaveSheets || !allCharactersSelected}
+            disabled={pipeline.isRunning || !allCharactersHaveSheets || !allCharactersSelected || !allPropsResolved}
+            title={!allPropsResolved ? 'Cada lugar/objeto recurrente necesita una imagen de referencia elegida (o quítalo de la lista)' : undefined}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >

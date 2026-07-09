@@ -208,6 +208,7 @@ ${landmarkSection}${propSection}
 
 CRITICAL instructions:
 - ONLY show the characters listed above - no other characters should appear
+- Do NOT redesign any character, landmark or prop: match their canonical descriptions and reference images exactly, in every detail
 - Bright, well-lit scene (this will be projected in a room with natural light)
 - Child-friendly imagery appropriate for ages 5-10
 - **ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO NUMBERS, NO WRITING OF ANY KIND IN THE IMAGE** - This is extremely important, the image must be purely visual with zero text elements
@@ -237,6 +238,43 @@ Important:
 - Bright, well-lit image
 - Child-friendly appearance
 - Expressive but not exaggerated features
+- **ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO LABELS** - the image must contain zero text elements
+- Suitable for children ages 5-10
+- Pure visual illustration only
+`.trim();
+}
+
+/**
+ * Hoja de referencia canónica para un lugar u objeto recurrente, análoga al
+ * character sheet: lugares → plano general (establishing shot); objetos →
+ * toma de producto sobre fondo neutro. Se genera en el estilo del cuento y
+ * luego se adjunta como referencia a cada escena donde aparece.
+ */
+function buildPropSheetPrompt(
+  styleId: string,
+  prop: { name: string; kind: 'location' | 'prop'; visualDescription: string }
+): string {
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+
+  const subjectInstructions = prop.kind === 'location'
+    ? `Establishing shot of a location, wide view showing the full place clearly.
+
+Location: ${prop.visualDescription}
+
+Show the location from a slightly elevated three-quarter view in neutral daylight, with all its distinctive architectural/natural features fully visible. No people, no animals, no characters — the location alone.`
+    : `Reference sheet of a single object, product-shot style.
+
+Object: ${prop.visualDescription}
+
+Show the object centered on a plain, light neutral background, three-quarter view, evenly lit, with all its distinctive details, colors and materials clearly visible. No people, no animals, no characters — the object alone.`;
+
+  return `${stylePrompt}
+
+${subjectInstructions}
+
+Important:
+- This image will be used as the canonical visual reference for "${prop.name}" across every illustration of a children's story — every distinctive detail must be clear and unambiguous
+- Bright, well-lit image
 - **ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO LABELS** - the image must contain zero text elements
 - Suitable for children ages 5-10
 - Pure visual illustration only
@@ -890,6 +928,27 @@ serve(async (req) => {
         break;
       }
 
+      case 'prop': {
+        const { prop } = requestData;
+        if (!prop?.name || !prop?.visualDescription) {
+          throw new Error('Se requiere prop {name, kind, visualDescription} para generar la hoja de referencia');
+        }
+        const propKind: 'location' | 'prop' = prop.kind === 'location' ? 'location' : 'prop';
+        prompt = buildPropSheetPrompt(styleId, { name: prop.name, kind: propKind, visualDescription: prop.visualDescription });
+
+        // Fotos reales opcionales del usuario como referencia adicional
+        if (Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
+          for (const refImg of prop.referenceImages.slice(0, 2)) {
+            const processed = await processReferenceImage(refImg);
+            if (processed) {
+              referenceImages.push(processed);
+              characterDescriptions.push(`PROP REFERENCE - ${prop.name}: ${prop.visualDescription}. Render this ${propKind === 'location' ? 'place' : 'object'} EXACTLY as shown in this photo.`);
+            }
+          }
+        }
+        break;
+      }
+
       case 'cover': {
         // IGUAL QUE SCENE: usar characters y sceneReferenceImage
         const { title, protagonist, location, characters, sceneReferenceImage, customPrompt, props } = requestData;
@@ -1176,7 +1235,7 @@ Instrucciones críticas:
       }
 
       default:
-        throw new Error(`Tipo no válido: ${type}. Use: scene, character, cover, end`);
+        throw new Error(`Tipo no válido: ${type}. Use: scene, character, prop, cover, end`);
     }
 
     if (refine) {
