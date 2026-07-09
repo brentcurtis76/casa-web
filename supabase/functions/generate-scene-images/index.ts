@@ -1217,6 +1217,8 @@ Instrucciones críticas:
     }
 
     if (images.length === 0 && errors.length > 0) {
+      // Propagar rate-limit como 429 para que el cliente pueda bajar su concurrencia
+      const isRateLimited = errors.some((e) => e.includes('429') || /rate.?limit/i.test(e));
       return new Response(
         JSON.stringify({
           success: false,
@@ -1226,7 +1228,7 @@ Instrucciones críticas:
           referenceImagesCount: referenceImages.length,
         }),
         {
-          status: 500,
+          status: isRateLimited ? 429 : 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
