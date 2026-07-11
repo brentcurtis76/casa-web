@@ -50,6 +50,8 @@ export interface DraftUploadedUrls {
   sceneImageUrls: Record<number, string[]>;
   coverUrls: string[];
   endUrls: string[];
+  /** URLs públicas de las referencias de props subidas (por propId). */
+  propImageUrls: Record<string, string[]>;
 }
 
 export interface DraftSaveResult {
@@ -87,8 +89,23 @@ function applyUploadedUrlsToDraft(
     return next;
   };
 
+  // Referencias de props: viven dentro de story.props (por id), no en un
+  // Record aparte. Mismo criterio: solo si la cantidad coincide.
+  const swappedStory = draft.story && uploaded.propImageUrls
+    ? {
+        ...draft.story,
+        props: draft.story.props?.map(p => {
+          const urls = uploaded.propImageUrls[p.id];
+          return Array.isArray(urls) && urls.length > 0 && urls.length === (p.referenceImages || []).length
+            ? { ...p, referenceImages: urls }
+            : p;
+        }),
+      }
+    : draft.story;
+
   return {
     ...draft,
+    story: swappedStory,
     characterSheetOptions: swapRecord(draft.characterSheetOptions || {}, uploaded.characterSheetUrls),
     sceneImageOptions: swapRecord(draft.sceneImageOptions || {}, uploaded.sceneImageUrls),
     coverOptions: uploaded.coverUrls.length > 0 && uploaded.coverUrls.length === (draft.coverOptions || []).length
@@ -603,6 +620,8 @@ async function saveDraftToSupabase(
             removeError
           );
         } else {
+          // Invalidar el cache de existencia: estos paths ya no existen
+          orphanedPropStoragePaths.forEach((p) => verifiedPaths.delete(p));
           console.log(
             `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
           );
@@ -681,6 +700,9 @@ async function saveDraftToSupabase(
       ) as Record<number, string[]>,
       coverUrls: newImagePaths.coverPaths.map(getPublicUrl),
       endUrls: newImagePaths.endPaths.map(getPublicUrl),
+      propImageUrls: Object.fromEntries(
+        Object.entries(newImagePaths.propImagePaths).map(([key, paths]) => [key, paths.map(getPublicUrl)])
+      ),
     };
 
     return { success: true, uploadedUrls };
@@ -763,13 +785,38 @@ async function loadDraftFromSupabase(
       }));
     }
 
+    // Sanitizar índices de selección: si una subida parcial dejó menos paths
+    // que opciones, un índice persistido puede quedar fuera de rango y la
+    // "selección" apuntaría a nada (escena/personaje sin imagen al finalizar).
+    const sanitizeSelections = <K extends string | number>(
+      selections: Record<K, number>,
+      options: Record<K, string[]>
+    ): Record<K, number> => {
+      const next = {} as Record<K, number>;
+      for (const [key, idx] of Object.entries(selections) as Array<[K, number]>) {
+        const opts = options[key];
+        if (typeof idx === 'number' && Array.isArray(opts) && idx >= 0 && idx < opts.length) {
+          next[key] = idx;
+        } else {
+          console.warn(`[useCuentacuentosDraft] Selección fuera de rango descartada: key=${String(key)}, idx=${idx}, opciones=${opts?.length ?? 0}`);
+        }
+      }
+      return next;
+    };
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
       currentStep: data.current_step as CuentacuentosDraft['currentStep'],
       config: data.config as CuentacuentosDraft['config'],
       story,
-      selectedCharacterSheets: (data.selected_character_sheets as Record<string, number>) || {},
-      selectedSceneImages: (data.selected_scene_images as Record<number, number>) || {},
+      selectedCharacterSheets: sanitizeSelections(
+        (data.selected_character_sheets as Record<string, number>) || {},
+        imageOptions.characterSheetOptions
+      ),
+      selectedSceneImages: sanitizeSelections(
+        (data.selected_scene_images as Record<number, number>) || {},
+        imageOptions.sceneImageOptions
+      ),
       selectedCover: data.selected_cover as number | null,
       selectedEnd: data.selected_end as number | null,
       sceneReferenceModes,
@@ -1125,6 +1172,9 @@ export function useCuentacuentosDraft({
 
           if (deleteError) {
             console.error('[useCuentacuentosDraft] Error deleting files:', deleteError);
+          } else {
+            // Invalidar el cache de existencia: estos paths ya no existen
+            allPaths.forEach((p) => verifiedPaths.delete(p));
           }
         }
       }

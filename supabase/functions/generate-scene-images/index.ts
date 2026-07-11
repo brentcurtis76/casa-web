@@ -326,6 +326,19 @@ No characters, just the text and decorative elements.
 `.trim();
 }
 
+// Marcadores de referencias "de estilo/escenario" (no de personaje): guían
+// estilo, composición o locación en vez de la identidad de un personaje.
+const STYLE_REF_MARKERS = [
+  'SCENE STYLE REFERENCE',
+  'SAME-LOCATION REFERENCE',
+  'COVER STYLE REFERENCE',
+  'END STYLE REFERENCE',
+];
+
+function isStyleReferenceDesc(desc?: string): boolean {
+  return !!desc && STYLE_REF_MARKERS.some((marker) => desc.includes(marker));
+}
+
 function isValidImageBase64(base64: string): boolean {
   if (!base64 || typeof base64 !== 'string') return false;
   return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/') || base64.startsWith('UklGR');
@@ -466,7 +479,7 @@ async function generateImage(
       console.warn('[generateImage] refine.sourceImage missing or invalid base64 — proceeding without refine source');
     }
 
-    const hasSceneRef = characterDescriptions[0]?.includes('SCENE STYLE REFERENCE');
+    const hasSceneRef = isStyleReferenceDesc(characterDescriptions[0]);
     const hasLandmarkRef = characterDescriptions.some(d => d?.includes('LANDMARK REFERENCE'));
 
     if (referenceImages.length > 0) {
@@ -520,7 +533,7 @@ Study each reference carefully before generating. All subjects in your output MU
       for (let i = 0; i < referenceImages.length && i < 14; i++) {
         const imgData = referenceImages[i];
         const imgPrefix = imgData?.slice(0, 30) || 'empty';
-        const isSceneRef = characterDescriptions[i]?.includes('SCENE STYLE REFERENCE');
+        const isSceneRef = isStyleReferenceDesc(characterDescriptions[i]);
         console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, prefix="${imgPrefix}", isSceneRef=${isSceneRef}`);
 
         if (isValidImageBase64(imgData)) {
@@ -530,7 +543,9 @@ Study each reference carefully before generating. All subjects in your output MU
             const isLandmarkRef = characterDescriptions[i]?.includes('LANDMARK REFERENCE');
             const isPropRef = characterDescriptions[i]?.includes('PROP REFERENCE');
             if (isSceneRef) {
-              parts.push({ text: `STYLE REFERENCE IMAGE - Copy the visual style, colors, lighting, and atmosphere from this image:` });
+              // La descripción trae la instrucción correcta según el tipo de
+              // referencia (estilo, misma locación/pov, portada, fin).
+              parts.push({ text: characterDescriptions[i] });
             } else if (isLandmarkRef) {
               parts.push({ text: `LANDMARK/BUILDING REFERENCE IMAGE - Render this building EXACTLY as shown, copying all architectural details: ${characterDescriptions[i]}` });
             } else if (isPropRef) {
@@ -571,7 +586,7 @@ ${prompt}`;
     }
 
     if (variation > 0) {
-      if (imagesAdded > 0 && characterDescriptions[0]?.includes('SCENE STYLE REFERENCE')) {
+      if (imagesAdded > 0 && isStyleReferenceDesc(characterDescriptions[0])) {
         finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition and poses, but MAINTAIN THE SAME VISUAL STYLE as the reference image - same color palette, same lighting style, same artistic atmosphere.`;
       } else {
         finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition, poses, and background details. However, the characters MUST remain VISUALLY IDENTICAL to their reference images - same face, same hair, same clothes, same colors.`;
@@ -689,6 +704,20 @@ serve(async (req) => {
         && typeof requestData.refine.feedback === 'string'
         ? { sourceImage: requestData.refine.sourceImage, feedback: requestData.refine.feedback }
         : undefined;
+
+    // El editor intercambia base64→URL tras cada guardado, así que la imagen a
+    // refinar suele llegar como URL pública. Sin esta descarga, generateImage
+    // la descartaría en silencio y el "refinamiento" regeneraría desde cero.
+    if (refine && !isValidImageBase64(refine.sourceImage)) {
+      const processedSource = await processReferenceImage(refine.sourceImage);
+      if (processedSource) {
+        refine.sourceImage = processedSource;
+        console.log(`[generate-scene-images] refine.sourceImage convertido a base64 (${processedSource.length} chars)`);
+      } else {
+        console.warn('[generate-scene-images] refine.sourceImage no procesable — se refinará sin imagen fuente');
+      }
+    }
+
     // Refine requests always produce exactly one image; slot 0 of inlineData is the source.
     const effectiveCount = refine ? 1 : count;
 

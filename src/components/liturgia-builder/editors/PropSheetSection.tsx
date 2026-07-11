@@ -6,56 +6,14 @@
  * que luego se adjunta a cada escena donde aparecen.
  */
 
-import React, { useRef, useState } from 'react';
-import { Loader2, RefreshCw, Camera, MapPin, Package, Plus, Trash2, Upload, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, RefreshCw, Camera, MapPin, Package, Plus, Trash2, Check } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
+import ImageUploadButton from '@/components/shared/ImageUploadButton';
 import type { StoryProp, PropKind } from '@/types/shared/story';
 
 const imageSrc = (value: string): string =>
   value.startsWith('http') || value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
-
-const PhotoUploadButton: React.FC<{
-  onUpload: (base64: string) => void;
-  disabled?: boolean;
-}> = ({ onUpload, disabled }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Por favor selecciona un archivo de imagen');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen es muy grande. Máximo 5MB');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      onUpload(base64);
-    };
-    reader.readAsDataURL(file);
-    if (inputRef.current) inputRef.current.value = '';
-  };
-
-  return (
-    <>
-      <input ref={inputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
-        style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight, color: CASA_BRAND.colors.secondary.grayDark }}
-      >
-        <Upload size={14} />
-        Subir foto
-      </button>
-    </>
-  );
-};
 
 export interface PropSheetSectionProps {
   storyProps: StoryProp[];
@@ -233,7 +191,7 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
                     <><Camera size={14} /> Generar referencia</>
                   )}
                 </button>
-                <PhotoUploadButton onUpload={(base64) => onUploadPhoto(prop.id, base64)} disabled={busy} />
+                <ImageUploadButton label="foto" onUpload={(base64) => onUploadPhoto(prop.id, base64)} disabled={busy} />
                 <button
                   type="button"
                   onClick={() => onRemove(prop.id)}

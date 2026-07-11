@@ -334,7 +334,12 @@ export interface GenerateSceneImagesSceneRequest {
   characters?: GenerateSceneImagesCharacterRef[];
   location: LocationInfo;
   sceneReferenceImage?: string;
-  sceneReferenceMode?: 'style' | 'composition';
+  /**
+   * 'style' = referencia de estilo visual; 'pov' = misma locación desde otro
+   * ángulo de cámara. (Debe coincidir con los valores del edge function y de
+   * la persistencia del draft.)
+   */
+  sceneReferenceMode?: 'style' | 'pov';
   landmarks?: GenerateSceneImagesLandmarkRef[];
   props?: GenerateSceneImagesPropRef[];
   count?: number;

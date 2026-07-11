@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Trash2 } from 'lucide-react';
 import ImageRefineBox from '@/components/shared/ImageRefineBox';
+import ImageUploadButton from '@/components/shared/ImageUploadButton';
 import PropSheetSection from './PropSheetSection';
 
 interface CuentacuentoEditorProps {
@@ -363,74 +364,6 @@ const ImageSelector: React.FC<{
 };
 
 /**
- * Componente para subir imagen manualmente
- */
-const ImageUploadButton: React.FC<{
-  onUpload: (base64: string) => void;
-  label: string;
-  disabled?: boolean;
-}> = ({ onUpload, label, disabled }) => {
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validar que sea una imagen
-    if (!file.type.startsWith('image/')) {
-      alert('Por favor selecciona un archivo de imagen');
-      return;
-    }
-
-    // Validar tamaño (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen es muy grande. Máximo 5MB');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Extraer solo el base64 (sin el prefijo data:image/...)
-      const base64 = result.split(',')[1];
-      onUpload(base64);
-    };
-    reader.readAsDataURL(file);
-
-    // Limpiar el input para permitir subir el mismo archivo de nuevo
-    if (inputRef.current) {
-      inputRef.current.value = '';
-    }
-  };
-
-  return (
-    <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
-        style={{
-          backgroundColor: CASA_BRAND.colors.primary.white,
-          borderColor: CASA_BRAND.colors.secondary.grayLight,
-          color: CASA_BRAND.colors.secondary.grayDark,
-        }}
-      >
-        <Upload size={14} />
-        Subir {label}
-      </button>
-    </>
-  );
-};
-
-/**
  * Indicador de progreso de pasos
  */
 const StepIndicator: React.FC<{
@@ -676,7 +609,14 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const sceneReferenceModeRef = useRef<Record<number, 'style' | 'pov'>>({});
   const propSheetOptionsRef = useRef<Record<string, string[]>>({});
   const currentStepRef = useRef<CreationStep>(currentStep);
+  // Prompts editados: los closures de tareas del pipeline (que retryFailed
+  // re-ejecuta más tarde) leen SIEMPRE el prompt vigente, no el del momento
+  // en que se creó el lote.
+  const editingScenePromptRef = useRef<Record<number, string>>({});
+  const editingCharacterPromptRef = useRef<Record<string, string>>({});
 
+  useEffect(() => { editingScenePromptRef.current = editingScenePrompt; }, [editingScenePrompt]);
+  useEffect(() => { editingCharacterPromptRef.current = editingCharacterPrompt; }, [editingCharacterPrompt]);
   useEffect(() => { propSheetOptionsRef.current = propSheetOptions; }, [propSheetOptions]);
   useEffect(() => { characterSheetOptionsRef.current = characterSheetOptions; }, [characterSheetOptions]);
   useEffect(() => { selectedCharacterSheetsRef.current = selectedCharacterSheets; }, [selectedCharacterSheets]);
@@ -1289,7 +1229,7 @@ Instrucciones críticas:
         },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) throw await extractInvokeError(fnError);
 
       if (data?.promptPreview) {
         setPromptPreview(data.promptPreview);
@@ -1318,7 +1258,7 @@ Instrucciones críticas:
         body: getRequestBody(),
       });
 
-      if (fnError) throw fnError;
+      if (fnError) throw await extractInvokeError(fnError);
 
       if (!data?.success) {
         throw new Error(data?.error || 'Error al generar el cuento');
@@ -1380,8 +1320,10 @@ Instrucciones críticas:
 
           const userProps = storyProps.map((p) => ({
             ...p,
+            // `||` (no `??`): el análisis devuelve '' para props sin fotos y no
+            // debe pisar la descripción canónica existente con vacío.
             visualDescription:
-              analyses.find((a) => a.id === p.id)?.visualDescription ?? p.visualDescription,
+              analyses.find((a) => a.id === p.id)?.visualDescription || p.visualDescription,
           }));
 
           const suggestedProps: StoryProp[] = suggested.map((s, i) => ({
@@ -1463,7 +1405,7 @@ Instrucciones críticas:
         },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) throw await extractInvokeError(fnError);
 
       if (!data?.success || !data.story) {
         throw new Error(data?.error || 'Error al refinar el cuento');
@@ -1700,8 +1642,22 @@ Instrucciones críticas:
   }, [story, generateCharacterSheetCore]);
 
   // ===== Lugares y objetos recurrentes (props) =====
+  // Reemplaza base64 por URLs subidas dentro de los props del estado
+  // (mismo criterio que swapOptionsWithUploadedUrls: solo si coincide la cantidad).
+  const applyPropUrlSwap = useCallback((propImageUrls: Record<string, string[]>) => {
+    const swapProps = (props: StoryProp[]) => props.map(p => {
+      const urls = propImageUrls[p.id];
+      return Array.isArray(urls) && urls.length > 0 && urls.length === (p.referenceImages || []).length
+        ? { ...p, referenceImages: urls }
+        : p;
+    });
+    setStoryProps(prev => swapProps(prev));
+    setStory(prev => prev ? { ...prev, props: swapProps(prev.props || []) } : prev);
+  }, []);
+
   // Aplica una transformación a los props en storyProps + story.props y
-  // persiste el story actualizado en el draft.
+  // persiste el story actualizado en el draft. El guardado pasa por la MISMA
+  // cola serializada que los guardados del pipeline para no pisarse con ellos.
   const applyPropsUpdate = useCallback(async (updater: (props: StoryProp[]) => StoryProp[]) => {
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = updater(baseProps);
@@ -1715,9 +1671,22 @@ Instrucciones críticas:
       };
       setStory(nextStory);
     }
-    await saveDraftNow({ story: nextStory });
+
+    saveQueueRef.current = saveQueueRef.current
+      .then(async () => {
+        const result = await saveDraftNow({ story: nextStory });
+        // Base64 recién subido → URL, para no re-subir en cada guardado ni
+        // mandar megabytes de base64 a cada generación de escena.
+        if (result.uploadedUrls?.propImageUrls) {
+          applyPropUrlSwap(result.uploadedUrls.propImageUrls);
+        }
+      })
+      .catch((err) => {
+        console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
+      });
+    await saveQueueRef.current;
     return nextProps;
-  }, [story, storyProps, saveDraftNow]);
+  }, [story, storyProps, saveDraftNow, applyPropUrlSwap]);
 
   // Núcleo de generación de hoja de referencia de lugar/objeto. Igual patrón
   // que los character sheets: candidatas a memoria (efímeras), elección humana.
@@ -1848,11 +1817,19 @@ Instrucciones críticas:
   }, [applyPropsUpdate]);
 
   const handleUpdatePropDescription = useCallback((propId: string, visualDescription: string) => {
-    // Solo estado local mientras se escribe; se persiste con el próximo guardado
-    const update = (props: StoryProp[]) => props.map(p => p.id === propId ? { ...p, visualDescription } : p);
-    setStoryProps(prev => update(prev));
-    setStory(prev => prev ? { ...prev, props: update(prev.props || []) } : prev);
-  }, []);
+    // Se dispara en blur (no por tecla): actualiza estado y persiste con el
+    // guardado debounced — sin esto, una edición de descripción sola se
+    // perdería al recargar (el auto-save continuo está deshabilitado).
+    const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
+    const nextProps = baseProps.map(p => p.id === propId ? { ...p, visualDescription } : p);
+    setStoryProps(nextProps);
+    let nextStory: Story | null = story;
+    if (story) {
+      nextStory = { ...story, props: nextProps };
+      setStory(nextStory);
+    }
+    saveDraft({ story: nextStory });
+  }, [story, storyProps, saveDraft]);
 
   // Núcleo de generación de imagen de escena, compartido por el botón manual y
   // el pipeline automático. Actualiza ref+estado y encola el guardado. Lanza
@@ -2052,6 +2029,7 @@ Instrucciones críticas:
   // Generar portada
   const handleGenerateCover = useCallback(async (customPrompt?: string) => {
     if (!story) return;
+    const storyIdAtStart = story.id;
 
     setGeneratingCover(true);
     setError(null);
@@ -2119,10 +2097,17 @@ Instrucciones críticas:
         error: data?.error,
       });
 
-      if (fnError) throw fnError;
+      if (fnError) throw await extractInvokeError(fnError);
 
       if (!data?.success || !data.images?.length) {
         throw new Error(data?.error || 'No se pudieron generar imágenes de portada');
+      }
+
+      // Mismo guard que los cores: si el cuento cambió (reset/regenerar/
+      // eliminar) mientras generábamos, descartar el resultado.
+      if (storyIdRef.current !== storyIdAtStart) {
+        console.warn('[CuentacuentoEditor] Descartando portada: el cuento cambió durante la generación');
+        return;
       }
 
       setCoverOptions(data.images);
@@ -2174,6 +2159,7 @@ Instrucciones críticas:
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
     if (!story) return;
+    const storyIdAtStart = story.id;
 
     setGeneratingEnd(true);
     setError(null);
@@ -2217,10 +2203,17 @@ Instrucciones críticas:
         body: requestBody,
       });
 
-      if (fnError) throw fnError;
+      if (fnError) throw await extractInvokeError(fnError);
 
       if (!data?.success || !data.images?.length) {
         throw new Error(data?.error || 'No se pudieron generar imágenes de fin');
+      }
+
+      // Mismo guard que los cores: si el cuento cambió (reset/regenerar/
+      // eliminar) mientras generábamos, descartar el resultado.
+      if (storyIdRef.current !== storyIdAtStart) {
+        console.warn('[CuentacuentoEditor] Descartando imagen final: el cuento cambió durante la generación');
+        return;
       }
 
       setEndOptions(data.images);
@@ -2259,7 +2252,8 @@ Instrucciones críticas:
         id: `sheet-${c.id}`,
         kind: 'sheet',
         label: c.name,
-        run: () => generateCharacterSheetCore(c, editingCharacterPrompt[c.id]),
+        // Prompt leído del ref al EJECUTAR: retryFailed usa la versión vigente
+        run: () => generateCharacterSheetCore(c, editingCharacterPromptRef.current[c.id]),
       })),
       ...pendingProps.map((p): PipelineTask => ({
         id: `prop-${p.id}`,
@@ -2280,11 +2274,12 @@ Instrucciones críticas:
       id: `scene-${s.number}`,
       kind: 'scene',
       label: `Escena ${s.number}`,
-      run: () => generateSceneImageCore(s, editingScenePrompt[s.number]),
+      // Prompt leído del ref al EJECUTAR: retryFailed usa la versión vigente
+      run: () => generateSceneImageCore(s, editingScenePromptRef.current[s.number]),
     }));
     void pipeline.runAll(tasks);
     return true;
-  }, [story, pipeline, generateSceneImageCore, editingScenePrompt]);
+  }, [story, pipeline, generateSceneImageCore]);
 
   const runCoverEndBatch = useCallback((): boolean => {
     if (!story) return false;
@@ -2366,7 +2361,7 @@ Instrucciones críticas:
           { body },
         );
 
-        if (fnError) throw fnError;
+        if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar el personaje');
         }
@@ -2452,8 +2447,7 @@ Instrucciones críticas:
           location: story.location,
           sceneReferenceImage: sceneRefImage,
           // Edge function accepts 'pov' at runtime; shared type drift bridged here.
-          sceneReferenceMode: (sceneReferenceMode[scene.number] ??
-            'style') as GenerateSceneImagesSceneRequest['sceneReferenceMode'],
+          sceneReferenceMode: sceneReferenceMode[scene.number] ?? 'style',
           props: propsForScene.length > 0 ? propsForScene : undefined,
           modelTier: 'pro',
           refine: { sourceImage, feedback },
@@ -2464,7 +2458,7 @@ Instrucciones críticas:
           { body },
         );
 
-        if (fnError) throw fnError;
+        if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar la escena');
         }
@@ -2568,7 +2562,7 @@ Instrucciones críticas:
           { body },
         );
 
-        if (fnError) throw fnError;
+        if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar la portada');
         }
@@ -2644,7 +2638,7 @@ Instrucciones críticas:
           { body },
         );
 
-        if (fnError) throw fnError;
+        if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar la imagen final');
         }
@@ -3186,10 +3180,19 @@ Instrucciones críticas:
       };
     });
 
+    // Props: solo referencias ya persistidas (URLs). saveLiturgy no sube base64
+    // de props, así que un base64 residual quedaría incrustado para siempre en
+    // el JSON de la liturgia guardada. Las URLs ya viven en Storage vía el draft.
+    const finalProps = story.props?.map(p => ({
+      ...p,
+      referenceImages: (p.referenceImages || []).filter(img => img.startsWith('http')),
+    }));
+
     const finalStory: Story = {
       ...story,
       characters: finalCharacters,
       scenes: finalScenes,
+      props: finalProps,
       coverImageOptions: coverOptions,
       coverImageUrl: finalCoverImage,
       endImageOptions: endOptions,
@@ -3227,6 +3230,7 @@ Instrucciones críticas:
     selectedCharacterSheetsRef.current = {};
     sceneImageOptionsRef.current = {};
     selectedSceneImagesRef.current = {};
+    propSheetOptionsRef.current = {};
     setStory(null);
     setPreviewSlides(null);
     setShowForm(true);
@@ -3240,6 +3244,11 @@ Instrucciones críticas:
     setSelectedCover(null);
     setEndOptions([]);
     setSelectedEnd(null);
+    // Los props del cuento anterior no deben sangrar al nuevo: solo se
+    // conservan si el usuario los vuelve a definir en la configuración.
+    setStoryProps([]);
+    setPropSheetOptions({});
+    setSelectedPropSheets({});
   }, [cancelPipeline]);
 
   // Editar cuento existente (sin borrar)
@@ -3791,9 +3800,15 @@ Instrucciones críticas:
     // Un prop está resuelto cuando tiene una referencia PERSISTIDA (hoja elegida
     // o foto). Candidatas sin elegir NO cuentan: son efímeras y se pierden al
     // recargar, y sin elección las escenas no reciben ancla visual.
-    const pendingPropCount = activeProps.filter(p => (p.referenceImages?.length ?? 0) === 0).length;
-    const allPropsResolved = pendingPropCount === 0;
-    const pendingSheetCount = story.characters.filter(c => !(characterSheetOptions[c.id]?.length)).length + pendingPropCount;
+    const unresolvedProps = activeProps.filter(p => (p.referenceImages?.length ?? 0) === 0);
+    const allPropsResolved = unresolvedProps.length === 0;
+    // Dos conteos distintos: lo que el LOTE puede generar (sin candidatas aún —
+    // mismo predicado que runCharacterSheetBatch, para que el botón nunca sea
+    // un no-op) vs lo que espera una ELECCIÓN humana (candidatas listas).
+    const pendingGenerationCount =
+      story.characters.filter(c => !(characterSheetOptions[c.id]?.length) && (editingCharacterPrompt[c.id] ?? c.visualDescription)?.trim()).length +
+      unresolvedProps.filter(p => p.visualDescription?.trim() && !(propSheetOptions[p.id]?.length)).length;
+    const awaitingSelectionCount = unresolvedProps.filter(p => (propSheetOptions[p.id]?.length ?? 0) > 0).length;
     const sheetItems = pipeline.items.filter(i => i.kind === 'sheet' || i.kind === 'prop');
     const sheetDone = sheetItems.filter(i => i.status === 'done').length;
     const sheetErrors = sheetItems.filter(i => i.status === 'error').length;
@@ -3807,16 +3822,18 @@ Instrucciones críticas:
           </p>
         </div>
 
-        {/* Progreso del pipeline de hojas de personaje */}
-        {(sheetBatchActive || sheetErrors > 0 || pendingSheetCount > 0) && (
+        {/* Progreso del pipeline de hojas de personaje y props */}
+        {(sheetBatchActive || sheetErrors > 0 || pendingGenerationCount > 0 || awaitingSelectionCount > 0) && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sheetBatchActive ? (
                 <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando referencias… {sheetDone} de {sheetItems.length} listas</>
               ) : sheetErrors > 0 ? (
                 <span style={{ color: '#DC2626' }}>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</span>
+              ) : pendingGenerationCount > 0 ? (
+                <>{pendingGenerationCount} {pendingGenerationCount === 1 ? 'elemento sin imagen de referencia' : 'elementos sin imagen de referencia'}</>
               ) : (
-                <>{pendingSheetCount} {pendingSheetCount === 1 ? 'elemento sin imagen de referencia' : 'elementos sin imagen de referencia'}</>
+                <>{awaitingSelectionCount} {awaitingSelectionCount === 1 ? 'lugar/objeto espera que elijas su referencia' : 'lugares/objetos esperan que elijas su referencia'}</>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -3842,7 +3859,7 @@ Instrucciones críticas:
                       Reintentar fallidos ({sheetErrors})
                     </button>
                   )}
-                  {pendingSheetCount > 0 && (
+                  {pendingGenerationCount > 0 && (
                     <button
                       type="button"
                       onClick={runCharacterSheetBatch}
@@ -3850,7 +3867,7 @@ Instrucciones críticas:
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
-                      <Sparkles size={14} /> Generar todos ({pendingSheetCount})
+                      <Sparkles size={14} /> Generar todos ({pendingGenerationCount})
                     </button>
                   )}
                 </>
@@ -4194,6 +4211,7 @@ Instrucciones críticas:
         <div className="max-h-[600px] overflow-y-auto space-y-4 pr-1">
           {story.scenes.map((scene) => {
             const isExpanded = expandedScenePrompts[scene.number];
+            const scenePipelineStatus = pipeline.statusOf(`scene-${scene.number}`);
             const excludedIds = sceneExcludedCharacters[scene.number] || [];
             const includedIds = sceneIncludedCharacters[scene.number] || [];
             const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
@@ -4239,12 +4257,12 @@ Instrucciones críticas:
                       </button>
 
                       {/* Estado del pipeline para esta escena */}
-                      {pipeline.statusOf(`scene-${scene.number}`) === 'pending' && pipeline.isRunning && (
+                      {scenePipelineStatus === 'pending' && pipeline.isRunning && (
                         <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight, color: CASA_BRAND.colors.secondary.grayDark }}>
                           En cola
                         </span>
                       )}
-                      {pipeline.statusOf(`scene-${scene.number}`) === 'error' && !pipeline.isRunning && (
+                      {scenePipelineStatus === 'error' && !pipeline.isRunning && (
                         <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
                           Error
                         </span>
@@ -4257,7 +4275,7 @@ Instrucciones críticas:
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
-                        {(generatingSceneIndex === scene.number || pipeline.statusOf(`scene-${scene.number}`) === 'running') ? (
+                        {(generatingSceneIndex === scene.number || scenePipelineStatus === 'running') ? (
                           <><Loader2 size={14} className="animate-spin" /> Generando...</>
                         ) : sceneImageOptions[scene.number]?.length ? (
                           <><RefreshCw size={14} /> Regenerar</>
