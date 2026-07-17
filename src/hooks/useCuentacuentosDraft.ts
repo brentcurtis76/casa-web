@@ -1040,6 +1040,30 @@ interface DraftIdentity {
   revision: number;
 }
 
+/**
+ * Identidad de un snapshot generado por el A2 pipeline. Puente entre el
+ * `AppliedIdentity` del runner (`{storyId, epoch, itemId, generatedRevision}`)
+ * y la cola serializada del draft. Se re-declara localmente para no crear
+ * dependencia cruzada con el runner (el hook es consumido por otros callers).
+ */
+export interface GeneratedSnapshotIdentity {
+  storyId: string | null;
+  epoch: number;
+  itemId: string;
+  generatedRevision: number;
+}
+
+/**
+ * Input del adaptador de persistencia para snapshots del pipeline A2. El
+ * `patch` es un `DraftPatch` armado por el caller a partir del snapshot
+ * aplicado del ítem; el adaptador es un puente delgado que no conoce la
+ * forma del snapshot ni la naturaleza del ítem.
+ */
+export interface EnqueueGeneratedSnapshotInput {
+  patch: DraftPatch;
+  identity: GeneratedSnapshotIdentity;
+}
+
 export interface UseCuentacuentosDraftReturn {
   hasDraft: boolean;
   draft: CuentacuentosDraftFull | null;
@@ -1081,6 +1105,30 @@ export interface UseCuentacuentosDraftReturn {
    * ejemplo, un reemplazo estructural de escenas sin cambiar el story id).
    */
   bumpDraftStoryRevision: () => void;
+  /**
+   * Adaptador de persistencia para snapshots generados por el pipeline A2.
+   *
+   * Semántica:
+   *  - Ruta única de persistencia: encola vía `enqueueDraftWrite`. Nunca llama
+   *    a `saveDraftNow` directamente.
+   *  - Guardas pre-enqueue: rechaza (no-op) si `storyId`/`epoch` no coinciden
+   *    con la identidad viva del hook, o si `generatedRevision` no es
+   *    estrictamente mayor a la última revisión aplicada para el mismo `itemId`.
+   *  - La revisión por ítem se reserva SÍNCRONAMENTE al encolar, así una
+   *    revisión menor encolada después de una mayor queda no-op sin importar
+   *    en qué orden se resuelva la cola.
+   *  - Independiente del `runToken` del runner: no se lee ni se consulta.
+   *  - Éxito: la promesa se resuelve DESPUÉS de que la escritura de Supabase
+   *    completó (I/O real), no antes. El runner marcará `done` sólo entonces.
+   *  - Fallo: propaga el rechazo del `enqueueDraftWrite` para que el runner
+   *    lo observe como `save-failed`.
+   *  - No-op (identidad stale): resuelve `undefined` sin encolar ni tocar la
+   *    reserva por ítem. El runner marcará `done` — la escritura relevante
+   *    llegará (o llegó) por otra vía y sobreescribirá.
+   */
+  enqueueGeneratedSnapshot: (
+    input: EnqueueGeneratedSnapshotInput
+  ) => Promise<void>;
 }
 
 /**
@@ -1119,6 +1167,13 @@ export function useCuentacuentosDraft({
   const epochRef = useRef(0);
   const activeStoryIdRef = useRef<string | null>(null);
   const revisionRef = useRef(0);
+
+  // Revisión por ítem reservada por `enqueueGeneratedSnapshot`. Estrictamente
+  // creciente por `itemId`: una revisión menor a la reservada queda no-op sin
+  // importar el orden de resolución de la cola. Se resetea en toda transición
+  // de lifecycle (delete/replace story/aceptar recovery) porque los ítems del
+  // pipeline se re-crean con contadores frescos en cada corrida.
+  const perItemGeneratedRevisionsRef = useRef<Map<string, number>>(new Map());
 
   // Mantener refs sincronizadas con el estado
   useEffect(() => {
@@ -1339,6 +1394,40 @@ export function useCuentacuentosDraft({
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
   }, [performDraftWrite]);
 
+  // Adaptador A2: puente entre `AppliedIdentity` del runner y la cola
+  // serializada del draft. Guarda pre-enqueue + reserva de revisión por ítem;
+  // no toca `saveDraftNow` directamente ni consulta el `runToken`.
+  const enqueueGeneratedSnapshot = useCallback(
+    (input: EnqueueGeneratedSnapshotInput): Promise<void> => {
+      const { patch, identity } = input;
+
+      // Guardas pre-enqueue (síncronas):
+      //  1) storyId + epoch deben coincidir con la identidad viva del hook.
+      //  2) generatedRevision debe ser estrictamente mayor a la última
+      //     reservada para este itemId. Una revisión igual o menor es stale.
+      if (identity.storyId !== activeStoryIdRef.current) return Promise.resolve();
+      if (identity.epoch !== epochRef.current) return Promise.resolve();
+      const currentReserved =
+        perItemGeneratedRevisionsRef.current.get(identity.itemId) ?? 0;
+      if (identity.generatedRevision <= currentReserved) return Promise.resolve();
+
+      // Reservar la nueva revisión ANTES de encolar. Esto ordena estrictamente
+      // las escrituras por ítem incluso si el caller reenqueue una rev menor
+      // fuera de orden: la reserva ya está en la mayor y la menor será no-op.
+      perItemGeneratedRevisionsRef.current.set(
+        identity.itemId,
+        identity.generatedRevision
+      );
+
+      // La cola serializada (`enqueueDraftWrite`) re-chequea storyId/epoch al
+      // commit boundary. Para la revisión por ítem, la reserva síncrona basta:
+      // una revisión menor no puede colarse por delante. Propagamos éxito/fallo
+      // al runner: resolver = save exitoso (I/O completado), throw = save-failed.
+      return enqueueDraftWrite(patch).then(() => undefined);
+    },
+    [enqueueDraftWrite]
+  );
+
   // ---------------------------------------------------------------------------
   // Identidad lógica del draft — mutadores expuestos al editor
   // ---------------------------------------------------------------------------
@@ -1356,23 +1445,33 @@ export function useCuentacuentosDraft({
     }
   }, []);
 
+  // Limpia las reservas de generatedRevision por ítem. Debe llamarse en toda
+  // transición de lifecycle (delete, replace story, aceptar recovery) porque
+  // los ítems del pipeline se re-crean con contadores frescos en cada corrida.
+  const resetGeneratedRevisions = useCallback(() => {
+    perItemGeneratedRevisionsRef.current = new Map();
+  }, []);
+
   const bumpDraftEpoch = useCallback(() => {
     epochRef.current += 1;
     resetDebounce();
-  }, [resetDebounce]);
+    resetGeneratedRevisions();
+  }, [resetDebounce, resetGeneratedRevisions]);
 
   const setActiveDraftStoryId = useCallback((storyId: string | null) => {
     if (activeStoryIdRef.current !== storyId) {
       activeStoryIdRef.current = storyId;
       revisionRef.current = 0;
       resetDebounce();
+      resetGeneratedRevisions();
     }
-  }, [resetDebounce]);
+  }, [resetDebounce, resetGeneratedRevisions]);
 
   const bumpDraftStoryRevision = useCallback(() => {
     revisionRef.current += 1;
     resetDebounce();
-  }, [resetDebounce]);
+    resetGeneratedRevisions();
+  }, [resetDebounce, resetGeneratedRevisions]);
 
   // Cargar borrador manualmente. Carga = lifecycle: cualquier escritura en
   // vuelo debe descartar su commit, y el story activo pasa a ser el cargado.
@@ -1381,10 +1480,11 @@ export function useCuentacuentosDraft({
     const loaded = await loadDraftFromSupabase(userId, liturgyId);
     epochRef.current += 1;
     resetDebounce();
+    resetGeneratedRevisions();
     setActiveDraftStoryId(loaded?.story?.id ?? null);
     setDraft(loaded);
     return loaded;
-  }, [liturgyId, userId, setActiveDraftStoryId, resetDebounce]);
+  }, [liturgyId, userId, setActiveDraftStoryId, resetDebounce, resetGeneratedRevisions]);
 
   // Eliminar borrador. Lifecycle destructivo: cualquier escritura en vuelo
   // debe descartar su commit para no resucitar estado que el usuario borró.
@@ -1395,10 +1495,11 @@ export function useCuentacuentosDraft({
     activeStoryIdRef.current = null;
     revisionRef.current = 0;
     resetDebounce();
+    resetGeneratedRevisions();
     setDraft(null);
     setLastSavedAt(null);
     setShowRecoveryPrompt(false);
-  }, [liturgyId, userId, resetDebounce]);
+  }, [liturgyId, userId, resetDebounce, resetGeneratedRevisions]);
 
   // Eliminar todas las imágenes del cuento (Storage + DB draft)
   // Esto se usa cuando el usuario quiere eliminar completamente una historia
@@ -1468,6 +1569,7 @@ export function useCuentacuentosDraft({
       activeStoryIdRef.current = null;
       revisionRef.current = 0;
       resetDebounce();
+      resetGeneratedRevisions();
       setDraft(null);
       setLastSavedAt(null);
       setShowRecoveryPrompt(false);
@@ -1478,7 +1580,7 @@ export function useCuentacuentosDraft({
       console.error('[useCuentacuentosDraft] Error deleting story images:', err);
       return false;
     }
-  }, [resetDebounce]);
+  }, [resetDebounce, resetGeneratedRevisions]);
 
   // Aceptar recuperación. El story cargado pasa a ser el activo — cualquier
   // escritura en vuelo desde antes de aceptar quedará stale.
@@ -1486,9 +1588,10 @@ export function useCuentacuentosDraft({
     setShowRecoveryPrompt(false);
     epochRef.current += 1;
     resetDebounce();
+    resetGeneratedRevisions();
     setActiveDraftStoryId(draft?.story?.id ?? null);
     return draft;
-  }, [draft, setActiveDraftStoryId, resetDebounce]);
+  }, [draft, setActiveDraftStoryId, resetDebounce, resetGeneratedRevisions]);
 
   // Rechazar recuperación. Igual que delete: invalidar identidad.
   const declineRecovery = useCallback(() => {
@@ -1499,9 +1602,10 @@ export function useCuentacuentosDraft({
     activeStoryIdRef.current = null;
     revisionRef.current = 0;
     resetDebounce();
+    resetGeneratedRevisions();
     setDraft(null);
     setShowRecoveryPrompt(false);
-  }, [liturgyId, userId, resetDebounce]);
+  }, [liturgyId, userId, resetDebounce, resetGeneratedRevisions]);
 
   return {
     hasDraft: draft !== null && draft.currentStep !== 'config',
@@ -1520,5 +1624,6 @@ export function useCuentacuentosDraft({
     bumpDraftEpoch,
     setActiveDraftStoryId,
     bumpDraftStoryRevision,
+    enqueueGeneratedSnapshot,
   };
 }
