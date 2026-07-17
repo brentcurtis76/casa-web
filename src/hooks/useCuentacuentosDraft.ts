@@ -59,6 +59,107 @@ export interface DraftSaveResult {
   uploadedUrls: DraftUploadedUrls | null;
 }
 
+/**
+ * Diferencia semántica ("patch") aplicable a un snapshot de draft.
+ *
+ * Semántica de own-key presence:
+ * - Una clave AUSENTE preserva el valor del snapshot (no se toca).
+ * - Una clave PRESENTE sobreescribe, incluso si su valor es `[]`, `{}`,
+ *   `false` o `null`. Nunca se infiere intención de vaciado a partir de
+ *   truthiness o `length`.
+ *
+ * Los campos de identidad (`liturgyId`) y metadatos autogenerados
+ * (`savedAt`, `version`) no forman parte del patch: son inyectados al
+ * normalizar el snapshot final.
+ */
+export type DraftPatch = Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>;
+
+/**
+ * Merge puro por presencia de clave propia. Nunca inspecciona el valor.
+ * Ver docstring de `DraftPatch` para la semántica.
+ */
+export function mergePatch(
+  snapshot: CuentacuentosDraftFull,
+  patch: DraftPatch
+): CuentacuentosDraftFull {
+  const result: CuentacuentosDraftFull = { ...snapshot };
+  for (const key of Object.keys(patch)) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      (result as Record<string, unknown>)[key] = (patch as Record<string, unknown>)[key];
+    }
+  }
+  return result;
+}
+
+/** Categorías de imágenes cuya subida se dispara sólo si el patch las toca. */
+interface UploadCategories {
+  characterSheets: boolean;
+  sceneImages: boolean;
+  cover: boolean;
+  end: boolean;
+  props: boolean;
+}
+
+function categoriesFromPatch(patch: DraftPatch): UploadCategories {
+  const has = (k: keyof DraftPatch) => Object.prototype.hasOwnProperty.call(patch, k);
+  return {
+    characterSheets: has('characterSheetOptions'),
+    sceneImages: has('sceneImageOptions'),
+    cover: has('coverOptions'),
+    end: has('endOptions'),
+    // La referencia de props vive tanto en `propReferenceImages` como en
+    // `story.props[].referenceImages`; ambos cuentan como intención de tocar props.
+    props: has('propReferenceImages') || has('story'),
+  };
+}
+
+function defaultDraft(liturgyId: string): CuentacuentosDraftFull {
+  return {
+    liturgyId,
+    currentStep: 'config',
+    config: {
+      location: '',
+      customLocation: '',
+      characters: '',
+      style: 'reflexivo',
+      illustrationStyle: 'ghibli',
+      additionalNotes: '',
+    },
+    story: null,
+    characterSheetOptions: {},
+    selectedCharacterSheets: {},
+    sceneImageOptions: {},
+    selectedSceneImages: {},
+    coverOptions: [],
+    selectedCover: null,
+    endOptions: [],
+    selectedEnd: null,
+    sceneReferenceModes: {},
+    propReferenceImages: {},
+    savedAt: '',
+    version: 1,
+  };
+}
+
+/**
+ * Normaliza un snapshot completo aplicando el patch sobre el borrador vivo
+ * (o los defaults si no hay borrador). Inyecta identidad y metadatos.
+ */
+function normalizeSnapshot(
+  currentDraft: CuentacuentosDraftFull | null,
+  patch: DraftPatch,
+  liturgyId: string
+): CuentacuentosDraftFull {
+  const baseline = currentDraft ?? defaultDraft(liturgyId);
+  const merged = mergePatch(baseline, patch);
+  return {
+    ...merged,
+    liturgyId,
+    savedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+
 // Cache de paths ya verificados/subidos en esta sesión: evita repetir un HEAD
 // request por archivo en cada guardado (era O(N²) al acumular escenas).
 const verifiedPaths = new Set<string>();
@@ -308,7 +409,8 @@ async function downloadImage(path: string): Promise<string | null> {
 async function saveImagesToStorage(
   userId: string,
   liturgyId: string,
-  draft: CuentacuentosDraftFull
+  draft: CuentacuentosDraftFull,
+  categories: UploadCategories
 ): Promise<{
   characterSheetPaths: Record<string, string[]>;
   sceneImagePaths: Record<number, string[]>;
@@ -341,37 +443,45 @@ async function saveImagesToStorage(
     finalize.push(() => assign(slots.filter((p): p is string => !!p)));
   };
 
-  for (const [charId, options] of Object.entries(draft.characterSheetOptions || {})) {
+  if (categories.characterSheets) {
+    for (const [charId, options] of Object.entries(draft.characterSheetOptions || {})) {
+      queueGroup(
+        options,
+        (i, data) => uploadImage(userId, liturgyId, 'characters', charId, i, data),
+        (paths) => { characterSheetPaths[charId] = paths; }
+      );
+    }
+  }
+
+  if (categories.sceneImages) {
+    for (const [sceneNum, options] of Object.entries(draft.sceneImageOptions || {})) {
+      const num = Number(sceneNum);
+      queueGroup(
+        options,
+        (i, data) => uploadImage(userId, liturgyId, 'scenes', `scene${sceneNum}`, i, data),
+        (paths) => {
+          sceneImagePaths[num] = paths;
+          console.log(`[useCuentacuentosDraft] Scene ${sceneNum}: ${paths.length} paths saved`);
+        }
+      );
+    }
+  }
+
+  if (categories.cover) {
     queueGroup(
-      options,
-      (i, data) => uploadImage(userId, liturgyId, 'characters', charId, i, data),
-      (paths) => { characterSheetPaths[charId] = paths; }
+      draft.coverOptions || [],
+      (i, data) => uploadImage(userId, liturgyId, 'cover', 'cover', i, data),
+      (paths) => { coverPaths.push(...paths); }
     );
   }
 
-  for (const [sceneNum, options] of Object.entries(draft.sceneImageOptions || {})) {
-    const num = Number(sceneNum);
+  if (categories.end) {
     queueGroup(
-      options,
-      (i, data) => uploadImage(userId, liturgyId, 'scenes', `scene${sceneNum}`, i, data),
-      (paths) => {
-        sceneImagePaths[num] = paths;
-        console.log(`[useCuentacuentosDraft] Scene ${sceneNum}: ${paths.length} paths saved`);
-      }
+      draft.endOptions || [],
+      (i, data) => uploadImage(userId, liturgyId, 'end', 'end', i, data),
+      (paths) => { endPaths.push(...paths); }
     );
   }
-
-  queueGroup(
-    draft.coverOptions || [],
-    (i, data) => uploadImage(userId, liturgyId, 'cover', 'cover', i, data),
-    (paths) => { coverPaths.push(...paths); }
-  );
-
-  queueGroup(
-    draft.endOptions || [],
-    (i, data) => uploadImage(userId, liturgyId, 'end', 'end', i, data),
-    (paths) => { endPaths.push(...paths); }
-  );
 
   // Subir imágenes de referencia de props
   // Fuente primaria: draft.story.props[].referenceImages — es el estado VIVO que
@@ -379,26 +489,28 @@ async function saveImagesToStorage(
   // Fuente secundaria: draft.propReferenceImages (poblado al cargar el draft);
   // si tuviera precedencia, taparía los cambios post-recarga y la referencia
   // de un prop quedaría congelada para siempre en su primer valor persistido.
-  const propSources: Record<string, string[]> = {};
-  if (draft.story?.props) {
-    for (const prop of draft.story.props) {
-      if (prop?.id && Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
-        propSources[prop.id] = prop.referenceImages;
+  if (categories.props) {
+    const propSources: Record<string, string[]> = {};
+    if (draft.story?.props) {
+      for (const prop of draft.story.props) {
+        if (prop?.id && Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
+          propSources[prop.id] = prop.referenceImages;
+        }
       }
     }
-  }
-  for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
-    if (!propSources[propId] && Array.isArray(images) && images.length > 0) {
-      propSources[propId] = images;
+    for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
+      if (!propSources[propId] && Array.isArray(images) && images.length > 0) {
+        propSources[propId] = images;
+      }
     }
-  }
 
-  for (const [propId, images] of Object.entries(propSources)) {
-    queueGroup(
-      images,
-      (i, data) => uploadImage(userId, liturgyId, 'props', propId, i, data),
-      (paths) => { propImagePaths[propId] = paths; }
-    );
+    for (const [propId, images] of Object.entries(propSources)) {
+      queueGroup(
+        images,
+        (i, data) => uploadImage(userId, liturgyId, 'props', propId, i, data),
+        (paths) => { propImagePaths[propId] = paths; }
+      );
+    }
   }
 
   await runWithConcurrency(jobs, 6);
@@ -485,14 +597,33 @@ async function loadImagesFromStorage(
   return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions, propReferenceImages };
 }
 
+export interface SaveDraftInput {
+  userId: string;
+  liturgyId: string;
+  snapshot: CuentacuentosDraftFull;
+  /** Patch original: sólo las claves aquí presentes son escritas en persistencia. */
+  patch: DraftPatch;
+}
+
+export interface SaveDraftSuccess {
+  uploadedUrls: DraftUploadedUrls;
+}
+
 /**
- * Guarda un borrador en Supabase
+ * Guarda un borrador en Supabase.
+ *
+ * Semántica de escritura: cada categoría de imágenes (character sheets,
+ * scenes, cover, end, props) y `sceneReferenceModes` se persisten sólo si
+ * el `patch` tiene su clave presente. Colecciones vacías presentes limpian
+ * la persistencia; claves ausentes preservan lo existente en DB.
+ *
+ * Lanza (`throw`) si la persistencia falla.
  */
-async function saveDraftToSupabase(
-  userId: string,
-  liturgyId: string,
-  draft: CuentacuentosDraftFull
-): Promise<DraftSaveResult> {
+async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSuccess> {
+  const { userId, liturgyId, snapshot: draft, patch } = input;
+  const has = (k: keyof DraftPatch) => Object.prototype.hasOwnProperty.call(patch, k);
+  const categories = categoriesFromPatch(patch);
+  const writeSceneModes = has('sceneReferenceModes');
   try {
     console.log(`[useCuentacuentosDraft] Saving draft to Supabase, step: ${draft.currentStep}`);
     console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.sceneImageOptions || {}).length} scene image sets`);
@@ -522,11 +653,12 @@ async function saveDraftToSupabase(
       sceneReferenceModes: {},
     };
 
-    // Subir SOLO las imágenes nuevas (las que están en memoria)
-    const newImagePaths = await saveImagesToStorage(userId, liturgyId, draft);
+    // Subir sólo las categorías que el patch tocó (patch presence).
+    const newImagePaths = await saveImagesToStorage(userId, liturgyId, draft, categories);
 
-    // CRITICAL FIX: Safer merge logic that NEVER loses existing valid paths
-    // Only overwrite if we have valid new paths (non-null, non-empty strings)
+    // Semántica de escritura por own-key presence del patch: si la clave está
+    // presente, la escritura reemplaza (incluso a vacío); si está ausente, se
+    // preserva lo existente en DB. Nunca se decide por truthiness ni length.
     const mergedPaths: {
       characterSheetPaths: Record<string, string[]>;
       sceneImagePaths: Record<string | number, string[]>;
@@ -535,99 +667,70 @@ async function saveDraftToSupabase(
       propImagePaths: Record<string, string[]>;
       sceneReferenceModes: Record<number, 'style' | 'pov'>;
     } = {
-      characterSheetPaths: { ...existingPaths.characterSheetPaths },
-      sceneImagePaths: { ...existingPaths.sceneImagePaths },
-      coverPaths: existingPaths.coverPaths || [],
-      endPaths: existingPaths.endPaths || [],
-      propImagePaths: { ...(existingPaths.propImagePaths || {}) } as Record<string, string[]>,
-      // Los modos (style/pov) se persisten aquí; el draft en memoria es la fuente de verdad
-      sceneReferenceModes: { ...(draft.sceneReferenceModes || {}) },
+      characterSheetPaths: categories.characterSheets
+        ? { ...newImagePaths.characterSheetPaths }
+        : { ...(existingPaths.characterSheetPaths || {}) },
+      sceneImagePaths: categories.sceneImages
+        ? { ...newImagePaths.sceneImagePaths }
+        : { ...(existingPaths.sceneImagePaths || {}) },
+      coverPaths: categories.cover
+        ? [...newImagePaths.coverPaths]
+        : (existingPaths.coverPaths || []),
+      endPaths: categories.end
+        ? [...newImagePaths.endPaths]
+        : (existingPaths.endPaths || []),
+      propImagePaths: categories.props
+        ? { ...newImagePaths.propImagePaths }
+        : { ...(existingPaths.propImagePaths || {}) },
+      // sceneReferenceModes se persiste sólo si el patch lo toca; en caso
+      // contrario preservamos lo que ya hay en DB.
+      sceneReferenceModes: writeSceneModes
+        ? { ...(draft.sceneReferenceModes || {}) }
+        : { ...(existingPaths.sceneReferenceModes || {}) },
     };
 
-    // Merge character paths - only overwrite if we have valid new paths
-    for (const [key, paths] of Object.entries(newImagePaths.characterSheetPaths)) {
-      const validPaths = (paths || []).filter(p => p != null && p !== '');
-      if (validPaths.length > 0) {
-        mergedPaths.characterSheetPaths[key] = validPaths;
-        console.log(`[useCuentacuentosDraft] Updating character ${key} with ${validPaths.length} valid paths`);
-      }
-      // If no valid paths, KEEP existing (don't overwrite with empty)
-    }
-
-    // Merge scene paths - only overwrite if we have valid new paths
-    for (const [key, paths] of Object.entries(newImagePaths.sceneImagePaths)) {
-      const validPaths = (paths || []).filter(p => p != null && p !== '');
-      if (validPaths.length > 0) {
-        (mergedPaths.sceneImagePaths as Record<string, string[]>)[key] = validPaths;
-        console.log(`[useCuentacuentosDraft] Updating scene ${key} with ${validPaths.length} valid paths`);
-      }
-      // If no valid paths, KEEP existing (don't overwrite with empty)
-    }
-
-    // Cover and end paths - only replace if we have valid new ones
-    const validCoverPaths = (newImagePaths.coverPaths || []).filter(p => p != null && p !== '');
-    if (validCoverPaths.length > 0) {
-      mergedPaths.coverPaths = validCoverPaths;
-      console.log(`[useCuentacuentosDraft] Updating cover with ${validCoverPaths.length} valid paths`);
-    }
-
-    const validEndPaths = (newImagePaths.endPaths || []).filter(p => p != null && p !== '');
-    if (validEndPaths.length > 0) {
-      mergedPaths.endPaths = validEndPaths;
-      console.log(`[useCuentacuentosDraft] Updating end with ${validEndPaths.length} valid paths`);
-    }
-
-    // Merge prop image paths - only overwrite if we have valid new paths
-    for (const [key, paths] of Object.entries(newImagePaths.propImagePaths || {})) {
-      const validPaths = (paths || []).filter(p => p != null && p !== '');
-      if (validPaths.length > 0) {
-        mergedPaths.propImagePaths[key] = validPaths;
-        console.log(`[useCuentacuentosDraft] Updating prop ${key} with ${validPaths.length} valid paths`);
-      }
-      // If no valid paths, KEEP existing (don't overwrite with empty)
-    }
-
-    // Purge stale propImagePaths: any key not present in the current draft.story.props
-    // is an orphan (prop was removed). Strip the key and best-effort delete its files.
-    const currentPropIds = new Set<string>(
-      (draft.story?.props || [])
-        .map(p => p?.id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    );
-    const orphanedPropStoragePaths: string[] = [];
-    for (const key of Object.keys(mergedPaths.propImagePaths)) {
-      if (!currentPropIds.has(key)) {
-        const paths = mergedPaths.propImagePaths[key] || [];
-        for (const p of paths) {
-          // Only plain storage paths are removable; skip full URLs and __FULLURL__ markers.
-          if (typeof p === 'string' && p.length > 0 && !p.startsWith('http') && !p.startsWith('__FULLURL__')) {
-            orphanedPropStoragePaths.push(p);
+    // Orphan purge: sólo cuando el patch tocó props (recalculó el conjunto
+    // de propImagePaths). Si el patch no tocó props, no removemos huérfanos
+    // porque no tenemos evidencia de que el usuario haya intentado limpiarlos.
+    if (categories.props) {
+      const currentPropIds = new Set<string>(
+        (draft.story?.props || [])
+          .map(p => p?.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      );
+      const orphanedPropStoragePaths: string[] = [];
+      for (const key of Object.keys(mergedPaths.propImagePaths)) {
+        if (!currentPropIds.has(key)) {
+          const paths = mergedPaths.propImagePaths[key] || [];
+          for (const p of paths) {
+            if (typeof p === 'string' && p.length > 0 && !p.startsWith('http') && !p.startsWith('__FULLURL__')) {
+              orphanedPropStoragePaths.push(p);
+            }
           }
+          delete mergedPaths.propImagePaths[key];
+          console.log(`[useCuentacuentosDraft] Purging orphaned propImagePaths key: ${key}`);
         }
-        delete mergedPaths.propImagePaths[key];
-        console.log(`[useCuentacuentosDraft] Purging orphaned propImagePaths key: ${key}`);
       }
-    }
 
-    if (orphanedPropStoragePaths.length > 0) {
-      try {
-        const { error: removeError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .remove(orphanedPropStoragePaths);
-        if (removeError) {
-          console.warn(
-            `[useCuentacuentosDraft] Best-effort orphan prop storage delete failed (${orphanedPropStoragePaths.length} files):`,
-            removeError
-          );
-        } else {
-          // Invalidar el cache de existencia: estos paths ya no existen
-          orphanedPropStoragePaths.forEach((p) => verifiedPaths.delete(p));
-          console.log(
-            `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
-          );
+      if (orphanedPropStoragePaths.length > 0) {
+        try {
+          const { error: removeError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .remove(orphanedPropStoragePaths);
+          if (removeError) {
+            console.warn(
+              `[useCuentacuentosDraft] Best-effort orphan prop storage delete failed (${orphanedPropStoragePaths.length} files):`,
+              removeError
+            );
+          } else {
+            orphanedPropStoragePaths.forEach((p) => verifiedPaths.delete(p));
+            console.log(
+              `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
+            );
+          }
+        } catch (err) {
+          console.warn('[useCuentacuentosDraft] Best-effort orphan prop storage delete threw:', err);
         }
-      } catch (err) {
-        console.warn('[useCuentacuentosDraft] Best-effort orphan prop storage delete threw:', err);
       }
     }
 
@@ -684,7 +787,7 @@ async function saveDraftToSupabase(
 
     if (error) {
       console.error('[useCuentacuentosDraft] Error saving draft:', error);
-      return { success: false, uploadedUrls: null };
+      throw new Error(`saveDraftToSupabase upsert failed: ${error.message ?? String(error)}`);
     }
 
     console.log(`[useCuentacuentosDraft] Draft saved successfully, total scene paths: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
@@ -705,11 +808,35 @@ async function saveDraftToSupabase(
       ),
     };
 
-    return { success: true, uploadedUrls };
+    return { uploadedUrls };
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error saving draft:', err);
-    return { success: false, uploadedUrls: null };
+    throw err;
   }
+}
+
+/**
+ * Primitivo de persistencia (sin React). Normaliza el snapshot final y lo
+ * persiste vía `saveDraftToSupabase`. Rechaza (`throw`) si la persistencia
+ * falla. Devuelve el snapshot normalizado y las URLs subidas.
+ *
+ * No toca React state, no muta refs y no expone setters: es una función
+ * pura de I/O sobre Supabase/Storage, testable sin renderizar el hook.
+ */
+export async function persistDraftNow(input: {
+  userId: string;
+  liturgyId: string;
+  currentDraft: CuentacuentosDraftFull | null;
+  patch: DraftPatch;
+}): Promise<{ snapshot: CuentacuentosDraftFull; uploadedUrls: DraftUploadedUrls }> {
+  const snapshot = normalizeSnapshot(input.currentDraft, input.patch, input.liturgyId);
+  const { uploadedUrls } = await saveDraftToSupabase({
+    userId: input.userId,
+    liturgyId: input.liturgyId,
+    snapshot,
+    patch: input.patch,
+  });
+  return { snapshot, uploadedUrls };
 }
 
 /**
@@ -961,8 +1088,7 @@ export function useCuentacuentosDraft({
 
   // Guardar borrador con debounce - usa refs para evitar ciclos de dependencia
   // IMPORTANTE: Esta función tiene identidad estable (no cambia entre renders)
-  const saveDraft = useCallback((data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => {
-    // Usar refs para acceder a valores actuales sin crear dependencias
+  const saveDraft = useCallback((data: DraftPatch) => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
@@ -973,143 +1099,72 @@ export function useCuentacuentosDraft({
       return;
     }
 
-    // Acumular datos pendientes
-    pendingDataRef.current = { ...pendingDataRef.current, ...data };
+    // Acumular datos pendientes en el patch pendiente (own-key merge).
+    pendingDataRef.current = { ...(pendingDataRef.current || {}), ...data };
 
-    // Cancelar timeout anterior
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
-    // Guardar después de un breve delay (debounce)
     autoSaveTimeoutRef.current = setTimeout(async () => {
-      if (pendingDataRef.current && !isSavingRef.current) {
-        isSavingRef.current = true;
-        setIsSaving(true);
-
-        // Usar draftRef.current para obtener el draft actual sin crear dependencia
-        const currentDraft = draftRef.current;
-
-        const fullDraft: CuentacuentosDraftFull = {
+      if (!pendingDataRef.current || isSavingRef.current) return;
+      const patch = pendingDataRef.current;
+      pendingDataRef.current = null;
+      isSavingRef.current = true;
+      setIsSaving(true);
+      try {
+        const { snapshot, uploadedUrls } = await persistDraftNow({
+          userId: currentUserId,
           liturgyId: currentLiturgyId,
-          currentStep: 'config',
-          config: {
-            location: '',
-            customLocation: '',
-            characters: '',
-            style: 'reflexivo',
-            illustrationStyle: 'ghibli',
-            additionalNotes: '',
-          },
-          story: null,
-          characterSheetOptions: {},
-          selectedCharacterSheets: {},
-          sceneImageOptions: {},
-          selectedSceneImages: {},
-          coverOptions: [],
-          selectedCover: null,
-          endOptions: [],
-          selectedEnd: null,
-          sceneReferenceModes: {},
-          propReferenceImages: {},
-          ...currentDraft,
-          ...pendingDataRef.current,
-          savedAt: new Date().toISOString(),
-          version: 1,
-        };
-
-        try {
-          console.log(`[useCuentacuentosDraft] Starting saveDraftToSupabase...`);
-          const { success, uploadedUrls } = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
-          console.log(`[useCuentacuentosDraft] saveDraftToSupabase returned: ${success}`);
-          if (success) {
-            setDraft(applyUploadedUrlsToDraft(fullDraft, uploadedUrls));
-            setLastSavedAt(fullDraft.savedAt);
-          }
-        } catch (err) {
-          console.error('[useCuentacuentosDraft] Failed to save draft:', err);
-        } finally {
-          isSavingRef.current = false;
-          setIsSaving(false);
-          pendingDataRef.current = null;
-        }
+          currentDraft: draftRef.current,
+          patch,
+        });
+        setDraft(applyUploadedUrlsToDraft(snapshot, uploadedUrls));
+        setLastSavedAt(snapshot.savedAt);
+      } catch (err) {
+        console.error('[useCuentacuentosDraft] Failed to save draft:', err);
+      } finally {
+        isSavingRef.current = false;
+        setIsSaving(false);
       }
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
-  }, []); // Sin dependencias - usa refs para valores actuales
+  }, []);
 
-  // Guardar borrador INMEDIATAMENTE sin debounce - usar cuando sea crítico guardar (ej: después de generar imágenes)
-  const saveDraftNow = useCallback(async (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>): Promise<DraftSaveResult> => {
+  // Wrapper temporal (compatibilidad hasta Subtask 2): guarda INMEDIATO y
+  // aplica state updates. La primitiva `persistDraftNow` (top-level) es la
+  // API canónica de persistencia — no toca React state ni refs.
+  const saveDraftNow = useCallback(async (data: DraftPatch): Promise<DraftSaveResult> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
-    const currentDraft = draftRef.current;
 
-    console.log(`[useCuentacuentosDraft] saveDraftNow called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}`);
+    console.log(`[useCuentacuentosDraft] saveDraftNow (wrapper) called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}`);
 
     if (!currentUserId) {
       console.warn('[useCuentacuentosDraft] saveDraftNow: No userId available, skipping save');
       return { success: false, uploadedUrls: null };
     }
 
-    // Cancelar cualquier debounce pendiente
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
       autoSaveTimeoutRef.current = null;
     }
-
-    if (isSavingRef.current) {
-      console.log('[useCuentacuentosDraft] saveDraftNow: Already saving, waiting...');
-      // Esperar a que termine el guardado actual
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    isSavingRef.current = true;
     setIsSaving(true);
-
-    const fullDraft: CuentacuentosDraftFull = {
-      liturgyId: currentLiturgyId,
-      currentStep: 'config',
-      config: {
-        location: '',
-        customLocation: '',
-        characters: '',
-        style: 'reflexivo',
-        illustrationStyle: 'ghibli',
-        additionalNotes: '',
-      },
-      story: null,
-      characterSheetOptions: {},
-      selectedCharacterSheets: {},
-      sceneImageOptions: {},
-      selectedSceneImages: {},
-      coverOptions: [],
-      selectedCover: null,
-      endOptions: [],
-      selectedEnd: null,
-      sceneReferenceModes: {},
-      propReferenceImages: {},
-      ...currentDraft,
-      ...data,
-      savedAt: new Date().toISOString(),
-      version: 1,
-    };
-
     try {
-      console.log(`[useCuentacuentosDraft] saveDraftNow: Starting immediate save...`);
-      const result = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
-      console.log(`[useCuentacuentosDraft] saveDraftNow: Save completed, success: ${result.success}`);
-
-      if (result.success) {
-        setDraft(applyUploadedUrlsToDraft(fullDraft, result.uploadedUrls));
-        setLastSavedAt(fullDraft.savedAt);
-      }
-      return result;
+      const { snapshot, uploadedUrls } = await persistDraftNow({
+        userId: currentUserId,
+        liturgyId: currentLiturgyId,
+        currentDraft: draftRef.current,
+        patch: data,
+      });
+      setDraft(applyUploadedUrlsToDraft(snapshot, uploadedUrls));
+      setLastSavedAt(snapshot.savedAt);
+      pendingDataRef.current = null;
+      return { success: true, uploadedUrls };
     } catch (err) {
       console.error('[useCuentacuentosDraft] saveDraftNow: Failed to save draft:', err);
       return { success: false, uploadedUrls: null };
     } finally {
-      isSavingRef.current = false;
       setIsSaving(false);
-      pendingDataRef.current = null;
     }
   }, []);
 
