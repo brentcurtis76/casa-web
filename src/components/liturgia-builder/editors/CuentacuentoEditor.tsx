@@ -143,28 +143,6 @@ async function extractInvokeError(fnError: unknown): Promise<Error> {
   return fnError instanceof Error ? fnError : new Error(String(fnError));
 }
 
-/**
- * Reemplaza opciones base64 en memoria por las URLs públicas devueltas por el
- * guardado del draft. Solo intercambia una key cuando la cantidad de URLs
- * coincide con la cantidad de opciones (mismo orden garantizado por el hook);
- * si algún upload falló se conserva el base64 para no perder candidatas.
- */
-function swapOptionsWithUploadedUrls<K extends string | number>(
-  current: Record<K, string[]>,
-  uploaded: Record<K, string[]>
-): Record<K, string[]> {
-  let changed = false;
-  const next = { ...current };
-  for (const [key, urls] of Object.entries(uploaded) as Array<[K, string[]]>) {
-    const options = next[key];
-    if (Array.isArray(options) && Array.isArray(urls) && urls.length > 0 && urls.length === options.length) {
-      next[key] = urls;
-      changed = true;
-    }
-  }
-  return changed ? next : current;
-}
-
 // Pasos del flujo de creación
 type CreationStep =
   | 'config'           // Configurar lugar, personajes, estilo
@@ -620,6 +598,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const selectedSceneImagesRef = useRef<Record<number, number>>({});
   const sceneReferenceModeRef = useRef<Record<number, 'style' | 'pov'>>({});
   const propSheetOptionsRef = useRef<Record<string, string[]>>({});
+  // Cover/end refs — refine reads latest slot state during apply so a click
+  // right after a generate replaces the correct slot without closure staleness.
+  const coverOptionsRef = useRef<string[]>([]);
+  const selectedCoverRef = useRef<number | null>(null);
+  const endOptionsRef = useRef<string[]>([]);
+  const selectedEndRef = useRef<number | null>(null);
   const currentStepRef = useRef<CreationStep>(currentStep);
   // Prompts editados: los closures de tareas del pipeline (que retryFailed
   // re-ejecuta más tarde) leen SIEMPRE el prompt vigente, no el del momento
@@ -636,6 +620,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   useEffect(() => { selectedSceneImagesRef.current = selectedSceneImages; }, [selectedSceneImages]);
   useEffect(() => { sceneReferenceModeRef.current = sceneReferenceMode; }, [sceneReferenceMode]);
   useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
+  useEffect(() => { coverOptionsRef.current = coverOptions; }, [coverOptions]);
+  useEffect(() => { selectedCoverRef.current = selectedCover; }, [selectedCover]);
+  useEffect(() => { endOptionsRef.current = endOptions; }, [endOptions]);
+  useEffect(() => { selectedEndRef.current = selectedEnd; }, [selectedEnd]);
 
   // Id del cuento vigente: las tareas en vuelo lo comparan antes de aplicar
   // resultados, para que un reset/regeneración no reciba imágenes huérfanas.
@@ -2332,10 +2320,88 @@ Instrucciones críticas:
   }, [currentStep, story, runCharacterSheetBatch, runSceneBatch, runCoverEndBatch]);
 
   // ===== Phase 7: refine handlers (character, scene, cover, end) =====
-  // Each refine mirrors its generate counterpart's request body and adds
-  // `refine: { sourceImage, feedback }`. On success the currently selected
-  // option in the relevant array is replaced in place; the selection index
-  // does not move. Cover/end refine never auto-fires sibling derivations.
+  // Each refine builds a PipelineItemTask with the SAME itemId as its generate
+  // counterpart (`sheet-${id}`, `scene-${n}`, `cover`, `end`). Sharing itemIds
+  // makes the runner's monotonic `generatedRevision` guard order refine/generate
+  // writes for the same asset: a stale invoke result cannot overwrite a newer
+  // revision. The request body preserves each counterpart's shape and only adds
+  // `refine: { sourceImage, feedback }` — no edge-function contract change.
+  // On successful refine the currently selected option is replaced in place;
+  // the selection index does not move and cover/end never auto-fire sibling
+  // derivations.
+
+  // Builder: refine character sheet
+  const buildRefineCharacterSheetTask = useCallback((
+    character: StoryCharacter,
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+    const visualDescription =
+      editingCharacterPromptRef.current[character.id] ?? character.visualDescription;
+    const capturedStyle = story.illustrationStyle;
+    const capturedName = character.name;
+    const capturedDesc = character.description;
+
+    return {
+      id: `sheet-${character.id}`,
+      kind: 'sheet',
+      label: character.name,
+      provider: async () => {
+        const body: GenerateSceneImagesCharacterRequest = {
+          type: 'character',
+          styleId: capturedStyle,
+          character: {
+            name: capturedName,
+            description: capturedDesc,
+            visualDescription,
+          },
+          modelTier: 'pro',
+          refine: { sourceImage, feedback },
+        };
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+        if (fnError) throw await extractInvokeError(fnError);
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar el personaje');
+        }
+        return data as ProviderResult;
+      },
+      apply: (result, appliedIdentity: AppliedIdentity) => {
+        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+        const refined = result.images[0];
+        const existing = characterSheetOptionsRef.current[character.id] || [];
+        const currentSelected = selectedCharacterSheetsRef.current[character.id];
+        const slotIdx =
+          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
+            ? currentSelected
+            : existing.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return null;
+
+        const updated = existing.slice();
+        updated[slotIdx] = refined;
+        const newOptions = { ...characterSheetOptionsRef.current, [character.id]: updated };
+        const newSelection = { ...selectedCharacterSheetsRef.current, [character.id]: slotIdx };
+        characterSheetOptionsRef.current = newOptions;
+        selectedCharacterSheetsRef.current = newSelection;
+        setCharacterSheetOptions(newOptions);
+        setSelectedCharacterSheets(newSelection);
+
+        markPipelineResolved(`sheet-${character.id}`);
+
+        return {
+          currentStep: currentStepRef.current,
+          characterSheetOptions: newOptions,
+          selectedCharacterSheets: newSelection,
+        };
+      },
+      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
+        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+      },
+    };
+  }, [story, markPipelineResolved, enqueueGeneratedSnapshot]);
 
   const handleRefineCharacterSheet = useCallback(
     async (characterId: string, sourceImage: string, feedback: string) => {
@@ -2347,62 +2413,15 @@ Instrucciones críticas:
       setRefiningCharId(characterId);
 
       try {
-        const visualDescription =
-          editingCharacterPrompt[characterId] ?? character.visualDescription;
-
-        const body: GenerateSceneImagesCharacterRequest = {
-          type: 'character',
-          styleId: story.illustrationStyle,
-          character: {
-            name: character.name,
-            description: character.description,
-            visualDescription,
-          },
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar el personaje');
+        const task = buildRefineCharacterSheetTask(character, sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando personaje');
+          setCharRefineErrors((prev) => ({ ...prev, [characterId]: errMsg }));
         }
-
-        const refined: string = data.images[0];
-
-        const existing = characterSheetOptions[characterId] || [];
-        const currentSelected = selectedCharacterSheets[characterId];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newOptions = { ...characterSheetOptions, [characterId]: updated };
-        const newSelection = { ...selectedCharacterSheets, [characterId]: slotIdx };
-        setCharacterSheetOptions(newOptions);
-        setSelectedCharacterSheets(newSelection);
-
-        await enqueueDraftWrite(
-          {
-            currentStep,
-            characterSheetOptions: newOptions,
-            selectedCharacterSheets: newSelection,
-          },
-          {
-            onCommit: (uploadedUrls) => {
-              const uploadedSheetUrls = uploadedUrls.characterSheetUrls;
-              if (!uploadedSheetUrls) return;
-              setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
-            },
-          },
-        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando personaje';
@@ -2411,15 +2430,108 @@ Instrucciones críticas:
         setRefiningCharId(null);
       }
     },
-    [
-      story,
-      editingCharacterPrompt,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      currentStep,
-      enqueueDraftWrite,
-    ],
+    [story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
   );
+
+  // Builder: refine scene image
+  const buildRefineSceneTask = useCallback((
+    scene: StoryScene,
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    const excludedIds = sceneExcludedCharacters[scene.number] || [];
+    const includedIds = sceneIncludedCharacters[scene.number] || [];
+    const charactersWithReferences = getCharactersWithReferences(scene, excludedIds, includedIds)
+      .filter((c) => !c.isExcluded)
+      .map((c) => ({
+        name: c.name,
+        visualDescription: c.visualDescription,
+        referenceImage: c.referenceImage,
+      }));
+
+    const overridePrompt = editingScenePromptRef.current[scene.number];
+    const sceneData = overridePrompt
+      ? { text: scene.text, visualDescription: overridePrompt }
+      : { text: scene.text, visualDescription: scene.visualDescription };
+
+    const sceneRefImage = sceneReferenceImages[scene.number];
+    const propsForScene = getPropsForScene(scene);
+    const capturedStyle = story.illustrationStyle;
+    const capturedLocation = story.location;
+    const capturedRefMode = sceneReferenceModeRef.current[scene.number] ?? 'style';
+
+    return {
+      id: `scene-${scene.number}`,
+      kind: 'scene',
+      label: `Escena ${scene.number}`,
+      provider: async () => {
+        const body: GenerateSceneImagesSceneRequest = {
+          type: 'scene',
+          styleId: capturedStyle,
+          scene: sceneData,
+          characters: charactersWithReferences,
+          location: capturedLocation,
+          sceneReferenceImage: sceneRefImage,
+          sceneReferenceMode: capturedRefMode,
+          props: propsForScene.length > 0 ? propsForScene : undefined,
+          modelTier: 'pro',
+          refine: { sourceImage, feedback },
+        };
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'generate-scene-images',
+          { body },
+        );
+        if (fnError) throw await extractInvokeError(fnError);
+        if (!data?.success || !data.images?.length) {
+          throw new Error(data?.error || 'No se pudo refinar la escena');
+        }
+        return data as ProviderResult;
+      },
+      apply: (result, appliedIdentity: AppliedIdentity) => {
+        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+        const refined = result.images[0];
+        const existing = sceneImageOptionsRef.current[scene.number] || [];
+        const currentSelected = selectedSceneImagesRef.current[scene.number];
+        const slotIdx =
+          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
+            ? currentSelected
+            : existing.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return null;
+
+        const updated = existing.slice();
+        updated[slotIdx] = refined;
+        const newSceneOptions = { ...sceneImageOptionsRef.current, [scene.number]: updated };
+        const newSelection = { ...selectedSceneImagesRef.current, [scene.number]: slotIdx };
+        sceneImageOptionsRef.current = newSceneOptions;
+        selectedSceneImagesRef.current = newSelection;
+        setSceneImageOptions(newSceneOptions);
+        setSelectedSceneImages(newSelection);
+
+        markPipelineResolved(`scene-${scene.number}`);
+
+        return {
+          currentStep: currentStepRef.current,
+          sceneImageOptions: newSceneOptions,
+          selectedSceneImages: newSelection,
+          sceneReferenceModes: sceneReferenceModeRef.current,
+        };
+      },
+      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
+        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+      },
+    };
+  }, [
+    story,
+    sceneExcludedCharacters,
+    sceneIncludedCharacters,
+    sceneReferenceImages,
+    getCharactersWithReferences,
+    getPropsForScene,
+    markPipelineResolved,
+    enqueueGeneratedSnapshot,
+  ]);
 
   const handleRefineSceneImage = useCallback(
     async (sceneNumber: number, sourceImage: string, feedback: string) => {
@@ -2431,81 +2543,15 @@ Instrucciones críticas:
       setRefiningSceneNumber(sceneNumber);
 
       try {
-        const excludedIds = sceneExcludedCharacters[scene.number] || [];
-        const includedIds = sceneIncludedCharacters[scene.number] || [];
-        const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
-        const charactersWithReferences = charactersWithRefs
-          .filter((c) => !c.isExcluded)
-          .map((c) => ({
-            name: c.name,
-            visualDescription: c.visualDescription,
-            referenceImage: c.referenceImage,
-          }));
-
-        const overridePrompt = editingScenePrompt[scene.number];
-        const sceneData = overridePrompt
-          ? { text: scene.text, visualDescription: overridePrompt }
-          : { text: scene.text, visualDescription: scene.visualDescription };
-
-        const sceneRefImage = sceneReferenceImages[scene.number];
-        const propsForScene = getPropsForScene(scene);
-
-        const body: GenerateSceneImagesSceneRequest = {
-          type: 'scene',
-          styleId: story.illustrationStyle,
-          scene: sceneData,
-          characters: charactersWithReferences,
-          location: story.location,
-          sceneReferenceImage: sceneRefImage,
-          // Edge function accepts 'pov' at runtime; shared type drift bridged here.
-          sceneReferenceMode: sceneReferenceMode[scene.number] ?? 'style',
-          props: propsForScene.length > 0 ? propsForScene : undefined,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la escena');
+        const task = buildRefineSceneTask(scene, sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando imagen de escena');
+          setSceneRefineErrors((prev) => ({ ...prev, [sceneNumber]: errMsg }));
         }
-
-        const refined: string = data.images[0];
-
-        const existing = sceneImageOptions[sceneNumber] || [];
-        const currentSelected = selectedSceneImages[sceneNumber];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newSceneOptions = { ...sceneImageOptions, [sceneNumber]: updated };
-        const newSelection = { ...selectedSceneImages, [sceneNumber]: slotIdx };
-        setSceneImageOptions(newSceneOptions);
-        setSelectedSceneImages(newSelection);
-
-        await enqueueDraftWrite(
-          {
-            currentStep,
-            sceneImageOptions: newSceneOptions,
-            selectedSceneImages: newSelection,
-            sceneReferenceModes: sceneReferenceMode,
-          },
-          {
-            onCommit: (uploadedUrls) => {
-              const uploadedSceneUrls = uploadedUrls.sceneImageUrls;
-              if (!uploadedSceneUrls) return;
-              setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
-            },
-          },
-        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando imagen de escena';
@@ -2514,88 +2560,115 @@ Instrucciones críticas:
         setRefiningSceneNumber(null);
       }
     },
-    [
-      story,
-      sceneExcludedCharacters,
-      sceneIncludedCharacters,
-      sceneReferenceImages,
-      sceneReferenceMode,
-      editingScenePrompt,
-      getCharactersWithReferences,
-      getPropsForScene,
-      sceneImageOptions,
-      selectedSceneImages,
-      currentStep,
-      enqueueDraftWrite,
-    ],
+    [story, buildRefineSceneTask, buildRunIdentity, pipeline],
   );
 
-  const handleRefineCover = useCallback(
-    async (sourceImage: string, feedback: string) => {
-      if (!story) return;
+  // Builder: refine cover
+  const buildRefineCoverTask = useCallback((
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
 
-      setRefineCoverError(null);
-      setIsRefiningCover(true);
+    const excludedIds = coverExcludedCharacters;
+    const charactersWithReferences = story.characters
+      .filter((c) => !excludedIds.includes(c.id))
+      .map((c) => {
+        const options = characterSheetOptionsRef.current[c.id];
+        const selectedIdx = selectedCharacterSheetsRef.current[c.id];
+        const referenceImage =
+          options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
 
-      try {
-        const excludedIds = coverExcludedCharacters;
-        const charactersWithReferences = story.characters
-          .filter((c) => !excludedIds.includes(c.id))
-          .map((c) => {
-            const options = characterSheetOptions[c.id];
-            const selectedIdx = selectedCharacterSheets[c.id];
-            const referenceImage =
-              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-            return {
-              name: c.name,
-              visualDescription: c.visualDescription,
-              referenceImage,
-            };
-          });
+    const protagonist =
+      story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
+    const primaryProps = getPrimaryProps();
+    const capturedStyle = story.illustrationStyle;
+    const capturedTitle = story.title;
+    const capturedLocation = story.location;
+    const capturedCoverRef = coverReferenceImage || undefined;
+    const capturedCoverPrompt = editingCoverPrompt || undefined;
 
-        const protagonist =
-          story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
-        const primaryProps = getPrimaryProps();
-
+    return {
+      id: 'cover',
+      kind: 'cover',
+      label: 'Portada',
+      provider: async () => {
         const body: GenerateSceneImagesCoverRequest = {
           type: 'cover',
-          styleId: story.illustrationStyle,
-          title: story.title,
+          styleId: capturedStyle,
+          title: capturedTitle,
           protagonist: {
             visualDescription: protagonist?.visualDescription || 'A friendly child character',
           },
-          location: story.location,
+          location: capturedLocation,
           characters: charactersWithReferences,
-          sceneReferenceImage: coverReferenceImage || undefined,
+          sceneReferenceImage: capturedCoverRef,
           props: primaryProps.length > 0 ? primaryProps : undefined,
-          customPrompt: editingCoverPrompt || undefined,
+          customPrompt: capturedCoverPrompt,
           modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
-
         const { data, error: fnError } = await supabase.functions.invoke(
           'generate-scene-images',
           { body },
         );
-
         if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar la portada');
         }
-
-        const refined: string = data.images[0];
-
-        setCoverOptions((prev) => {
-          const slotIdx =
-            typeof selectedCover === 'number' && prev[selectedCover] === sourceImage
-              ? selectedCover
-              : prev.findIndex((opt) => opt === sourceImage);
-          if (slotIdx < 0) return prev;
-          const next = prev.slice();
-          next[slotIdx] = refined;
-          return next;
-        });
+        return data as ProviderResult;
+      },
+      apply: (result, appliedIdentity: AppliedIdentity) => {
+        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+        const refined = result.images[0];
+        const prev = coverOptionsRef.current;
+        const selected = selectedCoverRef.current;
+        const slotIdx =
+          typeof selected === 'number' && prev[selected] === sourceImage
+            ? selected
+            : prev.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return null;
+        const nextOptions = prev.slice();
+        nextOptions[slotIdx] = refined;
+        coverOptionsRef.current = nextOptions;
+        setCoverOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
+        return { coverOptions: nextOptions };
+      },
+      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
+        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+      },
+    };
+  }, [
+    story,
+    coverExcludedCharacters,
+    coverReferenceImage,
+    editingCoverPrompt,
+    getPrimaryProps,
+    enqueueGeneratedSnapshot,
+  ]);
+
+  const handleRefineCover = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      if (!story) return;
+      setRefineCoverError(null);
+      setIsRefiningCover(true);
+      try {
+        const task = buildRefineCoverTask(sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando portada');
+          setRefineCoverError(errMsg);
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando portada';
@@ -2604,74 +2677,103 @@ Instrucciones críticas:
         setIsRefiningCover(false);
       }
     },
-    [
-      story,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      coverExcludedCharacters,
-      coverReferenceImage,
-      editingCoverPrompt,
-      getPrimaryProps,
-      selectedCover,
-    ],
+    [story, buildRefineCoverTask, buildRunIdentity, pipeline],
   );
 
-  const handleRefineEnd = useCallback(
-    async (sourceImage: string, feedback: string) => {
-      if (!story) return;
+  // Builder: refine end image
+  const buildRefineEndTask = useCallback((
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
 
-      setRefineEndError(null);
-      setIsRefiningEnd(true);
+    const charactersWithReferences = story.characters
+      .filter((c) => endIncludedCharacters.includes(c.id))
+      .map((c) => {
+        const options = characterSheetOptionsRef.current[c.id];
+        const selectedIdx = selectedCharacterSheetsRef.current[c.id];
+        const referenceImage =
+          options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
 
-      try {
-        const charactersWithReferences = story.characters
-          .filter((c) => endIncludedCharacters.includes(c.id))
-          .map((c) => {
-            const options = characterSheetOptions[c.id];
-            const selectedIdx = selectedCharacterSheets[c.id];
-            const referenceImage =
-              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-            return {
-              name: c.name,
-              visualDescription: c.visualDescription,
-              referenceImage,
-            };
-          });
+    const capturedStyle = story.illustrationStyle;
+    const capturedEndRef = endReferenceImage || undefined;
+    const capturedEndPrompt = editingEndPrompt || undefined;
 
+    return {
+      id: 'end',
+      kind: 'end',
+      label: 'Imagen final',
+      provider: async () => {
         const body: GenerateSceneImagesEndRequest = {
           type: 'end',
-          styleId: story.illustrationStyle,
-          referenceImage: endReferenceImage || undefined,
+          styleId: capturedStyle,
+          referenceImage: capturedEndRef,
           characters:
             charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
-          customPrompt: editingEndPrompt || undefined,
+          customPrompt: capturedEndPrompt,
           modelTier: 'pro',
           refine: { sourceImage, feedback },
         };
-
         const { data, error: fnError } = await supabase.functions.invoke(
           'generate-scene-images',
           { body },
         );
-
         if (fnError) throw await extractInvokeError(fnError);
         if (!data?.success || !data.images?.length) {
           throw new Error(data?.error || 'No se pudo refinar la imagen final');
         }
-
-        const refined: string = data.images[0];
-
-        setEndOptions((prev) => {
-          const slotIdx =
-            typeof selectedEnd === 'number' && prev[selectedEnd] === sourceImage
-              ? selectedEnd
-              : prev.findIndex((opt) => opt === sourceImage);
-          if (slotIdx < 0) return prev;
-          const next = prev.slice();
-          next[slotIdx] = refined;
-          return next;
-        });
+        return data as ProviderResult;
+      },
+      apply: (result, appliedIdentity: AppliedIdentity) => {
+        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+        const refined = result.images[0];
+        const prev = endOptionsRef.current;
+        const selected = selectedEndRef.current;
+        const slotIdx =
+          typeof selected === 'number' && prev[selected] === sourceImage
+            ? selected
+            : prev.findIndex((opt) => opt === sourceImage);
+        if (slotIdx < 0) return null;
+        const nextOptions = prev.slice();
+        nextOptions[slotIdx] = refined;
+        endOptionsRef.current = nextOptions;
+        setEndOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
+        return { endOptions: nextOptions };
+      },
+      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
+        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+      },
+    };
+  }, [
+    story,
+    endReferenceImage,
+    editingEndPrompt,
+    endIncludedCharacters,
+    enqueueGeneratedSnapshot,
+  ]);
+
+  const handleRefineEnd = useCallback(
+    async (sourceImage: string, feedback: string) => {
+      if (!story) return;
+      setRefineEndError(null);
+      setIsRefiningEnd(true);
+      try {
+        const task = buildRefineEndTask(sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando imagen final');
+          setRefineEndError(errMsg);
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando imagen final';
@@ -2680,15 +2782,7 @@ Instrucciones críticas:
         setIsRefiningEnd(false);
       }
     },
-    [
-      story,
-      endReferenceImage,
-      editingEndPrompt,
-      endIncludedCharacters,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      selectedEnd,
-    ],
+    [story, buildRefineEndTask, buildRunIdentity, pipeline],
   );
 
   // Subir imagen de personaje manualmente

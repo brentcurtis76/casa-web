@@ -64,6 +64,8 @@ export interface UseStoryImagePipelineReturn {
   cancel: () => void;
   /** Estado de un item por id (undefined si no está en la corrida). */
   statusOf: (id: string) => PipelineItemStatus | undefined;
+  /** Mensaje de error live del item (undefined si no aplica). */
+  errorOf: (id: string) => string | undefined;
   /**
    * Marca un item como resuelto desde fuera del pipeline (p.ej. el usuario
    * regeneró manualmente una escena que había fallado): limpia el badge de
@@ -158,6 +160,10 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
   const cancel = useCallback(() => runner.cancel(), [runner]);
   const isBusy = useCallback(() => runner.isBusy(), [runner]);
   const statusOf = useCallback((id: string) => runner.statusOf(id), [runner]);
+  const errorOf = useCallback(
+    (id: string) => runner.getItems().find((v) => v.id === id)?.error,
+    [runner]
+  );
   const markResolved = useCallback((id: string) => runner.markResolved(id), [runner]);
   const getRunToken = useCallback(() => runner.getRunToken(), [runner]);
 
@@ -184,6 +190,7 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
     retryItem,
     cancel,
     statusOf,
+    errorOf,
     markResolved,
     getRunToken,
   };
