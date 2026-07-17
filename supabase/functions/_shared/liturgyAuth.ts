@@ -163,11 +163,11 @@ export function createSupabaseAuthzDeps(
       try {
         const { data, error } = await supabaseAdmin.auth.getUser(token);
         if (error) {
-          const status = (error as { status?: number }).status ?? 0;
-          if (status >= 500) {
-            return { kind: "backend_error", error };
+          const status = (error as { status?: number }).status;
+          if (status === 400 || status === 401 || status === 403) {
+            return { kind: "unauthenticated" };
           }
-          return { kind: "unauthenticated" };
+          return { kind: "backend_error", error };
         }
         const user = data?.user;
         if (!user) {
