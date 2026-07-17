@@ -1,12 +1,9 @@
 // Unit tests for the shared liturgy authorization guard.
 // Purely synthetic — no network, no Supabase client imports.
 
-// deno-lint-ignore-file no-import-prefix require-await
+// deno-lint-ignore-file require-await
 
-import {
-  assertEquals,
-  assertStrictEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertStrictEquals } from "@std/assert";
 
 import {
   type CheckPermissionOutcome,

@@ -793,6 +793,7 @@ export function createHandler(
       }
 
       jsonText = jsonText
+        // deno-lint-ignore no-control-regex -- intentional: strips ASCII control chars from model output before JSON.parse (same expression exists on origin/main)
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
         .trim();
 

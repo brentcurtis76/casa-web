@@ -8,8 +8,8 @@
  * `handler.ts` so tests can import the handler without side effects.
  */
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { serve } from "std/http/server.ts";
+import { createClient } from "@supabase/supabase-js";
 
 import { createSupabaseAuthzDeps } from "../_shared/liturgyAuth.ts";
 import { createHandler } from "./handler.ts";
