@@ -298,6 +298,144 @@ Deno.test("T-0.9 supabase adapter calls has_permission with { p_user_id, p_resou
   );
 });
 
+// T-0.4c — Adapter classifies transport-layer errors (status 0) as
+// backend_error, not unauthenticated. supabase-js returns
+// AuthRetryableFetchError with `status: 0` on network failures; those
+// must fail-closed to 503 AUTHZ_BACKEND_ERROR (with CORS + JSON), not
+// leak as 401 UNAUTHORIZED.
+Deno.test("T-0.4c adapter: getUser error {status: 0} => 503 AUTHZ_BACKEND_ERROR", async () => {
+  const fakeAdmin = {
+    auth: {
+      getUser: async (_token: string) => ({
+        data: { user: null },
+        error: { status: 0, message: "fetch failed" },
+      }),
+    },
+    rpc: async (_fn: string, _args: Record<string, unknown>) => ({
+      data: null,
+      error: null,
+    }),
+  };
+
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const result = await requirePermission(
+    requestWith({ Authorization: "Bearer any.jwt" }),
+    deps,
+    { resource: RESOURCE, action: ACTION, corsHeaders: CORS },
+  );
+
+  assertStrictEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.response.status, 503);
+  assertCors(result.response);
+  assertEquals(await readBody(result.response), {
+    success: false,
+    code: "AUTHZ_BACKEND_ERROR",
+  });
+});
+
+// T-0.4d — Adapter classifies rate limiting (status 429) as
+// backend_error. 429 is a transient backend condition, not an
+// authentication failure.
+Deno.test("T-0.4d adapter: getUser error {status: 429} => 503 AUTHZ_BACKEND_ERROR", async () => {
+  const fakeAdmin = {
+    auth: {
+      getUser: async (_token: string) => ({
+        data: { user: null },
+        error: { status: 429, message: "too many requests" },
+      }),
+    },
+    rpc: async (_fn: string, _args: Record<string, unknown>) => ({
+      data: null,
+      error: null,
+    }),
+  };
+
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const result = await requirePermission(
+    requestWith({ Authorization: "Bearer any.jwt" }),
+    deps,
+    { resource: RESOURCE, action: ACTION, corsHeaders: CORS },
+  );
+
+  assertStrictEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.response.status, 503);
+  assertCors(result.response);
+  assertEquals(await readBody(result.response), {
+    success: false,
+    code: "AUTHZ_BACKEND_ERROR",
+  });
+});
+
+// T-0.4e — Adapter classifies errors without a status field as
+// backend_error. An error object with no `status` is ambiguous and
+// must not be treated as a credential rejection.
+Deno.test("T-0.4e adapter: getUser error without status => 503 AUTHZ_BACKEND_ERROR", async () => {
+  const fakeAdmin = {
+    auth: {
+      getUser: async (_token: string) => ({
+        data: { user: null },
+        error: { message: "unknown failure" } as { status?: number },
+      }),
+    },
+    rpc: async (_fn: string, _args: Record<string, unknown>) => ({
+      data: null,
+      error: null,
+    }),
+  };
+
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const result = await requirePermission(
+    requestWith({ Authorization: "Bearer any.jwt" }),
+    deps,
+    { resource: RESOURCE, action: ACTION, corsHeaders: CORS },
+  );
+
+  assertStrictEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.response.status, 503);
+  assertCors(result.response);
+  assertEquals(await readBody(result.response), {
+    success: false,
+    code: "AUTHZ_BACKEND_ERROR",
+  });
+});
+
+// T-0.4f — Adapter still returns 401 UNAUTHORIZED for real credential
+// rejections (status 401 from the auth backend). Guards the
+// unauthenticated branch from over-narrowing to zero cases.
+Deno.test("T-0.4f adapter: getUser error {status: 401} => 401 UNAUTHORIZED", async () => {
+  const fakeAdmin = {
+    auth: {
+      getUser: async (_token: string) => ({
+        data: { user: null },
+        error: { status: 401, message: "invalid jwt" },
+      }),
+    },
+    rpc: async (_fn: string, _args: Record<string, unknown>) => ({
+      data: null,
+      error: null,
+    }),
+  };
+
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const result = await requirePermission(
+    requestWith({ Authorization: "Bearer expired.jwt" }),
+    deps,
+    { resource: RESOURCE, action: ACTION, corsHeaders: CORS },
+  );
+
+  assertStrictEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.response.status, 401);
+  assertCors(result.response);
+  assertEquals(await readBody(result.response), {
+    success: false,
+    code: "UNAUTHORIZED",
+  });
+});
+
 // T-0.9 (matrix completeness) — the five paid edge handlers use two
 // distinct permission pairs: `liturgy_builder:write` for four of them
 // (process-reflexion-pdf, generate-scene-images, generate-story,
