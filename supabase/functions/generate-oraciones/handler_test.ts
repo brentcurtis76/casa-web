@@ -4,8 +4,13 @@
 //   * OPTIONS is served before the guard (200 + CORS, no auth calls).
 //   * Missing Authorization returns 401 UNAUTHORIZED before req.json() or
 //     the Anthropic provider (`fetch`) are touched — verified with spies.
-//   * The guard maps to `oraciones:write` — verified via the args the
-//     handler passes to `checkPermission`.
+//   * An invalid bearer token (getUser -> unauthenticated) also returns
+//     401 UNAUTHORIZED and never reaches the body or provider.
+//   * A false permission returns 403 FORBIDDEN and the guard is called
+//     with exactly `oraciones:write` (T-0.5 / T-0.9 per-handler wiring).
+//   * getUser and checkPermission backend failures both fail-closed to
+//     503 AUTHZ_BACKEND_ERROR, preserving CORS/JSON and leaving req.json
+//     and provider spies at zero.
 
 // deno-lint-ignore-file no-import-prefix require-await
 
@@ -134,10 +139,7 @@ Deno.test("OPTIONS preflight returns 200 with CORS and skips auth guard", async 
     });
     const res = await handler(req);
 
-    // Accept 200 or 204 for preflight; production uses 200.
-    if (res.status !== 200 && res.status !== 204) {
-      throw new Error(`unexpected preflight status: ${res.status}`);
-    }
+    assertStrictEquals(res.status, 200);
     for (const [k, v] of Object.entries(corsHeaders)) {
       assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
     }
@@ -185,9 +187,56 @@ Deno.test(
   },
 );
 
-// T-INT-generate-oraciones-3
+// T-INT-generate-oraciones-3 — invalid bearer token also fails closed
+// with 401 and never touches body or provider.
 Deno.test(
-  "handler maps to permission oraciones:write",
+  "POST with invalid bearer token returns 401 UNAUTHORIZED and never reads body or calls provider",
+  async () => {
+    const { deps: authz, calls } = makeAuthzDeps({
+      getUser: async () => ({ kind: "unauthenticated" }),
+    });
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/generate-oraciones",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer bad.jwt",
+          },
+          body: JSON.stringify(samplePayload()),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 401);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "UNAUTHORIZED",
+      });
+
+      // getUser ran once; checkPermission never called; body/provider
+      // untouched.
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0], { kind: "getUser", token: "bad.jwt" });
+      assertEquals(json.calls, 0, "req.json must not be called");
+      assertEquals(fetchSpy.calls, 0, "fetch must not be called");
+    });
+  },
+);
+
+// T-INT-generate-oraciones-4 — T-0.5 / T-0.9 per-handler wiring: false
+// permission returns 403 with CORS/JSON, and the guard is called with
+// exactly `oraciones:write`.
+Deno.test(
+  "handler denies with 403 FORBIDDEN and maps to permission oraciones:write",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps({
       // Deny so the handler stops after the mapping check — we only care
@@ -212,6 +261,10 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 403);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
       assertEquals(await res.json(), {
         success: false,
         code: "FORBIDDEN",
@@ -228,6 +281,107 @@ Deno.test(
       });
 
       // Denial short-circuits before body/provider access.
+      assertEquals(json.calls, 0);
+      assertEquals(fetchSpy.calls, 0);
+    });
+  },
+);
+
+// T-INT-generate-oraciones-5 — auth backend failure fails closed to 503,
+// preserving CORS/JSON and leaving downstream spies at zero.
+Deno.test(
+  "auth backend error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
+  async () => {
+    const { deps: authz, calls } = makeAuthzDeps({
+      getUser: async () => ({
+        kind: "backend_error",
+        error: new Error("supabase auth 5xx"),
+      }),
+    });
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/generate-oraciones",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer any.jwt",
+          },
+          body: JSON.stringify(samplePayload()),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 503);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "AUTHZ_BACKEND_ERROR",
+      });
+
+      // Only getUser ran; checkPermission never called.
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0], { kind: "getUser", token: "any.jwt" });
+
+      assertEquals(json.calls, 0);
+      assertEquals(fetchSpy.calls, 0);
+    });
+  },
+);
+
+// T-INT-generate-oraciones-6 — permission RPC failure fails closed to 503,
+// and the RPC was invoked with the exact oraciones:write pair.
+Deno.test(
+  "permission RPC error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
+  async () => {
+    const { deps: authz, calls } = makeAuthzDeps({
+      checkPermission: async () => ({
+        kind: "backend_error",
+        error: { message: "rpc timeout" },
+      }),
+    });
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/generate-oraciones",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer good.jwt",
+          },
+          body: JSON.stringify(samplePayload()),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 503);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "AUTHZ_BACKEND_ERROR",
+      });
+
+      // getUser then checkPermission with the exact resource/action.
+      assertEquals(calls.length, 2);
+      assertEquals(calls[1], {
+        kind: "checkPermission",
+        userId: "user-abc",
+        resource: "oraciones",
+        action: "write",
+      });
+
       assertEquals(json.calls, 0);
       assertEquals(fetchSpy.calls, 0);
     });

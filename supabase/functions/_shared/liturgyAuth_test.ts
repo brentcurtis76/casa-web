@@ -297,3 +297,51 @@ Deno.test("T-0.9 supabase adapter calls has_permission with { p_user_id, p_resou
     false,
   );
 });
+
+// T-0.9 (matrix completeness) — the five paid edge handlers use two
+// distinct permission pairs: `liturgy_builder:write` for four of them
+// (process-reflexion-pdf, generate-scene-images, generate-story,
+// refine-story) and `oraciones:write` for generate-oraciones. The RPC
+// adapter must forward the caller's exact resource/action pair with the
+// production parameter name `p_user_id`. This test exercises the
+// non-default pair through `requirePermission` so both matrix cells are
+// covered explicitly.
+Deno.test("T-0.9 supabase adapter forwards oraciones:write via requirePermission with { p_user_id, p_resource, p_action }", async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  const fakeAdmin = {
+    auth: {
+      getUser: async (_token: string) => ({
+        data: { user: { id: "u-777", email: "o@y.z" } },
+        error: null,
+      }),
+    },
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args });
+      return { data: true, error: null };
+    },
+  };
+
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const result = await requirePermission(
+    requestWith({ Authorization: "Bearer good.jwt" }),
+    deps,
+    { resource: "oraciones", action: "write", corsHeaders: CORS },
+  );
+
+  assertStrictEquals(result.ok, true);
+  if (!result.ok) return;
+  assertEquals(result.user.id, "u-777");
+
+  assertEquals(rpcCalls.length, 1);
+  assertEquals(rpcCalls[0].fn, "has_permission");
+  assertEquals(rpcCalls[0].args, {
+    p_user_id: "u-777",
+    p_resource: "oraciones",
+    p_action: "write",
+  });
+  // Guardrail: legacy `p_user` name must NOT appear.
+  assertStrictEquals(
+    Object.prototype.hasOwnProperty.call(rpcCalls[0].args, "p_user"),
+    false,
+  );
+});
