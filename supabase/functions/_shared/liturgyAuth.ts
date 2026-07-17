@@ -138,9 +138,25 @@ export function requireLiturgyWriter(
 //
 // The RPC call MUST use the parameter name `p_user_id` (not `p_user`) —
 // this is the SQL signature of `public.has_permission` in production.
+type SupabaseAuthGetUser = (
+  token: string,
+) => PromiseLike<{
+  data: { user: { id: string; email?: string } | null };
+  error: { status?: number } | null;
+}>;
+
+type SupabaseRpc = (
+  fn: string,
+  params: Record<string, unknown>,
+) => PromiseLike<{ data: unknown; error: unknown }>;
+
+export interface SupabaseAdminLike {
+  auth: { getUser: SupabaseAuthGetUser };
+  rpc: SupabaseRpc;
+}
+
 export function createSupabaseAuthzDeps(
-  // deno-lint-ignore no-explicit-any
-  supabaseAdmin: any,
+  supabaseAdmin: SupabaseAdminLike,
 ): RequirePermissionDeps {
   return {
     async getUser(token: string): Promise<GetUserOutcome> {

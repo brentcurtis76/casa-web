@@ -375,7 +375,12 @@ function buildUserPrompt(data: {
   locationResearch: string;
   characters: string[];
   landmarks?: Array<
-    { name: string; narrativeRole: string; visualDescription: string; role: string }
+    {
+      name: string;
+      narrativeRole: string;
+      visualDescription: string;
+      role: string;
+    }
   >;
   props?: Array<
     {
@@ -477,7 +482,7 @@ ${
 - Rol narrativo: ${lm.narrativeRole}
 - Prominencia: ${
           lm.role === "primary"
-            ? 'PRINCIPAL — debe aparecer en muchas escenas (al menos la mitad)'
+            ? "PRINCIPAL — debe aparecer en muchas escenas (al menos la mitad)"
             : "SECUNDARIO — aparece en algunas escenas (3-4)"
         }
 ${
