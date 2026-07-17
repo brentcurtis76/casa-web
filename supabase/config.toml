@@ -10,3 +10,21 @@ verify_jwt = false
 # pg_cron calls with WA_REMINDERS_CRON_SECRET, which is not a platform JWT
 [functions.wa-reminders]
 verify_jwt = false
+
+[functions.generate-scene-images]
+verify_jwt = true
+
+[functions.generate-story]
+verify_jwt = true
+
+[functions.refine-story]
+verify_jwt = true
+
+[functions.process-reflexion-pdf]
+verify_jwt = true
+
+[functions.generate-oraciones]
+verify_jwt = true
+
+[functions.generate-graphic]
+verify_jwt = true
