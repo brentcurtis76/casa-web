@@ -86,25 +86,38 @@ export function mergePatch(
   return result;
 }
 
-/** Categorías de imágenes cuya subida se dispara sólo si el patch las toca. */
+/**
+ * Categorías de imágenes cuya subida se dispara sólo si el patch las toca.
+ * Para props, la fuente de derivación es explícita:
+ *  - 'propRefs': el patch trae `propReferenceImages`; ese valor manda literalmente
+ *    (incluso `{}` limpia los paths persistidos). `story.props` NO se consulta.
+ *  - 'story': el patch trae `story` pero NO `propReferenceImages`; derivar de
+ *    `story.props[].referenceImages`.
+ *  - `false`: ninguna de las dos claves está presente; preservar paths existentes.
+ */
+type PropsSource = false | 'propRefs' | 'story';
+
 interface UploadCategories {
   characterSheets: boolean;
   sceneImages: boolean;
   cover: boolean;
   end: boolean;
-  props: boolean;
+  props: PropsSource;
 }
 
 function categoriesFromPatch(patch: DraftPatch): UploadCategories {
   const has = (k: keyof DraftPatch) => Object.prototype.hasOwnProperty.call(patch, k);
+  const props: PropsSource = has('propReferenceImages')
+    ? 'propRefs'
+    : has('story')
+      ? 'story'
+      : false;
   return {
     characterSheets: has('characterSheetOptions'),
     sceneImages: has('sceneImageOptions'),
     cover: has('coverOptions'),
     end: has('endOptions'),
-    // La referencia de props vive tanto en `propReferenceImages` como en
-    // `story.props[].referenceImages`; ambos cuentan como intención de tocar props.
-    props: has('propReferenceImages') || has('story'),
+    props,
   };
 }
 
@@ -478,24 +491,22 @@ async function saveImagesToStorage(
     );
   }
 
-  // Subir imágenes de referencia de props
-  // Fuente primaria: draft.story.props[].referenceImages — es el estado VIVO que
-  // el editor actualiza al elegir hojas generadas o subir fotos nuevas.
-  // Fuente secundaria: draft.propReferenceImages (poblado al cargar el draft);
-  // si tuviera precedencia, taparía los cambios post-recarga y la referencia
-  // de un prop quedaría congelada para siempre en su primer valor persistido.
+  // Subir imágenes de referencia de props: la fuente depende de qué clave del
+  // patch la disparó. `propReferenceImages` presente manda literalmente (`{}`
+  // limpia); si está ausente y `story` está presente, derivamos de `story.props`.
   if (categories.props) {
     const propSources: Record<string, string[]> = {};
-    if (draft.story?.props) {
-      for (const prop of draft.story.props) {
+    if (categories.props === 'propRefs') {
+      for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
+        if (Array.isArray(images) && images.length > 0) {
+          propSources[propId] = images;
+        }
+      }
+    } else {
+      for (const prop of draft.story?.props || []) {
         if (prop?.id && Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
           propSources[prop.id] = prop.referenceImages;
         }
-      }
-    }
-    for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
-      if (!propSources[propId] && Array.isArray(images) && images.length > 0) {
-        propSources[propId] = images;
       }
     }
 
@@ -624,13 +635,20 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
     console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.sceneImageOptions || {}).length} scene image sets`);
     console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.characterSheetOptions || {}).length} character sheet sets`);
 
-    // Primero obtener los paths existentes para no sobrescribirlos
-    const { data: existingDraft } = await supabase
+    // Primero obtener los paths existentes para no sobrescribirlos. Un fallo
+    // del SELECT no puede degradarse a "sin paths existentes": arriesgaría
+    // borrar categorías que el patch no toca. Abortamos antes de subir o upsert.
+    const { data: existingDraft, error: selectError } = await supabase
       .from('cuentacuentos_drafts')
       .select('image_paths')
       .eq('liturgia_id', liturgyId)
       .eq('user_id', userId)
       .maybeSingle();
+
+    if (selectError) {
+      console.error('[useCuentacuentosDraft] Error reading existing image_paths:', selectError);
+      throw new Error(`saveDraftToSupabase select failed: ${selectError.message ?? String(selectError)}`);
+    }
 
     const existingPaths = (existingDraft?.image_paths as {
       characterSheetPaths?: Record<string, string[]>;
@@ -815,10 +833,12 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
  * persiste vía `saveDraftToSupabase`. Rechaza (`throw`) si la persistencia
  * falla. Devuelve el snapshot normalizado y las URLs subidas.
  *
- * No toca React state, no muta refs y no expone setters: es una función
- * pura de I/O sobre Supabase/Storage, testable sin renderizar el hook.
+ * No toca `draftRef`, ni React draft state, ni `lastSavedAt`, ni expone
+ * setters: es una función pura de I/O sobre Supabase/Storage, testable sin
+ * renderizar el hook. Es el único camino de persistencia usado por
+ * `enqueueDraftWrite`; no debe llamarse desde ningún otro sitio en producción.
  */
-export async function persistDraftNow(input: {
+export async function saveDraftNow(input: {
   userId: string;
   liturgyId: string;
   currentDraft: CuentacuentosDraftFull | null;
@@ -1164,11 +1184,13 @@ export function useCuentacuentosDraft({
       const capturedRevision = revisionRef.current;
 
       try {
-        const snapshot = normalizeSnapshot(draftRef.current, patch, currentLiturgyId);
-        const { uploadedUrls } = await saveDraftToSupabase({
+        // saveDraftNow es el único camino de persistencia: normaliza el
+        // snapshot y persiste. Nunca toca refs ni React state — esto es
+        // responsabilidad de la cola tras chequear identidad.
+        const { snapshot, uploadedUrls } = await saveDraftNow({
           userId: currentUserId,
           liturgyId: currentLiturgyId,
-          snapshot,
+          currentDraft: draftRef.current,
           patch,
         });
 

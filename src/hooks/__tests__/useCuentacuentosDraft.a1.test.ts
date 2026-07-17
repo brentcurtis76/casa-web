@@ -30,6 +30,10 @@ const uploadCalls: Array<{ path: string }> = [];
 const removedPaths: string[] = [];
 let existingImagePaths: Record<string, unknown> | null = null;
 let upsertError: { message: string } | null = null;
+// Error opcional que se devuelve desde el .select('image_paths').maybeSingle()
+// preliminar. Cuando está seteado, la primitiva de persistencia debe abortar
+// antes de subir imágenes o hacer upsert.
+let selectError: { message: string } | null = null;
 // Cola de deferreds para controlar cuándo resuelve cada upsert. Si vacía,
 // el mock resuelve inmediatamente (compat T-A1.1/T-A1.2). Cada .shift() saca
 // el próximo deferred para la próxima llamada a upsert().
@@ -41,10 +45,15 @@ vi.mock('@/integrations/supabase/client', () => {
   const tableApi = () => ({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockImplementation(async () => ({
-      data: existingImagePaths ? { image_paths: existingImagePaths } : null,
-      error: null,
-    })),
+    maybeSingle: vi.fn().mockImplementation(async () => {
+      if (selectError) {
+        return { data: null, error: selectError };
+      }
+      return {
+        data: existingImagePaths ? { image_paths: existingImagePaths } : null,
+        error: null,
+      };
+    }),
     upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
@@ -95,7 +104,7 @@ vi.mock('@/integrations/supabase/client', () => {
 // -----------------------------------------------------------------------------
 import {
   mergePatch,
-  persistDraftNow,
+  saveDraftNow,
   useCuentacuentosDraft,
   type CuentacuentosDraftFull,
   type DraftPatch,
@@ -145,6 +154,7 @@ beforeEach(() => {
   upsertDeferreds.length = 0;
   existingImagePaths = null;
   upsertError = null;
+  selectError = null;
   mockUserId = null;
   // fetch (HEAD checks): siempre 200 para no ejercitar red.
   vi.stubGlobal(
@@ -217,9 +227,9 @@ describe('T-A1.1 mergePatch (own-key presence semantics)', () => {
 });
 
 // -----------------------------------------------------------------------------
-// T-A1.2 — persistDraftNow: la primitiva persiste sin tocar React state
+// T-A1.2 — saveDraftNow: la primitiva persiste sin tocar React state
 // -----------------------------------------------------------------------------
-describe('T-A1.2 persistDraftNow (persistence-only primitive)', () => {
+describe('T-A1.2 saveDraftNow (persistence-only primitive)', () => {
   it('persiste el snapshot normalizado, devuelve snapshot + uploadedUrls y no expone setters', async () => {
     // Existing DB paths que DEBEN preservarse cuando el patch no toca esas categorías.
     existingImagePaths = {
@@ -245,7 +255,7 @@ describe('T-A1.2 persistDraftNow (persistence-only primitive)', () => {
 
     // Contrato: la firma de la primitiva NO acepta setters ni refs de React.
     // Se le pasa sólo state pura y devuelve state puro.
-    const result = await persistDraftNow({
+    const result = await saveDraftNow({
       userId: 'u1',
       liturgyId: 'lit-1',
       currentDraft,
@@ -310,7 +320,7 @@ describe('T-A1.2 persistDraftNow (persistence-only primitive)', () => {
     expect(persisted.sceneReferenceModes).toEqual({ 5: 'pov' });
 
     // === Contrato de "no side effects React" ===
-    // La firma de persistDraftNow no acepta setters, y toma sólo datos puros;
+    // La firma de saveDraftNow no acepta setters, y toma sólo datos puros;
     // por construcción no puede llamar a setDraft / setLastSavedAt ni mutar
     // draftRef. Reforzamos verificando que el input `currentDraft` no fue
     // mutado por la primitiva.
@@ -323,13 +333,86 @@ describe('T-A1.2 persistDraftNow (persistence-only primitive)', () => {
   it('rechaza (throw) si Supabase devuelve error en la persistencia', async () => {
     upsertError = { message: 'db offline' };
     await expect(
-      persistDraftNow({
+      saveDraftNow({
         userId: 'u1',
         liturgyId: 'lit-1',
         currentDraft: baseSnapshot(),
         patch: { currentStep: 'cover' } as DraftPatch,
       })
     ).rejects.toThrow(/db offline/);
+  });
+
+  it('propReferenceImages: {} presente limpia los prop paths persistidos, incluso si story.props tiene referenceImages vivas', async () => {
+    existingImagePaths = {
+      propImagePaths: { oldProp: ['users/u1/lit-1/props/oldProp_0.png'] },
+      sceneImagePaths: { 5: ['users/u1/lit-1/scenes/scene5_0.png'] },
+    };
+    // Snapshot vivo con story.props que TIENE referenceImages: si derivamos
+    // desde story.props en lugar de honrar el patch, subiríamos y persistiríamos
+    // esas referencias — exactamente el bug que F5 corrige.
+    const currentDraft = baseSnapshot();
+    currentDraft.story = {
+      ...currentDraft.story!,
+      props: [
+        {
+          id: 'p1',
+          kind: 'object',
+          name: 'p1',
+          narrativeRole: '',
+          visualDescription: '',
+          referenceImages: ['data:image/png;base64,ZmFrZQ=='],
+          role: 'primary',
+        } as unknown as NonNullable<Story['props']>[number],
+      ],
+    };
+
+    const result = await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft,
+      // Sólo propReferenceImages presente con {} → semántica: limpiar.
+      // `story` NO está presente en el patch, así que story.props NO debe
+      // usarse como fuente. `propReferenceImages` presente manda.
+      patch: { propReferenceImages: {} } as DraftPatch,
+    });
+
+    // No se subió ninguna imagen de prop (ni de nada — el patch sólo toca props).
+    expect(uploadCalls).toHaveLength(0);
+    expect(result.uploadedUrls.propImageUrls).toEqual({});
+
+    // Upsert persiste propImagePaths vacío (limpia el path viejo).
+    expect(upsertCalls).toHaveLength(1);
+    const persisted = upsertCalls[0].payload.image_paths as {
+      propImagePaths: Record<string, string[]>;
+      sceneImagePaths: Record<string, string[]>;
+    };
+    expect(persisted.propImagePaths).toEqual({});
+    // Otras categorías NO tocadas por el patch se preservan intactas.
+    expect(persisted.sceneImagePaths).toEqual({ 5: ['users/u1/lit-1/scenes/scene5_0.png'] });
+  });
+
+  it('rechaza (throw) si el SELECT preliminar de image_paths falla; sin uploads ni upsert', async () => {
+    selectError = { message: 'select offline' };
+    // Patch que normalmente subiría imágenes: si no abortáramos temprano,
+    // veríamos uploadCalls > 0 antes del throw.
+    const patch: DraftPatch = {
+      coverOptions: [
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      ],
+    };
+
+    await expect(
+      saveDraftNow({
+        userId: 'u1',
+        liturgyId: 'lit-1',
+        currentDraft: baseSnapshot(),
+        patch,
+      })
+    ).rejects.toThrow(/select offline/);
+
+    // Confirmación dura: no se tocó Storage ni la tabla tras el fallo del SELECT.
+    expect(uploadCalls).toHaveLength(0);
+    expect(upsertCalls).toHaveLength(0);
   });
 });
 
