@@ -184,22 +184,27 @@ const StorySlidePreview: React.FC<{ slide: Slide }> = ({ slide }) => {
 /**
  * Componente para mostrar opciones de imagen y seleccionar
  */
+type ImageSelectorPhase = 'idle' | 'generating' | 'saving';
+
 const ImageSelector: React.FC<{
   options: string[];
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onSave?: () => Promise<void>;
   onRegenerate?: () => void;
-  isGenerating: boolean;
+  /** Runner phase for this asset: shows a placeholder while generating/saving. */
+  phase: ImageSelectorPhase;
   isSaving?: boolean;
   savedMessage?: string | null;
   label: string;
-}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, isGenerating, isSaving, savedMessage, label }) => {
-  if (isGenerating) {
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label }) => {
+  if (phase !== 'idle') {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 size={24} className="animate-spin mr-2" style={{ color: CASA_BRAND.colors.primary.amber }} />
-        <span style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Generando {label}...</span>
+        <span style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+          {phase === 'saving' ? `Guardando ${label}...` : `Generando ${label}...`}
+        </span>
       </div>
     );
   }
@@ -479,13 +484,11 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // Estado del flujo
   const [currentStep, setCurrentStep] = useState<CreationStep>(getInitialStep());
 
-  // Estado de generación de imágenes
+  // Estado de generación del cuento (texto con IA — no imágenes).
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [generatingCharacterIndex, setGeneratingCharacterIndex] = useState<number | null>(null);
-  const [generatingSceneIndex, setGeneratingSceneIndex] = useState<number | null>(null);
-  const [generatingCover, setGeneratingCover] = useState(false);
-  const [generatingEnd, setGeneratingEnd] = useState(false);
+  // El estado por-ítem de generación/persistencia de imágenes se lee
+  // directamente del runner (`pipeline.statusOf`); no hay máquinas paralelas.
 
   // Estado de refinamiento de imágenes (Phase 7 scaffolding)
   const [refiningCharId, setRefiningCharId] = useState<string | null>(null);
@@ -510,7 +513,6 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // como primera referenceImage del prop y viaja a cada escena.
   const [propSheetOptions, setPropSheetOptions] = useState<Record<string, string[]>>({});
   const [selectedPropSheets, setSelectedPropSheets] = useState<Record<string, number>>({});
-  const [generatingPropId, setGeneratingPropId] = useState<string | null>(null);
 
   // Estado de portada/fin
   const [coverOptions, setCoverOptions] = useState<string[]>([]);
@@ -639,6 +641,17 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const pipeline = useStoryImagePipeline();
   // Métodos estables del pipeline (el objeto cambia de identidad por render)
   const { markResolved: markPipelineResolved, cancel: cancelPipeline } = pipeline;
+
+  // Derivadores del estado del runner. Un ítem está "ocupado" mientras el
+  // provider está corriendo o mientras el snapshot se persiste; el UI no
+  // celebra completitud durante `persisting`.
+  const phaseOf = (id: string): ImageSelectorPhase => {
+    const s = pipeline.statusOf(id);
+    if (s === 'running') return 'generating';
+    if (s === 'persisting') return 'saving';
+    return 'idle';
+  };
+  const isItemBusy = (id: string) => phaseOf(id) !== 'idle';
 
   // Al desmontar, dejar de sacar tareas de la cola (las en vuelo se descartan
   // solas vía storyIdRef).
@@ -1603,22 +1616,17 @@ Instrucciones críticas:
   // Generar character sheet para un personaje (botón manual)
   const handleGenerateCharacterSheet = useCallback(async (
     character: StoryCharacter,
-    index: number,
+    _index: number,
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
     if (!story) return;
-
-    setGeneratingCharacterIndex(index);
     setError(null);
-
     try {
       const task = buildCharacterSheetTask(character, customPrompt, generateOptions?.append ?? false);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando character sheet');
-    } finally {
-      setGeneratingCharacterIndex(null);
     }
   }, [story, buildCharacterSheetTask, buildRunIdentity, pipeline]);
 
@@ -1747,15 +1755,12 @@ Instrucciones críticas:
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
     if (!story) return;
-    setGeneratingPropId(prop.id);
     setError(null);
     try {
       const task = buildPropSheetTask(prop);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando hoja de referencia');
-    } finally {
-      setGeneratingPropId(null);
     }
   }, [story, buildPropSheetTask, buildRunIdentity, pipeline]);
 
@@ -1959,16 +1964,12 @@ Instrucciones críticas:
       });
     }
 
-    setGeneratingSceneIndex(scene.number);
     setError(null);
-
     try {
       const task = buildSceneTask(scene, customPrompt, append);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen de escena');
-    } finally {
-      setGeneratingSceneIndex(null);
     }
   }, [story, editingSceneText, toast, buildSceneTask, buildRunIdentity, pipeline]);
 
@@ -2091,17 +2092,12 @@ Instrucciones críticas:
   // Generar portada
   const handleGenerateCover = useCallback(async (customPrompt?: string) => {
     if (!story) return;
-
-    setGeneratingCover(true);
     setError(null);
-
     try {
       const task = buildCoverTask(customPrompt);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando portada');
-    } finally {
-      setGeneratingCover(false);
     }
   }, [story, buildCoverTask, buildRunIdentity, pipeline]);
 
@@ -2203,17 +2199,12 @@ Instrucciones críticas:
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
     if (!story) return;
-
-    setGeneratingEnd(true);
     setError(null);
-
     try {
       const task = buildEndTask(customPrompt);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen final');
-    } finally {
-      setGeneratingEnd(false);
     }
   }, [story, buildEndTask, buildRunIdentity, pipeline]);
 
@@ -2262,26 +2253,21 @@ Instrucciones críticas:
 
   const runCoverEndBatch = useCallback((): boolean => {
     if (!story) return false;
+    // Gate por el propio runner: si el ítem ya está corriendo o guardando,
+    // no lo re-encolamos. No hay banderas paralelas para limpiar en `finally`.
+    const busy = (id: string) => {
+      const s = pipeline.statusOf(id);
+      return s === 'running' || s === 'persisting';
+    };
     const tasks: Array<PipelineItemTask<ProviderResult>> = [];
-    if (coverOptions.length === 0 && !generatingCover) {
-      tasks.push(buildCoverTask());
-      setGeneratingCover(true);
-    }
-    if (endOptions.length === 0 && !generatingEnd) {
-      tasks.push(buildEndTask());
-      setGeneratingEnd(true);
-    }
+    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask());
+    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask());
     if (tasks.length === 0) return true;
     // Portada y fin en un solo runItems para que el runner los corra en paralelo
     // sin cancelarse mutuamente (cada llamada a runItems invalida la anterior).
-    const identity = buildRunIdentity();
-    void pipeline.runItems(tasks, identity).finally(() => {
-      // Limpiar spinners al terminar el lote (sea por éxito, error o cancelación).
-      if (tasks.some(t => t.id === 'cover')) setGeneratingCover(false);
-      if (tasks.some(t => t.id === 'end')) setGeneratingEnd(false);
-    });
+    void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, coverOptions.length, endOptions.length, generatingCover, generatingEnd, buildCoverTask, buildEndTask, buildRunIdentity, pipeline]);
+  }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, buildRunIdentity, pipeline]);
 
   // Auto-arranque SOLO en transiciones de avance del flujo (las aprobaciones):
   // story→characters, characters→scenes, scenes→cover. Nunca al montar, al
@@ -3925,6 +3911,7 @@ Instrucciones críticas:
     const sheetItems = pipeline.items.filter(i => i.kind === 'sheet' || i.kind === 'prop');
     const sheetDone = sheetItems.filter(i => i.status === 'done').length;
     const sheetErrors = sheetItems.filter(i => i.status === 'error').length;
+    const sheetSaveFailed = sheetItems.filter(i => i.status === 'save-failed').length;
     const sheetBatchActive = pipeline.isRunning && sheetItems.length > 0;
 
     return (
@@ -3936,13 +3923,17 @@ Instrucciones críticas:
         </div>
 
         {/* Progreso del pipeline de hojas de personaje y props */}
-        {(sheetBatchActive || sheetErrors > 0 || pendingGenerationCount > 0 || awaitingSelectionCount > 0) && (
+        {(sheetBatchActive || sheetErrors > 0 || sheetSaveFailed > 0 || pendingGenerationCount > 0 || awaitingSelectionCount > 0) && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sheetBatchActive ? (
                 <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando referencias… {sheetDone} de {sheetItems.length} listas</>
-              ) : sheetErrors > 0 ? (
-                <span style={{ color: '#DC2626' }}>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</span>
+              ) : sheetErrors > 0 || sheetSaveFailed > 0 ? (
+                <span style={{ color: '#DC2626' }}>
+                  {sheetErrors > 0 && (<>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</>)}
+                  {sheetErrors > 0 && sheetSaveFailed > 0 && ' · '}
+                  {sheetSaveFailed > 0 && (<>{sheetSaveFailed} {sheetSaveFailed === 1 ? 'no se pudo guardar' : 'no se pudieron guardar'}</>)}
+                </span>
               ) : pendingGenerationCount > 0 ? (
                 <>{pendingGenerationCount} {pendingGenerationCount === 1 ? 'elemento sin imagen de referencia' : 'elementos sin imagen de referencia'}</>
               ) : (
@@ -3961,22 +3952,22 @@ Instrucciones críticas:
                 </button>
               ) : (
                 <>
-                  {sheetErrors > 0 && (
+                  {(sheetErrors > 0 || sheetSaveFailed > 0) && (
                     <button
                       type="button"
                       onClick={() => void pipeline.retryFailed({ storyId: story?.id ?? null, epoch: 0 })}
-                      disabled={generatingCharacterIndex !== null || refiningCharId !== null}
+                      disabled={pipeline.isRunning || refiningCharId !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
                     >
-                      Reintentar fallidos ({sheetErrors})
+                      Reintentar fallidos ({sheetErrors + sheetSaveFailed})
                     </button>
                   )}
                   {pendingGenerationCount > 0 && (
                     <button
                       type="button"
                       onClick={runCharacterSheetBatch}
-                      disabled={generatingCharacterIndex !== null || refiningCharId !== null}
+                      disabled={pipeline.isRunning || refiningCharId !== null}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -4005,12 +3996,14 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                  disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  disabled={pipeline.isRunning || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
-                  {(generatingCharacterIndex === index || pipeline.statusOf(`sheet-${character.id}`) === 'running') ? (
+                  {phaseOf(`sheet-${character.id}`) === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf(`sheet-${character.id}`) === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : characterSheetOptions[character.id]?.length ? (
                     <><RefreshCw size={14} /> Regenerar</>
                   ) : (
@@ -4021,7 +4014,7 @@ Instrucciones críticas:
                   <button
                     type="button"
                     onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id], { append: true })}
-                    disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null}
+                    disabled={pipeline.isRunning || refiningCharId !== null}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
                     style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
                     title="Genera 2 opciones adicionales sin descartar las existentes"
@@ -4029,10 +4022,22 @@ Instrucciones críticas:
                     <Sparkles size={14} /> 2 más
                   </button>
                 )}
+                {pipeline.statusOf(`sheet-${character.id}`) === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem(`sheet-${character.id}`, buildRunIdentity())}
+                    disabled={pipeline.isRunning || refiningCharId !== null}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la imagen ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={(base64) => handleUploadCharacterImage(character.id, base64)}
                   label="imagen"
-                  disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null}
+                  disabled={pipeline.isRunning || refiningCharId !== null}
                 />
               </div>
             </div>
@@ -4092,14 +4097,14 @@ Instrucciones críticas:
                         if (refiningCharId !== null || pipeline.isRunning) return;
                         handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id]);
                       }}
-                      isGenerating={generatingCharacterIndex === index}
+                      phase={phaseOf(`sheet-${character.id}`)}
                       isSaving={savingCharacter === character.id}
                       savedMessage={savedCharacterMessage[character.id]}
                       label="character sheet"
                     />
                   </div>
                   {charSelectedImage && (
-                    <div className={(generatingCharacterIndex !== null || pipeline.isRunning) ? 'opacity-60 pointer-events-none' : ''}>
+                    <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                       <ImageRefineBox
                         onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
                         isRefining={isRefiningThisChar}
@@ -4119,7 +4124,6 @@ Instrucciones críticas:
           storyProps={activeProps}
           sheetOptions={propSheetOptions}
           selectedSheets={selectedPropSheets}
-          generatingPropId={generatingPropId}
           pipelineBusy={pipeline.isRunning}
           statusOf={pipeline.statusOf}
           onGenerate={handleGeneratePropSheet}
@@ -4128,6 +4132,7 @@ Instrucciones críticas:
           onRemove={handleRemoveProp}
           onAdd={handleAddProp}
           onUpdateDescription={handleUpdatePropDescription}
+          onRetryPersist={(propId) => void pipeline.retryItem(`prop-${propId}`, buildRunIdentity())}
         />
 
         {/* Error */}
@@ -4259,6 +4264,7 @@ Instrucciones críticas:
     const sceneItems = pipeline.items.filter(i => i.kind === 'scene');
     const sceneDone = sceneItems.filter(i => i.status === 'done').length;
     const sceneErrorCount = sceneItems.filter(i => i.status === 'error').length;
+    const sceneSaveFailed = sceneItems.filter(i => i.status === 'save-failed').length;
     const sceneBatchActive = pipeline.isRunning && sceneItems.length > 0;
 
     return (
@@ -4270,13 +4276,17 @@ Instrucciones críticas:
         </div>
 
         {/* Progreso del pipeline de escenas */}
-        {(sceneBatchActive || sceneErrorCount > 0 || pendingSceneCount > 0) && (
+        {(sceneBatchActive || sceneErrorCount > 0 || sceneSaveFailed > 0 || pendingSceneCount > 0) && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sceneBatchActive ? (
                 <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando escenas… {sceneDone} de {sceneItems.length} listas</>
-              ) : sceneErrorCount > 0 ? (
-                <span style={{ color: '#DC2626' }}>{sceneErrorCount} {sceneErrorCount === 1 ? 'escena falló' : 'escenas fallaron'}</span>
+              ) : sceneErrorCount > 0 || sceneSaveFailed > 0 ? (
+                <span style={{ color: '#DC2626' }}>
+                  {sceneErrorCount > 0 && (<>{sceneErrorCount} {sceneErrorCount === 1 ? 'escena falló' : 'escenas fallaron'}</>)}
+                  {sceneErrorCount > 0 && sceneSaveFailed > 0 && ' · '}
+                  {sceneSaveFailed > 0 && (<>{sceneSaveFailed} {sceneSaveFailed === 1 ? 'no se guardó' : 'no se guardaron'}</>)}
+                </span>
               ) : (
                 <>{pendingSceneCount} {pendingSceneCount === 1 ? 'escena sin imágenes' : 'escenas sin imágenes'}</>
               )}
@@ -4293,22 +4303,22 @@ Instrucciones críticas:
                 </button>
               ) : (
                 <>
-                  {sceneErrorCount > 0 && (
+                  {(sceneErrorCount > 0 || sceneSaveFailed > 0) && (
                     <button
                       type="button"
                       onClick={() => void pipeline.retryFailed({ storyId: story?.id ?? null, epoch: 0 })}
-                      disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
+                      disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
                     >
-                      Reintentar fallidas ({sceneErrorCount})
+                      Reintentar fallidas ({sceneErrorCount + sceneSaveFailed})
                     </button>
                   )}
                   {pendingSceneCount > 0 && (
                     <button
                       type="button"
                       onClick={runSceneBatch}
-                      disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
+                      disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -4380,16 +4390,23 @@ Instrucciones críticas:
                           Error
                         </span>
                       )}
+                      {scenePipelineStatus === 'save-failed' && !pipeline.isRunning && (
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                          No se guardó
+                        </span>
+                      )}
                       {/* Botón generar */}
                       <button
                         type="button"
                         onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                        disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                        disabled={pipeline.isRunning || refiningSceneNumber !== null}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
-                        {(generatingSceneIndex === scene.number || scenePipelineStatus === 'running') ? (
+                        {scenePipelineStatus === 'running' ? (
                           <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                        ) : scenePipelineStatus === 'persisting' ? (
+                          <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                         ) : sceneImageOptions[scene.number]?.length ? (
                           <><RefreshCw size={14} /> Regenerar</>
                         ) : (
@@ -4401,7 +4418,7 @@ Instrucciones críticas:
                         <button
                           type="button"
                           onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number], { append: true })}
-                          disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                          disabled={pipeline.isRunning || refiningSceneNumber !== null}
                           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
                           style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
                           title="Genera 2 opciones adicionales sin descartar las existentes"
@@ -4409,11 +4426,23 @@ Instrucciones críticas:
                           <Sparkles size={14} /> 2 más
                         </button>
                       )}
+                      {scenePipelineStatus === 'save-failed' && (
+                        <button
+                          type="button"
+                          onClick={() => void pipeline.retryItem(`scene-${scene.number}`, buildRunIdentity())}
+                          disabled={pipeline.isRunning || refiningSceneNumber !== null}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                          style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                          title="Reintenta guardar la imagen ya generada"
+                        >
+                          <RefreshCw size={14} /> Reintentar guardado
+                        </button>
+                      )}
                       {/* Botón subir imagen */}
                       <ImageUploadButton
                         onUpload={(base64) => handleUploadSceneImage(scene.number, base64)}
                         label="imagen"
-                        disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                        disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       />
                     </div>
                   </div>
@@ -4902,14 +4931,14 @@ Instrucciones críticas:
                             if (refiningSceneNumber !== null || pipeline.isRunning) return;
                             handleGenerateSceneImage(scene, editingScenePrompt[scene.number]);
                           }}
-                          isGenerating={generatingSceneIndex === scene.number}
+                          phase={phaseOf(`scene-${scene.number}`)}
                           isSaving={savingScene === scene.number}
                           savedMessage={savedSceneMessage[scene.number]}
                           label={`escena ${scene.number}`}
                         />
                       </div>
                       {sceneSelectedImage && (
-                        <div className={(generatingSceneIndex !== null || pipeline.isRunning) ? 'opacity-60 pointer-events-none' : ''}>
+                        <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                           <ImageRefineBox
                             onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
                             isRefining={isRefiningThisScene}
@@ -5257,22 +5286,36 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCover()}
-                  disabled={generatingCover}
+                  disabled={isItemBusy('cover') || isRefiningCover}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
-                  {generatingCover ? (
+                  {phaseOf('cover') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf('cover') === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : coverOptions.length > 0 ? (
                     <><RefreshCw size={14} /> Regenerar</>
                   ) : (
                     <><Camera size={14} /> Generar portada</>
                   )}
                 </button>
+                {pipeline.statusOf('cover') === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem('cover', buildRunIdentity())}
+                    disabled={isItemBusy('cover') || isRefiningCover}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la portada ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={handleUploadCover}
                   label="portada"
-                  disabled={generatingCover}
+                  disabled={isItemBusy('cover') || isRefiningCover}
                 />
               </div>
             </div>
@@ -5523,7 +5566,7 @@ Instrucciones críticas:
                     onSelect={setSelectedCover}
                     onSave={handleSaveCover}
                     onRegenerate={() => handleGenerateCover()}
-                    isGenerating={generatingCover}
+                    phase={phaseOf('cover')}
                     isSaving={savingCover}
                     savedMessage={savedCoverMessage}
                     label="portada"
@@ -5581,22 +5624,36 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateEnd()}
-                  disabled={generatingEnd}
+                  disabled={isItemBusy('end') || isRefiningEnd}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
-                  {generatingEnd ? (
+                  {phaseOf('end') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf('end') === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : endOptions.length > 0 ? (
                     <><RefreshCw size={14} /> Regenerar</>
                   ) : (
                     <><Camera size={14} /> Generar "Fin"</>
                   )}
                 </button>
+                {pipeline.statusOf('end') === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem('end', buildRunIdentity())}
+                    disabled={isItemBusy('end') || isRefiningEnd}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la imagen ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={handleUploadEnd}
                   label="imagen"
-                  disabled={generatingEnd}
+                  disabled={isItemBusy('end') || isRefiningEnd}
                 />
               </div>
             </div>
@@ -5850,7 +5907,7 @@ Instrucciones críticas:
                     onSelect={setSelectedEnd}
                     onSave={handleSaveEnd}
                     onRegenerate={() => handleGenerateEnd()}
-                    isGenerating={generatingEnd}
+                    phase={phaseOf('end')}
                     isSaving={savingEnd}
                     savedMessage={savedEndMessage}
                     label="imagen final"
