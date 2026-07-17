@@ -207,6 +207,10 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 403);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
       assertEquals(await res.json(), {
         success: false,
         code: "FORBIDDEN",

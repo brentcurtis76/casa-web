@@ -189,6 +189,54 @@ Deno.test("T-0.4b permission RPC error returns 503 AUTHZ_BACKEND_ERROR", async (
   assertEquals(calls.length, 2);
 });
 
+// T-0.5 — Legacy Supabase anon key must be rejected as unauthenticated.
+//
+// Historically, callers could pass `Authorization: Bearer <SUPABASE_ANON_KEY>`
+// and reach edge functions that treated the anon JWT as an authenticated
+// principal. `supabaseAdmin.auth.getUser(<anon_key>)` resolves with
+// `{ data: { user: null }, error: null }` because the anon JWT has no
+// associated session. The adapter maps that shape to `unauthenticated`,
+// and the guard returns 401 UNAUTHORIZED — never calling `has_permission`,
+// never reaching the handler body. This test exercises the full adapter
+// path (createSupabaseAuthzDeps) so we detect any future regression that
+// would treat a null-user response as authenticated.
+Deno.test("T-0.5 legacy anon key is treated as unauthenticated and returns 401", async () => {
+  const rpcCalls: Array<{ fn: string }> = [];
+  const fakeAdmin = {
+    auth: {
+      // Shape returned by supabase-js for a valid-but-userless JWT such as
+      // the raw anon key.
+      getUser: async (_token: string) => ({
+        data: { user: null },
+        error: null,
+      }),
+    },
+    rpc: async (fn: string, _args: Record<string, unknown>) => {
+      rpcCalls.push({ fn });
+      return { data: true, error: null };
+    },
+  };
+  const deps = createSupabaseAuthzDeps(fakeAdmin);
+  const anonJwt =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.sig";
+  const result = await requireLiturgyWriter(
+    requestWith({ Authorization: `Bearer ${anonJwt}` }),
+    deps,
+    CORS,
+  );
+
+  assertStrictEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.response.status, 401);
+  assertCors(result.response);
+  assertEquals(await readBody(result.response), {
+    success: false,
+    code: "UNAUTHORIZED",
+  });
+  // Guardrail: permission RPC must not run when the caller has no user.
+  assertEquals(rpcCalls.length, 0);
+});
+
 // T-0.6 — Happy path: authenticated user with permission returns ok with user.
 Deno.test("T-0.6 authenticated user with permission returns ok user", async () => {
   const { deps, calls } = makeDeps({});
