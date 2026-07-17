@@ -1526,17 +1526,22 @@ Instrucciones críticas:
   // propagar el error al llamador del pipeline.
   const enqueueCharacterSave = useCallback(async (): Promise<void> => {
     try {
-      const result = await enqueueDraftWrite({
-        currentStep: currentStepRef.current,
-        characterSheetOptions: characterSheetOptionsRef.current,
-        selectedCharacterSheets: selectedCharacterSheetsRef.current,
-      });
-      const uploaded = result.uploadedUrls?.characterSheetUrls;
-      if (uploaded) {
-        const swapped = swapOptionsWithUploadedUrls(characterSheetOptionsRef.current, uploaded);
-        characterSheetOptionsRef.current = swapped;
-        setCharacterSheetOptions(swapped);
-      }
+      await enqueueDraftWrite(
+        {
+          currentStep: currentStepRef.current,
+          characterSheetOptions: characterSheetOptionsRef.current,
+          selectedCharacterSheets: selectedCharacterSheetsRef.current,
+        },
+        {
+          onCommit: (uploadedUrls) => {
+            const uploaded = uploadedUrls.characterSheetUrls;
+            if (!uploaded) return;
+            const swapped = swapOptionsWithUploadedUrls(characterSheetOptionsRef.current, uploaded);
+            characterSheetOptionsRef.current = swapped;
+            setCharacterSheetOptions(swapped);
+          },
+        },
+      );
     } catch (err) {
       console.error('[CuentacuentoEditor] Error en guardado encolado (personajes):', err);
     }
@@ -1544,18 +1549,23 @@ Instrucciones críticas:
 
   const enqueueSceneSave = useCallback(async (): Promise<void> => {
     try {
-      const result = await enqueueDraftWrite({
-        currentStep: currentStepRef.current,
-        sceneImageOptions: sceneImageOptionsRef.current,
-        selectedSceneImages: selectedSceneImagesRef.current,
-        sceneReferenceModes: sceneReferenceModeRef.current,
-      });
-      const uploaded = result.uploadedUrls?.sceneImageUrls;
-      if (uploaded) {
-        const swapped = swapOptionsWithUploadedUrls(sceneImageOptionsRef.current, uploaded);
-        sceneImageOptionsRef.current = swapped;
-        setSceneImageOptions(swapped);
-      }
+      await enqueueDraftWrite(
+        {
+          currentStep: currentStepRef.current,
+          sceneImageOptions: sceneImageOptionsRef.current,
+          selectedSceneImages: selectedSceneImagesRef.current,
+          sceneReferenceModes: sceneReferenceModeRef.current,
+        },
+        {
+          onCommit: (uploadedUrls) => {
+            const uploaded = uploadedUrls.sceneImageUrls;
+            if (!uploaded) return;
+            const swapped = swapOptionsWithUploadedUrls(sceneImageOptionsRef.current, uploaded);
+            sceneImageOptionsRef.current = swapped;
+            setSceneImageOptions(swapped);
+          },
+        },
+      );
     } catch (err) {
       console.error('[CuentacuentoEditor] Error en guardado encolado (escenas):', err);
     }
@@ -1677,12 +1687,19 @@ Instrucciones críticas:
     }
 
     try {
-      const result = await enqueueDraftWrite({ story: nextStory });
-      // Base64 recién subido → URL, para no re-subir en cada guardado ni
-      // mandar megabytes de base64 a cada generación de escena.
-      if (result.uploadedUrls?.propImageUrls) {
-        applyPropUrlSwap(result.uploadedUrls.propImageUrls);
-      }
+      await enqueueDraftWrite(
+        { story: nextStory },
+        {
+          // Base64 recién subido → URL, para no re-subir en cada guardado ni
+          // mandar megabytes de base64 a cada generación de escena. Aplica sólo
+          // si la identidad del draft aún coincide con la del write commiteado.
+          onCommit: (uploadedUrls) => {
+            if (uploadedUrls.propImageUrls) {
+              applyPropUrlSwap(uploadedUrls.propImageUrls);
+            }
+          },
+        },
+      );
     } catch (err) {
       console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
     }
@@ -2384,15 +2401,20 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        const saveResult = await enqueueDraftWrite({
-          currentStep,
-          characterSheetOptions: newOptions,
-          selectedCharacterSheets: newSelection,
-        });
-        const uploadedSheetUrls = saveResult.uploadedUrls?.characterSheetUrls;
-        if (uploadedSheetUrls) {
-          setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
-        }
+        await enqueueDraftWrite(
+          {
+            currentStep,
+            characterSheetOptions: newOptions,
+            selectedCharacterSheets: newSelection,
+          },
+          {
+            onCommit: (uploadedUrls) => {
+              const uploadedSheetUrls = uploadedUrls.characterSheetUrls;
+              if (!uploadedSheetUrls) return;
+              setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
+            },
+          },
+        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando personaje';
@@ -2481,16 +2503,21 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        const saveResult = await enqueueDraftWrite({
-          currentStep,
-          sceneImageOptions: newSceneOptions,
-          selectedSceneImages: newSelection,
-          sceneReferenceModes: sceneReferenceMode,
-        });
-        const uploadedSceneUrls = saveResult.uploadedUrls?.sceneImageUrls;
-        if (uploadedSceneUrls) {
-          setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
-        }
+        await enqueueDraftWrite(
+          {
+            currentStep,
+            sceneImageOptions: newSceneOptions,
+            selectedSceneImages: newSelection,
+            sceneReferenceModes: sceneReferenceMode,
+          },
+          {
+            onCommit: (uploadedUrls) => {
+              const uploadedSceneUrls = uploadedUrls.sceneImageUrls;
+              if (!uploadedSceneUrls) return;
+              setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
+            },
+          },
+        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando imagen de escena';
