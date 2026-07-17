@@ -342,6 +342,15 @@ describe('T-A1.2 saveDraftNow (persistence-only primitive)', () => {
     ).rejects.toThrow(/db offline/);
   });
 
+});
+
+// -----------------------------------------------------------------------------
+// F4 — `propReferenceImages` presente con `{}` limpia los prop paths
+// persistidos. La derivación honra own-key presence del patch: el valor exacto
+// manda, incluso `{}`. `story.props` (aun con referenceImages vivas) NO debe
+// usarse como fuente cuando `propReferenceImages` está presente en el patch.
+// -----------------------------------------------------------------------------
+describe('F4 propReferenceImages own-key presence (empty patch clears persisted prop paths)', () => {
   it('propReferenceImages: {} presente limpia los prop paths persistidos, incluso si story.props tiene referenceImages vivas', async () => {
     existingImagePaths = {
       propImagePaths: { oldProp: ['users/u1/lit-1/props/oldProp_0.png'] },
@@ -349,7 +358,7 @@ describe('T-A1.2 saveDraftNow (persistence-only primitive)', () => {
     };
     // Snapshot vivo con story.props que TIENE referenceImages: si derivamos
     // desde story.props en lugar de honrar el patch, subiríamos y persistiríamos
-    // esas referencias — exactamente el bug que F5 corrige.
+    // esas referencias — exactamente el bug que F4 corrige.
     const currentDraft = baseSnapshot();
     currentDraft.story = {
       ...currentDraft.story!,
@@ -387,10 +396,19 @@ describe('T-A1.2 saveDraftNow (persistence-only primitive)', () => {
       sceneImagePaths: Record<string, string[]>;
     };
     expect(persisted.propImagePaths).toEqual({});
-    // Otras categorías NO tocadas por el patch se preservan intactas.
+    // Otras categorías NO tocadas por el patch se preservan intactas
+    // (categoría 'story' ausente → propRefs manda; sceneImagePaths ausente
+    // → preservar del SELECT existente).
     expect(persisted.sceneImagePaths).toEqual({ 5: ['users/u1/lit-1/scenes/scene5_0.png'] });
   });
+});
 
+// -----------------------------------------------------------------------------
+// F5 — fallo del SELECT preliminar de `image_paths` debe abortar antes de
+// cualquier upload o upsert. Un fallo del read no puede degradarse a "sin
+// paths existentes" porque arriesgaría borrar categorías que el patch no toca.
+// -----------------------------------------------------------------------------
+describe('F5 SELECT-error abort (read failure blocks uploads and upsert)', () => {
   it('rechaza (throw) si el SELECT preliminar de image_paths falla; sin uploads ni upsert', async () => {
     selectError = { message: 'select offline' };
     // Patch que normalmente subiría imágenes: si no abortáramos temprano,
