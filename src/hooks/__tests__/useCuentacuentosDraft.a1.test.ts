@@ -631,3 +631,197 @@ describe('T-A1.5 enqueueDraftWrite (fallo aislado, cola no envenenada)', () => {
     expect(result.current.draft?.currentStep).toBe('characters');
   });
 });
+
+// -----------------------------------------------------------------------------
+// F1 — identidad se captura SÍNCRONAMENTE al encolar, ANTES del chaining sobre
+// writeTailRef. Si dos escrituras se encolan concurrentemente y la identidad
+// cambia entre el fin de W1 y el arranque de W2, W2 debe persistir (I/O
+// completado) pero NO commitear al estado React ni invocar onCommit.
+// -----------------------------------------------------------------------------
+describe('F1 enqueueDraftWrite (sync identity capture; queued stale write drops commit)', () => {
+  it('cambio de identidad entre W1 y W2: W2 persiste pero no commitea ni invoca onCommit', async () => {
+    const dfd1 = makeDeferred<{ error: null }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+
+    // Setear identity antes de encolar para que ambas capturen la misma.
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    const onCommit1 = vi.fn();
+    const onCommit2 = vi.fn();
+
+    let op1: Promise<unknown>;
+    let op2: Promise<unknown>;
+    act(() => {
+      op1 = result.current.enqueueDraftWrite({ currentStep: 'story' }, { onCommit: onCommit1 });
+      // W2 se encola concurrentemente: su identidad debe capturarse AQUÍ,
+      // ANTES de que W1 termine, no cuando W2 arranque a correr en la cola.
+      op2 = result.current.enqueueDraftWrite({ currentStep: 'characters' }, { onCommit: onCommit2 });
+    });
+
+    // Sólo W1 comenzó a persistir; W2 espera al tail.
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(1);
+    expect((upsertCalls[0].payload as { current_step: string }).current_step).toBe('story');
+
+    // Resolver W1: debe commitear (identidad estable en ese momento).
+    await act(async () => {
+      dfd1.resolve({ error: null });
+      await op1;
+    });
+    expect(result.current.draft?.currentStep).toBe('story');
+    expect(onCommit1).toHaveBeenCalledTimes(1);
+
+    // Ahora, ANTES de que W2 arranque a correr en la cola, cambiamos la
+    // identidad (bump epoch). Con captura síncrona en enqueue, W2 tenía la
+    // identidad vieja capturada; con la implementación buggy (captura en
+    // .then() de la cola), W2 tomaría la identidad NUEVA y commitería.
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    // Dejar arrancar a W2 en la cola.
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(2);
+    expect((upsertCalls[1].payload as { current_step: string }).current_step).toBe('characters');
+
+    // Resolver W2: la persistencia ocurre pero el commit debe descartarse.
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2;
+    });
+
+    // I/O completado para ambas.
+    expect(upsertCalls).toHaveLength(2);
+    // draft React sigue en el commit de W1 — W2 NO sobreescribió.
+    expect(result.current.draft?.currentStep).toBe('story');
+    // onCommit2 NUNCA se invocó porque la identidad no coincidía en el
+    // momento del post-persistencia.
+    expect(onCommit2).not.toHaveBeenCalled();
+    // onCommit1 sigue con exactamente una invocación (nunca se re-dispara).
+    expect(onCommit1).toHaveBeenCalledTimes(1);
+  });
+
+  it('control identidad estable: W1 y W2 secuenciales bajo la misma identidad ambos commitean en orden', async () => {
+    const dfd1 = makeDeferred<{ error: null }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    const onCommit1 = vi.fn();
+    const onCommit2 = vi.fn();
+
+    let op1: Promise<unknown>;
+    let op2: Promise<unknown>;
+    act(() => {
+      op1 = result.current.enqueueDraftWrite({ currentStep: 'story' }, { onCommit: onCommit1 });
+      op2 = result.current.enqueueDraftWrite({ currentStep: 'characters' }, { onCommit: onCommit2 });
+    });
+
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(1);
+
+    // Resolver W1: debe commitear.
+    await act(async () => {
+      dfd1.resolve({ error: null });
+      await op1;
+    });
+    expect(result.current.draft?.currentStep).toBe('story');
+    expect(onCommit1).toHaveBeenCalledTimes(1);
+
+    // W2 arranca sin cambios de identidad; debe también commitear.
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(2);
+
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2;
+    });
+
+    expect(result.current.draft?.currentStep).toBe('characters');
+    expect(onCommit2).toHaveBeenCalledTimes(1);
+    // Ninguno de los onCommit se disparó más de una vez.
+    expect(onCommit1).toHaveBeenCalledTimes(1);
+    expect(onCommit2).toHaveBeenCalledTimes(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// F3 — el debounce de saveDraft debe conservar la identidad capturada CUANDO
+// llegó el patch. Si la identidad cambia durante los 2s de debounce, el patch
+// pendiente persiste (I/O completado) pero el estado React NO commitea.
+// -----------------------------------------------------------------------------
+describe('F3 saveDraft debounce (identity-carrying pending data)', () => {
+  it('cambio de lifecycle durante el debounce: patch persiste con identidad vieja, no commitea', async () => {
+    vi.useFakeTimers();
+    try {
+      const dfd = makeDeferred<{ error: null }>();
+      upsertDeferreds.push(dfd);
+
+      // Montar hook: dentro de fake timers necesitamos manualmente correr los
+      // microtasks del useEffect inicial.
+      mockUserId = 'u1';
+      const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId: 'lit-1' }));
+      // Correr microtasks pendientes hasta que isLoading pase a false.
+      await vi.waitFor(
+        () => expect(result.current.isLoading).toBe(false),
+        { timeout: 2000, interval: 10 }
+      );
+
+      // Identidad A.
+      act(() => {
+        result.current.setActiveDraftStoryId('story-1');
+      });
+
+      // saveDraft debounced: pending patch queda armado con identidad A.
+      act(() => {
+        result.current.saveDraft({ currentStep: 'story' });
+      });
+
+      // Todavía no hubo upsert (2s de debounce sin cumplir).
+      expect(upsertCalls).toHaveLength(0);
+
+      // Cambiar identidad ANTES de que el timer dispare (dentro de los 2s).
+      act(() => {
+        result.current.bumpDraftEpoch();
+      });
+
+      // Disparar el timer del debounce.
+      await act(async () => {
+        vi.advanceTimersByTime(2100);
+      });
+
+      // Al disparar, la cola encoló performDraftWrite con identidad vieja.
+      // El upsert queda suspendido en el deferred.
+      await vi.waitFor(() => expect(upsertCalls).toHaveLength(1));
+      expect((upsertCalls[0].payload as { current_step: string }).current_step).toBe('story');
+
+      // Resolver el upsert. La persistencia ocurrió, pero al re-comparar
+      // identidad (vieja capturada vs actual bumped), el commit debe caer.
+      await act(async () => {
+        dfd.resolve({ error: null });
+        // Vaciar microtasks para que la rama post-persistencia termine.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // I/O completado.
+      expect(upsertCalls).toHaveLength(1);
+      // Commit descartado: draft React sigue null (nunca hubo un commit).
+      expect(result.current.draft).toBeNull();
+      expect(result.current.lastSavedAt).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

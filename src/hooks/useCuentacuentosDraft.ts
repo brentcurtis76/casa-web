@@ -1022,6 +1022,24 @@ export interface EnqueueDraftWriteResult {
   uploadedUrls: DraftUploadedUrls;
 }
 
+/**
+ * Opciones que el llamador puede pasar a `enqueueDraftWrite`.
+ * - `onCommit`: callback opcional que se invoca EXACTAMENTE una vez, sólo si
+ *   la escritura persistió y su identidad capturada aún coincide con la
+ *   identidad actual del hook en el momento del commit. No se invoca en
+ *   escrituras "stale" (persistidas pero descartadas para el estado React).
+ */
+export interface EnqueueDraftWriteOptions {
+  onCommit?: (uploadedUrls: DraftUploadedUrls, snapshot: CuentacuentosDraftFull) => void;
+}
+
+/** Identidad lógica del draft capturada en un punto en el tiempo. */
+interface DraftIdentity {
+  epoch: number;
+  storyId: string | null;
+  revision: number;
+}
+
 export interface UseCuentacuentosDraftReturn {
   hasDraft: boolean;
   draft: CuentacuentosDraftFull | null;
@@ -1036,7 +1054,10 @@ export interface UseCuentacuentosDraftReturn {
    * lógica ({epoch, storyId, revision}) cambia mientras la escritura está en
    * vuelo, la persistencia igual ocurre pero el estado React NO se actualiza.
    */
-  enqueueDraftWrite: (patch: DraftPatch) => Promise<EnqueueDraftWriteResult>;
+  enqueueDraftWrite: (
+    patch: DraftPatch,
+    options?: EnqueueDraftWriteOptions
+  ) => Promise<EnqueueDraftWriteResult>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
   deleteStoryImages: () => Promise<boolean>;
@@ -1074,7 +1095,11 @@ export function useCuentacuentosDraft({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const pendingDataRef = useRef<DraftPatch | null>(null);
+  // El patch pendiente conserva la identidad capturada al recibirlo. Merges
+  // sucesivos sólo se combinan si la identidad actual coincide con la del
+  // patch pendiente; un cambio de identidad rompe el linaje (never combine
+  // patches from different lifecycles).
+  const pendingDataRef = useRef<{ patch: DraftPatch; identity: DraftIdentity } | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Refs para evitar ciclos de dependencia - mantienen valores actuales sin causar re-renders
@@ -1163,7 +1188,14 @@ export function useCuentacuentosDraft({
   //     setLastSavedAt: el estado React sigue como estaba.
   //   - `isSaving` refleja si hay al menos una op en vuelo (independiente de
   //     si esa op terminará commiteando o no).
-  const enqueueDraftWrite = useCallback((patch: DraftPatch): Promise<EnqueueDraftWriteResult> => {
+  // Variante interna que acepta una identidad ya capturada. La usamos desde
+  // saveDraft (debounced) para que la identidad viaje CON el patch pendiente,
+  // en lugar de recapturarse cuando dispara el timer.
+  const performDraftWrite = useCallback((
+    patch: DraftPatch,
+    captured: DraftIdentity,
+    onCommit?: EnqueueDraftWriteOptions['onCommit']
+  ): Promise<EnqueueDraftWriteResult> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
@@ -1178,11 +1210,6 @@ export function useCuentacuentosDraft({
     // Devolvemos la promesa cruda de la operación para que el llamador
     // reciba la excepción real si falla la persistencia.
     const operation: Promise<EnqueueDraftWriteResult> = writeTailRef.current.then(async () => {
-      // Captura de identidad ANTES del I/O.
-      const capturedEpoch = epochRef.current;
-      const capturedStoryId = activeStoryIdRef.current;
-      const capturedRevision = revisionRef.current;
-
       try {
         // saveDraftNow es el único camino de persistencia: normaliza el
         // snapshot y persiste. Nunca toca refs ni React state — esto es
@@ -1194,22 +1221,33 @@ export function useCuentacuentosDraft({
           patch,
         });
 
-        // Re-lectura de identidad DESPUÉS del I/O. Si algo cambió, la
-        // persistencia ya ocurrió pero NO commiteamos al estado React.
+        // Re-lectura de identidad DESPUÉS del I/O contra la identidad que se
+        // capturó SÍNCRONAMENTE al encolar (antes del chaining sobre el tail).
+        // Si algo cambió, la persistencia ya ocurrió pero NO commiteamos al
+        // estado React ni disparamos onCommit.
         const identityStillMatches =
-          capturedEpoch === epochRef.current &&
-          capturedStoryId === activeStoryIdRef.current &&
-          capturedRevision === revisionRef.current;
+          captured.epoch === epochRef.current &&
+          captured.storyId === activeStoryIdRef.current &&
+          captured.revision === revisionRef.current;
 
         if (identityStillMatches) {
           const swapped = applyUploadedUrlsToDraft(snapshot, uploadedUrls);
           draftRef.current = swapped;
           setDraft(swapped);
           setLastSavedAt(snapshot.savedAt);
+          // onCommit es una notificación posterior al commit exitoso; sólo
+          // corre en la rama de identidad emparejada, exactamente una vez.
+          if (onCommit) {
+            try {
+              onCommit(uploadedUrls, snapshot);
+            } catch (err) {
+              console.error('[useCuentacuentosDraft] onCommit callback threw:', err);
+            }
+          }
         } else {
           console.log(
             '[useCuentacuentosDraft] Stale write: persisted but skipped React commit ' +
-            `(epoch ${capturedEpoch}→${epochRef.current}, storyId ${capturedStoryId}→${activeStoryIdRef.current}, revision ${capturedRevision}→${revisionRef.current})`
+            `(epoch ${captured.epoch}→${epochRef.current}, storyId ${captured.storyId}→${activeStoryIdRef.current}, revision ${captured.revision}→${revisionRef.current})`
           );
         }
 
@@ -1229,6 +1267,23 @@ export function useCuentacuentosDraft({
     return operation;
   }, []);
 
+  // API pública de encolado: captura identidad SÍNCRONAMENTE antes de
+  // encadenar sobre writeTailRef. Esto garantiza que dos escrituras
+  // consecutivas W1→W2 bajo identidad estable capturen la MISMA identidad,
+  // y que un cambio de identidad entre encolado y ejecución invalide el
+  // commit incluso si la operación arranca después del cambio.
+  const enqueueDraftWrite = useCallback((
+    patch: DraftPatch,
+    options?: EnqueueDraftWriteOptions
+  ): Promise<EnqueueDraftWriteResult> => {
+    const captured: DraftIdentity = {
+      epoch: epochRef.current,
+      storyId: activeStoryIdRef.current,
+      revision: revisionRef.current,
+    };
+    return performDraftWrite(patch, captured, options?.onCommit);
+  }, [performDraftWrite]);
+
   // Guardar borrador con debounce. Acumula patches por own-key merge y, al
   // vencer el debounce, encola una única escritura vía enqueueDraftWrite.
   // Traga la rechazo del promise para no dejar unhandled rejections del timer.
@@ -1240,9 +1295,31 @@ export function useCuentacuentosDraft({
       return;
     }
 
-    // Acumular patches pendientes por own-key presence: si una clave aparece en
-    // un patch posterior, sobreescribe. Claves no re-escritas se preservan.
-    pendingDataRef.current = { ...(pendingDataRef.current || {}), ...data };
+    // Identidad capturada al recibir ESTE patch. Viaja con el patch pendiente
+    // hasta que dispare el timer; si el timer dispara bajo otra identidad, la
+    // escritura persiste con la identidad vieja y el commit queda descartado
+    // por la cola (stale write).
+    const currentIdentity: DraftIdentity = {
+      epoch: epochRef.current,
+      storyId: activeStoryIdRef.current,
+      revision: revisionRef.current,
+    };
+
+    const prev = pendingDataRef.current;
+    const identityMatches =
+      prev !== null &&
+      prev.identity.epoch === currentIdentity.epoch &&
+      prev.identity.storyId === currentIdentity.storyId &&
+      prev.identity.revision === currentIdentity.revision;
+
+    // Merge sólo si la identidad coincide (own-key presence: claves posteriores
+    // sobreescriben). Si la identidad cambió, el patch previo pertenece a otro
+    // ciclo de vida y se descarta — nunca se combinan patches de identidades
+    // distintas.
+    pendingDataRef.current = {
+      patch: identityMatches ? { ...prev!.patch, ...data } : { ...data },
+      identity: currentIdentity,
+    };
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
@@ -1250,16 +1327,17 @@ export function useCuentacuentosDraft({
 
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSaveTimeoutRef.current = null;
-      if (!pendingDataRef.current) return;
-      const patch = pendingDataRef.current;
+      const pending = pendingDataRef.current;
+      if (!pending) return;
       pendingDataRef.current = null;
-      // Ruteo por la cola: la rechazo se traga aquí para no dejar unhandled
-      // rejections del setTimeout; enqueueDraftWrite ya logueó lo necesario.
-      enqueueDraftWrite(patch).catch((err) => {
+      // Enqueue usando la identidad capturada CUANDO llegó el patch, no la
+      // actual. Así, un cambio de identidad durante el debounce no "reetiqueta"
+      // el patch: quedará stale y no commiteará.
+      performDraftWrite(pending.patch, pending.identity).catch((err) => {
         console.error('[useCuentacuentosDraft] Failed to save draft (debounced):', err);
       });
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
-  }, [enqueueDraftWrite]);
+  }, [performDraftWrite]);
 
   // ---------------------------------------------------------------------------
   // Identidad lógica del draft — mutadores expuestos al editor
