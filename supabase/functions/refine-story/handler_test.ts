@@ -4,8 +4,11 @@
 //   * OPTIONS is served before the guard (200 + CORS, no auth calls).
 //   * Missing Authorization returns 401 UNAUTHORIZED before req.json() or
 //     the Anthropic provider (`fetch`) are touched — verified with spies.
-//   * The guard maps to `liturgy_builder:write` — verified via the args
-//     the handler passes to `checkPermission`.
+//   * A false permission returns 403 FORBIDDEN and the guard is called with
+//     exactly `liturgy_builder:write` (T-0.5 / T-0.9 per-handler wiring).
+//   * getUser and checkPermission backend failures both fail-closed to 503
+//     AUTHZ_BACKEND_ERROR, preserving CORS/JSON and leaving req.json /
+//     Storage / provider spies at zero.
 
 // deno-lint-ignore-file no-import-prefix require-await
 
@@ -180,9 +183,11 @@ Deno.test(
   },
 );
 
-// T-INT-refine-story-3
+// T-INT-refine-story-3 — T-0.5 / T-0.9 per-handler wiring: false
+// permission returns 403 with CORS/JSON, and the guard is called with
+// exactly `liturgy_builder:write`.
 Deno.test(
-  "handler maps to permission liturgy_builder:write",
+  "handler denies with 403 FORBIDDEN and maps to permission liturgy_builder:write",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps({
       // Deny so the handler stops after the mapping check — we only care
@@ -207,6 +212,10 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 403);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
       assertEquals(await res.json(), {
         success: false,
         code: "FORBIDDEN",
@@ -223,6 +232,107 @@ Deno.test(
       });
 
       // Denial short-circuits before body/provider access.
+      assertEquals(json.calls, 0);
+      assertEquals(fetchSpy.calls, 0);
+    });
+  },
+);
+
+// T-INT-refine-story-4 — auth backend failure fails closed to 503,
+// preserving CORS/JSON and leaving downstream spies at zero.
+Deno.test(
+  "auth backend error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
+  async () => {
+    const { deps: authz, calls } = makeAuthzDeps({
+      getUser: async () => ({
+        kind: "backend_error",
+        error: new Error("supabase auth 5xx"),
+      }),
+    });
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/refine-story",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer any.jwt",
+          },
+          body: JSON.stringify(samplePayload()),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 503);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "AUTHZ_BACKEND_ERROR",
+      });
+
+      // Only getUser ran; checkPermission never called.
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0], { kind: "getUser", token: "any.jwt" });
+
+      assertEquals(json.calls, 0);
+      assertEquals(fetchSpy.calls, 0);
+    });
+  },
+);
+
+// T-INT-refine-story-5 — permission RPC failure fails closed to 503,
+// and the RPC was invoked with the exact liturgy_builder:write pair.
+Deno.test(
+  "permission RPC error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
+  async () => {
+    const { deps: authz, calls } = makeAuthzDeps({
+      checkPermission: async () => ({
+        kind: "backend_error",
+        error: { message: "rpc timeout" },
+      }),
+    });
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/refine-story",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer good.jwt",
+          },
+          body: JSON.stringify(samplePayload()),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 503);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "AUTHZ_BACKEND_ERROR",
+      });
+
+      // getUser then checkPermission with the exact resource/action.
+      assertEquals(calls.length, 2);
+      assertEquals(calls[1], {
+        kind: "checkPermission",
+        userId: "user-abc",
+        resource: "liturgy_builder",
+        action: "write",
+      });
+
       assertEquals(json.calls, 0);
       assertEquals(fetchSpy.calls, 0);
     });

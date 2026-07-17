@@ -1,14 +1,17 @@
-// Integration tests for the generate-scene-images request handler.
+// Integration tests for the generate-story request handler.
 //
-// T-INT-generate-scene-images covers the fail-closed authz contract:
+// T-INT-generate-story covers the fail-closed authz contract:
 //   * OPTIONS is served before the guard (200 + CORS, no auth calls).
 //   * Missing Authorization returns 401 UNAUTHORIZED before req.json(),
-//     Storage, or the provider (`fetch`) are touched — verified with spies.
-//   * A false permission returns 403 FORBIDDEN and the guard is called with
-//     exactly `liturgy_builder:write` (T-0.5 / T-0.9 per-handler wiring).
-//   * getUser and checkPermission backend failures both fail-closed to 503
-//     AUTHZ_BACKEND_ERROR, preserving CORS/JSON and leaving req.json /
-//     Storage / provider spies at zero.
+//     Storage / Gemini research, or the Anthropic provider (`fetch`) are
+//     touched — verified with spies.
+//   * A false permission returns 403 FORBIDDEN, again before any downstream
+//     side effect (T-0.5 per-handler wiring).
+//   * A getUser backend failure returns 503 AUTHZ_BACKEND_ERROR; a
+//     checkPermission backend failure also returns 503. Both preserve CORS
+//     and JSON, and both leave req.json / provider spies at zero.
+//   * The guard maps to `liturgy_builder:write` — verified via the args
+//     the handler passes to `checkPermission` (T-0.9 per-handler wiring).
 
 // deno-lint-ignore-file no-import-prefix require-await
 
@@ -103,16 +106,34 @@ function spyRequest(
 }
 
 function baseDeps(authz: RequirePermissionDeps): HandlerDeps {
-  return { apiKey: "test-key", authzDeps: authz };
+  return {
+    anthropicApiKey: "test-anthropic-key",
+    googleAiApiKey: "test-google-key",
+    authzDeps: authz,
+  };
 }
 
-// T-INT-generate-scene-images-1
+function samplePayload() {
+  return {
+    context: {
+      title: "Adviento",
+      summary: "Esperanza en la espera",
+      readings: [{ reference: "Is 40:1-5", text: "Consolad, consolad…" }],
+    },
+    location: "Chiloé",
+    characters: [],
+    style: "reflexivo",
+    additionalNotes: "",
+  };
+}
+
+// T-INT-generate-story-1
 Deno.test("OPTIONS preflight returns 200 with CORS and skips auth guard", async () => {
   const { deps: authz, calls } = makeAuthzDeps();
   const handler = createHandler(baseDeps(authz));
 
   await withFetchSpy(async (fetchSpy) => {
-    const req = new Request("https://edge.test/generate-scene-images", {
+    const req = new Request("https://edge.test/generate-story", {
       method: "OPTIONS",
     });
     const res = await handler(req);
@@ -127,20 +148,20 @@ Deno.test("OPTIONS preflight returns 200 with CORS and skips auth guard", async 
   });
 });
 
-// T-INT-generate-scene-images-2
+// T-INT-generate-story-2
 Deno.test(
-  "POST without Authorization returns 401 UNAUTHORIZED and never reads body, storage, or provider",
+  "POST without Authorization returns 401 UNAUTHORIZED and never reads body or calls provider",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps();
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
       const { req, json } = spyRequest(
-        "https://edge.test/generate-scene-images",
+        "https://edge.test/generate-story",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "scene", styleId: "storybook" }),
+          body: JSON.stringify(samplePayload()),
         },
       );
 
@@ -156,8 +177,9 @@ Deno.test(
         code: "UNAUTHORIZED",
       });
 
-      // Fail-closed: no body parse, no fetch (Storage / provider), no authz
-      // backend calls at all when the credential is missing.
+      // Fail-closed: no body parse, no fetch (Gemini research / Anthropic
+      // provider), no authz backend calls at all when the credential is
+      // missing.
       assertEquals(json.calls, 0, "req.json must not be called");
       assertEquals(fetchSpy.calls, 0, "fetch must not be called");
       assertEquals(calls.length, 0, "authz backend must not be called");
@@ -165,29 +187,27 @@ Deno.test(
   },
 );
 
-// T-INT-generate-scene-images-3 — T-0.5 / T-0.9 per-handler wiring:
-// false permission returns 403 with CORS/JSON, and the guard is called
-// with exactly `liturgy_builder:write`.
+// T-INT-generate-story-3 — T-0.5 / T-0.9 per-handler wiring: false
+// permission returns 403 and the guard is called with the exact
+// liturgy_builder:write pair.
 Deno.test(
   "handler denies with 403 FORBIDDEN and maps to permission liturgy_builder:write",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps({
-      // Deny so the handler stops after the mapping check — we only care
-      // that the resource/action pair was passed correctly.
       checkPermission: async () => ({ kind: "denied" }),
     });
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
       const { req, json } = spyRequest(
-        "https://edge.test/generate-scene-images",
+        "https://edge.test/generate-story",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer good.jwt",
           },
-          body: JSON.stringify({ type: "scene", styleId: "storybook" }),
+          body: JSON.stringify(samplePayload()),
         },
       );
 
@@ -220,8 +240,7 @@ Deno.test(
   },
 );
 
-// T-INT-generate-scene-images-4 — auth backend failure fails closed to
-// 503, preserving CORS/JSON and leaving downstream spies at zero.
+// T-INT-generate-story-4 — auth backend failure fails closed to 503.
 Deno.test(
   "auth backend error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
   async () => {
@@ -235,14 +254,14 @@ Deno.test(
 
     await withFetchSpy(async (fetchSpy) => {
       const { req, json } = spyRequest(
-        "https://edge.test/generate-scene-images",
+        "https://edge.test/generate-story",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer any.jwt",
           },
-          body: JSON.stringify({ type: "scene", styleId: "storybook" }),
+          body: JSON.stringify(samplePayload()),
         },
       );
 
@@ -268,29 +287,29 @@ Deno.test(
   },
 );
 
-// T-INT-generate-scene-images-5 — permission RPC failure fails closed to
-// 503, and the RPC was invoked with the exact liturgy_builder:write pair.
+// T-INT-generate-story-5 — permission RPC failure fails closed to 503,
+// and the RPC was invoked with the exact liturgy_builder:write pair.
 Deno.test(
   "permission RPC error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps({
       checkPermission: async () => ({
         kind: "backend_error",
-        error: { message: "rpc timeout" },
+        error: { message: "connection reset" },
       }),
     });
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
       const { req, json } = spyRequest(
-        "https://edge.test/generate-scene-images",
+        "https://edge.test/generate-story",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer good.jwt",
           },
-          body: JSON.stringify({ type: "scene", styleId: "storybook" }),
+          body: JSON.stringify(samplePayload()),
         },
       );
 
