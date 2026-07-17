@@ -1342,20 +1342,37 @@ export function useCuentacuentosDraft({
   // ---------------------------------------------------------------------------
   // Identidad lógica del draft — mutadores expuestos al editor
   // ---------------------------------------------------------------------------
+
+  // Drop cualquier patch armado en `saveDraft` que aún no disparó y cancela el
+  // timer del debounce. Debe llamarse SÍNCRONAMENTE en toda transición de
+  // identidad (epoch/story/revision) y en lifecycle destructivos (delete,
+  // recovery). Sin esto, un patch armado bajo la identidad vieja sobreviviría
+  // al reemplazo y se encolaría después, mezclando estado entre ciclos de vida.
+  const resetDebounce = useCallback(() => {
+    pendingDataRef.current = null;
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+    }
+  }, []);
+
   const bumpDraftEpoch = useCallback(() => {
     epochRef.current += 1;
-  }, []);
+    resetDebounce();
+  }, [resetDebounce]);
 
   const setActiveDraftStoryId = useCallback((storyId: string | null) => {
     if (activeStoryIdRef.current !== storyId) {
       activeStoryIdRef.current = storyId;
       revisionRef.current = 0;
+      resetDebounce();
     }
-  }, []);
+  }, [resetDebounce]);
 
   const bumpDraftStoryRevision = useCallback(() => {
     revisionRef.current += 1;
-  }, []);
+    resetDebounce();
+  }, [resetDebounce]);
 
   // Cargar borrador manualmente. Carga = lifecycle: cualquier escritura en
   // vuelo debe descartar su commit, y el story activo pasa a ser el cargado.
@@ -1363,10 +1380,11 @@ export function useCuentacuentosDraft({
     if (!userId) return null;
     const loaded = await loadDraftFromSupabase(userId, liturgyId);
     epochRef.current += 1;
+    resetDebounce();
     setActiveDraftStoryId(loaded?.story?.id ?? null);
     setDraft(loaded);
     return loaded;
-  }, [liturgyId, userId, setActiveDraftStoryId]);
+  }, [liturgyId, userId, setActiveDraftStoryId, resetDebounce]);
 
   // Eliminar borrador. Lifecycle destructivo: cualquier escritura en vuelo
   // debe descartar su commit para no resucitar estado que el usuario borró.
@@ -1376,10 +1394,11 @@ export function useCuentacuentosDraft({
     epochRef.current += 1;
     activeStoryIdRef.current = null;
     revisionRef.current = 0;
+    resetDebounce();
     setDraft(null);
     setLastSavedAt(null);
     setShowRecoveryPrompt(false);
-  }, [liturgyId, userId]);
+  }, [liturgyId, userId, resetDebounce]);
 
   // Eliminar todas las imágenes del cuento (Storage + DB draft)
   // Esto se usa cuando el usuario quiere eliminar completamente una historia
@@ -1448,6 +1467,7 @@ export function useCuentacuentosDraft({
       epochRef.current += 1;
       activeStoryIdRef.current = null;
       revisionRef.current = 0;
+      resetDebounce();
       setDraft(null);
       setLastSavedAt(null);
       setShowRecoveryPrompt(false);
@@ -1458,16 +1478,17 @@ export function useCuentacuentosDraft({
       console.error('[useCuentacuentosDraft] Error deleting story images:', err);
       return false;
     }
-  }, []);
+  }, [resetDebounce]);
 
   // Aceptar recuperación. El story cargado pasa a ser el activo — cualquier
   // escritura en vuelo desde antes de aceptar quedará stale.
   const acceptRecovery = useCallback(() => {
     setShowRecoveryPrompt(false);
     epochRef.current += 1;
+    resetDebounce();
     setActiveDraftStoryId(draft?.story?.id ?? null);
     return draft;
-  }, [draft, setActiveDraftStoryId]);
+  }, [draft, setActiveDraftStoryId, resetDebounce]);
 
   // Rechazar recuperación. Igual que delete: invalidar identidad.
   const declineRecovery = useCallback(() => {
@@ -1477,9 +1498,10 @@ export function useCuentacuentosDraft({
     epochRef.current += 1;
     activeStoryIdRef.current = null;
     revisionRef.current = 0;
+    resetDebounce();
     setDraft(null);
     setShowRecoveryPrompt(false);
-  }, [liturgyId, userId]);
+  }, [liturgyId, userId, resetDebounce]);
 
   return {
     hasDraft: draft !== null && draft.currentStep !== 'config',

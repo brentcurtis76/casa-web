@@ -774,17 +774,15 @@ describe('F1 enqueueDraftWrite (sync identity capture; queued stale write drops 
 });
 
 // -----------------------------------------------------------------------------
-// F3 — el debounce de saveDraft debe conservar la identidad capturada CUANDO
-// llegó el patch. Si la identidad cambia durante los 2s de debounce, el patch
-// pendiente persiste (I/O completado) pero el estado React NO commitea.
+// F3 — el debounce de saveDraft debe cancelarse SÍNCRONAMENTE ante cualquier
+// cambio de lifecycle (epoch/story/revision). Un patch pendiente armado bajo
+// una identidad y sobreviviente a su reemplazo mezclaría ciclos de vida: la
+// invariante estricta es que ese patch NO persiste ni commitea.
 // -----------------------------------------------------------------------------
-describe('F3 saveDraft debounce (identity-carrying pending data)', () => {
-  it('cambio de lifecycle durante el debounce: patch persiste con identidad vieja, no commitea', async () => {
+describe('F3 saveDraft debounce (lifecycle-canceled pending data)', () => {
+  it('cambio de lifecycle durante el debounce: patch pendiente ni persiste ni commitea', async () => {
     vi.useFakeTimers();
     try {
-      const dfd = makeDeferred<{ error: null }>();
-      upsertDeferreds.push(dfd);
-
       // Montar hook: dentro de fake timers necesitamos manualmente correr los
       // microtasks del useEffect inicial.
       mockUserId = 'u1';
@@ -809,35 +807,103 @@ describe('F3 saveDraft debounce (identity-carrying pending data)', () => {
       expect(upsertCalls).toHaveLength(0);
 
       // Cambiar identidad ANTES de que el timer dispare (dentro de los 2s).
+      // Esto debe cancelar el timer y descartar el patch pendiente.
       act(() => {
         result.current.bumpDraftEpoch();
       });
 
-      // Disparar el timer del debounce.
+      // Avanzar más allá del debounce: nada debe dispararse.
       await act(async () => {
         vi.advanceTimersByTime(2100);
       });
 
-      // Al disparar, la cola encoló performDraftWrite con identidad vieja.
-      // El upsert queda suspendido en el deferred.
-      await vi.waitFor(() => expect(upsertCalls).toHaveLength(1));
-      expect((upsertCalls[0].payload as { current_step: string }).current_step).toBe('story');
-
-      // Resolver el upsert. La persistencia ocurrió, pero al re-comparar
-      // identidad (vieja capturada vs actual bumped), el commit debe caer.
+      // Vaciar microtasks por si algo quedó en cola.
       await act(async () => {
-        dfd.resolve({ error: null });
-        // Vaciar microtasks para que la rama post-persistencia termine.
         await Promise.resolve();
         await Promise.resolve();
         await Promise.resolve();
       });
 
-      // I/O completado.
-      expect(upsertCalls).toHaveLength(1);
-      // Commit descartado: draft React sigue null (nunca hubo un commit).
+      // Ni persistencia ni commit: el patch pendiente fue cancelado.
+      expect(upsertCalls).toHaveLength(0);
+      expect(uploadCalls).toHaveLength(0);
       expect(result.current.draft).toBeNull();
       expect(result.current.lastSavedAt).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cambio de storyId durante el debounce: patch pendiente ni persiste ni commitea', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUserId = 'u1';
+      const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId: 'lit-1' }));
+      await vi.waitFor(
+        () => expect(result.current.isLoading).toBe(false),
+        { timeout: 2000, interval: 10 }
+      );
+
+      act(() => {
+        result.current.setActiveDraftStoryId('story-1');
+      });
+
+      act(() => {
+        result.current.saveDraft({ currentStep: 'story' });
+      });
+
+      // Reemplazo de story antes de que dispare el debounce.
+      act(() => {
+        result.current.setActiveDraftStoryId('story-2');
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(2100);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(upsertCalls).toHaveLength(0);
+      expect(result.current.draft).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('bump de revision durante el debounce (generation-apply): patch pendiente ni persiste ni commitea', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUserId = 'u1';
+      const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId: 'lit-1' }));
+      await vi.waitFor(
+        () => expect(result.current.isLoading).toBe(false),
+        { timeout: 2000, interval: 10 }
+      );
+
+      act(() => {
+        result.current.setActiveDraftStoryId('story-1');
+      });
+
+      act(() => {
+        result.current.saveDraft({ currentStep: 'story' });
+      });
+
+      act(() => {
+        result.current.bumpDraftStoryRevision();
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(2100);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(upsertCalls).toHaveLength(0);
+      expect(result.current.draft).toBeNull();
     } finally {
       vi.useRealTimers();
     }
