@@ -10,14 +10,12 @@
 //     AUTHZ_BACKEND_ERROR, preserving CORS/JSON and leaving req.json /
 //     Storage / provider spies at zero.
 
-// deno-lint-ignore-file no-import-prefix require-await
+// deno-lint-ignore-file require-await
 
-import {
-  assertEquals,
-  assertStrictEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertStrictEquals } from "@std/assert";
 
 import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
+import { createSupabaseAuthzDeps } from "../_shared/liturgyAuth.ts";
 import type {
   CheckPermissionOutcome,
   GetUserOutcome,
@@ -317,6 +315,106 @@ Deno.test(
 
       assertEquals(json.calls, 0);
       assertEquals(fetchSpy.calls, 0);
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// T-0.6 — anon-key-shaped bearer token (legacy anon-key-only call).
+//
+// A caller presenting only the project anon key (an HS256 JWT with
+// role="anon" and NO `sub` claim) must be rejected with 401 UNAUTHORIZED.
+// GoTrue rejects such tokens with status 403 "invalid claim: missing sub
+// claim"; the production adapter (`createSupabaseAuthzDeps`) must classify
+// that as `unauthenticated`, and the handler must stop before the
+// permission RPC, `req.json()`, Storage, or the provider.
+//
+// The token below is SYNTHETIC: header/payload follow the anon-key shape,
+// the signature is a fake string — it is not a real project key.
+// ---------------------------------------------------------------------------
+
+function b64url(input: string): string {
+  return btoa(input).replace(/\+/g, "-").replace(/\//g, "_").replace(
+    /=+$/,
+    "",
+  );
+}
+
+const SYNTHETIC_ANON_JWT = [
+  b64url(JSON.stringify({ alg: "HS256", typ: "JWT" })),
+  b64url(JSON.stringify({
+    iss: "supabase",
+    ref: "synthetic-project-ref",
+    role: "anon",
+    iat: 1700000000,
+    exp: 1900000000,
+  })),
+  b64url("synthetic-signature-not-a-real-key"),
+].join(".");
+
+Deno.test(
+  "T-0.6 anon-key-shaped bearer returns 401 UNAUTHORIZED via the production adapter; RPC, body, and provider untouched",
+  async () => {
+    const getUserTokens: string[] = [];
+    const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+
+    // Fake Supabase admin client that answers exactly like GoTrue does for
+    // an anon-key bearer: 403 "invalid claim: missing sub claim".
+    const fakeAdmin = {
+      auth: {
+        getUser: async (token: string) => {
+          getUserTokens.push(token);
+          return {
+            data: { user: null },
+            error: {
+              status: 403,
+              message: "invalid claim: missing sub claim",
+            },
+          };
+        },
+      },
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        rpcCalls.push({ fn, args });
+        return { data: null, error: null };
+      },
+    };
+
+    // Production adapter + production handler wiring (no makeAuthzDeps stub).
+    const authzDeps = createSupabaseAuthzDeps(fakeAdmin);
+    const handler = createHandler({ apiKey: "test-key", authzDeps });
+
+    await withFetchSpy(async (fetchSpy) => {
+      const { req, json } = spyRequest(
+        "https://edge.test/generate-scene-images",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SYNTHETIC_ANON_JWT}`,
+          },
+          body: JSON.stringify({ type: "scene", styleId: "storybook" }),
+        },
+      );
+
+      const res = await handler(req);
+
+      assertStrictEquals(res.status, 401);
+      for (const [k, v] of Object.entries(corsHeaders)) {
+        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+      }
+      assertEquals(res.headers.get("Content-Type"), "application/json");
+      assertEquals(await res.json(), {
+        success: false,
+        code: "UNAUTHORIZED",
+      });
+
+      // The guard extracted the exact bearer token and asked GoTrue once.
+      assertEquals(getUserTokens, [SYNTHETIC_ANON_JWT]);
+      // Rejected before authorization: permission RPC never invoked.
+      assertEquals(rpcCalls.length, 0, "has_permission RPC must not run");
+      // Zero side effects: no body parse, no Storage/provider fetch.
+      assertEquals(json.calls, 0, "req.json must not be called");
+      assertEquals(fetchSpy.calls, 0, "fetch must not be called");
     });
   },
 );
