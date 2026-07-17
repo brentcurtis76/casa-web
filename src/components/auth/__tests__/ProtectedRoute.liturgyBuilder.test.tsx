@@ -1,19 +1,30 @@
 /**
  * T-0.8 — /admin/liturgia/constructor requiere liturgy_builder:write
  *
- * Verifica que ProtectedRoute con requires={{ resource: 'liturgy_builder',
- * action: 'write' }} niegue el acceso a un usuario sin permisos y renderice
- * el hijo cuando el permiso está concedido. El AuthContext se mockea para
- * controlar hasPermission/isAdmin sin tocar Supabase.
+ * Ejercita el registro de rutas REAL (`appRoutes` de src/appRoutes.tsx,
+ * montado por App.tsx vía createBrowserRouter), no una copia local: si
+ * alguien quita el ProtectedRoute de la ruta del constructor, estos
+ * tests fallan.
+ *
+ *   1. Estructural: la ruta registrada para /admin/liturgia/constructor
+ *      debe ser un ProtectedRoute con requires liturgy_builder:write.
+ *   2. Conductual (deny): sin el permiso, navegar a la ruta real redirige
+ *      a /admin con toast de acceso denegado.
+ *   3. Conductual (allow): con liturgy_builder:write, la ruta real
+ *      renderiza el constructor.
+ *
+ * El AuthContext se mockea para controlar hasPermission sin tocar
+ * Supabase; las dos páginas que estos casos montan se sustituyen por
+ * stubs livianos (el registro de rutas sigue siendo el real).
  */
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 
 // ---------------------------------------------------------------------------
-// Mocks
+// Mocks (deben declararse antes de importar App/ProtectedRoute)
 // ---------------------------------------------------------------------------
 
 type AuthState = {
@@ -36,6 +47,7 @@ const authState: AuthState = {
 
 vi.mock('@/components/auth/AuthContext', () => ({
   useAuth: () => authState,
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 const toastMock = vi.fn();
@@ -43,35 +55,33 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: toastMock }),
 }));
 
-// Import AFTER mocks
+// Stubs para las dos páginas que se montan en estos casos. Solo se
+// reemplaza el componente de página; la RUTA sigue siendo la registrada
+// en App.tsx.
+vi.mock('@/pages/ConstructorLiturgiasPage', () => ({
+  default: () => (
+    <div data-testid="constructor-page">Constructor de Liturgias</div>
+  ),
+}));
+vi.mock('@/pages/AdminDashboard', () => ({
+  default: () => <div data-testid="admin-page">Admin Dashboard</div>,
+}));
+
+// Import AFTER mocks — el registro real de rutas que App.tsx monta vía
+// createBrowserRouter(appRoutes).
+import { appRoutes } from '@/appRoutes';
 import ProtectedRoute from '../ProtectedRoute';
 
-const ConstructorStub: React.FC = () => (
-  <div data-testid="constructor-page">Constructor de Liturgias</div>
-);
+const CONSTRUCTOR_PATH = '/admin/liturgia/constructor';
 
-const AdminStub: React.FC = () => (
-  <div data-testid="admin-page">Admin Dashboard</div>
-);
+const renderRealConstructorRoute = () => {
+  const router = createMemoryRouter(appRoutes, {
+    initialEntries: [CONSTRUCTOR_PATH],
+  });
+  return render(<RouterProvider router={router} />);
+};
 
-const renderConstructorRoute = () =>
-  render(
-    <MemoryRouter initialEntries={['/admin/liturgia/constructor']}>
-      <Routes>
-        <Route path="/admin" element={<AdminStub />} />
-        <Route
-          path="/admin/liturgia/constructor"
-          element={
-            <ProtectedRoute requires={{ resource: 'liturgy_builder', action: 'write' }}>
-              <ConstructorStub />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </MemoryRouter>,
-  );
-
-describe('T-0.8 — /admin/liturgia/constructor ProtectedRoute', () => {
+describe('T-0.8 — /admin/liturgia/constructor (registro real de App.tsx)', () => {
   beforeEach(() => {
     toastMock.mockReset();
     authState.user = { id: '11111111-1111-4111-8111-111111111111' };
@@ -82,14 +92,23 @@ describe('T-0.8 — /admin/liturgia/constructor ProtectedRoute', () => {
     authState.hasRole = vi.fn(() => false);
   });
 
-  it('deniega y redirige a /admin cuando el usuario no tiene liturgy_builder:write', async () => {
-    authState.hasPermission = vi.fn(async (resource: string, action: string) => {
-      // Sin permisos para liturgy_builder:write
-      if (resource === 'liturgy_builder' && action === 'write') return false;
-      return false;
-    });
+  it('la ruta registrada envuelve el constructor en ProtectedRoute con liturgy_builder:write', () => {
+    const route = appRoutes.find((r) => r.path === CONSTRUCTOR_PATH);
+    expect(route, `ruta ${CONSTRUCTOR_PATH} debe existir en appRoutes`).toBeDefined();
 
-    renderConstructorRoute();
+    const element = route!.element as React.ReactElement;
+    // Falla si ProtectedRoute se quita (o se sustituye) en App.tsx.
+    expect(element.type).toBe(ProtectedRoute);
+    expect(element.props.requires).toEqual({
+      resource: 'liturgy_builder',
+      action: 'write',
+    });
+  });
+
+  it('deniega y redirige a /admin cuando el usuario no tiene liturgy_builder:write', async () => {
+    authState.hasPermission = vi.fn(async () => false);
+
+    renderRealConstructorRoute();
 
     await waitFor(() => {
       expect(screen.getByTestId('admin-page')).toBeInTheDocument();
@@ -110,7 +129,7 @@ describe('T-0.8 — /admin/liturgia/constructor ProtectedRoute', () => {
       return resource === 'liturgy_builder' && action === 'write';
     });
 
-    renderConstructorRoute();
+    renderRealConstructorRoute();
 
     await waitFor(() => {
       expect(screen.getByTestId('constructor-page')).toBeInTheDocument();
