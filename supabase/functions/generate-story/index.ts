@@ -5,9 +5,22 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
+import { createSupabaseAuthzDeps, requireLiturgyWriter } from '../_shared/liturgyAuth.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const GOOGLE_AI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
+
+// F0 AuthN/AuthZ: service-role client + injectable authz deps for the shared
+// fail-closed guard. Request logic for this function is still monolithic on
+// cc-cleanup (overhaul fases 0-2); the handler.ts split is deferred to the
+// edge-function phases (F/C/D). The guard itself is the reviewed F0 module.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+const authzDeps = createSupabaseAuthzDeps(supabaseAdmin);
 const MODEL = 'claude-opus-4-5-20251101';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -552,6 +565,13 @@ serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // F0 fail-closed authz: runs BEFORE req.json(), any download, Storage, or the
+  // provider. Missing/invalid token => 401, denied => 403, backend error => 503.
+  const authz = await requireLiturgyWriter(req, authzDeps, corsHeaders);
+  if (!authz.ok) {
+    return authz.response;
   }
 
   try {
