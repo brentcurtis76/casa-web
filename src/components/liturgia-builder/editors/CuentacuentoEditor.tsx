@@ -591,7 +591,9 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
-    saveDraftNow,
+    enqueueDraftWrite,
+    bumpDraftEpoch,
+    setActiveDraftStoryId,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
   // Estado del diálogo de confirmación de eliminación
@@ -625,14 +627,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   useEffect(() => { sceneReferenceModeRef.current = sceneReferenceMode; }, [sceneReferenceMode]);
   useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
 
-  // Cola de guardado serializada: los guardados disparados por tareas
-  // concurrentes del pipeline nunca se solapan entre sí.
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-
   // Id del cuento vigente: las tareas en vuelo lo comparan antes de aplicar
   // resultados, para que un reset/regeneración no reciba imágenes huérfanas.
   const storyIdRef = useRef<string | null>(null);
-  useEffect(() => { storyIdRef.current = story?.id ?? null; }, [story]);
+  useEffect(() => {
+    storyIdRef.current = story?.id ?? null;
+    // También registrar el story activo en el hook para que enqueueDraftWrite
+    // pueda invalidar escrituras encoladas cuando el story cambia (delete/
+    // regenerar/aceptar recovery). Cambios de id resetean revision a 0.
+    setActiveDraftStoryId(story?.id ?? null);
+  }, [story, setActiveDraftStoryId]);
 
   const pipeline = useStoryImagePipeline();
   // Métodos estables del pipeline (el objeto cambia de identidad por render)
@@ -1460,9 +1464,12 @@ Instrucciones críticas:
     setError(null);
 
     // Descartar el lote en curso antes de borrar: las tareas en vuelo se
-    // auto-descartan al ver que storyIdRef ya no coincide.
+    // auto-descartan al ver que storyIdRef ya no coincide. El bump de epoch
+    // asegura que además cualquier guardado encolado ya en vuelo hacia el
+    // hook persista pero no commitee al estado (drop del stale commit).
     cancelPipeline();
     storyIdRef.current = null;
+    bumpDraftEpoch();
 
     try {
       console.log('[CuentacuentoEditor] Deleting story and all associated images...');
@@ -1510,53 +1517,49 @@ Instrucciones críticas:
       setIsDeleting(false);
       setShowDeleteDialog(false);
     }
-  }, [deleteStoryImages, onStoryDeleted, cancelPipeline]);
+  }, [deleteStoryImages, onStoryDeleted, cancelPipeline, bumpDraftEpoch]);
 
-  // Guardados serializados del pipeline: leen SIEMPRE los refs (estado más
-  // reciente) y reemplazan base64→URL en ref+estado al terminar, así los
-  // próximos guardados no re-suben imágenes ya persistidas.
-  const enqueueCharacterSave = useCallback((): Promise<void> => {
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({
-          currentStep: currentStepRef.current,
-          characterSheetOptions: characterSheetOptionsRef.current,
-          selectedCharacterSheets: selectedCharacterSheetsRef.current,
-        });
-        const uploaded = result.uploadedUrls?.characterSheetUrls;
-        if (uploaded) {
-          const swapped = swapOptionsWithUploadedUrls(characterSheetOptionsRef.current, uploaded);
-          characterSheetOptionsRef.current = swapped;
-          setCharacterSheetOptions(swapped);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (personajes):', err);
+  // Guardados del pipeline: leen SIEMPRE los refs (estado más reciente) y
+  // reemplazan base64→URL en ref+estado al terminar, así los próximos
+  // guardados no re-suben imágenes ya persistidas. La cola serializada vive
+  // en el hook (enqueueDraftWrite); aquí sólo tragamos el rechazo para no
+  // propagar el error al llamador del pipeline.
+  const enqueueCharacterSave = useCallback(async (): Promise<void> => {
+    try {
+      const result = await enqueueDraftWrite({
+        currentStep: currentStepRef.current,
+        characterSheetOptions: characterSheetOptionsRef.current,
+        selectedCharacterSheets: selectedCharacterSheetsRef.current,
       });
-    return saveQueueRef.current;
-  }, [saveDraftNow]);
+      const uploaded = result.uploadedUrls?.characterSheetUrls;
+      if (uploaded) {
+        const swapped = swapOptionsWithUploadedUrls(characterSheetOptionsRef.current, uploaded);
+        characterSheetOptionsRef.current = swapped;
+        setCharacterSheetOptions(swapped);
+      }
+    } catch (err) {
+      console.error('[CuentacuentoEditor] Error en guardado encolado (personajes):', err);
+    }
+  }, [enqueueDraftWrite]);
 
-  const enqueueSceneSave = useCallback((): Promise<void> => {
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({
-          currentStep: currentStepRef.current,
-          sceneImageOptions: sceneImageOptionsRef.current,
-          selectedSceneImages: selectedSceneImagesRef.current,
-          sceneReferenceModes: sceneReferenceModeRef.current,
-        });
-        const uploaded = result.uploadedUrls?.sceneImageUrls;
-        if (uploaded) {
-          const swapped = swapOptionsWithUploadedUrls(sceneImageOptionsRef.current, uploaded);
-          sceneImageOptionsRef.current = swapped;
-          setSceneImageOptions(swapped);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (escenas):', err);
+  const enqueueSceneSave = useCallback(async (): Promise<void> => {
+    try {
+      const result = await enqueueDraftWrite({
+        currentStep: currentStepRef.current,
+        sceneImageOptions: sceneImageOptionsRef.current,
+        selectedSceneImages: selectedSceneImagesRef.current,
+        sceneReferenceModes: sceneReferenceModeRef.current,
       });
-    return saveQueueRef.current;
-  }, [saveDraftNow]);
+      const uploaded = result.uploadedUrls?.sceneImageUrls;
+      if (uploaded) {
+        const swapped = swapOptionsWithUploadedUrls(sceneImageOptionsRef.current, uploaded);
+        sceneImageOptionsRef.current = swapped;
+        setSceneImageOptions(swapped);
+      }
+    } catch (err) {
+      console.error('[CuentacuentoEditor] Error en guardado encolado (escenas):', err);
+    }
+  }, [enqueueDraftWrite]);
 
   // Núcleo de generación de character sheet, compartido por el botón manual y
   // el pipeline automático. Actualiza ref+estado y encola el guardado. Lanza
@@ -1657,7 +1660,8 @@ Instrucciones críticas:
 
   // Aplica una transformación a los props en storyProps + story.props y
   // persiste el story actualizado en el draft. El guardado pasa por la MISMA
-  // cola serializada que los guardados del pipeline para no pisarse con ellos.
+  // cola serializada (enqueueDraftWrite, en el hook) que los guardados del
+  // pipeline, así que nunca se pisa con ellos.
   const applyPropsUpdate = useCallback(async (updater: (props: StoryProp[]) => StoryProp[]) => {
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = updater(baseProps);
@@ -1672,21 +1676,18 @@ Instrucciones críticas:
       setStory(nextStory);
     }
 
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({ story: nextStory });
-        // Base64 recién subido → URL, para no re-subir en cada guardado ni
-        // mandar megabytes de base64 a cada generación de escena.
-        if (result.uploadedUrls?.propImageUrls) {
-          applyPropUrlSwap(result.uploadedUrls.propImageUrls);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
-      });
-    await saveQueueRef.current;
+    try {
+      const result = await enqueueDraftWrite({ story: nextStory });
+      // Base64 recién subido → URL, para no re-subir en cada guardado ni
+      // mandar megabytes de base64 a cada generación de escena.
+      if (result.uploadedUrls?.propImageUrls) {
+        applyPropUrlSwap(result.uploadedUrls.propImageUrls);
+      }
+    } catch (err) {
+      console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
+    }
     return nextProps;
-  }, [story, storyProps, saveDraftNow, applyPropUrlSwap]);
+  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap]);
 
   // Núcleo de generación de hoja de referencia de lugar/objeto. Igual patrón
   // que los character sheets: candidatas a memoria (efímeras), elección humana.
@@ -2383,7 +2384,7 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        const saveResult = await saveDraftNow({
+        const saveResult = await enqueueDraftWrite({
           currentStep,
           characterSheetOptions: newOptions,
           selectedCharacterSheets: newSelection,
@@ -2406,7 +2407,7 @@ Instrucciones críticas:
       characterSheetOptions,
       selectedCharacterSheets,
       currentStep,
-      saveDraftNow,
+      enqueueDraftWrite,
     ],
   );
 
@@ -2480,7 +2481,7 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        const saveResult = await saveDraftNow({
+        const saveResult = await enqueueDraftWrite({
           currentStep,
           sceneImageOptions: newSceneOptions,
           selectedSceneImages: newSelection,
@@ -2510,7 +2511,7 @@ Instrucciones críticas:
       sceneImageOptions,
       selectedSceneImages,
       currentStep,
-      saveDraftNow,
+      enqueueDraftWrite,
     ],
   );
 
@@ -3223,9 +3224,12 @@ Instrucciones críticas:
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
     // Descartar el lote en curso: las tareas en vuelo se auto-descartan al
-    // ver que storyIdRef ya no coincide.
+    // ver que storyIdRef ya no coincide. El bump de epoch además hace que
+    // cualquier guardado encolado en el hook persista pero no commitee al
+    // estado (stale write drop) — nunca resucita estado del cuento viejo.
     cancelPipeline();
     storyIdRef.current = null;
+    bumpDraftEpoch();
     characterSheetOptionsRef.current = {};
     selectedCharacterSheetsRef.current = {};
     sceneImageOptionsRef.current = {};
@@ -3249,7 +3253,7 @@ Instrucciones críticas:
     setStoryProps([]);
     setPropSheetOptions({});
     setSelectedPropSheets({});
-  }, [cancelPipeline]);
+  }, [cancelPipeline, bumpDraftEpoch]);
 
   // Editar cuento existente (sin borrar)
   const handleEditStory = useCallback(() => {

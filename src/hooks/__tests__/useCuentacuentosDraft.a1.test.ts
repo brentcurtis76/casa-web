@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import type { Story } from '@/types/shared/story';
 
 // -----------------------------------------------------------------------------
@@ -8,11 +9,33 @@ import type { Story } from '@/types/shared/story';
 
 type UpsertPayload = Record<string, unknown> & { image_paths?: Record<string, unknown> };
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+}
+
+function makeDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 const upsertCalls: Array<{ payload: UpsertPayload }> = [];
 const uploadCalls: Array<{ path: string }> = [];
 const removedPaths: string[] = [];
 let existingImagePaths: Record<string, unknown> | null = null;
 let upsertError: { message: string } | null = null;
+// Cola de deferreds para controlar cuándo resuelve cada upsert. Si vacía,
+// el mock resuelve inmediatamente (compat T-A1.1/T-A1.2). Cada .shift() saca
+// el próximo deferred para la próxima llamada a upsert().
+const upsertDeferreds: Array<Deferred<{ error: { message: string } | null }>> = [];
+// Mock user id: el hook lo lee vía supabase.auth.getUser al montar.
+let mockUserId: string | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
   const tableApi = () => ({
@@ -24,6 +47,12 @@ vi.mock('@/integrations/supabase/client', () => {
     })),
     upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
       upsertCalls.push({ payload });
+      const deferred = upsertDeferreds.shift();
+      if (deferred) {
+        // La escritura queda suspendida hasta que el test resuelva el deferred.
+        const result = await deferred.promise;
+        return result;
+      }
       return { error: upsertError };
     }),
     delete: vi.fn().mockReturnThis(),
@@ -50,7 +79,9 @@ vi.mock('@/integrations/supabase/client', () => {
       from: vi.fn(() => tableApi()),
       storage: { from: vi.fn(() => storageApi()) },
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+        getUser: vi.fn().mockImplementation(async () => ({
+          data: { user: mockUserId ? { id: mockUserId } : null },
+        })),
         getSession: vi.fn(),
         onAuthStateChange: vi.fn(),
       },
@@ -65,6 +96,7 @@ vi.mock('@/integrations/supabase/client', () => {
 import {
   mergePatch,
   persistDraftNow,
+  useCuentacuentosDraft,
   type CuentacuentosDraftFull,
   type DraftPatch,
 } from '../useCuentacuentosDraft';
@@ -110,8 +142,10 @@ beforeEach(() => {
   upsertCalls.length = 0;
   uploadCalls.length = 0;
   removedPaths.length = 0;
+  upsertDeferreds.length = 0;
   existingImagePaths = null;
   upsertError = null;
+  mockUserId = null;
   // fetch (HEAD checks): siempre 200 para no ejercitar red.
   vi.stubGlobal(
     'fetch',
@@ -296,5 +330,221 @@ describe('T-A1.2 persistDraftNow (persistence-only primitive)', () => {
         patch: { currentStep: 'cover' } as DraftPatch,
       })
     ).rejects.toThrow(/db offline/);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Utilidades de tick para tests deterministas: en vez de sleeps, apuramos
+// microtasks para observar el estado tras el chaining de promesas.
+// -----------------------------------------------------------------------------
+const flushMicrotasks = async () => {
+  // Varios turns porque hay chaining .then(.then(.then())) dentro del hook.
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+};
+
+async function mountReadyHook(liturgyId = 'lit-1') {
+  mockUserId = 'u1';
+  const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId }));
+  // Esperar a que el efecto de auth resuelva y a que el chequeo inicial de
+  // draft termine (loadDraftFromSupabase devuelve null porque no hay data).
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  return result;
+}
+
+// -----------------------------------------------------------------------------
+// T-A1.3 — la cola nunca interleave dos enqueues concurrentes y ambos
+// commitean en orden.
+// -----------------------------------------------------------------------------
+describe('T-A1.3 enqueueDraftWrite (cola serializada, orden preservado)', () => {
+  it('dos enqueues concurrentes corren secuencialmente y commitean en orden', async () => {
+    const dfd1 = makeDeferred<{ error: null }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+
+    let op1: Promise<unknown>;
+    let op2: Promise<unknown>;
+    act(() => {
+      op1 = result.current.enqueueDraftWrite({ currentStep: 'story' });
+      op2 = result.current.enqueueDraftWrite({ currentStep: 'characters' });
+    });
+
+    // Sólo la primera upsert debe haber arrancado — la segunda está atrás en
+    // la cola esperando que el tail de la primera resuelva.
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(1);
+    expect((upsertCalls[0].payload as { current_step: string }).current_step).toBe('story');
+
+    // Resolver la primera: el commit ocurre y la segunda arranca.
+    await act(async () => {
+      dfd1.resolve({ error: null });
+      await op1;
+    });
+
+    // Ahora la segunda arrancó y quedó pending su deferred.
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(2);
+    expect((upsertCalls[1].payload as { current_step: string }).current_step).toBe('characters');
+
+    // Primer commit visible: currentStep 'story'.
+    expect(result.current.draft?.currentStep).toBe('story');
+
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2;
+    });
+
+    // Commit final visible: currentStep 'characters'.
+    expect(result.current.draft?.currentStep).toBe('characters');
+    // Ambas operaciones devolvieron shape { snapshot, uploadedUrls }.
+    const r1 = await op1!;
+    const r2 = await op2!;
+    expect(r1).toHaveProperty('snapshot');
+    expect(r1).toHaveProperty('uploadedUrls');
+    expect(r2).toHaveProperty('snapshot');
+    expect(r2).toHaveProperty('uploadedUrls');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// T-A1.4 — cambio de identidad {epoch, storyId, revision} mientras la
+// persistencia está en vuelo: persiste pero no commitea al estado React.
+// -----------------------------------------------------------------------------
+describe('T-A1.4 enqueueDraftWrite (stale write drop)', () => {
+  it('bump de epoch invalida el commit pero la persistencia igual ocurre', async () => {
+    const dfd = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd);
+    const result = await mountReadyHook();
+
+    let op: Promise<unknown>;
+    act(() => {
+      op = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(1);
+
+    // Bumpear epoch antes de resolver el upsert.
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    await act(async () => {
+      dfd.resolve({ error: null });
+      await op;
+    });
+
+    // La persistencia OCURRIÓ (upsert fue llamado con currentStep='story').
+    expect((upsertCalls[0].payload as { current_step: string }).current_step).toBe('story');
+    // El commit al estado React NO ocurrió: draft sigue como antes (null).
+    expect(result.current.draft).toBeNull();
+    expect(result.current.lastSavedAt).toBeNull();
+  });
+
+  it('cambio de storyId invalida el commit', async () => {
+    const dfd = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd);
+    const result = await mountReadyHook();
+
+    // Setear identity antes de encolar.
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    let op: Promise<unknown>;
+    act(() => {
+      op = result.current.enqueueDraftWrite({ currentStep: 'scenes' });
+    });
+    await flushMicrotasks();
+
+    // Cambiar storyId mientras la persistencia está en vuelo.
+    act(() => {
+      result.current.setActiveDraftStoryId('story-2');
+    });
+
+    await act(async () => {
+      dfd.resolve({ error: null });
+      await op;
+    });
+
+    // Persistió.
+    expect(upsertCalls).toHaveLength(1);
+    // NO commiteó.
+    expect(result.current.draft).toBeNull();
+  });
+
+  it('bump de revision invalida el commit', async () => {
+    const dfd = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd);
+    const result = await mountReadyHook();
+
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    let op: Promise<unknown>;
+    act(() => {
+      op = result.current.enqueueDraftWrite({ currentStep: 'cover' });
+    });
+    await flushMicrotasks();
+
+    act(() => {
+      result.current.bumpDraftStoryRevision();
+    });
+
+    await act(async () => {
+      dfd.resolve({ error: null });
+      await op;
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    expect(result.current.draft).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// T-A1.5 — la primera operación rechaza a su llamador, pero una siguiente
+// operación encolada sigue persistiendo y commiteando normalmente.
+// -----------------------------------------------------------------------------
+describe('T-A1.5 enqueueDraftWrite (fallo aislado, cola no envenenada)', () => {
+  it('la primera op rechaza al llamador; la segunda persiste y commitea', async () => {
+    const dfd1 = makeDeferred<{ error: { message: string } }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+
+    let op1: Promise<unknown>;
+    let op2: Promise<unknown>;
+    act(() => {
+      op1 = result.current.enqueueDraftWrite({ currentStep: 'story' });
+      op2 = result.current.enqueueDraftWrite({ currentStep: 'characters' });
+    });
+
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(1);
+
+    // Resolver la primera con error (Supabase rechaza el upsert).
+    await act(async () => {
+      dfd1.resolve({ error: { message: 'db exploded' } });
+      // op1 debe rechazar al llamador con el mensaje real.
+      await expect(op1).rejects.toThrow(/db exploded/);
+    });
+
+    // La segunda debe haber arrancado — la cola no está envenenada por el
+    // fallo de la primera (el tail se asignó a operation.catch(() => {})).
+    await flushMicrotasks();
+    expect(upsertCalls).toHaveLength(2);
+    expect((upsertCalls[1].payload as { current_step: string }).current_step).toBe('characters');
+
+    // Resolver la segunda con éxito: debe commitear al estado.
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2;
+    });
+
+    expect(result.current.draft?.currentStep).toBe('characters');
   });
 });

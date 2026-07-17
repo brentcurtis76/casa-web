@@ -54,11 +54,6 @@ export interface DraftUploadedUrls {
   propImageUrls: Record<string, string[]>;
 }
 
-export interface DraftSaveResult {
-  success: boolean;
-  uploadedUrls: DraftUploadedUrls | null;
-}
-
 /**
  * Diferencia semántica ("patch") aplicable a un snapshot de draft.
  *
@@ -995,20 +990,56 @@ export interface UseCuentacuentosDraftOptions {
   liturgyId: string;
 }
 
+/**
+ * Resultado devuelto por `enqueueDraftWrite`. Contiene el snapshot normalizado
+ * que se intentó persistir y las URLs subidas en esta escritura. La operación
+ * puede haber persistido en Supabase sin que se hayan commiteado los cambios
+ * al estado React del hook — eso ocurre cuando la identidad cambia entre la
+ * captura inicial y la re-lectura tras el await (stale write).
+ */
+export interface EnqueueDraftWriteResult {
+  snapshot: CuentacuentosDraftFull;
+  uploadedUrls: DraftUploadedUrls;
+}
+
 export interface UseCuentacuentosDraftReturn {
   hasDraft: boolean;
   draft: CuentacuentosDraftFull | null;
   lastSavedAt: string | null;
   isLoading: boolean;
   isSaving: boolean;
-  saveDraft: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => void;
-  saveDraftNow: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => Promise<DraftSaveResult>;
+  saveDraft: (data: DraftPatch) => void;
+  /**
+   * Encola una escritura al draft. Las escrituras se ejecutan estrictamente en
+   * orden sobre una cola serializada; el promise devuelto rechaza con el error
+   * de persistencia si Supabase falla (sin envenenar la cola). Si la identidad
+   * lógica ({epoch, storyId, revision}) cambia mientras la escritura está en
+   * vuelo, la persistencia igual ocurre pero el estado React NO se actualiza.
+   */
+  enqueueDraftWrite: (patch: DraftPatch) => Promise<EnqueueDraftWriteResult>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
   deleteStoryImages: () => Promise<boolean>;
   showRecoveryPrompt: boolean;
   acceptRecovery: () => CuentacuentosDraftFull | null;
   declineRecovery: () => void;
+  /**
+   * Bump del epoch: invalida cualquier escritura en vuelo. Uso: acciones de
+   * ciclo de vida que descartan la sesión actual (delete story, regenerar).
+   */
+  bumpDraftEpoch: () => void;
+  /**
+   * Registra la identidad del story activo. Si el id cambia (incluyendo a/desde
+   * `null`), resetea el contador de revisión a 0. Uso: crear un cuento nuevo,
+   * cargar un cuento desde recovery, reemplazar el cuento actual.
+   */
+  setActiveDraftStoryId: (storyId: string | null) => void;
+  /**
+   * Bump del contador de revisión del story activo. Uso: cambios granulares
+   * dentro del mismo story que deben invalidar escrituras en vuelo (por
+   * ejemplo, un reemplazo estructural de escenas sin cambiar el story id).
+   */
+  bumpDraftStoryRevision: () => void;
 }
 
 /**
@@ -1023,14 +1054,26 @@ export function useCuentacuentosDraft({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const pendingDataRef = useRef<Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>> | null>(null);
+  const pendingDataRef = useRef<DraftPatch | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isSavingRef = useRef(false);
 
   // Refs para evitar ciclos de dependencia - mantienen valores actuales sin causar re-renders
   const draftRef = useRef<CuentacuentosDraftFull | null>(null);
   const userIdRef = useRef<string | null>(null);
   const liturgyIdRef = useRef(liturgyId);
+
+  // Cola serializada de escrituras: cada op corre estrictamente después de la
+  // anterior. El tail se guarda como `.catch(() => {})` para que una escritura
+  // fallida rechace hacia su llamador sin envenenar las siguientes.
+  const writeTailRef = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingWritesRef = useRef(0);
+
+  // Identidad lógica que las escrituras encoladas capturan al iniciar y
+  // re-verifican tras el await. Si algo cambió, la persistencia igual ocurrió
+  // (no se aborta) pero NO se aplican los cambios al estado React del hook.
+  const epochRef = useRef(0);
+  const activeStoryIdRef = useRef<string | null>(null);
+  const revisionRef = useRef(0);
 
   // Mantener refs sincronizadas con el estado
   useEffect(() => {
@@ -1086,100 +1129,153 @@ export function useCuentacuentosDraft({
     };
   }, [liturgyId, userId]);
 
-  // Guardar borrador con debounce - usa refs para evitar ciclos de dependencia
-  // IMPORTANTE: Esta función tiene identidad estable (no cambia entre renders)
-  const saveDraft = useCallback((data: DraftPatch) => {
+  // Cola serializada de escrituras. Cada operación corre desde el tail de la
+  // cola: captura identidad, arma snapshot con own-key merge, persiste, y
+  // solo entonces re-lee identidad para decidir si commitea al estado React.
+  //
+  // Contrato:
+  //   - Rechaza (throw) hacia el llamador si Supabase falla, pero el tail se
+  //     asigna a `operation.catch(() => {})` para que una op fallida no
+  //     envenene a las siguientes: la próxima seguirá saliendo del tail.
+  //   - Si la identidad {epoch, storyId, revision} capturada al inicio no
+  //     coincide con la re-lectura tras el await, la persistencia igual ocurre
+  //     (no se aborta) pero NO se aplican los cambios a draftRef/setDraft/
+  //     setLastSavedAt: el estado React sigue como estaba.
+  //   - `isSaving` refleja si hay al menos una op en vuelo (independiente de
+  //     si esa op terminará commiteando o no).
+  const enqueueDraftWrite = useCallback((patch: DraftPatch): Promise<EnqueueDraftWriteResult> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
-    console.log(`[useCuentacuentosDraft] saveDraft called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}, step: ${data.currentStep}`);
+    if (!currentUserId) {
+      return Promise.reject(new Error('enqueueDraftWrite: no hay usuario autenticado'));
+    }
+
+    pendingWritesRef.current += 1;
+    setIsSaving(true);
+
+    // La cola encadena sobre el tail (siempre resuelto — nunca rechaza).
+    // Devolvemos la promesa cruda de la operación para que el llamador
+    // reciba la excepción real si falla la persistencia.
+    const operation: Promise<EnqueueDraftWriteResult> = writeTailRef.current.then(async () => {
+      // Captura de identidad ANTES del I/O.
+      const capturedEpoch = epochRef.current;
+      const capturedStoryId = activeStoryIdRef.current;
+      const capturedRevision = revisionRef.current;
+
+      try {
+        const snapshot = normalizeSnapshot(draftRef.current, patch, currentLiturgyId);
+        const { uploadedUrls } = await saveDraftToSupabase({
+          userId: currentUserId,
+          liturgyId: currentLiturgyId,
+          snapshot,
+          patch,
+        });
+
+        // Re-lectura de identidad DESPUÉS del I/O. Si algo cambió, la
+        // persistencia ya ocurrió pero NO commiteamos al estado React.
+        const identityStillMatches =
+          capturedEpoch === epochRef.current &&
+          capturedStoryId === activeStoryIdRef.current &&
+          capturedRevision === revisionRef.current;
+
+        if (identityStillMatches) {
+          const swapped = applyUploadedUrlsToDraft(snapshot, uploadedUrls);
+          draftRef.current = swapped;
+          setDraft(swapped);
+          setLastSavedAt(snapshot.savedAt);
+        } else {
+          console.log(
+            '[useCuentacuentosDraft] Stale write: persisted but skipped React commit ' +
+            `(epoch ${capturedEpoch}→${epochRef.current}, storyId ${capturedStoryId}→${activeStoryIdRef.current}, revision ${capturedRevision}→${revisionRef.current})`
+          );
+        }
+
+        return { snapshot, uploadedUrls };
+      } finally {
+        pendingWritesRef.current -= 1;
+        if (pendingWritesRef.current <= 0) {
+          pendingWritesRef.current = 0;
+          setIsSaving(false);
+        }
+      }
+    });
+
+    // El tail nunca puede rechazar: capturamos cualquier error aquí para que
+    // la próxima escritura siga saliendo desde una promesa resuelta.
+    writeTailRef.current = operation.catch(() => {});
+    return operation;
+  }, []);
+
+  // Guardar borrador con debounce. Acumula patches por own-key merge y, al
+  // vencer el debounce, encola una única escritura vía enqueueDraftWrite.
+  // Traga la rechazo del promise para no dejar unhandled rejections del timer.
+  const saveDraft = useCallback((data: DraftPatch) => {
+    const currentUserId = userIdRef.current;
 
     if (!currentUserId) {
       console.warn('[useCuentacuentosDraft] saveDraft: No userId available, skipping save');
       return;
     }
 
-    // Acumular datos pendientes en el patch pendiente (own-key merge).
+    // Acumular patches pendientes por own-key presence: si una clave aparece en
+    // un patch posterior, sobreescribe. Claves no re-escritas se preservan.
     pendingDataRef.current = { ...(pendingDataRef.current || {}), ...data };
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
-    autoSaveTimeoutRef.current = setTimeout(async () => {
-      if (!pendingDataRef.current || isSavingRef.current) return;
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveTimeoutRef.current = null;
+      if (!pendingDataRef.current) return;
       const patch = pendingDataRef.current;
       pendingDataRef.current = null;
-      isSavingRef.current = true;
-      setIsSaving(true);
-      try {
-        const { snapshot, uploadedUrls } = await persistDraftNow({
-          userId: currentUserId,
-          liturgyId: currentLiturgyId,
-          currentDraft: draftRef.current,
-          patch,
-        });
-        setDraft(applyUploadedUrlsToDraft(snapshot, uploadedUrls));
-        setLastSavedAt(snapshot.savedAt);
-      } catch (err) {
-        console.error('[useCuentacuentosDraft] Failed to save draft:', err);
-      } finally {
-        isSavingRef.current = false;
-        setIsSaving(false);
-      }
-    }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
-  }, []);
-
-  // Wrapper temporal (compatibilidad hasta Subtask 2): guarda INMEDIATO y
-  // aplica state updates. La primitiva `persistDraftNow` (top-level) es la
-  // API canónica de persistencia — no toca React state ni refs.
-  const saveDraftNow = useCallback(async (data: DraftPatch): Promise<DraftSaveResult> => {
-    const currentUserId = userIdRef.current;
-    const currentLiturgyId = liturgyIdRef.current;
-
-    console.log(`[useCuentacuentosDraft] saveDraftNow (wrapper) called, userId: ${currentUserId}, liturgyId: ${currentLiturgyId}`);
-
-    if (!currentUserId) {
-      console.warn('[useCuentacuentosDraft] saveDraftNow: No userId available, skipping save');
-      return { success: false, uploadedUrls: null };
-    }
-
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
-    setIsSaving(true);
-    try {
-      const { snapshot, uploadedUrls } = await persistDraftNow({
-        userId: currentUserId,
-        liturgyId: currentLiturgyId,
-        currentDraft: draftRef.current,
-        patch: data,
+      // Ruteo por la cola: la rechazo se traga aquí para no dejar unhandled
+      // rejections del setTimeout; enqueueDraftWrite ya logueó lo necesario.
+      enqueueDraftWrite(patch).catch((err) => {
+        console.error('[useCuentacuentosDraft] Failed to save draft (debounced):', err);
       });
-      setDraft(applyUploadedUrlsToDraft(snapshot, uploadedUrls));
-      setLastSavedAt(snapshot.savedAt);
-      pendingDataRef.current = null;
-      return { success: true, uploadedUrls };
-    } catch (err) {
-      console.error('[useCuentacuentosDraft] saveDraftNow: Failed to save draft:', err);
-      return { success: false, uploadedUrls: null };
-    } finally {
-      setIsSaving(false);
+    }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
+  }, [enqueueDraftWrite]);
+
+  // ---------------------------------------------------------------------------
+  // Identidad lógica del draft — mutadores expuestos al editor
+  // ---------------------------------------------------------------------------
+  const bumpDraftEpoch = useCallback(() => {
+    epochRef.current += 1;
+  }, []);
+
+  const setActiveDraftStoryId = useCallback((storyId: string | null) => {
+    if (activeStoryIdRef.current !== storyId) {
+      activeStoryIdRef.current = storyId;
+      revisionRef.current = 0;
     }
   }, []);
 
-  // Cargar borrador manualmente
+  const bumpDraftStoryRevision = useCallback(() => {
+    revisionRef.current += 1;
+  }, []);
+
+  // Cargar borrador manualmente. Carga = lifecycle: cualquier escritura en
+  // vuelo debe descartar su commit, y el story activo pasa a ser el cargado.
   const loadDraftAsync = useCallback(async () => {
     if (!userId) return null;
     const loaded = await loadDraftFromSupabase(userId, liturgyId);
+    epochRef.current += 1;
+    setActiveDraftStoryId(loaded?.story?.id ?? null);
     setDraft(loaded);
     return loaded;
-  }, [liturgyId, userId]);
+  }, [liturgyId, userId, setActiveDraftStoryId]);
 
-  // Eliminar borrador
+  // Eliminar borrador. Lifecycle destructivo: cualquier escritura en vuelo
+  // debe descartar su commit para no resucitar estado que el usuario borró.
   const deleteDraft = useCallback(() => {
     if (!userId) return;
     deleteDraftFromSupabase(userId, liturgyId);
+    epochRef.current += 1;
+    activeStoryIdRef.current = null;
+    revisionRef.current = 0;
     setDraft(null);
     setLastSavedAt(null);
     setShowRecoveryPrompt(false);
@@ -1246,7 +1342,12 @@ export function useCuentacuentosDraft({
         return false;
       }
 
-      // 3. Limpiar estado local
+      // 3. Invalidar identidad + limpiar estado local. Toda escritura en
+      // vuelo (por ejemplo del pipeline de generación) debe caer del lado
+      // de "persistió pero no commiteó" para no resucitar el cuento borrado.
+      epochRef.current += 1;
+      activeStoryIdRef.current = null;
+      revisionRef.current = 0;
       setDraft(null);
       setLastSavedAt(null);
       setShowRecoveryPrompt(false);
@@ -1259,17 +1360,23 @@ export function useCuentacuentosDraft({
     }
   }, []);
 
-  // Aceptar recuperación
+  // Aceptar recuperación. El story cargado pasa a ser el activo — cualquier
+  // escritura en vuelo desde antes de aceptar quedará stale.
   const acceptRecovery = useCallback(() => {
     setShowRecoveryPrompt(false);
+    epochRef.current += 1;
+    setActiveDraftStoryId(draft?.story?.id ?? null);
     return draft;
-  }, [draft]);
+  }, [draft, setActiveDraftStoryId]);
 
-  // Rechazar recuperación
+  // Rechazar recuperación. Igual que delete: invalidar identidad.
   const declineRecovery = useCallback(() => {
     if (userId) {
       deleteDraftFromSupabase(userId, liturgyId);
     }
+    epochRef.current += 1;
+    activeStoryIdRef.current = null;
+    revisionRef.current = 0;
     setDraft(null);
     setShowRecoveryPrompt(false);
   }, [liturgyId, userId]);
@@ -1281,12 +1388,15 @@ export function useCuentacuentosDraft({
     isLoading,
     isSaving,
     saveDraft,
-    saveDraftNow,
+    enqueueDraftWrite,
     loadDraft: loadDraftAsync,
     deleteDraft,
     deleteStoryImages,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
+    bumpDraftEpoch,
+    setActiveDraftStoryId,
+    bumpDraftStoryRevision,
   };
 }
