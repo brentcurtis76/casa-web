@@ -58,6 +58,7 @@ import type {
   SuggestedStoryProp,
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
+import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull, type DraftPatch } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, AppliedIdentity, RunIdentity, ApplyOutcome } from '@/hooks/storyImagePipelineRunner';
@@ -555,6 +556,9 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [coverIncludedCharacters, setCoverIncludedCharacters] = useState<string[]>([]);
   // Opt-in: characters to include as references for the end image (default: none)
   const [endIncludedCharacters, setEndIncludedCharacters] = useState<string[]>([]);
+  // A3/S5: lado explícito que faltaba — cover ya tenía include/exclude, end no.
+  // El pipeline/prompts pueden usarlo como opt-out; no lo reseteamos en restore.
+  const [endExcludedCharacters, setEndExcludedCharacters] = useState<string[]>([]);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
 
   // Estado de UI
@@ -641,6 +645,60 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     // regenerar/aceptar recovery). Cambios de id resetean revision a 0.
     setActiveDraftStoryId(story?.id ?? null);
   }, [story, setActiveDraftStoryId]);
+
+  // A3/S5: auto-persist de buffers editor extendidos (edited prompts, includes/
+  // excludes, referencias, currentStep, title, endExcluded). Cada cambio pasa
+  // por `saveDraft`, que debouncea 2s y encola vía `enqueueDraftWrite` —
+  // NUNCA se llama a `saveDraftNow` directo. Se salta:
+  //  - Antes del primer commit hidratado (evita spam al montar / al restore).
+  //  - En pasos `config` / `complete` (fuera del flujo de edición).
+  //
+  // Semántica: cada patch trae SÓLO las claves editor-buffer; la selección de
+  // opciones y las imágenes originales las escriben sus propios sitios.
+  const skipNextAutoPersistRef = useRef(true);
+  useEffect(() => {
+    if (skipNextAutoPersistRef.current) {
+      skipNextAutoPersistRef.current = false;
+      return;
+    }
+    if (currentStep === 'config' || currentStep === 'complete') return;
+    saveDraft({
+      currentStep,
+      editingScenePrompt,
+      editingCharacterPrompt,
+      editingCoverPrompt,
+      editingEndPrompt,
+      editingSceneText,
+      editingTitle,
+      sceneIncludedCharacters,
+      coverIncludedCharacters,
+      endIncludedCharacters,
+      sceneExcludedCharacters,
+      coverExcludedCharacters,
+      endExcludedCharacters,
+      sceneReferenceImages,
+      coverReferenceImage,
+      endReferenceImage,
+    });
+  }, [
+    saveDraft,
+    currentStep,
+    editingScenePrompt,
+    editingCharacterPrompt,
+    editingCoverPrompt,
+    editingEndPrompt,
+    editingSceneText,
+    editingTitle,
+    sceneIncludedCharacters,
+    coverIncludedCharacters,
+    endIncludedCharacters,
+    sceneExcludedCharacters,
+    coverExcludedCharacters,
+    endExcludedCharacters,
+    sceneReferenceImages,
+    coverReferenceImage,
+    endReferenceImage,
+  ]);
 
   const pipeline = useStoryImagePipeline();
   // Método estable del pipeline (el objeto cambia de identidad por render).
@@ -873,6 +931,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
 
   // Función para restaurar desde un draft
   const restoreFromDraft = useCallback((draftData: CuentacuentosDraftFull) => {
+    // A3/S5: silenciar el auto-persist effect durante el batch de restore —
+    // los sucesivos setState no deben re-persistir lo que acabamos de leer.
+    skipNextAutoPersistRef.current = true;
+
     // Restaurar configuración
     setLocation(draftData.config.location);
     setCustomLocation(draftData.config.customLocation);
@@ -956,8 +1018,6 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setSelectedCover(draftData.selectedCover);
     setEndOptions(draftData.endOptions);
     setSelectedEnd(draftData.selectedEnd);
-    setEndIncludedCharacters([]);
-    setEditingSceneText({});
 
     // Restaurar modos de imagen de referencia de escena (style | pov)
     // Normalizar keys a números por el mismo motivo que sceneImageOptions
@@ -968,9 +1028,53 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       }
     }
     setSceneReferenceMode(normalizedModes);
+    // A3/S5: sincronizar ref inmediatamente para que el pipeline lea el modo
+    // vigente antes del próximo useEffect flush.
+    sceneReferenceModeRef.current = normalizedModes;
+
+    // A3/S5: restaurar buffers extendidos del editor (edited prompts, includes/
+    // excludes, referencias por escena, title, landmarkVisible). Se aplican
+    // TANTO al React state como a las refs síncronas — cualquier pipeline read
+    // que corra antes del próximo commit ve el snapshot restaurado, no la
+    // pizarra en blanco del render anterior.
+    const normalizeNumericRecord = <T,>(src: Record<number, T> | undefined): Record<number, T> => {
+      const out: Record<number, T> = {};
+      for (const [k, v] of Object.entries(src || {})) out[Number(k)] = v;
+      return out;
+    };
+    const restoredScenePrompt = normalizeNumericRecord<string>(draftData.editingScenePrompt);
+    const restoredCharacterPrompt = { ...(draftData.editingCharacterPrompt || {}) };
+    const restoredSceneText = normalizeNumericRecord<string>(draftData.editingSceneText);
+    const restoredSceneRefs = normalizeNumericRecord<string>(draftData.sceneReferenceImages);
+    const restoredSceneIncluded = normalizeNumericRecord<string[]>(draftData.sceneIncludedCharacters);
+    const restoredSceneExcluded = normalizeNumericRecord<string[]>(draftData.sceneExcludedCharacters);
+
+    setEditingScenePrompt(restoredScenePrompt);
+    setEditingCharacterPrompt(restoredCharacterPrompt);
+    setEditingSceneText(restoredSceneText);
+    setSceneReferenceImages(restoredSceneRefs);
+    setSceneIncludedCharacters(restoredSceneIncluded);
+    setSceneExcludedCharacters(restoredSceneExcluded);
+    setEditingCoverPrompt(draftData.editingCoverPrompt ?? '');
+    setEditingEndPrompt(draftData.editingEndPrompt ?? '');
+    setCoverReferenceImage(draftData.coverReferenceImage ?? null);
+    setEndReferenceImage(draftData.endReferenceImage ?? null);
+    setCoverIncludedCharacters(draftData.coverIncludedCharacters ?? []);
+    setCoverExcludedCharacters(draftData.coverExcludedCharacters ?? []);
+    setEndIncludedCharacters(draftData.endIncludedCharacters ?? []);
+    // A3/S5: end excluded lo restauramos igual que cover (nunca silent reset).
+    setEndExcludedCharacters(draftData.endExcludedCharacters ?? []);
+    setEditingTitle(draftData.editingTitle ?? null);
+
+    // Sincronizar refs de prompts editados INMEDIATAMENTE — el pipeline
+    // (retryFailed / autoKick) puede leerlos antes de que se propague el
+    // efecto que sincroniza refs con state.
+    editingScenePromptRef.current = restoredScenePrompt;
+    editingCharacterPromptRef.current = restoredCharacterPrompt;
 
     // Restaurar paso actual
     setCurrentStep(draftData.currentStep);
+    currentStepRef.current = draftData.currentStep;
     setShowForm(false);
 
     console.log(`[CuentacuentoEditor] Restored from draft, step: ${draftData.currentStep}`);
@@ -3266,24 +3370,49 @@ Instrucciones críticas:
     }
   }, [endOptions, selectedEnd, context.id]);
 
-  // Aprobar cuento y avanzar a personajes
-  const handleApproveStory = useCallback(() => {
-    if (!story) return;
+  // A3/S6 — Gates transaccionales de aprobación / finalización.
+  //
+  // Toda ruta de aprobación primero persiste el snapshot autoritativo
+  // (nextStory + EditorStateV1 completo, computado por el hook desde el patch)
+  // vía la cola serializada `enqueueDraftWrite`. SÓLO tras una escritura viva
+  // (no `stale`, no rejected) aplica la transición local (setStory + step).
+  // Nunca "aprobamos en falso": un fallo de persistencia retiene story/step.
+  //
+  // Además, las 4 rutas están BLOQUEADAS mientras `pipeline.isSaving` sea true
+  // o `pipeline.saveFailedCount > 0` (imágenes con save pendiente/fallado).
+  // El banner en la cabecera y los botones deshabilitados le dan salida al
+  // usuario (Reintentar guardado) — este handler es la última defensa.
+  const gateWarning = 'Hay imágenes sin guardar; reintenta antes de aprobar';
 
-    setStory({
+  // Aprobar cuento y avanzar a personajes
+  const handleApproveStory = useCallback(async () => {
+    if (!story) return;
+    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
+    const nextStory: Story = {
       ...story,
       metadata: {
         ...story.metadata,
         status: 'characters-pending',
         updatedAt: new Date().toISOString(),
       },
+    };
+    await runApprovalTransaction({
+      state: gateState,
+      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'characters' }),
+      onSuccess: () => {
+        setStory(nextStory);
+        setCurrentStep('characters');
+      },
+      onBlocked: () => setError(gateWarning),
+      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
+      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-    setCurrentStep('characters');
-  }, [story]);
+  }, [story, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
 
   // Aprobar personajes y avanzar a escenas
-  const handleApproveCharacters = useCallback(() => {
+  const handleApproveCharacters = useCallback(async () => {
     if (!story) return;
+    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
 
     // Actualizar story con character sheets seleccionados
     const updatedCharacters = story.characters.map(char => {
@@ -3296,7 +3425,7 @@ Instrucciones críticas:
       };
     });
 
-    setStory({
+    const nextStory: Story = {
       ...story,
       characters: updatedCharacters,
       metadata: {
@@ -3304,13 +3433,24 @@ Instrucciones críticas:
         status: 'characters-approved',
         updatedAt: new Date().toISOString(),
       },
+    };
+    await runApprovalTransaction({
+      state: gateState,
+      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'scenes' }),
+      onSuccess: () => {
+        setStory(nextStory);
+        setCurrentStep('scenes');
+      },
+      onBlocked: () => setError(gateWarning),
+      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
+      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-    setCurrentStep('scenes');
-  }, [story, characterSheetOptions, selectedCharacterSheets]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
 
   // Aprobar escenas y avanzar a portada
-  const handleApproveScenes = useCallback(() => {
+  const handleApproveScenes = useCallback(async () => {
     if (!story) return;
+    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
 
     // Actualizar story con imágenes de escenas seleccionadas
     const updatedScenes = story.scenes.map(scene => {
@@ -3323,7 +3463,7 @@ Instrucciones críticas:
       };
     });
 
-    setStory({
+    const nextStory: Story = {
       ...story,
       scenes: updatedScenes,
       metadata: {
@@ -3331,15 +3471,29 @@ Instrucciones críticas:
         status: 'scenes-pending',
         updatedAt: new Date().toISOString(),
       },
+    };
+    await runApprovalTransaction({
+      state: gateState,
+      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'cover' }),
+      onSuccess: () => {
+        setStory(nextStory);
+        setCurrentStep('cover');
+      },
+      onBlocked: () => setError(gateWarning),
+      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
+      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-    setCurrentStep('cover');
-  }, [story, sceneImageOptions, selectedSceneImages]);
+  }, [story, sceneImageOptions, selectedSceneImages, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
 
   // Finalizar cuento
-  // NOTE: Images are kept as base64 here. Upload to storage happens in saveLiturgy
-  // when the user clicks "Guardar Liturgia". This follows the Portadas pattern.
-  const handleFinalize = useCallback(() => {
+  // A3/S6 — Igual que las aprobaciones: primero persiste, después transiciona.
+  // El gate `canApprove` bloquea cuando hay guardado en vuelo o entradas
+  // save-failed. `deleteDraft()` sólo corre tras un commit vivo (nunca en
+  // stale/rejected). Nota: Images are kept as base64 here; upload to storage
+  // happens in saveLiturgy when the user clicks "Guardar Liturgia".
+  const handleFinalize = useCallback(async () => {
     if (!story) return;
+    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
 
     // Build final scenes with selected images (may be base64 or URL)
     const finalScenes = story.scenes.map(scene => {
@@ -3400,21 +3554,27 @@ Instrucciones críticas:
       },
     };
 
-    setStory(finalStory);
-
-    // Generate final slides
-    const slides = createPreviewSlideGroup(finalStory);
-    setPreviewSlides(slides as unknown as SlideGroup);
-
-    // Pass story to parent - images will be uploaded when user clicks "Guardar Liturgia"
-    onStoryCreated(finalStory, slides as unknown as SlideGroup);
-    setConfirmed(true);
-    setCurrentStep('complete');
-
-    // Delete the draft since story is finalized
-    deleteDraft();
-    console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft]);
+    await runApprovalTransaction({
+      state: gateState,
+      enqueue: () => enqueueDraftWrite({ story: finalStory, currentStep: 'complete' }),
+      onSuccess: () => {
+        setStory(finalStory);
+        // Generate final slides
+        const slides = createPreviewSlideGroup(finalStory);
+        setPreviewSlides(slides as unknown as SlideGroup);
+        // Pass story to parent - images will be uploaded when user clicks "Guardar Liturgia"
+        onStoryCreated(finalStory, slides as unknown as SlideGroup);
+        setConfirmed(true);
+        setCurrentStep('complete');
+        // Delete the draft since story is finalized (only tras persistencia viva).
+        deleteDraft();
+        console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
+      },
+      onBlocked: () => setError(gateWarning),
+      onStale: () => setError('El borrador cambió durante la finalización; vuelve a intentar.'),
+      onError: () => setError('No se pudo guardar antes de finalizar. Reintenta.'),
+    });
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
@@ -3975,8 +4135,10 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveStory}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors"
+            onClick={() => void handleApproveStory()}
+            disabled={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
+            title={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount }) ? 'Hay imágenes sin guardar; reintenta antes de aprobar' : undefined}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
             <Check size={18} />
@@ -4255,9 +4417,21 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveCharacters}
-            disabled={pipeline.isRunning || !allCharactersHaveSheets || !allCharactersSelected || !allPropsResolved}
-            title={!allPropsResolved ? 'Cada lugar/objeto recurrente necesita una imagen de referencia elegida (o quítalo de la lista)' : undefined}
+            onClick={() => void handleApproveCharacters()}
+            disabled={
+              pipeline.isRunning ||
+              !allCharactersHaveSheets ||
+              !allCharactersSelected ||
+              !allPropsResolved ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            title={
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                : !allPropsResolved
+                ? 'Cada lugar/objeto recurrente necesita una imagen de referencia elegida (o quítalo de la lista)'
+                : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -5074,8 +5248,17 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveScenes}
-            disabled={pipeline.isRunning || scenesSelected < story.scenes.length}
+            onClick={() => void handleApproveScenes()}
+            disabled={
+              pipeline.isRunning ||
+              scenesSelected < story.scenes.length ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            title={
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -6051,8 +6234,17 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleFinalize}
-            disabled={selectedCover === null || selectedEnd === null}
+            onClick={() => void handleFinalize()}
+            disabled={
+              selectedCover === null ||
+              selectedEnd === null ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            title={
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -6232,6 +6424,37 @@ Instrucciones críticas:
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* A3/S6 — Banner de reintentar guardado. Se muestra cuando hay entradas
+          save-failed en el registry: bloquea las aprobaciones y expone el CTA
+          `Reintentar guardado (N)` que llama a `pipeline.retrySaves(...)` — que
+          reencola SÓLO persistencia (cero llamadas al provider). */}
+      {pipeline.saveFailedCount > 0 && (
+        <div
+          data-testid="save-retry-banner"
+          role="alert"
+          className="flex items-start gap-3 p-3 rounded-lg border"
+          style={{ backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }}
+        >
+          <AlertCircle size={18} style={{ color: '#DC2626', flexShrink: 0, marginTop: 2 }} />
+          <div className="flex-1 text-sm" style={{ color: '#991B1B' }}>
+            <div className="font-medium">Hay imágenes sin guardar; reintenta antes de aprobar</div>
+            <div className="text-xs" style={{ color: '#B91C1C' }}>
+              El pipeline sólo reintenta guardar — no vuelve a generar imágenes.
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="save-retry-button"
+            onClick={() => void pipeline.retrySaves(buildRunIdentity())}
+            disabled={pipeline.isSaving}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
+            style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+          >
+            <RefreshCw size={14} /> Reintentar guardado ({pipeline.saveFailedCount})
+          </button>
         </div>
       )}
 

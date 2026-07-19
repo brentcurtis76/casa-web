@@ -811,3 +811,280 @@ describe('A3/S4 save-only retry: provider called zero times', () => {
     expect(uploadCalls).toHaveLength(0);
   });
 });
+
+// -----------------------------------------------------------------------------
+// T-A3.4 — Round-trip lossless de EditorStateV1 extendido: al persistir con
+// buffers editor (edited prompts, includes/excludes, references, scene text,
+// title, overlays, currentStep), un load posterior debe reconstruir cada uno.
+// El test cubre TODOS los campos del spec para prevenir regresiones cuando se
+// añaden slots nuevos.
+// -----------------------------------------------------------------------------
+describe('T-A3.4 EditorStateV1 extendido round-trip (persist + reload sin pérdida)', () => {
+  it('todos los buffers editor sobreviven un persist + load ciclo', async () => {
+    const draft = baseSnapshot();
+    // Poblar cada slot del EditorStateV1 extendido con un valor distinto y
+    // reconocible — cualquier drop se detecta en la aserción final. Los option
+    // arrays deben ser lo bastante largos como para pasar el sanitize del load
+    // (`options.length > selectedIdx`).
+    draft.characterSheetOptions = { charA: ['https://cdn/a-0.png', 'https://cdn/a-1.png', 'https://cdn/a-2.png'] };
+    draft.selectedCharacterSheets = { charA: 2 };
+    draft.sceneImageOptions = {
+      1: ['https://cdn/s1-0.png', 'https://cdn/s1-1.png', 'https://cdn/s1-2.png', 'https://cdn/s1-3.png'],
+      2: ['https://cdn/s2-0.png'],
+    };
+    draft.selectedSceneImages = { 1: 3, 2: 0 };
+    draft.coverOptions = [
+      'https://cdn/c-0.png', 'https://cdn/c-1.png', 'https://cdn/c-2.png',
+      'https://cdn/c-3.png', 'https://cdn/c-4.png', 'https://cdn/c-5.png',
+    ];
+    draft.selectedCover = 5;
+    draft.endOptions = [
+      'https://cdn/e-0.png', 'https://cdn/e-1.png', 'https://cdn/e-2.png',
+      'https://cdn/e-3.png', 'https://cdn/e-4.png', 'https://cdn/e-5.png',
+      'https://cdn/e-6.png', 'https://cdn/e-7.png',
+    ];
+    draft.selectedEnd = 7;
+    draft.editingScenePrompt = { 1: 'edited scene 1 prompt', 2: 'edited scene 2 prompt' };
+    draft.editingCharacterPrompt = { charA: 'edited char A prompt' };
+    draft.editingCoverPrompt = 'edited cover prompt';
+    draft.editingEndPrompt = 'edited end prompt';
+    draft.editingSceneText = { 1: 'edited scene text 1' };
+    draft.editingTitle = 'Titulo editado';
+    draft.sceneIncludedCharacters = { 1: ['charA', 'charB'] };
+    draft.coverIncludedCharacters = ['charA'];
+    draft.endIncludedCharacters = ['charB'];
+    draft.sceneExcludedCharacters = { 2: ['charC'] };
+    draft.coverExcludedCharacters = ['charD'];
+    draft.endExcludedCharacters = ['charE'];
+    draft.sceneReferenceModes = { 1: 'pov', 2: 'style' };
+    // Overlays viven en story pero se mirroran en el snapshot v1 para round-trip.
+    const overlayCover = { text: 'PORTADA', position: 'top', color: 'white', size: 'L' } as const;
+    const overlayEnd = { text: 'FIN', position: 'bottom', color: 'black', size: 'M' } as const;
+    if (draft.story) {
+      draft.story = { ...draft.story, coverTextOverlay: overlayCover, endTextOverlay: overlayEnd };
+    }
+    // Referencias por escena en base64 (hook debe convertir a paths al persistir).
+    draft.sceneReferenceImages = { 1: 'data:image/png;base64,AAAA' };
+    draft.coverReferenceImage = 'data:image/png;base64,BBBB';
+    draft.endReferenceImage = 'data:image/png;base64,CCCC';
+
+    // Persistir.
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: {
+        currentStep: 'cover',
+        editingScenePrompt: draft.editingScenePrompt,
+        editingCharacterPrompt: draft.editingCharacterPrompt,
+        editingCoverPrompt: draft.editingCoverPrompt,
+        editingEndPrompt: draft.editingEndPrompt,
+        editingSceneText: draft.editingSceneText,
+        editingTitle: draft.editingTitle,
+        sceneIncludedCharacters: draft.sceneIncludedCharacters,
+        coverIncludedCharacters: draft.coverIncludedCharacters,
+        endIncludedCharacters: draft.endIncludedCharacters,
+        sceneExcludedCharacters: draft.sceneExcludedCharacters,
+        coverExcludedCharacters: draft.coverExcludedCharacters,
+        endExcludedCharacters: draft.endExcludedCharacters,
+        sceneReferenceImages: draft.sceneReferenceImages,
+        coverReferenceImage: draft.coverReferenceImage,
+        endReferenceImage: draft.endReferenceImage,
+        sceneReferenceModes: draft.sceneReferenceModes,
+        story: draft.story,
+      },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const payload = upsertCalls[0].payload;
+    const persistedStory = payload.story as Record<string, unknown>;
+    // Invariante path-only: los strings del story no llevan `data:` URLs.
+    const storyJson = JSON.stringify(persistedStory);
+    expect(storyJson.includes('data:image')).toBe(false);
+    // El snapshot embebido debe cubrir cada slot extendido.
+    const embedded = persistedStory.editorStateV1 as {
+      version: number;
+      selections: { selectedCover: number; selectedEnd: number };
+      edited: {
+        scenePrompt: Record<number, string>;
+        characterPrompt: Record<string, string>;
+        coverPrompt: string;
+        endPrompt: string;
+        sceneText: Record<number, string>;
+        title: string;
+      };
+      includedCharacters: { scene: Record<number, string[]>; cover: string[]; end: string[] };
+      excludedCharacters: { scene: Record<number, string[]>; cover: string[]; end: string[] };
+      sceneReferenceModes: Record<number, string>;
+      overlays: { cover: unknown; end: unknown };
+      currentStep: string;
+      recoveryRevision: number;
+    };
+    expect(embedded.version).toBe(1);
+    expect(embedded.currentStep).toBe('cover');
+    expect(embedded.selections.selectedCover).toBe(5);
+    expect(embedded.selections.selectedEnd).toBe(7);
+    expect(embedded.edited.scenePrompt[1]).toBe('edited scene 1 prompt');
+    expect(embedded.edited.characterPrompt.charA).toBe('edited char A prompt');
+    expect(embedded.edited.coverPrompt).toBe('edited cover prompt');
+    expect(embedded.edited.endPrompt).toBe('edited end prompt');
+    expect(embedded.edited.sceneText[1]).toBe('edited scene text 1');
+    expect(embedded.edited.title).toBe('Titulo editado');
+    expect(embedded.includedCharacters.scene[1]).toEqual(['charA', 'charB']);
+    expect(embedded.includedCharacters.cover).toEqual(['charA']);
+    expect(embedded.includedCharacters.end).toEqual(['charB']);
+    expect(embedded.excludedCharacters.scene[2]).toEqual(['charC']);
+    expect(embedded.excludedCharacters.cover).toEqual(['charD']);
+    expect(embedded.excludedCharacters.end).toEqual(['charE']);
+    expect(embedded.sceneReferenceModes[1]).toBe('pov');
+    expect(embedded.sceneReferenceModes[2]).toBe('style');
+    expect(embedded.overlays.cover).toEqual(overlayCover);
+    expect(embedded.overlays.end).toEqual(overlayEnd);
+    expect(embedded.recoveryRevision).toBeGreaterThanOrEqual(1);
+
+    // Ahora simular un load usando el payload persistido como el row de DB.
+    // Nota: paths de referencia se serializan dentro de image_paths, no en JSON.
+    // Las option arrays (characterSheet/scene/cover/end) NO iban en el patch
+    // (son ortogonales a este test), así que inyectamos paths sintéticos con
+    // suficiente longitud para sobrevivir el sanitize del load — el objetivo
+    // de este test es el round-trip del EditorStateV1, no las opciones.
+    const imagePaths = {
+      ...(payload.image_paths as Record<string, unknown>),
+      characterSheetPaths: {
+        charA: ['u1/lit-1/characters/charA_0.png', 'u1/lit-1/characters/charA_1.png', 'u1/lit-1/characters/charA_2.png'],
+      },
+      sceneImagePaths: {
+        1: ['u1/lit-1/scenes/scene1_0.png', 'u1/lit-1/scenes/scene1_1.png', 'u1/lit-1/scenes/scene1_2.png', 'u1/lit-1/scenes/scene1_3.png'],
+        2: ['u1/lit-1/scenes/scene2_0.png'],
+      },
+      coverPaths: [
+        'u1/lit-1/cover/cover_0.png', 'u1/lit-1/cover/cover_1.png', 'u1/lit-1/cover/cover_2.png',
+        'u1/lit-1/cover/cover_3.png', 'u1/lit-1/cover/cover_4.png', 'u1/lit-1/cover/cover_5.png',
+      ],
+      endPaths: [
+        'u1/lit-1/end/end_0.png', 'u1/lit-1/end/end_1.png', 'u1/lit-1/end/end_2.png',
+        'u1/lit-1/end/end_3.png', 'u1/lit-1/end/end_4.png', 'u1/lit-1/end/end_5.png',
+        'u1/lit-1/end/end_6.png', 'u1/lit-1/end/end_7.png',
+      ],
+    } as Record<string, unknown>;
+    expect(imagePaths.sceneReferencePaths).toBeDefined();
+    expect(imagePaths.coverReferencePath).toBeTruthy();
+    expect(imagePaths.endReferencePath).toBeTruthy();
+
+    loadedDraftRow = {
+      current_step: payload.current_step,
+      config: payload.config,
+      story: persistedStory,
+      selected_character_sheets: payload.selected_character_sheets,
+      selected_scene_images: payload.selected_scene_images,
+      selected_cover: payload.selected_cover,
+      selected_end: payload.selected_end,
+      image_paths: imagePaths,
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    const d = loaded!;
+    // Selections
+    expect(d.selectedCharacterSheets).toEqual({ charA: 2 });
+    expect(d.selectedSceneImages[1]).toBe(3);
+    expect(d.selectedCover).toBe(5);
+    expect(d.selectedEnd).toBe(7);
+    // Edited prompts + scene text + title.
+    expect(d.editingScenePrompt?.[1]).toBe('edited scene 1 prompt');
+    expect(d.editingCharacterPrompt?.charA).toBe('edited char A prompt');
+    expect(d.editingCoverPrompt).toBe('edited cover prompt');
+    expect(d.editingEndPrompt).toBe('edited end prompt');
+    expect(d.editingSceneText?.[1]).toBe('edited scene text 1');
+    expect(d.editingTitle).toBe('Titulo editado');
+    // Includes / excludes en las 3 dimensiones (scene/cover/end).
+    expect(d.sceneIncludedCharacters?.[1]).toEqual(['charA', 'charB']);
+    expect(d.coverIncludedCharacters).toEqual(['charA']);
+    expect(d.endIncludedCharacters).toEqual(['charB']);
+    expect(d.sceneExcludedCharacters?.[2]).toEqual(['charC']);
+    expect(d.coverExcludedCharacters).toEqual(['charD']);
+    expect(d.endExcludedCharacters).toEqual(['charE']);
+    // Reference modes + reference images (resueltas como URLs, no base64).
+    expect(d.sceneReferenceModes[1]).toBe('pov');
+    expect(d.sceneReferenceModes[2]).toBe('style');
+    expect(typeof d.sceneReferenceImages?.[1]).toBe('string');
+    expect(d.sceneReferenceImages![1].startsWith('data:')).toBe(false);
+    expect(typeof d.coverReferenceImage).toBe('string');
+    expect(d.coverReferenceImage!.startsWith('data:')).toBe(false);
+    expect(typeof d.endReferenceImage).toBe('string');
+    expect(d.endReferenceImage!.startsWith('data:')).toBe(false);
+    // Overlays (viven en story tras la carga).
+    expect(d.story?.coverTextOverlay).toEqual(overlayCover);
+    expect(d.story?.endTextOverlay).toEqual(overlayEnd);
+    // Current step.
+    expect(d.currentStep).toBe('cover');
+    // recoveryRevision monotónico (>=1 tras el commit).
+    expect((d.recoveryRevision ?? 0)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// T-A3.5 (reload half) — landmarkVisible por escena sobrevive un round-trip.
+// El generate/apply owner del snapshot escribe scene.landmarkVisible dentro del
+// story tree; el reload debe restaurar ese boolean por escena tanto del story
+// como del snapshot v1 embebido.
+// -----------------------------------------------------------------------------
+describe('T-A3.5 landmarkVisible reload half', () => {
+  it('landmarkVisible por escena persiste en editorStateV1 y se restaura al load', async () => {
+    const draft = baseSnapshot();
+    // Story con dos escenas: una con landmarkVisible true, otra false.
+    const scenesWithLandmark = [
+      { number: 1, text: 's1', landmarkVisible: true } as unknown as Story['scenes'][number],
+      { number: 2, text: 's2', landmarkVisible: false } as unknown as Story['scenes'][number],
+    ];
+    if (draft.story) {
+      draft.story = { ...draft.story, scenes: scenesWithLandmark };
+    }
+    draft.landmarkVisible = { 1: true, 2: false };
+
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: {
+        currentStep: 'scenes',
+        landmarkVisible: draft.landmarkVisible,
+        story: draft.story,
+      },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const payload = upsertCalls[0].payload;
+    const persistedStory = payload.story as Record<string, unknown>;
+    const embedded = persistedStory.editorStateV1 as { landmarkVisible: Record<number, boolean> };
+    expect(embedded.landmarkVisible).toEqual({ 1: true, 2: false });
+
+    loadedDraftRow = {
+      current_step: payload.current_step,
+      config: payload.config,
+      story: persistedStory,
+      selected_character_sheets: payload.selected_character_sheets,
+      selected_scene_images: payload.selected_scene_images,
+      selected_cover: payload.selected_cover,
+      selected_end: payload.selected_end,
+      image_paths: payload.image_paths,
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.landmarkVisible).toEqual({ 1: true, 2: false });
+    // Y también sobrevive dentro de las escenas del story cargado.
+    const s1 = loaded!.story?.scenes?.find((s) => s.number === 1);
+    const s2 = loaded!.story?.scenes?.find((s) => s.number === 2);
+    expect(s1?.landmarkVisible).toBe(true);
+    expect(s2?.landmarkVisible).toBe(false);
+  });
+});

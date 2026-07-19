@@ -5,8 +5,17 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import type { Story } from '@/types/shared/story';
+import type { Story, TextOverlay } from '@/types/shared/story';
 import { runWithConcurrency } from '@/lib/cuentacuentos/concurrency';
+import {
+  buildEditorStateV1,
+  restoreEditorStateV1,
+  isEditorStateV1Extended,
+  scrubImageRefsDeep,
+  isNonPathImageString,
+  type EditorStateV1Extended,
+  type EditorCreationStep,
+} from '@/lib/cuentacuentos/recoverySnapshot';
 
 // Estructura del borrador guardado
 export interface CuentacuentosDraft {
@@ -39,6 +48,37 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
   endOptions: string[];
   // Imágenes de referencia de props (propId -> URLs públicas o base64)
   propReferenceImages: Record<string, string[]>;
+  // ---------------------------------------------------------------------------
+  // A3/S5 — editor buffer slots persistidas junto al draft.
+  // Todos son opcionales para que un load legado los rellene con defaults en
+  // vez de romper. La forma canónica del snapshot vive en `editorStateV1` (ver
+  // recoverySnapshot.ts); estos slots son la superficie que consume el editor.
+  // ---------------------------------------------------------------------------
+  editingScenePrompt?: Record<number, string>;
+  editingCharacterPrompt?: Record<string, string>;
+  editingCoverPrompt?: string;
+  editingEndPrompt?: string;
+  editingSceneText?: Record<number, string>;
+  editingTitle?: string | null;
+  sceneIncludedCharacters?: Record<number, string[]>;
+  coverIncludedCharacters?: string[];
+  endIncludedCharacters?: string[];
+  sceneExcludedCharacters?: Record<number, string[]>;
+  coverExcludedCharacters?: string[];
+  /** A3/S5: lado explícito que faltaba (cover ya tenía include/exclude, end no). */
+  endExcludedCharacters?: string[];
+  /** Imagen de referencia por escena — base64 en memoria, path Storage al persistir. */
+  sceneReferenceImages?: Record<number, string>;
+  /** Imagen de referencia para la portada. */
+  coverReferenceImage?: string | null;
+  /** Imagen de referencia para el fin. */
+  endReferenceImage?: string | null;
+  /** landmarkVisible por escena, redundante con story.scenes[].landmarkVisible pero
+   * canónico dentro de EditorStateV1 para round-trip lossless. */
+  landmarkVisible?: Record<number, boolean>;
+  /** Contador que se incrementa en cada persistencia exitosa: sirve como
+   * identidad de recuperación (útil para diffs, telemetry, y evitar carreras). */
+  recoveryRevision?: number;
 }
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
@@ -89,10 +129,7 @@ export interface RequiredSnapshotProvenance {
 }
 
 export function defaultEditorStateV1(
-  draft?: Pick<
-    CuentacuentosDraftFull,
-    'selectedCharacterSheets' | 'selectedSceneImages' | 'selectedCover' | 'selectedEnd'
-  > | null
+  draft?: CuentacuentosDraftFull | null
 ): EditorStateV1 {
   return {
     version: 1,
@@ -106,16 +143,55 @@ export function defaultEditorStateV1(
 }
 
 /**
- * Type guard: valida forma mínima de un EditorStateV1 persistido. Rechaza
- * cualquier `version !== 1` o estructura incompleta — sin migración, un
- * shape desconocido se descarta y el load usa defaults seguros.
+ * A3/S5 — snapshot canónico extendido del estado del editor. Cubre todos los
+ * campos listados en el spec (edited prompts, includes/excludes, overlays,
+ * currentStep, landmarkVisible, recoveryRevision) además de las selecciones
+ * base. Es el que se embebe en `story.editorStateV1` al persistir. Legacy
+ * drafts sin este bloque cargan con defaults seguros vía `restoreEditorStateV1`.
  */
-function isEditorStateV1(candidate: unknown): candidate is EditorStateV1 {
-  if (!candidate || typeof candidate !== 'object') return false;
-  const c = candidate as Partial<EditorStateV1>;
-  if (c.version !== 1) return false;
-  if (!c.selections || typeof c.selections !== 'object') return false;
-  return true;
+export function buildEditorStateV1FromDraft(
+  draft: CuentacuentosDraftFull | null,
+  story: Story | null
+): EditorStateV1Extended {
+  return buildEditorStateV1({
+    selectedCharacterSheets: draft?.selectedCharacterSheets,
+    selectedSceneImages: draft?.selectedSceneImages,
+    selectedCover: draft?.selectedCover,
+    selectedEnd: draft?.selectedEnd,
+    editingScenePrompt: draft?.editingScenePrompt,
+    editingCharacterPrompt: draft?.editingCharacterPrompt,
+    editingCoverPrompt: draft?.editingCoverPrompt,
+    editingEndPrompt: draft?.editingEndPrompt,
+    editingSceneText: draft?.editingSceneText,
+    editingTitle: draft?.editingTitle,
+    sceneIncludedCharacters: draft?.sceneIncludedCharacters,
+    coverIncludedCharacters: draft?.coverIncludedCharacters,
+    endIncludedCharacters: draft?.endIncludedCharacters,
+    sceneExcludedCharacters: draft?.sceneExcludedCharacters,
+    coverExcludedCharacters: draft?.coverExcludedCharacters,
+    endExcludedCharacters: draft?.endExcludedCharacters,
+    sceneReferenceModes: draft?.sceneReferenceModes,
+    coverTextOverlay: story?.coverTextOverlay ?? null,
+    endTextOverlay: story?.endTextOverlay ?? null,
+    landmarkVisible: landmarkVisibleFromDraft(draft, story),
+    currentStep: (draft?.currentStep ?? 'config') as EditorCreationStep,
+    recoveryRevision: draft?.recoveryRevision,
+  });
+}
+
+function landmarkVisibleFromDraft(
+  draft: CuentacuentosDraftFull | null,
+  story: Story | null
+): Record<number, boolean> {
+  if (draft?.landmarkVisible && Object.keys(draft.landmarkVisible).length > 0) {
+    return draft.landmarkVisible;
+  }
+  // Fallback: derivar del story si el draft aún no persistió el bloque.
+  const out: Record<number, boolean> = {};
+  for (const s of story?.scenes ?? []) {
+    if (typeof s.landmarkVisible === 'boolean') out[s.number] = s.landmarkVisible;
+  }
+  return out;
 }
 
 /**
@@ -140,6 +216,12 @@ export interface DraftUploadedUrls {
   endUrls: string[];
   /** URLs públicas de las referencias de props subidas (por propId). */
   propImageUrls: Record<string, string[]>;
+  /** A3/S5: URL pública de referencias de escena por número. */
+  sceneReferenceUrls: Record<number, string>;
+  /** A3/S5: URL pública de la referencia de portada, si se subió una nueva. */
+  coverReferenceUrl: string | null;
+  /** A3/S5: URL pública de la referencia de fin, si se subió una nueva. */
+  endReferenceUrl: string | null;
 }
 
 /**
@@ -191,6 +273,12 @@ interface UploadCategories {
   cover: boolean;
   end: boolean;
   props: PropsSource;
+  /** A3/S5: imagen de referencia por escena. */
+  sceneReferences: boolean;
+  /** A3/S5: imagen de referencia para portada. */
+  coverReference: boolean;
+  /** A3/S5: imagen de referencia para fin. */
+  endReference: boolean;
 }
 
 function categoriesFromPatch(patch: DraftPatch): UploadCategories {
@@ -206,6 +294,9 @@ function categoriesFromPatch(patch: DraftPatch): UploadCategories {
     cover: has('coverOptions'),
     end: has('endOptions'),
     props,
+    sceneReferences: has('sceneReferenceImages'),
+    coverReference: has('coverReferenceImage'),
+    endReference: has('endReferenceImage'),
   };
 }
 
@@ -232,6 +323,23 @@ function defaultDraft(liturgyId: string): CuentacuentosDraftFull {
     selectedEnd: null,
     sceneReferenceModes: {},
     propReferenceImages: {},
+    editingScenePrompt: {},
+    editingCharacterPrompt: {},
+    editingCoverPrompt: '',
+    editingEndPrompt: '',
+    editingSceneText: {},
+    editingTitle: null,
+    sceneIncludedCharacters: {},
+    coverIncludedCharacters: [],
+    endIncludedCharacters: [],
+    sceneExcludedCharacters: {},
+    coverExcludedCharacters: [],
+    endExcludedCharacters: [],
+    sceneReferenceImages: {},
+    coverReferenceImage: null,
+    endReferenceImage: null,
+    landmarkVisible: {},
+    recoveryRevision: 0,
     savedAt: '',
     version: 1,
   };
@@ -300,6 +408,18 @@ function applyUploadedUrlsToDraft(
       }
     : draft.story;
 
+  // A3/S5: swap de referencias por escena/portada/fin. Regla: sólo si la
+  // subida devolvió una URL, reemplaza la base64 en memoria (la clave
+  // ausente preserva el valor actual).
+  const sceneReferenceImages: Record<number, string> = { ...(draft.sceneReferenceImages || {}) };
+  for (const [key, url] of Object.entries(uploaded.sceneReferenceUrls || {})) {
+    if (typeof url === 'string' && url.length > 0) {
+      sceneReferenceImages[Number(key)] = url;
+    }
+  }
+  const coverReferenceImage = uploaded.coverReferenceUrl ?? draft.coverReferenceImage ?? null;
+  const endReferenceImage = uploaded.endReferenceUrl ?? draft.endReferenceImage ?? null;
+
   return {
     ...draft,
     story: swappedStory,
@@ -311,6 +431,9 @@ function applyUploadedUrlsToDraft(
     endOptions: uploaded.endUrls.length > 0 && uploaded.endUrls.length === (draft.endOptions || []).length
       ? uploaded.endUrls
       : draft.endOptions,
+    sceneReferenceImages,
+    coverReferenceImage,
+    endReferenceImage,
   };
 }
 
@@ -513,12 +636,18 @@ async function saveImagesToStorage(
   coverPaths: string[];
   endPaths: string[];
   propImagePaths: Record<string, string[]>;
+  sceneReferencePaths: Record<number, string>;
+  coverReferencePath: string | null;
+  endReferencePath: string | null;
 }> {
   const characterSheetPaths: Record<string, string[]> = {};
   const sceneImagePaths: Record<number, string[]> = {};
   const coverPaths: string[] = [];
   const endPaths: string[] = [];
   const propImagePaths: Record<string, string[]> = {};
+  const sceneReferencePaths: Record<number, string> = {};
+  let coverReferencePath: string | null = null;
+  let endReferencePath: string | null = null;
 
   // Todas las subidas se acumulan como tareas y corren en paralelo (límite 6),
   // escribiendo en slots pre-asignados para preservar el orden por key.
@@ -607,10 +736,64 @@ async function saveImagesToStorage(
     }
   }
 
+  // A3/S5: single-image reference uploads. Each slot is a scalar (not an array
+  // like options) so we use a small helper that assigns via a captured setter.
+  const queueSingle = (
+    imageData: string | null | undefined,
+    upload: (data: string) => Promise<string | null>,
+    assign: (path: string | null) => void
+  ) => {
+    if (typeof imageData !== 'string' || imageData.length === 0) {
+      assign(null);
+      return;
+    }
+    let slot: string | null = null;
+    jobs.push(async () => {
+      slot = await upload(imageData);
+    });
+    finalize.push(() => assign(slot));
+  };
+
+  if (categories.sceneReferences) {
+    for (const [sceneNum, image] of Object.entries(draft.sceneReferenceImages || {})) {
+      const num = Number(sceneNum);
+      queueSingle(
+        image,
+        (data) => uploadImage(userId, liturgyId, 'sceneRefs', `scene${sceneNum}`, 0, data),
+        (path) => { if (path) sceneReferencePaths[num] = path; }
+      );
+    }
+  }
+
+  if (categories.coverReference) {
+    queueSingle(
+      draft.coverReferenceImage ?? null,
+      (data) => uploadImage(userId, liturgyId, 'coverRef', 'cover', 0, data),
+      (path) => { coverReferencePath = path; }
+    );
+  }
+
+  if (categories.endReference) {
+    queueSingle(
+      draft.endReferenceImage ?? null,
+      (data) => uploadImage(userId, liturgyId, 'endRef', 'end', 0, data),
+      (path) => { endReferencePath = path; }
+    );
+  }
+
   await runWithConcurrency(jobs, 6);
   finalize.forEach((fn) => fn());
 
-  return { characterSheetPaths, sceneImagePaths, coverPaths, endPaths, propImagePaths };
+  return {
+    characterSheetPaths,
+    sceneImagePaths,
+    coverPaths,
+    endPaths,
+    propImagePaths,
+    sceneReferencePaths,
+    coverReferencePath,
+    endReferencePath,
+  };
 }
 
 /**
@@ -625,6 +808,9 @@ async function loadImagesFromStorage(
     coverPaths: string[];
     endPaths: string[];
     propImagePaths?: Record<string, string[]>;
+    sceneReferencePaths?: Record<number, string>;
+    coverReferencePath?: string | null;
+    endReferencePath?: string | null;
   }
 ): Promise<{
   characterSheetOptions: Record<string, string[]>;
@@ -632,12 +818,18 @@ async function loadImagesFromStorage(
   coverOptions: string[];
   endOptions: string[];
   propReferenceImages: Record<string, string[]>;
+  sceneReferenceImages: Record<number, string>;
+  coverReferenceImage: string | null;
+  endReferenceImage: string | null;
 }> {
   const characterSheetOptions: Record<string, string[]> = {};
   const sceneImageOptions: Record<number, string[]> = {};
   const coverOptions: string[] = [];
   const endOptions: string[] = [];
   const propReferenceImages: Record<string, string[]> = {};
+  const sceneReferenceImages: Record<number, string> = {};
+  let coverReferenceImage: string | null = null;
+  let endReferenceImage: string | null = null;
 
   // Helper function to handle __FULLURL__ marker
   const pathToUrl = (path: string): string => {
@@ -686,9 +878,32 @@ async function loadImagesFromStorage(
     }
   }
 
+  // A3/S5: resolve single-image reference paths to display URLs.
+  for (const [sceneNum, path] of Object.entries(paths.sceneReferencePaths || {})) {
+    const num = Number(sceneNum);
+    if (typeof path === 'string' && path.length > 0) {
+      sceneReferenceImages[num] = pathToUrl(path);
+    }
+  }
+  if (typeof paths.coverReferencePath === 'string' && paths.coverReferencePath.length > 0) {
+    coverReferenceImage = pathToUrl(paths.coverReferencePath);
+  }
+  if (typeof paths.endReferencePath === 'string' && paths.endReferencePath.length > 0) {
+    endReferenceImage = pathToUrl(paths.endReferencePath);
+  }
+
   console.log(`[useCuentacuentosDraft] Generated public URLs for ${Object.keys(sceneImageOptions).length} scene sets`);
 
-  return { characterSheetOptions, sceneImageOptions, coverOptions, endOptions, propReferenceImages };
+  return {
+    characterSheetOptions,
+    sceneImageOptions,
+    coverOptions,
+    endOptions,
+    propReferenceImages,
+    sceneReferenceImages,
+    coverReferenceImage,
+    endReferenceImage,
+  };
 }
 
 export interface SaveDraftInput {
@@ -745,6 +960,9 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       endPaths?: string[];
       propImagePaths?: Record<string, string[]>;
       sceneReferenceModes?: Record<number, 'style' | 'pov'>;
+      sceneReferencePaths?: Record<number, string>;
+      coverReferencePath?: string | null;
+      endReferencePath?: string | null;
     }) || {
       characterSheetPaths: {},
       sceneImagePaths: {},
@@ -752,6 +970,9 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       endPaths: [],
       propImagePaths: {},
       sceneReferenceModes: {},
+      sceneReferencePaths: {},
+      coverReferencePath: null,
+      endReferencePath: null,
     };
 
     // Subir sólo las categorías que el patch tocó (patch presence).
@@ -767,6 +988,9 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       endPaths: string[];
       propImagePaths: Record<string, string[]>;
       sceneReferenceModes: Record<number, 'style' | 'pov'>;
+      sceneReferencePaths: Record<number, string>;
+      coverReferencePath: string | null;
+      endReferencePath: string | null;
     } = {
       characterSheetPaths: categories.characterSheets
         ? { ...newImagePaths.characterSheetPaths }
@@ -788,6 +1012,17 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       sceneReferenceModes: writeSceneModes
         ? { ...(draft.sceneReferenceModes || {}) }
         : { ...(existingPaths.sceneReferenceModes || {}) },
+      // A3/S5: reference paths persistidas sólo cuando el patch tocó la
+      // categoría correspondiente. Ausencia preserva lo existente.
+      sceneReferencePaths: categories.sceneReferences
+        ? { ...newImagePaths.sceneReferencePaths }
+        : { ...(existingPaths.sceneReferencePaths || {}) },
+      coverReferencePath: categories.coverReference
+        ? newImagePaths.coverReferencePath
+        : (existingPaths.coverReferencePath ?? null),
+      endReferencePath: categories.endReference
+        ? newImagePaths.endReferencePath
+        : (existingPaths.endReferencePath ?? null),
     };
 
     // Orphan purge: sólo cuando el patch tocó props (recalculó el conjunto
@@ -849,8 +1084,15 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       if (isNonPathImageRef(v)) return undefined;
       return v;
     };
-    const editorStateV1: EditorStateV1 = defaultEditorStateV1(draft);
-    const cleanStory = draft.story ? ({
+    // A3/S5: snapshot canónico extendido embebido dentro del payload de story.
+    // Cubre todos los campos de EditorStateV1Extended, no sólo selecciones.
+    // `recoveryRevision` viene ya incrementado por `saveDraftNow` (fuente única
+    // de bump para que el snapshot devuelto refleje el mismo valor).
+    const editorStateV1Extended: EditorStateV1Extended = buildEditorStateV1FromDraft(
+      draft,
+      draft.story
+    );
+    const rawCleanStory = draft.story ? {
       ...draft.story,
       characters: draft.story.characters?.map(c => ({
         ...c,
@@ -876,9 +1118,16 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       coverImageOptions: undefined,
       endImageUrl: undefined,
       endImageOptions: undefined,
-      // Bloque versionado embebido: el hook lo tira/hidrata en el boundary.
-      editorStateV1,
-    } as unknown as Record<string, unknown>) : null;
+    } : null;
+    // A3/S5: scrub recursivo de referencias no-path (base64/data URLs) en TODO
+    // el árbol antes de embed. Nunca dejamos base64 en el JSON persistido.
+    const cleanStory = rawCleanStory
+      ? ({
+          ...(scrubImageRefsDeep(rawCleanStory) as Record<string, unknown>),
+          // Bloque versionado embebido (post-scrub, snapshot canónico).
+          editorStateV1: editorStateV1Extended,
+        } as unknown as Record<string, unknown>)
+      : null;
 
     // Guardar en la tabla
     const { error } = await supabase
@@ -920,6 +1169,15 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
       propImageUrls: Object.fromEntries(
         Object.entries(newImagePaths.propImagePaths).map(([key, paths]) => [key, paths.map(getPublicUrl)])
       ),
+      sceneReferenceUrls: Object.fromEntries(
+        Object.entries(newImagePaths.sceneReferencePaths).map(([key, path]) => [Number(key), getPublicUrl(path)])
+      ) as Record<number, string>,
+      coverReferenceUrl: newImagePaths.coverReferencePath
+        ? getPublicUrl(newImagePaths.coverReferencePath)
+        : null,
+      endReferenceUrl: newImagePaths.endReferencePath
+        ? getPublicUrl(newImagePaths.endReferencePath)
+        : null,
     };
 
     return { uploadedUrls };
@@ -945,7 +1203,14 @@ export async function saveDraftNow(input: {
   currentDraft: CuentacuentosDraftFull | null;
   patch: DraftPatch;
 }): Promise<{ snapshot: CuentacuentosDraftFull; uploadedUrls: DraftUploadedUrls }> {
-  const snapshot = normalizeSnapshot(input.currentDraft, input.patch, input.liturgyId);
+  const baseSnapshot = normalizeSnapshot(input.currentDraft, input.patch, input.liturgyId);
+  // A3/S5: recoveryRevision monotónico por intento de persistencia. Se refleja
+  // en el snapshot embebido (`editorStateV1`) y en el snapshot devuelto para
+  // que el React state hidrate con el mismo valor tras el commit.
+  const snapshot: CuentacuentosDraftFull = {
+    ...baseSnapshot,
+    recoveryRevision: (baseSnapshot.recoveryRevision ?? 0) + 1,
+  };
   const { uploadedUrls } = await saveDraftToSupabase({
     userId: input.userId,
     liturgyId: input.liturgyId,
@@ -988,6 +1253,9 @@ async function loadDraftFromSupabase(
       endPaths: string[];
       propImagePaths?: Record<string, string[]>;
       sceneReferenceModes?: Record<number, 'style' | 'pov'>;
+      sceneReferencePaths?: Record<number, string>;
+      coverReferencePath?: string | null;
+      endReferencePath?: string | null;
     } | undefined;
 
     let imageOptions = {
@@ -996,6 +1264,9 @@ async function loadDraftFromSupabase(
       coverOptions: [] as string[],
       endOptions: [] as string[],
       propReferenceImages: {} as Record<string, string[]>,
+      sceneReferenceImages: {} as Record<number, string>,
+      coverReferenceImage: null as string | null,
+      endReferenceImage: null as string | null,
     };
 
     if (imagePaths) {
@@ -1018,18 +1289,18 @@ async function loadDraftFromSupabase(
       }
     }
 
-    // Extraer EditorStateV1 embebido (si existe) y despojarlo del story antes
-    // de exponerlo al React state. Un draft legado (sin `editorStateV1` o con
-    // `version` desconocida) carga con defaults seguros.
+    // A3/S5: Extraer EditorStateV1 (extendido) embebido. Un draft legado (sin
+    // `editorStateV1` o con `version` desconocida) hidrata con defaults seguros
+    // vía `restoreEditorStateV1`. El shape antiguo (sólo selecciones) también
+    // pasa por el mismo mapper: los campos ausentes quedan en su default.
     const rawStory = data.story as (Story & { editorStateV1?: unknown }) | null;
     const rawEditorState = rawStory && typeof rawStory === 'object'
       ? (rawStory as { editorStateV1?: unknown }).editorStateV1
       : undefined;
-    const _editorStateV1: EditorStateV1 = isEditorStateV1(rawEditorState)
-      ? rawEditorState
-      : defaultEditorStateV1();
+    // `restoreEditorStateV1` normaliza faltas a defaults; shape mínimo legacy
+    // (sólo selecciones) también pasa, con el resto en defaults.
+    const restored = restoreEditorStateV1(rawEditorState);
     // Stripping: el hook expone `Story`, no un Story + editorStateV1 mezclado.
-    void _editorStateV1;
     const story: Story | null = rawStory
       ? (() => {
           const { editorStateV1: _drop, ...rest } = rawStory as Story & {
@@ -1067,26 +1338,103 @@ async function loadDraftFromSupabase(
       return next;
     };
 
+    // A3/S5: preferimos `sceneReferenceModes` del snapshot v1 restaurado si
+    // trae valores; si no, caemos al bloque `image_paths` (compat legacy).
+    const modesFromV1 = restored.sceneReferenceModes;
+    const effectiveSceneReferenceModes = Object.keys(modesFromV1).length > 0
+      ? modesFromV1
+      : sceneReferenceModes;
+
+    // Extraer imageOptions sin sobreescribir sceneReferenceModes (que ya
+    // computamos como effective arriba).
+    const {
+      characterSheetOptions,
+      sceneImageOptions,
+      coverOptions,
+      endOptions,
+      propReferenceImages: propRefs,
+      sceneReferenceImages,
+      coverReferenceImage,
+      endReferenceImage,
+    } = imageOptions;
+    void propRefs; // ya inyectado en story.props arriba.
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
-      currentStep: data.current_step as CuentacuentosDraft['currentStep'],
+      currentStep: (restored.currentStep ?? (data.current_step as CuentacuentosDraft['currentStep'])),
       config: data.config as CuentacuentosDraft['config'],
       story,
+      // Selections: la columna dedicada de DB es la fuente autoritativa (el
+      // editor la escribe directo). El snapshot v1 sólo cubre casos donde la
+      // columna esté vacía por escritura parcial.
       selectedCharacterSheets: sanitizeSelections(
-        (data.selected_character_sheets as Record<string, number>) || {},
-        imageOptions.characterSheetOptions
+        ((data.selected_character_sheets as Record<string, number>) || restored.selectedCharacterSheets),
+        characterSheetOptions
       ),
       selectedSceneImages: sanitizeSelections(
-        (data.selected_scene_images as Record<number, number>) || {},
-        imageOptions.sceneImageOptions
+        ((data.selected_scene_images as Record<number, number>) || restored.selectedSceneImages),
+        sceneImageOptions
       ),
-      selectedCover: data.selected_cover as number | null,
-      selectedEnd: data.selected_end as number | null,
-      sceneReferenceModes,
+      selectedCover: (data.selected_cover as number | null) ?? restored.selectedCover,
+      selectedEnd: (data.selected_end as number | null) ?? restored.selectedEnd,
+      sceneReferenceModes: effectiveSceneReferenceModes,
       savedAt: data.updated_at as string,
       version: 1,
-      ...imageOptions,
+      characterSheetOptions,
+      sceneImageOptions,
+      coverOptions,
+      endOptions,
+      propReferenceImages: imageOptions.propReferenceImages,
+      // A3/S5: buffers editor persistidos como parte del snapshot v1.
+      editingScenePrompt: restored.editingScenePrompt,
+      editingCharacterPrompt: restored.editingCharacterPrompt,
+      editingCoverPrompt: restored.editingCoverPrompt,
+      editingEndPrompt: restored.editingEndPrompt,
+      editingSceneText: restored.editingSceneText,
+      editingTitle: restored.editingTitle,
+      sceneIncludedCharacters: restored.sceneIncludedCharacters,
+      coverIncludedCharacters: restored.coverIncludedCharacters,
+      endIncludedCharacters: restored.endIncludedCharacters,
+      sceneExcludedCharacters: restored.sceneExcludedCharacters,
+      coverExcludedCharacters: restored.coverExcludedCharacters,
+      endExcludedCharacters: restored.endExcludedCharacters,
+      sceneReferenceImages,
+      coverReferenceImage,
+      endReferenceImage,
+      landmarkVisible: restored.landmarkVisible,
+      recoveryRevision: restored.recoveryRevision,
     };
+
+    // A3/S5: rehidratar campos story-tree desde v1 si el árbol perdió alguno
+    // por una escritura previa parcial (title/overlays/scene.text/landmark).
+    if (draft.story) {
+      const s = draft.story as Story;
+      const patched: Story = { ...s };
+      if (restored.editingTitle && (!s.title || s.title.length === 0)) {
+        patched.title = restored.editingTitle;
+      }
+      if (restored.coverTextOverlay && !s.coverTextOverlay) {
+        patched.coverTextOverlay = restored.coverTextOverlay;
+      }
+      if (restored.endTextOverlay && !s.endTextOverlay) {
+        patched.endTextOverlay = restored.endTextOverlay;
+      }
+      if (Array.isArray(s.scenes) && s.scenes.length > 0) {
+        patched.scenes = s.scenes.map((scene) => {
+          const editedText = restored.editingSceneText[scene.number];
+          const lv = restored.landmarkVisible[scene.number];
+          const next = { ...scene };
+          if (typeof editedText === 'string' && (!scene.text || scene.text.length === 0)) {
+            next.text = editedText;
+          }
+          if (typeof lv === 'boolean' && typeof scene.landmarkVisible !== 'boolean') {
+            next.landmarkVisible = lv;
+          }
+          return next;
+        });
+      }
+      draft.story = patched;
+    }
 
     return draft;
   } catch (err) {
