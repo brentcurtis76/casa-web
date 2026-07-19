@@ -1064,6 +1064,16 @@ export interface EnqueueGeneratedSnapshotInput {
   identity: GeneratedSnapshotIdentity;
 }
 
+/**
+ * Identidad viva del draft — sólo los campos que el pipeline A2 necesita para
+ * armar `AppliedIdentity`. Se lee desde refs (no rerender-capturados), así el
+ * caller siempre ve el valor actual, no una foto vieja de un render previo.
+ */
+export interface DraftIdentitySnapshot {
+  storyId: string | null;
+  epoch: number;
+}
+
 export interface UseCuentacuentosDraftReturn {
   hasDraft: boolean;
   draft: CuentacuentosDraftFull | null;
@@ -1071,6 +1081,13 @@ export interface UseCuentacuentosDraftReturn {
   isLoading: boolean;
   isSaving: boolean;
   saveDraft: (data: DraftPatch) => void;
+  /**
+   * Getter estable que devuelve la identidad {storyId, epoch} LIVE del hook,
+   * leída desde refs. No captura valores del render en el que se creó: cada
+   * invocación devuelve el valor actual (útil para que el pipeline arme
+   * `AppliedIdentity` en el momento exacto de aplicar el resultado).
+   */
+  getDraftIdentity: () => DraftIdentitySnapshot;
   /**
    * Encola una escritura al draft. Las escrituras se ejecutan estrictamente en
    * orden sobre una cola serializada; el promise devuelto rechaza con el error
@@ -1168,12 +1185,30 @@ export function useCuentacuentosDraft({
   const activeStoryIdRef = useRef<string | null>(null);
   const revisionRef = useRef(0);
 
-  // Revisión por ítem reservada por `enqueueGeneratedSnapshot`. Estrictamente
-  // creciente por `itemId`: una revisión menor a la reservada queda no-op sin
-  // importar el orden de resolución de la cola. Se resetea en toda transición
-  // de lifecycle (delete/replace story/aceptar recovery) porque los ítems del
-  // pipeline se re-crean con contadores frescos en cada corrida.
-  const perItemGeneratedRevisionsRef = useRef<Map<string, number>>(new Map());
+  // Estado por ítem para `enqueueGeneratedSnapshot`: la última `revision`
+  // observada y su `state` (`reserved` mientras el write está en vuelo,
+  // `committed` tras I/O exitosa, `failed` tras rechazo del `enqueueDraftWrite`).
+  //
+  // Reglas:
+  //  - Una revisión ESTRICTAMENTE MAYOR reemplaza el estado (permanentemente
+  //    invalida las menores). No hay downgrade posible.
+  //  - Una revisión IGUAL sólo puede volver a encolarse si el estado es
+  //    `failed` — soporta save-only retry con el mismo snapshot.
+  //  - Una revisión MENOR queda no-op sin importar el estado.
+  //  - Repetidas rechazos mantienen el estado como `failed` (no lo escalan a
+  //    `committed`). Sólo un resolve exitoso lo mueve a `committed`.
+  //
+  // El mapa se resetea en toda transición de lifecycle (delete, replace story,
+  // aceptar recovery, bump epoch) porque los ítems del pipeline se re-crean con
+  // contadores frescos en cada corrida.
+  type PerItemAttemptState = 'reserved' | 'committed' | 'failed';
+  interface PerItemAttempt {
+    revision: number;
+    state: PerItemAttemptState;
+  }
+  const perItemGeneratedRevisionsRef = useRef<Map<string, PerItemAttempt>>(
+    new Map()
+  );
 
   // Mantener refs sincronizadas con el estado
   useEffect(() => {
@@ -1403,27 +1438,61 @@ export function useCuentacuentosDraft({
 
       // Guardas pre-enqueue (síncronas):
       //  1) storyId + epoch deben coincidir con la identidad viva del hook.
-      //  2) generatedRevision debe ser estrictamente mayor a la última
-      //     reservada para este itemId. Una revisión igual o menor es stale.
+      //  2) La revisión decide via el estado por ítem:
+      //     - MAYOR estricta ⇒ reemplaza, invalida menores permanentemente.
+      //     - IGUAL ⇒ sólo si el último estado es `failed` (save-only retry).
+      //     - MENOR ⇒ stale.
       if (identity.storyId !== activeStoryIdRef.current) return Promise.resolve();
       if (identity.epoch !== epochRef.current) return Promise.resolve();
-      const currentReserved =
-        perItemGeneratedRevisionsRef.current.get(identity.itemId) ?? 0;
-      if (identity.generatedRevision <= currentReserved) return Promise.resolve();
+
+      const current = perItemGeneratedRevisionsRef.current.get(identity.itemId);
+      if (current) {
+        if (identity.generatedRevision < current.revision) {
+          return Promise.resolve();
+        }
+        if (identity.generatedRevision === current.revision) {
+          // Sólo un save-only retry legítimo puede re-encolar al mismo rev:
+          // eso requiere que el intento anterior haya quedado en `failed`.
+          if (current.state !== 'failed') {
+            return Promise.resolve();
+          }
+        }
+      }
 
       // Reservar la nueva revisión ANTES de encolar. Esto ordena estrictamente
       // las escrituras por ítem incluso si el caller reenqueue una rev menor
       // fuera de orden: la reserva ya está en la mayor y la menor será no-op.
-      perItemGeneratedRevisionsRef.current.set(
-        identity.itemId,
-        identity.generatedRevision
-      );
+      perItemGeneratedRevisionsRef.current.set(identity.itemId, {
+        revision: identity.generatedRevision,
+        state: 'reserved',
+      });
 
-      // La cola serializada (`enqueueDraftWrite`) re-chequea storyId/epoch al
-      // commit boundary. Para la revisión por ítem, la reserva síncrona basta:
-      // una revisión menor no puede colarse por delante. Propagamos éxito/fallo
-      // al runner: resolver = save exitoso (I/O completado), throw = save-failed.
-      return enqueueDraftWrite(patch).then(() => undefined);
+      // Nunca se consulta `runToken` — la validación es {storyId, epoch, itemId,
+      // generatedRevision}. La cola serializada (`enqueueDraftWrite`) re-chequea
+      // storyId/epoch en el commit boundary. Post-I/O actualizamos el estado
+      // por ítem: `committed` si resolvió, `failed` si rechazó. Repetidos
+      // rechazos MANTIENEN `failed` (sólo un resolve real lo pasa a `committed`).
+      const settle = (nextState: PerItemAttemptState) => {
+        const now = perItemGeneratedRevisionsRef.current.get(identity.itemId);
+        // Sólo actualizamos si la entrada sigue siendo NUESTRA reserva. Un
+        // higher-rev que llegó después ya tomó ownership y no debemos pisarlo.
+        if (now && now.revision === identity.generatedRevision) {
+          perItemGeneratedRevisionsRef.current.set(identity.itemId, {
+            revision: identity.generatedRevision,
+            state: nextState,
+          });
+        }
+      };
+      return enqueueDraftWrite(patch).then(
+        () => {
+          settle('committed');
+          return undefined;
+        },
+        (err: unknown) => {
+          settle('failed');
+          throw err;
+        }
+      );
     },
     [enqueueDraftWrite]
   );
@@ -1451,6 +1520,17 @@ export function useCuentacuentosDraft({
   const resetGeneratedRevisions = useCallback(() => {
     perItemGeneratedRevisionsRef.current = new Map();
   }, []);
+
+  // Getter estable de identidad viva. Se implementa como referencia estable
+  // (creada una vez) que SIEMPRE lee de refs — nunca captura valores del
+  // render en el que se creó. Esto es lo que el pipeline necesita para armar
+  // `AppliedIdentity` en el momento exacto de aplicar el resultado del
+  // provider, no cuando se armó la task.
+  const getDraftIdentityRef = useRef<() => DraftIdentitySnapshot>(() => ({
+    storyId: activeStoryIdRef.current,
+    epoch: epochRef.current,
+  }));
+  const getDraftIdentity = getDraftIdentityRef.current;
 
   const bumpDraftEpoch = useCallback(() => {
     epochRef.current += 1;
@@ -1614,6 +1694,7 @@ export function useCuentacuentosDraft({
     isLoading,
     isSaving,
     saveDraft,
+    getDraftIdentity,
     enqueueDraftWrite,
     loadDraft: loadDraftAsync,
     deleteDraft,

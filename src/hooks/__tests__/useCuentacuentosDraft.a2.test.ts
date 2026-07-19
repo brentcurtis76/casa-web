@@ -501,3 +501,372 @@ describe('A2.7 reset de reservas en transición de lifecycle', () => {
     expect(upsertCalls).toHaveLength(2);
   });
 });
+
+// -----------------------------------------------------------------------------
+// F1 — `getDraftIdentity`: getter estable que devuelve la identidad viva del
+// hook (leída desde refs). No captura valores del render en el que se creó.
+// -----------------------------------------------------------------------------
+describe('F1 getDraftIdentity (stable live-identity getter)', () => {
+  it('devuelve el estado inicial (storyId=null, epoch=0)', async () => {
+    const result = await mountReadyHook();
+    expect(result.current.getDraftIdentity()).toEqual({ storyId: null, epoch: 0 });
+  });
+
+  it('refleja setActiveDraftStoryId y bumpDraftEpoch sin necesidad de re-render', async () => {
+    const result = await mountReadyHook();
+
+    // Capturar el getter EN ESTE render — luego mutamos identidad y el mismo
+    // getter debe devolver los nuevos valores (nunca los del render de captura).
+    const capturedGetter = result.current.getDraftIdentity;
+    expect(capturedGetter()).toEqual({ storyId: null, epoch: 0 });
+
+    act(() => {
+      result.current.setActiveDraftStoryId('story-A');
+    });
+    expect(capturedGetter()).toEqual({ storyId: 'story-A', epoch: 0 });
+
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+    expect(capturedGetter()).toEqual({ storyId: 'story-A', epoch: 1 });
+
+    act(() => {
+      result.current.setActiveDraftStoryId('story-B');
+    });
+    expect(capturedGetter()).toEqual({ storyId: 'story-B', epoch: 1 });
+  });
+
+  it('la referencia del getter es estable entre renders', async () => {
+    const result = await mountReadyHook();
+    const g1 = result.current.getDraftIdentity;
+    // Forzar re-render vía mutación de estado.
+    act(() => {
+      result.current.setActiveDraftStoryId('story-x');
+    });
+    const g2 = result.current.getDraftIdentity;
+    expect(g2).toBe(g1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// F2 — Estado por ítem `reserved | committed | failed` sobre `enqueueGeneratedSnapshot`.
+// -----------------------------------------------------------------------------
+describe('F2 estado por ítem (reserved | committed | failed)', () => {
+  it('epoch 1 (tras bumpDraftEpoch) se acepta bajo la nueva identidad', async () => {
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+      result.current.bumpDraftEpoch();
+    });
+    // La identidad viva ahora es {story-1, epoch=1}: writes con esa identidad pasan.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 1, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+    // Uno con epoch=0 (viejo) es no-op.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 2 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+  });
+
+  it('first failed write puede reintentarse con la MISMA revision y produce OTRO write real', async () => {
+    // Primer upsert rechaza; segundo upsert resuelve.
+    const dfd1 = makeDeferred<{ error: { message: string } }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Attempt #1: rev 1 → reserved → upsert en vuelo.
+    let op1: Promise<void>;
+    act(() => {
+      op1 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    // Rechazar attempt #1: enqueueDraftWrite propaga error → estado pasa a 'failed'.
+    await act(async () => {
+      dfd1.resolve({ error: { message: 'db burned' } });
+      await expect(op1!).rejects.toThrow(/db burned/);
+    });
+
+    // Attempt #2: MISMA revision (1). El estado 'failed' permite reintentar.
+    let op2: Promise<void>;
+    act(() => {
+      op2 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+
+    // Se disparó un SEGUNDO upsert real (no fue un no-op ni un short-circuit).
+    await waitFor(() => expect(upsertCalls).toHaveLength(2));
+
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2!;
+    });
+  });
+
+  it('repeated failure: rechazos sucesivos mantienen `failed` y propagan el error cada vez', async () => {
+    const dfd1 = makeDeferred<{ error: { message: string } }>();
+    const dfd2 = makeDeferred<{ error: { message: string } }>();
+    const dfd3 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2, dfd3);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Intento #1 falla.
+    let op1: Promise<void>;
+    act(() => {
+      op1 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+    await act(async () => {
+      dfd1.resolve({ error: { message: 'boom-1' } });
+      await expect(op1!).rejects.toThrow(/boom-1/);
+    });
+
+    // Intento #2 con MISMA rev — permitido (estado 'failed') — vuelve a fallar.
+    let op2: Promise<void>;
+    act(() => {
+      op2 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(2));
+    await act(async () => {
+      dfd2.resolve({ error: { message: 'boom-2' } });
+      await expect(op2!).rejects.toThrow(/boom-2/);
+    });
+
+    // Intento #3 con MISMA rev — sigue siendo 'failed' → reintento permitido.
+    // Esta vez resuelve: el estado pasa a 'committed'.
+    let op3: Promise<void>;
+    act(() => {
+      op3 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(3));
+    await act(async () => {
+      dfd3.resolve({ error: null });
+      await op3!;
+    });
+
+    // Post-committed: un nuevo intento con la MISMA rev = 1 es no-op (ya no está failed).
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(3);
+  });
+
+  it('post-success: mismo rev queda no-op (state=committed); rev mayor pasa', async () => {
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Rev 1 commit exitoso.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+
+    // Mismo rev = 1 tras committed → no-op.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+
+    // Rev 2 (mayor) pasa.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 2 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(2);
+  });
+
+  it('rev N NO puede sobreescribir rev N+1: tras committed en N+1, rev N es no-op', async () => {
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Rev 3 committed.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 3 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+
+    // Rev 2 (menor) llega después: no-op estricta.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 2 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+  });
+
+  it('rev N NO puede sobreescribir rev N+1 tras fallo de N+1: rev N sigue siendo no-op', async () => {
+    const dfd = makeDeferred<{ error: { message: string } }>();
+    upsertDeferreds.push(dfd);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Rev 5 falla.
+    let opHi: Promise<void>;
+    act(() => {
+      opHi = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 5 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+    await act(async () => {
+      dfd.resolve({ error: { message: 'nope' } });
+      await expect(opHi!).rejects.toThrow(/nope/);
+    });
+
+    // Rev 4 (menor) intento — no-op: la regla es estrictamente por revisión,
+    // no por estado. Sólo la MISMA rev fallada puede reintentar.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 4 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+  });
+
+  it('provider generation NUNCA se repite durante save-only retry: adapter no invoca provider ni upload', async () => {
+    // El adaptador RECIBE `patch: DraftPatch` — no una task con `provider`.
+    // Por construcción no puede regenerar. Verificamos concretamente que un
+    // retry con la misma rev no incrementa uploads (upload = síntoma clásico
+    // de nuevo procesamiento). El patch sólo contiene URLs (no base64), así
+    // que el conteo esperado es 0 antes y después.
+    const dfd1 = makeDeferred<{ error: { message: string } }>();
+    const dfd2 = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd1, dfd2);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    let op1: Promise<void>;
+    act(() => {
+      op1 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+    await act(async () => {
+      dfd1.resolve({ error: { message: 'transient' } });
+      await expect(op1!).rejects.toThrow(/transient/);
+    });
+
+    // Registrar el conteo de "trabajo" acumulado antes del retry.
+    const uploadsBefore = uploadCalls.length;
+
+    // Save-only retry con la MISMA rev.
+    let op2: Promise<void>;
+    act(() => {
+      op2 = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(2));
+    await act(async () => {
+      dfd2.resolve({ error: null });
+      await op2!;
+    });
+
+    // El retry SÍ hizo otro upsert real (persistencia repetida — expected),
+    // pero NO ejecutó nada equivalente a "provider generation": ni el
+    // adaptador ni la cola llaman a un provider. Como proxy fuerte de eso,
+    // no se materializaron uploads adicionales por el retry.
+    expect(uploadCalls.length).toBe(uploadsBefore);
+  });
+
+  it('storyId/epoch mismatch tras un committed: sigue siendo no-op (no re-abre el estado)', async () => {
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Rev 1 committed.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+
+    // Cambio de identidad: bump epoch. La reserva por ítem se resetea (contract).
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    // Un write con la identidad VIEJA queda no-op (epoch mismatch),
+    // NO revive el estado ni pisa la reserva post-reset.
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 5 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(1);
+
+    // Rev 1 sobre la NUEVA identidad pasa (reset limpió la reserva).
+    await act(async () => {
+      await result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 1, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+    expect(upsertCalls).toHaveLength(2);
+  });
+});
