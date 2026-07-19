@@ -123,6 +123,7 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 import {
+  APPLY_EPHEMERAL,
   createStoryImagePipelineRunner,
   type AppliedIdentity,
   type PipelineItemStatus,
@@ -617,7 +618,7 @@ describe('regression 5 — stale-discard vs ephemeral prop', () => {
     expect(runner.statusOf('scene-1')).toBe('pending');
   });
 
-  it('ephemeral prop: apply-returns-null by design → status done, no upsert, no adapter enqueue', async () => {
+  it('ephemeral prop: apply returns APPLY_EPHEMERAL by design → status done, no upsert, no adapter enqueue', async () => {
     const hook = await mountReadyHook();
     act(() => {
       hook.current.setActiveDraftStoryId('story-A');
@@ -637,8 +638,10 @@ describe('regression 5 — stale-discard vs ephemeral prop', () => {
         })) as { data: { success: true; images: string[] } };
         return data;
       },
-      // Ephemeral prop sheet: apply intentionally returns null every time.
-      apply: () => null,
+      // Ephemeral prop sheet: apply signals ephemeral success via APPLY_EPHEMERAL
+      // (F3 explicit-outcome contract). Runner marks the item `done` with zero
+      // persist call.
+      apply: () => APPLY_EPHEMERAL,
       persist: async (snap, identity) => {
         persistSpy();
         enqueueSpy();

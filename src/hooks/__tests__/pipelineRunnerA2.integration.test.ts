@@ -135,6 +135,8 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 import {
+  APPLY_EPHEMERAL,
+  APPLY_STALE,
   createStoryImagePipelineRunner,
   type PipelineItemKind,
   type PipelineItemTask,
@@ -236,9 +238,11 @@ function makeEditorLikeTask(
     },
     apply: (result, appliedIdentity) => {
       // Guard mirrors every editor builder: if the story changed during
-      // generation, discard silently.
-      if (appliedIdentity.storyId !== liveStoryIdRef.current) return null;
-      if (opts.ephemeral) return null;
+      // generation, discard silently → APPLY_STALE (F3 explicit outcome).
+      if (appliedIdentity.storyId !== liveStoryIdRef.current) return APPLY_STALE;
+      // Ephemeral by design (e.g. prop sheet) → APPLY_EPHEMERAL. The runner
+      // marks the item `done` without invoking persist.
+      if (opts.ephemeral) return APPLY_EPHEMERAL;
       // Include the provider result's first image somewhere in the patch so
       // the payload varies per invocation (irrelevant to assertions).
       void result.images[0];
@@ -712,8 +716,9 @@ describe('T-A2/S4.7 story-switch invalidates in-flight apply/persist', () => {
       },
       apply: (result, identity) => {
         applySpy(result, identity);
-        // Editor builder guard: if the story id changed, discard.
-        if (identity.storyId !== liveStoryIdRef.current) return null;
+        // Editor builder guard: if the story id changed, discard via
+        // APPLY_STALE so the runner marks the item `pending` (F3).
+        if (identity.storyId !== liveStoryIdRef.current) return APPLY_STALE;
         return samplePatch('scene');
       },
       persist: async (snap, identity) => {
@@ -748,8 +753,9 @@ describe('T-A2/S4.7 story-switch invalidates in-flight apply/persist', () => {
     expect(applySpy).toHaveBeenCalledTimes(1);
     expect(persistSpy).not.toHaveBeenCalled();
     expect(upsertCalls).toHaveLength(0);
-    // Runner marks item done (apply returned null → discarded cleanly).
-    expect(runner.statusOf('scene-1')).toBe('done');
+    // Stale-discard leaves the item in `pending` (F3) so a subsequent run can
+    // still drive it to a terminal state under the live identity.
+    expect(runner.statusOf('scene-1')).toBe('pending');
   });
 
   it('stale identity that bypasses apply is still dropped by the adapter pre-enqueue guard', async () => {

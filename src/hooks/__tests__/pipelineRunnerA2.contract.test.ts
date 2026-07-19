@@ -105,6 +105,8 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 import {
+  APPLY_EPHEMERAL,
+  APPLY_STALE,
   createStoryImagePipelineRunner,
   type PipelineItemKind,
   type PipelineItemTask,
@@ -592,11 +594,27 @@ function buildSyntheticRefineTask(
 }
 
 describe.each(REFINE_CASES)('refine parity — $name ($kind)', (c) => {
-  it('(a) guarded apply: stale identity check inside apply returns null → no persist', async () => {
+  it('(a) guarded apply: stale identity returns APPLY_STALE → pending, no persist', async () => {
     const runner = createStoryImagePipelineRunner({ staggerMs: 0, providerAttempts: 1 });
     const persistSpy = vi.fn();
     const task = buildSyntheticRefineTask(c, {
-      apply: () => null, // simulate stale-identity guard inside the editor's apply
+      apply: () => APPLY_STALE, // simulate stale-identity guard inside the editor's apply
+      persist: async () => {
+        persistSpy();
+      },
+    });
+    await runner.runItems({ tasks: [task], identity: { storyId: 'story-A', epoch: 0 } });
+    // Stale-discard: item goes back to `pending` (F3) so a future run can push
+    // it forward. `done` would falsely signal "successfully handled".
+    expect(runner.statusOf(c.itemId)).toBe('pending');
+    expect(persistSpy).not.toHaveBeenCalled();
+  });
+
+  it('(a-ephemeral) legit ephemeral apply returns APPLY_EPHEMERAL → done, no persist', async () => {
+    const runner = createStoryImagePipelineRunner({ staggerMs: 0, providerAttempts: 1 });
+    const persistSpy = vi.fn();
+    const task = buildSyntheticRefineTask(c, {
+      apply: () => APPLY_EPHEMERAL,
       persist: async () => {
         persistSpy();
       },

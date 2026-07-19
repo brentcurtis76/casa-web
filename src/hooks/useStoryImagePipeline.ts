@@ -26,6 +26,15 @@ import {
 } from './storyImagePipelineRunner';
 
 export type { PipelineItemKind, PipelineItemStatus } from './storyImagePipelineRunner';
+// Sentinels de retorno explícito de `apply` (F3). Re-exportados para que los
+// callers en React puedan importar todo desde el hook.
+export {
+  APPLY_STALE,
+  APPLY_EPHEMERAL,
+  type ApplyOutcome,
+  type ApplyStale,
+  type ApplyEphemeral,
+} from './storyImagePipelineRunner';
 
 /** Item legado expuesto al UI (mismo shape que la vista del runner). */
 export type PipelineItem = PipelineItemView;

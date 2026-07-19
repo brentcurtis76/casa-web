@@ -25,6 +25,19 @@
  * - El runner acepta también tareas "legacy" con una única función `run()`
  *   (sin apply/persist). Para ellas el flujo es pending → running → done/error,
  *   preservando el comportamiento previo del hook `useStoryImagePipeline`.
+ *
+ * Contrato de retorno de `apply` (F3):
+ *   - `APPLY_STALE`  → el chequeo interno de identidad (storyId/epoch) NO
+ *     coincidió; se descarta y el ítem vuelve a `pending` (sin persistir), para
+ *     que una nueva corrida pueda empujarlo hacia adelante.
+ *   - `APPLY_EPHEMERAL` → apply se completó legítimamente pero no requiere
+ *     persistencia (p.ej. hoja de referencia efímera de un prop). Ítem → `done`
+ *     sin llamar a `persist`.
+ *   - Un snapshot (cualquier valor no-sentinel) → se retiene y se persiste. La
+ *     rechazo de `persist` publica `save-failed`; el éxito publica `done`.
+ *   - `null`/`undefined` se mapean a `APPLY_STALE` por compatibilidad. Un nuevo
+ *     caller NUNCA debe sobrecargar `null` para significar "efímero" — para eso
+ *     existe `APPLY_EPHEMERAL`.
  */
 
 import { retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
@@ -42,6 +55,30 @@ export type PipelineItemStatus =
 /** Token opaco de corrida. Sólo el runner lo crea; los callers lo pasan como valor. */
 declare const runTokenBrand: unique symbol;
 export type RunToken = { readonly [runTokenBrand]: true };
+
+/**
+ * Sentinels de retorno de `apply`. Son símbolos comparables por referencia; el
+ * runner los distingue explícitamente de un snapshot y de `null`/`undefined`
+ * (que se tratan como stale por back-compat).
+ *
+ * - `APPLY_STALE`: identidad interna del caller cambió durante la generación
+ *   → volver a `pending`, no persistir.
+ * - `APPLY_EPHEMERAL`: apply se completó pero por diseño no persiste →
+ *   `done`, no llamar a `persist`.
+ */
+export const APPLY_STALE: unique symbol = Symbol.for('a2.pipelineRunner.apply.stale');
+export const APPLY_EPHEMERAL: unique symbol = Symbol.for(
+  'a2.pipelineRunner.apply.ephemeral',
+);
+export type ApplyStale = typeof APPLY_STALE;
+export type ApplyEphemeral = typeof APPLY_EPHEMERAL;
+
+/**
+ * Resultado explícito de `apply`. Callers nuevos DEBEN devolver uno de los
+ * sentinels o un snapshot; `null`/`undefined` se aceptan sólo por back-compat y
+ * se interpretan como `APPLY_STALE`.
+ */
+export type ApplyOutcome<TSnapshot> = ApplyStale | ApplyEphemeral | TSnapshot;
 
 /**
  * Identidad lógica capturada al aplicar. Se pasa a `apply` y `persist`.
@@ -67,16 +104,28 @@ export interface ProviderContext {
 
 /**
  * Tarea de 3 fases. `apply` corre síncrono bajo guardia de identidad y devuelve
- * el snapshot que se retendrá como fuente de verdad para reintentos de save-only.
- * Devolver `null` desde `apply` es equivalente a "descartar" (ítem queda en
- * estado terminal `done` sin persistir).
+ * uno de tres resultados explícitos:
+ *
+ *   - `APPLY_STALE` (o `null`/`undefined` por back-compat): la identidad interna
+ *     ya no coincide con la que se capturó al iniciar; el ítem vuelve a
+ *     `pending` sin persistir.
+ *   - `APPLY_EPHEMERAL`: apply se completó pero por diseño no hay nada que
+ *     persistir; el ítem queda en `done` y `persist` NO se llama.
+ *   - Un snapshot (cualquier valor distinto de los sentinels): el runner lo
+ *     retiene como fuente de verdad para reintentos save-only y lo persiste.
+ *
+ * Un mismo `null` NO puede significar simultáneamente stale y efímero — cada
+ * retorno tiene un significado inequívoco.
  */
 export interface PipelineItemTask<TResult = unknown, TSnapshot = unknown> {
   id: string;
   kind: PipelineItemKind;
   label: string;
   provider: (ctx: ProviderContext) => Promise<TResult>;
-  apply: (result: TResult, identity: AppliedIdentity) => TSnapshot | null;
+  apply: (
+    result: TResult,
+    identity: AppliedIdentity,
+  ) => ApplyOutcome<TSnapshot> | null | undefined;
   persist: (snapshot: Readonly<TSnapshot>, identity: AppliedIdentity) => Promise<void>;
 }
 
@@ -240,8 +289,14 @@ export function createStoryImagePipelineRunner(
       existing.kind = partial.kind;
       existing.label = partial.label;
       if (partial.status !== undefined) {
+        // Nueva corrida sobre un ítem existente: limpia el estado terminal
+        // previo (`error` / `save-failed`) y las capturas retenidas para
+        // reintentos save-only. La nueva apply reescribirá retainedSnapshot /
+        // retainedIdentity si tiene éxito.
         existing.status = partial.status;
         existing.error = undefined;
+        existing.retainedSnapshot = undefined;
+        existing.retainedIdentity = undefined;
       }
     } else {
       items.set(partial.id, {
@@ -329,9 +384,9 @@ export function createStoryImagePipelineRunner(
       generatedRevision: nextRevision,
     };
 
-    let snapshot: unknown;
+    let outcome: unknown;
     try {
-      snapshot = task.apply(providerResult, appliedIdentity);
+      outcome = task.apply(providerResult, appliedIdentity);
     } catch (err) {
       setStatus(
         itemState.id,
@@ -341,19 +396,31 @@ export function createStoryImagePipelineRunner(
       return;
     }
 
-    if (snapshot === null || snapshot === undefined) {
-      // apply desestimó (identidad interna cambió); no persistimos.
+    // Desambiguación explícita del resultado de apply:
+    //   - APPLY_STALE / null / undefined → identidad interna stale → `pending`.
+    //     El ítem queda disponible para que una futura corrida lo empuje otra
+    //     vez sin arrastrar `error`/`done` fantasmas.
+    //   - APPLY_EPHEMERAL → apply legítimo, no requiere persistencia → `done`.
+    //   - snapshot → persistir.
+    if (outcome === APPLY_STALE || outcome === null || outcome === undefined) {
+      setStatus(itemState.id, 'pending');
+      return;
+    }
+    if (outcome === APPLY_EPHEMERAL) {
       setStatus(itemState.id, 'done');
       return;
     }
 
     // Retener snapshot inmutable interno y desprender uno para persist.
-    const retained = deepFreeze(detachSnapshot(snapshot));
+    const retained = deepFreeze(detachSnapshot(outcome));
     itemState.retainedSnapshot = retained;
     itemState.retainedIdentity = appliedIdentity;
     itemState.generatedRevision = nextRevision;
 
     // --- Fase persist ---
+    // Publica 'persisting' ANTES de invocar persist, y sólo emite 'done'
+    // después de que la promesa se resuelva. Una rechazo publica 'save-failed'
+    // sin pasar por 'done'.
     setStatus(itemState.id, 'persisting');
     try {
       const detached = deepFreeze(detachSnapshot(retained)) as Readonly<unknown>;
