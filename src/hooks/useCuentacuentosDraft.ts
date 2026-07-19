@@ -77,6 +77,17 @@ export interface SnapshotProvenance {
   contentHash?: string | null;
 }
 
+/**
+ * Provenance requerida (A3/S4). Ambos campos son obligatorios para el adaptador
+ * de `enqueueGeneratedSnapshot`. `sourceRevision` debe coincidir con
+ * `identity.generatedRevision`; `contentHash` es el hash determinista del
+ * snapshot aplicado en `apply`.
+ */
+export interface RequiredSnapshotProvenance {
+  sourceRevision: number;
+  contentHash: string;
+}
+
 export function defaultEditorStateV1(
   draft?: Pick<
     CuentacuentosDraftFull,
@@ -1205,10 +1216,17 @@ export interface GeneratedSnapshotIdentity {
  * `patch` es un `DraftPatch` armado por el caller a partir del snapshot
  * aplicado del ítem; el adaptador es un puente delgado que no conoce la
  * forma del snapshot ni la naturaleza del ítem.
+ *
+ * A3/S4: `provenance` es requerida cuando el caller soporta hash guards.
+ * `sourceRevision` debe coincidir con `identity.generatedRevision`;
+ * `contentHash` es el hash determinista del snapshot computado en `apply`
+ * y cerrado sobre la función `persist`. Cuando está ausente, los guards de
+ * hash se omiten (compatibilidad hacia atrás).
  */
 export interface EnqueueGeneratedSnapshotInput {
   patch: DraftPatch;
   identity: GeneratedSnapshotIdentity;
+  provenance?: RequiredSnapshotProvenance;
 }
 
 /**
@@ -1354,6 +1372,18 @@ export function useCuentacuentosDraft({
     state: PerItemAttemptState;
   }
   const perItemGeneratedRevisionsRef = useRef<Map<string, PerItemAttempt>>(
+    new Map()
+  );
+
+  // Tracker de contentHash por ítem (A3/S4): para cada ítem almacena la última
+  // revisión + contentHash observados. Se actualiza SÍNCRONAMENTE al encolar vía
+  // `enqueueGeneratedSnapshot`. Se resetea junto con `perItemGeneratedRevisionsRef`
+  // en toda transición de lifecycle.
+  interface PerItemContentHash {
+    revision: number;
+    contentHash: string;
+  }
+  const perItemContentHashRef = useRef<Map<string, PerItemContentHash>>(
     new Map()
   );
 
@@ -1605,19 +1635,24 @@ export function useCuentacuentosDraft({
     }, 2000); // Debounce de 2 segundos (más largo porque sube imágenes)
   }, [performDraftWrite]);
 
-  // Adaptador A2: puente entre `AppliedIdentity` del runner y la cola
-  // serializada del draft. Guarda pre-enqueue + reserva de revisión por ítem;
-  // no toca `saveDraftNow` directamente ni consulta el `runToken`.
+  // Adaptador A2/A3: puente entre `AppliedIdentity` del runner y la cola
+  // serializada del draft. Guarda pre-enqueue + reserva de revisión por ítem +
+  // hash de provenance (A3/S4); no toca `saveDraftNow` directamente ni
+  // consulta el `runToken`.
   const enqueueGeneratedSnapshot = useCallback(
     (input: EnqueueGeneratedSnapshotInput): Promise<void> => {
-      const { patch, identity } = input;
+      const { patch, identity, provenance } = input;
 
       // Guardas pre-enqueue (síncronas):
       //  1) storyId + epoch deben coincidir con la identidad viva del hook.
       //  2) La revisión decide via el estado por ítem:
       //     - MAYOR estricta ⇒ reemplaza, invalida menores permanentemente.
-      //     - IGUAL ⇒ sólo si el último estado es `failed` (save-only retry).
+      //     - IGUAL ⇒ sólo si el último estado es `failed` (save-only retry) Y
+      //               el contentHash coincide con el registrado (mismo snapshot).
       //     - MENOR ⇒ stale.
+      //  3) (A3/S4) contentHash: si hay un hash registrado para este ítem+rev y
+      //     el caller presenta un hash diferente, rechazar — otro apply más
+      //     nuevo ya tomó ownership.
       if (identity.storyId !== activeStoryIdRef.current) return Promise.resolve();
       if (identity.epoch !== epochRef.current) return Promise.resolve();
 
@@ -1632,6 +1667,19 @@ export function useCuentacuentosDraft({
           if (current.state !== 'failed') {
             return Promise.resolve();
           }
+          // (A3/S4) Para el retry save-only con provenance: el contentHash debe
+          // coincidir con el registrado para esta revisión (mismo snapshot).
+          if (provenance) {
+            const existingHash = perItemContentHashRef.current.get(identity.itemId);
+            if (
+              existingHash &&
+              existingHash.revision === identity.generatedRevision &&
+              existingHash.contentHash !== provenance.contentHash
+            ) {
+              // Hash diferente para la misma revisión → snapshot distinto, stale.
+              return Promise.resolve();
+            }
+          }
         }
       }
 
@@ -1643,10 +1691,21 @@ export function useCuentacuentosDraft({
         state: 'reserved',
       });
 
+      // (A3/S4) Registrar el contentHash SÍNCRONAMENTE para esta revisión.
+      // Si un apply posterior (rev N+1) llega antes de que procesemos el
+      // upsert, el tracker ya habrá avanzado y `validateProvenanceBeforeSwap`
+      // rechazará el swap. Solo si el caller provee provenance.
+      if (provenance) {
+        perItemContentHashRef.current.set(identity.itemId, {
+          revision: identity.generatedRevision,
+          contentHash: provenance.contentHash,
+        });
+      }
+
       // Nunca se consulta `runToken` — la validación es {storyId, epoch, itemId,
-      // generatedRevision}. La cola serializada (`enqueueDraftWrite`) re-chequea
-      // storyId/epoch en el commit boundary. Post-I/O actualizamos el estado
-      // por ítem: `committed` si resolvió, `failed` si rechazó. Repetidos
+      // generatedRevision[, contentHash]}. La cola serializada (`enqueueDraftWrite`)
+      // re-chequea storyId/epoch en el commit boundary. Post-I/O actualizamos el
+      // estado por ítem: `committed` si resolvió, `failed` si rechazó. Repetidos
       // rechazos MANTIENEN `failed` (sólo un resolve real lo pasa a `committed`).
       const settle = (nextState: PerItemAttemptState) => {
         const now = perItemGeneratedRevisionsRef.current.get(identity.itemId);
@@ -1659,11 +1718,9 @@ export function useCuentacuentosDraft({
           });
         }
       };
-      // Guard de operation-start (A3): revalida `{storyId, epoch, itemId,
-      // generatedRevision}` justo antes del upsert. Si la identidad viva
-      // cambió (bump epoch, replace story, delete) o si nuestra reserva por
-      // ítem fue reemplazada por una revisión mayor / reseteada por lifecycle,
-      // la cola devuelve `{stale: true}` sin upsert, uploads ni swaps.
+
+      // Guard de operation-start (A3): revalida identidad justo antes del upsert.
+      // (A3/S4) Si provenance presente, añade hash guard.
       const preStart = (): boolean => {
         if (identity.storyId !== activeStoryIdRef.current) return false;
         if (identity.epoch !== epochRef.current) return false;
@@ -1674,9 +1731,37 @@ export function useCuentacuentosDraft({
         // aquí implicaría que ya settle-amos por otra vía, algo imposible antes
         // del upsert — el guard mismo asegura no re-entrar.
         if (still.state !== 'reserved') return false;
+        // (A3/S4) Hash guard: si el tracker fue actualizado por un apply
+        // concurrente, el hash ya no coincide.
+        if (provenance) {
+          const trackedHash = perItemContentHashRef.current.get(identity.itemId);
+          if (
+            trackedHash &&
+            trackedHash.revision === identity.generatedRevision &&
+            trackedHash.contentHash !== provenance.contentHash
+          ) {
+            return false;
+          }
+        }
         return true;
       };
-      return enqueueDraftWrite(patch, { preStart }).then(
+
+      // (A3/S4) validateProvenanceBeforeSwap: corre DESPUÉS del upsert y ANTES
+      // de los URL swaps. Rechaza si identidad completa o contentHash ya no
+      // coincide con el tracker. Sólo cuando el caller provee provenance.
+      const validateProvenanceBeforeSwap = provenance
+        ? (): boolean => {
+            if (identity.storyId !== activeStoryIdRef.current) return false;
+            if (identity.epoch !== epochRef.current) return false;
+            const trackedHash = perItemContentHashRef.current.get(identity.itemId);
+            if (!trackedHash) return false;
+            if (trackedHash.revision !== identity.generatedRevision) return false;
+            if (trackedHash.contentHash !== provenance.contentHash) return false;
+            return true;
+          }
+        : undefined;
+
+      return enqueueDraftWrite(patch, { preStart, validateProvenanceBeforeSwap }).then(
         (result) => {
           if ((result as EnqueueDraftWriteStale).stale) {
             // Operation-start guard rechazó: no tocamos la reserva porque
@@ -1712,11 +1797,13 @@ export function useCuentacuentosDraft({
     }
   }, []);
 
-  // Limpia las reservas de generatedRevision por ítem. Debe llamarse en toda
-  // transición de lifecycle (delete, replace story, aceptar recovery) porque
-  // los ítems del pipeline se re-crean con contadores frescos en cada corrida.
+  // Limpia las reservas de generatedRevision por ítem y el tracker de
+  // contentHash. Debe llamarse en toda transición de lifecycle (delete,
+  // replace story, aceptar recovery) porque los ítems del pipeline se
+  // re-crean con contadores frescos en cada corrida.
   const resetGeneratedRevisions = useCallback(() => {
     perItemGeneratedRevisionsRef.current = new Map();
+    perItemContentHashRef.current = new Map();
   }, []);
 
   // Getter estable de identidad viva. Se implementa como referencia estable

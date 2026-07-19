@@ -89,6 +89,8 @@ interface CuentacuentoEditorProps {
   onNavigateToFullEditor?: () => void;
 }
 
+import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
+
 // Lugares predefinidos para Chile
 const LOCATION_PRESETS = [
   { id: 'santiago', name: 'Santiago', description: 'La capital entre los cerros' },
@@ -1558,6 +1560,8 @@ Instrucciones críticas:
     const effectivePrompt = customPrompt ?? character.visualDescription;
     if (!effectivePrompt.trim()) throw new Error('El personaje no tiene descripción visual');
     const capturedStyle = story.illustrationStyle;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: `sheet-${character.id}`,
@@ -1605,14 +1609,20 @@ Instrucciones críticas:
           setSelectedCharacterSheets(nextSelection);
         }
 
-        return {
+        const patch: DraftPatch = {
           currentStep: currentStepRef.current,
           characterSheetOptions: nextOptions,
           selectedCharacterSheets: nextSelection,
-        } as DraftPatch;
+        };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
@@ -1861,15 +1871,25 @@ Instrucciones críticas:
         referenceImage: c.referenceImage,
       }));
 
-    // Usar prompt personalizado si se proporciona
+    // Usar prompt personalizado si se proporciona; preservar landmarkVisible (A3/S4).
     const sceneData = customPrompt
-      ? { text: scene.text, visualDescription: customPrompt }
-      : { text: scene.text, visualDescription: scene.visualDescription };
+      ? {
+          text: scene.text,
+          visualDescription: customPrompt,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        }
+      : {
+          text: scene.text,
+          visualDescription: scene.visualDescription,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        };
 
     const sceneRefImage = sceneReferenceImages[scene.number];
     const propsForScene = getPropsForScene(scene);
     const capturedStyle = story.illustrationStyle;
     const capturedLocation = story.location;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: `scene-${scene.number}`,
@@ -1915,15 +1935,21 @@ Instrucciones críticas:
           setSelectedSceneImages(nextSelection);
         }
 
-        return {
+        const patch: DraftPatch = {
           currentStep: currentStepRef.current,
           sceneImageOptions: nextOptions,
           selectedSceneImages: nextSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
-        } as DraftPatch;
+        };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
@@ -2049,6 +2075,8 @@ Instrucciones críticas:
     const capturedLocation = story.location;
     const capturedCoverRef = coverReferenceImage;
     const capturedCoverPrompt = customPrompt || editingCoverPrompt || undefined;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: 'cover',
@@ -2085,10 +2113,16 @@ Instrucciones críticas:
         }
         const nextOptions = result.images;
         setCoverOptions(nextOptions);
-        return { coverOptions: nextOptions } as DraftPatch;
+        const patch: DraftPatch = { coverOptions: nextOptions };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
@@ -2163,6 +2197,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedEndRef = endReferenceImage || undefined;
     const capturedEndPrompt = customPrompt || editingEndPrompt || undefined;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: 'end',
@@ -2193,10 +2229,16 @@ Instrucciones críticas:
         }
         const nextOptions = result.images;
         setEndOptions(nextOptions);
-        return { endOptions: nextOptions } as DraftPatch;
+        const patch: DraftPatch = { endOptions: nextOptions };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
@@ -2333,6 +2375,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedName = character.name;
     const capturedDesc = character.description;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: `sheet-${character.id}`,
@@ -2385,14 +2429,20 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        return {
+        const patch: DraftPatch = {
           currentStep: currentStepRef.current,
           characterSheetOptions: newOptions,
           selectedCharacterSheets: newSelection,
-        } as DraftPatch;
+        };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
@@ -2446,15 +2496,26 @@ Instrucciones críticas:
       }));
 
     const overridePrompt = editingScenePromptRef.current[scene.number];
+    // Preserve landmarkVisible (A3/S4).
     const sceneData = overridePrompt
-      ? { text: scene.text, visualDescription: overridePrompt }
-      : { text: scene.text, visualDescription: scene.visualDescription };
+      ? {
+          text: scene.text,
+          visualDescription: overridePrompt,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        }
+      : {
+          text: scene.text,
+          visualDescription: scene.visualDescription,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        };
 
     const sceneRefImage = sceneReferenceImages[scene.number];
     const propsForScene = getPropsForScene(scene);
     const capturedStyle = story.illustrationStyle;
     const capturedLocation = story.location;
     const capturedRefMode = sceneReferenceModeRef.current[scene.number] ?? 'style';
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: `scene-${scene.number}`,
@@ -2506,15 +2567,21 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        return {
+        const patch: DraftPatch = {
           currentStep: currentStepRef.current,
           sceneImageOptions: newSceneOptions,
           selectedSceneImages: newSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
-        } as DraftPatch;
+        };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [
@@ -2588,6 +2655,8 @@ Instrucciones críticas:
     const capturedLocation = story.location;
     const capturedCoverRef = coverReferenceImage || undefined;
     const capturedCoverPrompt = editingCoverPrompt || undefined;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: 'cover',
@@ -2637,10 +2706,16 @@ Instrucciones críticas:
         coverOptionsRef.current = nextOptions;
         setCoverOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        return { coverOptions: nextOptions } as DraftPatch;
+        const patch: DraftPatch = { coverOptions: nextOptions };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [
@@ -2703,6 +2778,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedEndRef = endReferenceImage || undefined;
     const capturedEndPrompt = editingEndPrompt || undefined;
+    // Hash capturado en apply y usado en persist (A3/S4).
+    let capturedHash: string | null = null;
 
     return {
       id: 'end',
@@ -2747,10 +2824,16 @@ Instrucciones críticas:
         endOptionsRef.current = nextOptions;
         setEndOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        return { endOptions: nextOptions } as DraftPatch;
+        const patch: DraftPatch = { endOptions: nextOptions };
+        capturedHash = hashSnapshot(patch);
+        return patch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
+        await enqueueGeneratedSnapshot({
+          patch: snapshot as DraftPatch,
+          identity: appliedIdentity,
+          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
+        });
       },
     };
   }, [
