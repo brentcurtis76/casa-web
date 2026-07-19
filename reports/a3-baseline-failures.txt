@@ -1,0 +1,16 @@
+# Baseline vitest failures captured at fork SHA e3968d24b08dbff0b16fca4c077f347b473372d2
+# Ran: npx vitest run
+# Result: 1 failed test file, 6 failed tests, 32 passed test files, 376 passed tests
+
+Failing test file: src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx
+
+Failing test ids (MesaAbiertaDashboard describe):
+  1. shows pending status for unassigned participant
+  2. shows assignment details for assigned guest
+  3. shows assignment details for assigned host
+  4. displays calendar button for assigned participants
+  5. shows cancel button for non-cancelled participants
+  6. displays mystery reminder for assigned participants
+
+Passing test id in same file:
+  - shows empty state when user has no participation
