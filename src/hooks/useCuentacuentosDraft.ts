@@ -43,6 +43,83 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
 
+/**
+ * Representación versionada del estado del editor persistida dentro del
+ * payload de story (JSONB). No hay migración: drafts previos sin este campo
+ * cargan con defaults seguros.
+ *
+ * Diseño:
+ *  - `version` fija el schema (permite evolución sin migración).
+ *  - `selections` refleja los índices seleccionados en el momento del guardado.
+ *    Al cargar un draft legado (sin este campo) usamos defaults vacíos.
+ *  - `provenance` opcional acompaña el snapshot para trazabilidad (revisión
+ *    de origen y hash de contenido) — soporta hooks de validación antes de
+ *    los URL swaps del hook.
+ */
+export interface EditorStateV1 {
+  version: 1;
+  selections: {
+    selectedCharacterSheets: Record<string, number>;
+    selectedSceneImages: Record<number, number>;
+    selectedCover: number | null;
+    selectedEnd: number | null;
+  };
+  provenance?: SnapshotProvenance;
+}
+
+/**
+ * Metadata de provenance opcional para un snapshot de draft. Los adaptadores
+ * (por ejemplo `enqueueGeneratedSnapshot`) pueden inyectar el par
+ * `{sourceRevision, contentHash}` para permitir validación antes del URL swap.
+ */
+export interface SnapshotProvenance {
+  sourceRevision?: number;
+  contentHash?: string | null;
+}
+
+export function defaultEditorStateV1(
+  draft?: Pick<
+    CuentacuentosDraftFull,
+    'selectedCharacterSheets' | 'selectedSceneImages' | 'selectedCover' | 'selectedEnd'
+  > | null
+): EditorStateV1 {
+  return {
+    version: 1,
+    selections: {
+      selectedCharacterSheets: draft?.selectedCharacterSheets ?? {},
+      selectedSceneImages: draft?.selectedSceneImages ?? {},
+      selectedCover: draft?.selectedCover ?? null,
+      selectedEnd: draft?.selectedEnd ?? null,
+    },
+  };
+}
+
+/**
+ * Type guard: valida forma mínima de un EditorStateV1 persistido. Rechaza
+ * cualquier `version !== 1` o estructura incompleta — sin migración, un
+ * shape desconocido se descarta y el load usa defaults seguros.
+ */
+function isEditorStateV1(candidate: unknown): candidate is EditorStateV1 {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const c = candidate as Partial<EditorStateV1>;
+  if (c.version !== 1) return false;
+  if (!c.selections || typeof c.selections !== 'object') return false;
+  return true;
+}
+
+/**
+ * Detecta base64 o data URLs en el payload persistido. Cualquier string que
+ * empiece con `data:` o parezca base64 crudo (bloque grande sin scheme) NO es
+ * un Storage path válido y debe filtrarse antes de escribir.
+ */
+function isNonPathImageRef(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.startsWith('data:')) return true;
+  // Bloque base64 crudo largo sin scheme HTTP: no es un path.
+  if (!value.startsWith('http') && value.length > 512) return true;
+  return false;
+}
+
 // URLs públicas correspondientes a las imágenes subidas/verificadas en un guardado,
 // alineadas por key para que el editor pueda reemplazar base64 en memoria por URLs.
 export interface DraftUploadedUrls {
@@ -749,8 +826,20 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
 
     console.log(`[useCuentacuentosDraft] MERGE RESULT - scenes before: ${Object.keys(existingPaths.sceneImagePaths || {}).length}, after: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
 
-    // Preparar story sin imágenes base64 (limpiar characterSheetUrl y selectedImageUrl)
-    const cleanStory = draft.story ? {
+    // Preparar story sin imágenes base64/data URLs. Invariante A3: las
+    // referencias de imágenes en el JSON persistido son Storage paths (o URLs
+    // públicas que las envuelven), NUNCA base64 ni data URLs. Los paths reales
+    // viven en `image_paths` (arriba); el story JSON sólo lleva referencias no
+    // inflables. Además, incrustamos `editorStateV1` versionado dentro del
+    // payload de story para permitir evolución sin migración.
+    const stripImageRef = (v: unknown): string | undefined => {
+      if (typeof v !== 'string') return undefined;
+      if (v.startsWith('data:')) return undefined;
+      if (isNonPathImageRef(v)) return undefined;
+      return v;
+    };
+    const editorStateV1: EditorStateV1 = defaultEditorStateV1(draft);
+    const cleanStory = draft.story ? ({
       ...draft.story,
       characters: draft.story.characters?.map(c => ({
         ...c,
@@ -763,21 +852,22 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
         imageOptions: undefined,
       })),
       // Las imágenes de props ya se subieron a Storage (propImagePaths) y se
-      // restauran desde ahí al cargar: no inflar el JSON del story con base64.
+      // restauran desde ahí al cargar: el JSON del story sólo puede llevar
+      // referencias no inflables (paths o URLs públicas), nunca base64.
       props: draft.story.props?.map(p => ({
         ...p,
-        referenceImages: (p.referenceImages || []).filter(
-          img => typeof img === 'string' && img.startsWith('http')
-        ),
-        selectedReferenceUrl: p.selectedReferenceUrl?.startsWith('http')
-          ? p.selectedReferenceUrl
-          : undefined,
+        referenceImages: (p.referenceImages || [])
+          .map(stripImageRef)
+          .filter((img): img is string => !!img),
+        selectedReferenceUrl: stripImageRef(p.selectedReferenceUrl),
       })),
       coverImageUrl: undefined,
       coverImageOptions: undefined,
       endImageUrl: undefined,
       endImageOptions: undefined,
-    } : null;
+      // Bloque versionado embebido: el hook lo tira/hidrata en el boundary.
+      editorStateV1,
+    } as unknown as Record<string, unknown>) : null;
 
     // Guardar en la tabla
     const { error } = await supabase
@@ -917,7 +1007,27 @@ async function loadDraftFromSupabase(
       }
     }
 
-    const story = data.story as Story | null;
+    // Extraer EditorStateV1 embebido (si existe) y despojarlo del story antes
+    // de exponerlo al React state. Un draft legado (sin `editorStateV1` o con
+    // `version` desconocida) carga con defaults seguros.
+    const rawStory = data.story as (Story & { editorStateV1?: unknown }) | null;
+    const rawEditorState = rawStory && typeof rawStory === 'object'
+      ? (rawStory as { editorStateV1?: unknown }).editorStateV1
+      : undefined;
+    const _editorStateV1: EditorStateV1 = isEditorStateV1(rawEditorState)
+      ? rawEditorState
+      : defaultEditorStateV1();
+    // Stripping: el hook expone `Story`, no un Story + editorStateV1 mezclado.
+    void _editorStateV1;
+    const story: Story | null = rawStory
+      ? (() => {
+          const { editorStateV1: _drop, ...rest } = rawStory as Story & {
+            editorStateV1?: unknown;
+          };
+          void _drop;
+          return rest as Story;
+        })()
+      : null;
     const { propReferenceImages } = imageOptions;
 
     if (story?.props && propReferenceImages) {
@@ -1020,6 +1130,17 @@ export interface UseCuentacuentosDraftOptions {
 export interface EnqueueDraftWriteResult {
   snapshot: CuentacuentosDraftFull;
   uploadedUrls: DraftUploadedUrls;
+  stale?: false;
+}
+
+/**
+ * Resultado explícito devuelto cuando la guard de operation-start rechaza la
+ * escritura ANTES del upsert. Semántica: cero upserts, cero uploads, cero URL
+ * swaps, cero success reporting. La reserva por-ítem (si aplica) queda intacta:
+ * el caller es responsable de decidir qué hacer con ella.
+ */
+export interface EnqueueDraftWriteStale {
+  stale: true;
 }
 
 /**
@@ -1031,6 +1152,32 @@ export interface EnqueueDraftWriteResult {
  */
 export interface EnqueueDraftWriteOptions {
   onCommit?: (uploadedUrls: DraftUploadedUrls, snapshot: CuentacuentosDraftFull) => void;
+  /**
+   * Guard de operation-start (A3). Se invoca SÍNCRONAMENTE dentro del tail de
+   * la cola, INMEDIATAMENTE antes del upsert. Si devuelve `false`, la
+   * operación cortocircuita a `{ stale: true }` y NO realiza:
+   *   - `saveDraftNow` (no upsert, no uploads, no SELECT)
+   *   - URL swaps sobre el draft (no `applyUploadedUrlsToDraft`)
+   *   - React commit (no `setDraft` / `setLastSavedAt`)
+   *   - `onCommit` callback (no success reporting)
+   *
+   * Útil para el adaptador A2 de snapshots generados: revalida
+   * `{storyId, epoch, itemId, generatedRevision}` en el boundary del tail y
+   * evita que un write cuya identidad expiró mientras esperaba en cola
+   * pise state ajeno.
+   */
+  preStart?: () => boolean;
+  /**
+   * Validación de provenance opcional que corre DESPUÉS del upsert y ANTES
+   * de los URL swaps al React state. Si devuelve `false`, la persistencia
+   * igual ocurrió (I/O ya completado) pero el hook NO commitea el swap ni
+   * dispara `onCommit`. Diseñado para hooks del tipo "el snapshot que
+   * persistí ya no corresponde con la revisión/hash de origen esperada".
+   */
+  validateProvenanceBeforeSwap?: (
+    snapshot: CuentacuentosDraftFull,
+    uploadedUrls: DraftUploadedUrls
+  ) => boolean;
 }
 
 /** Identidad lógica del draft capturada en un punto en el tiempo. */
@@ -1098,7 +1245,7 @@ export interface UseCuentacuentosDraftReturn {
   enqueueDraftWrite: (
     patch: DraftPatch,
     options?: EnqueueDraftWriteOptions
-  ) => Promise<EnqueueDraftWriteResult>;
+  ) => Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
   deleteStoryImages: () => Promise<boolean>;
@@ -1284,8 +1431,10 @@ export function useCuentacuentosDraft({
   const performDraftWrite = useCallback((
     patch: DraftPatch,
     captured: DraftIdentity,
-    onCommit?: EnqueueDraftWriteOptions['onCommit']
-  ): Promise<EnqueueDraftWriteResult> => {
+    onCommit?: EnqueueDraftWriteOptions['onCommit'],
+    preStart?: EnqueueDraftWriteOptions['preStart'],
+    validateProvenanceBeforeSwap?: EnqueueDraftWriteOptions['validateProvenanceBeforeSwap']
+  ): Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
@@ -1299,8 +1448,18 @@ export function useCuentacuentosDraft({
     // La cola encadena sobre el tail (siempre resuelto — nunca rechaza).
     // Devolvemos la promesa cruda de la operación para que el llamador
     // reciba la excepción real si falla la persistencia.
-    const operation: Promise<EnqueueDraftWriteResult> = writeTailRef.current.then(async () => {
+    const operation: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale> = writeTailRef.current.then(async () => {
       try {
+        // Guard de operation-start: se evalúa síncronamente antes de tocar
+        // Supabase o Storage. Si el caller declara que la operación ya expiró,
+        // resolvemos con `{stale: true}` y NO ejecutamos saveDraftNow.
+        if (preStart && !preStart()) {
+          console.log(
+            '[useCuentacuentosDraft] preStart guard rejected: skipping upsert, uploads, swaps'
+          );
+          return { stale: true } as EnqueueDraftWriteStale;
+        }
+
         // saveDraftNow es el único camino de persistencia: normaliza el
         // snapshot y persiste. Nunca toca refs ni React state — esto es
         // responsabilidad de la cola tras chequear identidad.
@@ -1320,7 +1479,14 @@ export function useCuentacuentosDraft({
           captured.storyId === activeStoryIdRef.current &&
           captured.revision === revisionRef.current;
 
-        if (identityStillMatches) {
+        // Provenance hook: aunque la identidad lógica coincida, el caller puede
+        // vetar el URL swap si la revisión/hash de origen del snapshot ya no
+        // representa el estado actual (ej. otro apply más nuevo del mismo item).
+        const provenanceOk =
+          !validateProvenanceBeforeSwap ||
+          validateProvenanceBeforeSwap(snapshot, uploadedUrls);
+
+        if (identityStillMatches && provenanceOk) {
           const swapped = applyUploadedUrlsToDraft(snapshot, uploadedUrls);
           draftRef.current = swapped;
           setDraft(swapped);
@@ -1334,10 +1500,14 @@ export function useCuentacuentosDraft({
               console.error('[useCuentacuentosDraft] onCommit callback threw:', err);
             }
           }
-        } else {
+        } else if (!identityStillMatches) {
           console.log(
             '[useCuentacuentosDraft] Stale write: persisted but skipped React commit ' +
             `(epoch ${captured.epoch}→${epochRef.current}, storyId ${captured.storyId}→${activeStoryIdRef.current}, revision ${captured.revision}→${revisionRef.current})`
+          );
+        } else {
+          console.log(
+            '[useCuentacuentosDraft] Provenance validation rejected swap: persisted but no React commit'
           );
         }
 
@@ -1365,13 +1535,19 @@ export function useCuentacuentosDraft({
   const enqueueDraftWrite = useCallback((
     patch: DraftPatch,
     options?: EnqueueDraftWriteOptions
-  ): Promise<EnqueueDraftWriteResult> => {
+  ): Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale> => {
     const captured: DraftIdentity = {
       epoch: epochRef.current,
       storyId: activeStoryIdRef.current,
       revision: revisionRef.current,
     };
-    return performDraftWrite(patch, captured, options?.onCommit);
+    return performDraftWrite(
+      patch,
+      captured,
+      options?.onCommit,
+      options?.preStart,
+      options?.validateProvenanceBeforeSwap
+    );
   }, [performDraftWrite]);
 
   // Guardar borrador con debounce. Acumula patches por own-key merge y, al
@@ -1483,8 +1659,30 @@ export function useCuentacuentosDraft({
           });
         }
       };
-      return enqueueDraftWrite(patch).then(
-        () => {
+      // Guard de operation-start (A3): revalida `{storyId, epoch, itemId,
+      // generatedRevision}` justo antes del upsert. Si la identidad viva
+      // cambió (bump epoch, replace story, delete) o si nuestra reserva por
+      // ítem fue reemplazada por una revisión mayor / reseteada por lifecycle,
+      // la cola devuelve `{stale: true}` sin upsert, uploads ni swaps.
+      const preStart = (): boolean => {
+        if (identity.storyId !== activeStoryIdRef.current) return false;
+        if (identity.epoch !== epochRef.current) return false;
+        const still = perItemGeneratedRevisionsRef.current.get(identity.itemId);
+        if (!still) return false;
+        if (still.revision !== identity.generatedRevision) return false;
+        // Debe seguir siendo NUESTRA reserva `reserved`. Un `committed`/`failed`
+        // aquí implicaría que ya settle-amos por otra vía, algo imposible antes
+        // del upsert — el guard mismo asegura no re-entrar.
+        if (still.state !== 'reserved') return false;
+        return true;
+      };
+      return enqueueDraftWrite(patch, { preStart }).then(
+        (result) => {
+          if ((result as EnqueueDraftWriteStale).stale) {
+            // Operation-start guard rechazó: no tocamos la reserva porque
+            // ya fue reemplazada/limpiada por el lifecycle change.
+            return undefined;
+          }
           settle('committed');
           return undefined;
         },

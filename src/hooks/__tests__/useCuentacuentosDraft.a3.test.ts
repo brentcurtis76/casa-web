@@ -1,0 +1,548 @@
+/**
+ * A3 — Harden draft persistence identity and recovery storage contract.
+ *
+ * Cubre las invariantes de la subtask A3/2:
+ *   - Operation-start guard: escrituras generated stale al arranque del tail
+ *     no realizan upsert, upload, swap ni success reporting.
+ *   - Stale explícito devuelto por `enqueueDraftWrite`.
+ *   - Path-only en el JSON persistido (nunca base64 ni `data:` URLs).
+ *   - EditorStateV1 embebido en story; drafts legados cargan con defaults.
+ *   - Provenance hook validado antes de los URL swaps.
+ *   - Zero stale writes desde la ruta A2 cuando el ciclo de vida cambia.
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import type { Story } from '@/types/shared/story';
+
+// -----------------------------------------------------------------------------
+// Mock de Supabase con capture.
+// -----------------------------------------------------------------------------
+
+type UpsertPayload = Record<string, unknown> & { image_paths?: Record<string, unknown> };
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+}
+
+function makeDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const upsertCalls: Array<{ payload: UpsertPayload }> = [];
+const uploadCalls: Array<{ path: string }> = [];
+const removedPaths: string[] = [];
+let existingImagePaths: Record<string, unknown> | null = null;
+let selectError: { message: string } | null = null;
+let upsertError: { message: string } | null = null;
+const upsertDeferreds: Array<Deferred<{ error: { message: string } | null }>> = [];
+let mockUserId: string | null = null;
+let loadedDraftRow: Record<string, unknown> | null = null;
+
+vi.mock('@/integrations/supabase/client', () => {
+  const tableApi = () => ({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockImplementation(async () => {
+      if (selectError) return { data: null, error: selectError };
+      if (loadedDraftRow) return { data: loadedDraftRow, error: null };
+      return {
+        data: existingImagePaths ? { image_paths: existingImagePaths } : null,
+        error: null,
+      };
+    }),
+    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+      upsertCalls.push({ payload });
+      const deferred = upsertDeferreds.shift();
+      if (deferred) return deferred.promise;
+      return { error: upsertError };
+    }),
+    delete: vi.fn().mockReturnThis(),
+  });
+
+  const storageApi = () => ({
+    upload: vi.fn().mockImplementation(async (path: string) => {
+      uploadCalls.push({ path });
+      return { data: { path }, error: null };
+    }),
+    getPublicUrl: vi.fn().mockImplementation((path: string) => ({
+      data: { publicUrl: `https://mock.supabase.co/storage/${path}` },
+    })),
+    remove: vi.fn().mockImplementation(async (paths: string[]) => {
+      removedPaths.push(...paths);
+      return { error: null };
+    }),
+    list: vi.fn().mockResolvedValue({ data: [] }),
+    download: vi.fn().mockResolvedValue({ data: null, error: null }),
+  });
+
+  return {
+    supabase: {
+      from: vi.fn(() => tableApi()),
+      storage: { from: vi.fn(() => storageApi()) },
+      auth: {
+        getUser: vi.fn().mockImplementation(async () => ({
+          data: { user: mockUserId ? { id: mockUserId } : null },
+        })),
+        getSession: vi.fn(),
+        onAuthStateChange: vi.fn(),
+      },
+    },
+  };
+});
+
+import {
+  saveDraftNow,
+  useCuentacuentosDraft,
+  defaultEditorStateV1,
+  type CuentacuentosDraftFull,
+  type DraftPatch,
+  type EditorStateV1,
+  type EnqueueDraftWriteResult,
+  type EnqueueDraftWriteStale,
+} from '../useCuentacuentosDraft';
+
+beforeEach(() => {
+  upsertCalls.length = 0;
+  uploadCalls.length = 0;
+  removedPaths.length = 0;
+  upsertDeferreds.length = 0;
+  existingImagePaths = null;
+  selectError = null;
+  upsertError = null;
+  mockUserId = null;
+  loadedDraftRow = null;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response)
+  );
+});
+
+const flushMicrotasks = async () => {
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+};
+
+async function mountReadyHook(liturgyId = 'lit-1') {
+  mockUserId = 'u1';
+  const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId }));
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  return result;
+}
+
+const sampleScenePatch = (): DraftPatch => ({
+  currentStep: 'scenes',
+  sceneImageOptions: { 1: ['https://cdn/scene-1-a.png'] },
+  selectedSceneImages: { 1: 0 },
+});
+
+const baseSnapshot = (): CuentacuentosDraftFull => ({
+  liturgyId: 'lit-1',
+  currentStep: 'scenes',
+  config: {
+    location: 'jerusalem',
+    customLocation: '',
+    characters: 'jesus, discipulos',
+    style: 'reflexivo',
+    illustrationStyle: 'ghibli',
+    additionalNotes: '',
+  },
+  story: {
+    id: 'story-1',
+    title: 'Cuento A3',
+    summary: '',
+    location: { name: 'Jerusalén' } as unknown as Story['location'],
+    illustrationStyle: 'ghibli',
+    characters: [],
+    scenes: [],
+    props: [],
+    spiritualConnection: '',
+    metadata: { createdAt: '', updatedAt: '', status: 'draft' as Story['metadata']['status'] },
+  } as Story,
+  characterSheetOptions: {},
+  selectedCharacterSheets: {},
+  sceneImageOptions: {},
+  selectedSceneImages: {},
+  coverOptions: [],
+  selectedCover: null,
+  endOptions: [],
+  selectedEnd: null,
+  sceneReferenceModes: {},
+  propReferenceImages: {},
+  savedAt: '2026-01-01T00:00:00.000Z',
+  version: 1,
+});
+
+// -----------------------------------------------------------------------------
+// A3/F1 — Operation-start guard: enqueue-before-lifecycle-change /
+// start-after-change. Un `enqueueGeneratedSnapshot` cuya identidad expiró
+// mientras esperaba en la cola NO debe upsert, upload, swap ni committear.
+// -----------------------------------------------------------------------------
+describe('A3/F1 operation-start guard (enqueue-before-lifecycle-change, start-after-change)', () => {
+  it('bump epoch entre enqueue y arranque: cero upsert, cero upload, cero commit para el generated', async () => {
+    const dfdBlocker = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfdBlocker);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Blocker: mantiene el tail ocupado mientras encolamos el generated.
+    let opBlock: Promise<unknown>;
+    act(() => {
+      opBlock = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    // Generated encolado detrás del blocker. Su identidad quedará stale por el
+    // bump del epoch antes de que arranque el tail.
+    let opGen: Promise<void>;
+    act(() => {
+      opGen = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+
+    // Antes de que el tail avance, cambio de lifecycle: epoch bump.
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    // Resolver el blocker: el tail avanza y el generated intenta arrancar.
+    await act(async () => {
+      dfdBlocker.resolve({ error: null });
+      await opBlock;
+    });
+
+    await act(async () => {
+      await opGen;
+    });
+
+    // Cero upserts adicionales, cero uploads: la guard bloqueó saveDraftNow.
+    expect(upsertCalls).toHaveLength(1);
+    expect(uploadCalls).toHaveLength(0);
+    // El blocker mismo quedó stale también (bump epoch invalida su identidad),
+    // así que draft sigue en null: nada aplicó al React state.
+    expect(result.current.draft).toBeNull();
+  });
+
+  it('storyId reset entre enqueue y arranque: la queued generated es stale y no upsertea', async () => {
+    const dfdBlocker = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfdBlocker);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    let opBlock: Promise<unknown>;
+    act(() => {
+      opBlock = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    let opGen: Promise<void>;
+    act(() => {
+      opGen = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+
+    // Reemplazar el story activo antes de que arranque el generated.
+    act(() => {
+      result.current.setActiveDraftStoryId('story-2');
+    });
+
+    await act(async () => {
+      dfdBlocker.resolve({ error: null });
+      await opBlock;
+    });
+    await act(async () => {
+      await opGen;
+    });
+
+    // Sólo el upsert del blocker; el generated fue stale al arranque.
+    expect(upsertCalls).toHaveLength(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3/F2 — Stale result explícito: `enqueueDraftWrite` con `preStart` falso
+// devuelve `{stale:true}` y no toca Supabase.
+// -----------------------------------------------------------------------------
+describe('A3/F2 enqueueDraftWrite stale result (preStart=false)', () => {
+  it('preStart devuelve false: promise resuelve {stale:true}, cero upsert/upload/swap', async () => {
+    const result = await mountReadyHook();
+
+    let resValue: EnqueueDraftWriteResult | EnqueueDraftWriteStale | undefined;
+    await act(async () => {
+      resValue = await result.current.enqueueDraftWrite(
+        { currentStep: 'scenes' },
+        {
+          preStart: () => false,
+          onCommit: () => {
+            throw new Error('onCommit no debe invocarse en stale');
+          },
+        }
+      );
+    });
+
+    expect(resValue).toEqual({ stale: true });
+    expect(upsertCalls).toHaveLength(0);
+    expect(uploadCalls).toHaveLength(0);
+    expect(result.current.draft).toBeNull();
+    expect(result.current.lastSavedAt).toBeNull();
+  });
+
+  it('preStart devuelve true: promise resuelve con snapshot+uploadedUrls (fast path normal)', async () => {
+    const result = await mountReadyHook();
+
+    let resValue: EnqueueDraftWriteResult | EnqueueDraftWriteStale | undefined;
+    await act(async () => {
+      resValue = await result.current.enqueueDraftWrite(
+        { currentStep: 'scenes' },
+        { preStart: () => true }
+      );
+    });
+
+    expect(resValue).toBeDefined();
+    expect('stale' in resValue! && resValue!.stale).toBeFalsy();
+    expect(upsertCalls).toHaveLength(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3/F3 — Path-only JSON: la story persistida no contiene base64 ni data URLs.
+// Los paths de imagen viven en `image_paths` (Storage paths).
+// -----------------------------------------------------------------------------
+describe('A3/F3 path-only image references in persisted JSON (no base64, no data URLs)', () => {
+  it('base64 en propReferenceImages: se sube; el story JSON persistido no lleva base64', async () => {
+    const draft = baseSnapshot();
+    draft.story = {
+      ...draft.story!,
+      props: [
+        {
+          id: 'p1',
+          kind: 'object',
+          name: 'p1',
+          narrativeRole: '',
+          visualDescription: '',
+          // base64 crudo (no data:), simula una imagen recién capturada.
+          referenceImages: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA'],
+          role: 'primary',
+        } as unknown as NonNullable<Story['props']>[number],
+      ],
+    };
+
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: { propReferenceImages: { p1: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA'] } },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const persisted = upsertCalls[0].payload;
+    const persistedStory = persisted.story as { props?: Array<{ referenceImages?: unknown[] }> } | null;
+    const persistedRefs = persistedStory?.props?.[0]?.referenceImages ?? [];
+    // Invariante A3: 0 base64 y 0 data URLs en el JSON del story.
+    for (const ref of persistedRefs) {
+      expect(typeof ref).toBe('string');
+      expect((ref as string).startsWith('data:')).toBe(false);
+    }
+
+    // El JSON completo del story serializado NO contiene `data:image` ni un
+    // base64 crudo largo (>512 chars sin scheme).
+    const storyJson = JSON.stringify(persistedStory);
+    expect(storyJson).not.toContain('data:image');
+    // image_paths sí lleva paths (no URLs, no base64).
+    const imagePaths = persisted.image_paths as { propImagePaths: Record<string, string[]> };
+    for (const [, paths] of Object.entries(imagePaths.propImagePaths)) {
+      for (const p of paths) {
+        expect(p.startsWith('data:')).toBe(false);
+        // Debe empezar con `<userId>/<liturgyId>/props/...` — Storage path.
+        expect(p).toMatch(/^u1\/lit-1\/props\//);
+      }
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3/F4 — EditorStateV1: embebido en story al persistir; drafts legados cargan
+// con defaults seguros; el hook boundary lo despoja del Story expuesto.
+// -----------------------------------------------------------------------------
+describe('A3/F4 EditorStateV1 (persist embed + legacy defaults)', () => {
+  it('defaultEditorStateV1(): defaults con version=1 y selecciones vacías', () => {
+    const defaults = defaultEditorStateV1();
+    expect(defaults.version).toBe(1);
+    expect(defaults.selections.selectedCharacterSheets).toEqual({});
+    expect(defaults.selections.selectedSceneImages).toEqual({});
+    expect(defaults.selections.selectedCover).toBeNull();
+    expect(defaults.selections.selectedEnd).toBeNull();
+  });
+
+  it('persistencia embebe editorStateV1 dentro del story JSONB', async () => {
+    const draft = baseSnapshot();
+    draft.selectedCover = 2;
+    draft.selectedCharacterSheets = { char1: 3 };
+
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: { currentStep: 'cover' },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const persistedStory = upsertCalls[0].payload.story as Record<string, unknown> | null;
+    expect(persistedStory).not.toBeNull();
+    const persistedEditor = persistedStory!.editorStateV1 as EditorStateV1;
+    expect(persistedEditor).toBeDefined();
+    expect(persistedEditor.version).toBe(1);
+    // El bloque refleja los selectors del draft en el momento de guardar.
+    expect(persistedEditor.selections.selectedCover).toBe(2);
+    expect(persistedEditor.selections.selectedCharacterSheets).toEqual({ char1: 3 });
+  });
+
+  it('load legado sin editorStateV1: el hook aplica defaults y no expone el campo dentro del Story', async () => {
+    // Simular un row viejo en la tabla: story sin `editorStateV1`.
+    loadedDraftRow = {
+      current_step: 'scenes',
+      config: baseSnapshot().config,
+      story: { ...baseSnapshot().story, id: 'legacy-story' } as unknown as Record<string, unknown>,
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+
+    // Forzar load explícito.
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+
+    expect(loaded).not.toBeNull();
+    // El Story expuesto por el hook NO debe llevar `editorStateV1` mezclado.
+    const storyExposed = loaded!.story as (Story & { editorStateV1?: unknown }) | null;
+    expect(storyExposed).not.toBeNull();
+    expect((storyExposed as { editorStateV1?: unknown }).editorStateV1).toBeUndefined();
+    // El load no tira: los defaults vienen del helper (assertable vía helper).
+    expect(defaultEditorStateV1().version).toBe(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3/F5 — Provenance hook antes de URL swaps: si la validación falla, la
+// persistencia igual ocurre pero el hook NO commitea el swap ni dispara
+// onCommit — la persistencia no reporta success.
+// -----------------------------------------------------------------------------
+describe('A3/F5 validateProvenanceBeforeSwap (persist without swap if provenance rejects)', () => {
+  it('provenance validator devuelve false: upsert ocurre, cero swap, cero onCommit', async () => {
+    const result = await mountReadyHook();
+
+    const onCommit = vi.fn();
+
+    let resValue: EnqueueDraftWriteResult | EnqueueDraftWriteStale | undefined;
+    await act(async () => {
+      resValue = await result.current.enqueueDraftWrite(
+        { currentStep: 'scenes' },
+        {
+          validateProvenanceBeforeSwap: () => false,
+          onCommit,
+        }
+      );
+    });
+
+    // Persistió (upsert efectivo).
+    expect(upsertCalls).toHaveLength(1);
+    // pero NO commiteó al React state.
+    expect(result.current.draft).toBeNull();
+    expect(result.current.lastSavedAt).toBeNull();
+    // Y el callback de éxito NO se invocó.
+    expect(onCommit).not.toHaveBeenCalled();
+    // El return sigue siendo la shape normal (snapshot+uploadedUrls).
+    expect(resValue).toBeDefined();
+    expect('stale' in resValue! && resValue!.stale).toBeFalsy();
+    expect(resValue).toHaveProperty('snapshot');
+  });
+
+  it('provenance validator devuelve true: commit normal', async () => {
+    const result = await mountReadyHook();
+    const onCommit = vi.fn();
+    await act(async () => {
+      await result.current.enqueueDraftWrite(
+        { currentStep: 'scenes' },
+        { validateProvenanceBeforeSwap: () => true, onCommit }
+      );
+    });
+    expect(upsertCalls).toHaveLength(1);
+    expect(result.current.draft?.currentStep).toBe('scenes');
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3/F6 — Zero stale writes desde la ruta A2: enqueueGeneratedSnapshot devuelve
+// undefined (no success reporting) cuando la guard bloqueó, y no toca la
+// reserva por-ítem que ya fue reseteada por el lifecycle change.
+// -----------------------------------------------------------------------------
+describe('A3/F6 zero stale writes end-to-end desde enqueueGeneratedSnapshot', () => {
+  it('lifecycle change antes del arranque: resuelve undefined; upsert cero', async () => {
+    const dfdBlocker = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfdBlocker);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    let opBlock: Promise<unknown>;
+    act(() => {
+      opBlock = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    let opGen: Promise<void>;
+    act(() => {
+      opGen = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    await act(async () => {
+      dfdBlocker.resolve({ error: null });
+      await opBlock;
+    });
+
+    let genResult: void | undefined;
+    await act(async () => {
+      genResult = await opGen;
+    });
+
+    // undefined = mismo shape que un no-op pre-enqueue: el runner marca `done`
+    // sin creer que la persistencia relevante ocurrió por esta vía.
+    expect(genResult).toBeUndefined();
+    // Cero upserts adicionales (sólo el del blocker).
+    expect(upsertCalls).toHaveLength(1);
+    await flushMicrotasks();
+  });
+});

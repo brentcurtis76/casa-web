@@ -1014,7 +1014,7 @@ describe('T-A2/S4.10 source-tree audit invariants', () => {
     const before = src.slice(0, idx);
     // The nearest enclosing symbol before the call must be enqueueDraftWrite's
     // internal `operation` promise.
-    const lastOperation = before.lastIndexOf('const operation: Promise<EnqueueDraftWriteResult>');
+    const lastOperation = before.lastIndexOf('const operation: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale>');
     expect(lastOperation).toBeGreaterThan(-1);
     const lastFunctionDecl = Math.max(
       before.lastIndexOf('const enqueueDraftWrite'),
