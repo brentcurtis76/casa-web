@@ -41,6 +41,18 @@
  */
 
 import { retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
+import {
+  createSaveRetryRegistry,
+  type SaveRetryEntry,
+  type SaveRetryIdentity,
+  type SaveRetryRegistry,
+} from './saveRetryRegistry';
+
+export type {
+  SaveRetryEntry,
+  SaveRetryIdentity,
+  SaveRetryRegistry,
+} from './saveRetryRegistry';
 
 export type PipelineItemKind = 'sheet' | 'scene' | 'cover' | 'end' | 'prop';
 
@@ -156,10 +168,6 @@ interface InternalItemState {
   task?: PipelineItemTask | LegacyPipelineTask;
   /** Revisión monótona por ítem: sube en cada apply exitoso. */
   generatedRevision: number;
-  /** Snapshot inmutable retenido para reintento de save-only. */
-  retainedSnapshot?: unknown;
-  /** Identidad capturada al aplicar. Se re-usa tal cual en el reintento de persist. */
-  retainedIdentity?: AppliedIdentity;
 }
 
 export interface RunnerOptions {
@@ -187,20 +195,45 @@ export interface StoryImagePipelineRunner {
   retryItem: (input: RetryItemInput) => Promise<void>;
   /** Reintenta todos los ítems `error` y `save-failed` visibles. */
   retryFailed: (identity: RunIdentity) => Promise<void>;
+  /**
+   * Reintenta ÚNICAMENTE persistencias fallidas del registry para la identidad
+   * `(storyId, epoch)` dada. Nunca invoca provider ni apply. Cada entrada se
+   * revalida contra el registry justo antes de llamar `persist`; si la
+   * identidad ya no está viva, no se hace ninguna escritura y la entrada
+   * permanece como save-failed.
+   */
+  retrySaves: (identity: RunIdentity) => Promise<void>;
   /** Invalida el token vigente antes de abortar; corridas en vuelo no aplican ni persisten. */
   cancel: () => void;
   /** Lectura síncrona: ¿hay corrida activa? */
   isBusy: () => boolean;
+  /**
+   * Lectura síncrona: ¿hay al menos un `persist` (inicial o retry) en vuelo?
+   * Cubre initial + retry persistence — es la fuente para el "image-saving
+   * signal".
+   */
+  isSaving: () => boolean;
   /** Vista inmutable de ítems (para render). */
   getItems: () => ReadonlyArray<PipelineItemView>;
   /** Estado terminal/actual de un ítem. */
   statusOf: (id: string) => PipelineItemStatus | undefined;
-  /** Suscripción a cambios de `items`. Devuelve un unsubscribe. */
+  /** Suscripción a cambios de `items` / registry / saving. Devuelve un unsubscribe. */
   subscribe: (listener: () => void) => () => void;
   /** Marca un ítem como resuelto (compat: p.ej. el usuario lo regeneró manualmente). */
   markResolved: (id: string) => void;
   /** Token actualmente vigente (o null si no hay corrida activa). Diagnóstico/tests. */
   getRunToken: () => RunToken | null;
+  /** Conteo derivado del registry — número de saves fallidos pendientes. */
+  saveFailedCount: () => number;
+  /** Acceso de sólo lectura al registry (para diagnósticos y tests). */
+  getSaveRetryRegistry: () => SaveRetryRegistry;
+  /**
+   * Invalida entradas del registry por scope. La hook lo llama en cambios de
+   * lifecycle (bump epoch, cambio de story).
+   */
+  invalidateSaveRetries: (
+    scope: { storyId: string | null; epoch: number } | { storyId: string | null },
+  ) => number;
 }
 
 const DEFAULT_CONCURRENCY = 3;
@@ -264,18 +297,36 @@ export function createStoryImagePipelineRunner(
     providerBaseDelayMs = DEFAULT_PROVIDER_BASE_DELAY_MS,
   } = options;
 
-  // Estado global del runner. Único source of truth.
+  // Estado global del runner. Único source of truth para items/status.
+  // El registry es una fuente de verdad independiente (no acoplada al task
+  // map): re-arrancar un run no lo limpia.
   const items = new Map<string, InternalItemState>();
   const insertionOrder: string[] = [];
   const listeners = new Set<() => void>();
+  const registry = createSaveRetryRegistry();
 
   let currentRunToken: RunToken | null = null;
   let currentAbortController: AbortController | null = null;
   let running = false;
   let concurrencyOverride = baseConcurrency;
+  // Contador de persist en vuelo — cubre initial y retry persistence.
+  let savingCount = 0;
 
   const notify = () => {
     for (const l of listeners) l();
+  };
+  // Cambios del registry también se propagan al mismo bus de subscripción,
+  // para que saveFailedCount y la señal de guardado sean reactivos sin
+  // suscripciones extra.
+  registry.subscribe(notify);
+
+  const beginSaving = () => {
+    savingCount++;
+    notify();
+  };
+  const endSaving = () => {
+    if (savingCount > 0) savingCount--;
+    notify();
   };
 
   const upsertItem = (partial: {
@@ -289,14 +340,14 @@ export function createStoryImagePipelineRunner(
       existing.kind = partial.kind;
       existing.label = partial.label;
       if (partial.status !== undefined) {
-        // Nueva corrida sobre un ítem existente: limpia el estado terminal
-        // previo (`error` / `save-failed`) y las capturas retenidas para
-        // reintentos save-only. La nueva apply reescribirá retainedSnapshot /
-        // retainedIdentity si tiene éxito.
+        // Nueva corrida sobre un ítem existente: limpia SÓLO el estado
+        // terminal visible (`error` / `save-failed`) en la vista de items.
+        // Las entradas del save-retry registry NO se tocan aquí: son la
+        // fuente de verdad de persistencias fallidas y sobreviven al reset
+        // del task map (A3/S3). Un apply exitoso posterior (rev N+1) se
+        // encargará de invalidar entradas viejas del mismo ítem.
         existing.status = partial.status;
         existing.error = undefined;
-        existing.retainedSnapshot = undefined;
-        existing.retainedIdentity = undefined;
       }
     } else {
       items.set(partial.id, {
@@ -411,49 +462,119 @@ export function createStoryImagePipelineRunner(
       return;
     }
 
-    // Retener snapshot inmutable interno y desprender uno para persist.
+    // Snapshot desprendido + deep-frozen. Es el que se retiene para retry en
+    // el registry y también el que se entrega a `persist` (frozen desde ya —
+    // no hace falta un segundo detach porque el caller ya no puede mutarlo).
     const retained = deepFreeze(detachSnapshot(outcome));
-    itemState.retainedSnapshot = retained;
-    itemState.retainedIdentity = appliedIdentity;
     itemState.generatedRevision = nextRevision;
+
+    // Regla "N+1 invalida N": una nueva revisión aplicada limpia entradas
+    // fallidas viejas del mismo (story, epoch, item) con revisión ≤ N.
+    // Esto es lo que garantiza que una vieja falla NO pueda sobrescribir la
+    // nueva revisión aunque su persist se reintente después.
+    registry.invalidateBelowRevision(
+      appliedIdentity.storyId,
+      appliedIdentity.epoch,
+      appliedIdentity.itemId,
+      appliedIdentity.generatedRevision - 1,
+    );
 
     // --- Fase persist ---
     // Publica 'persisting' ANTES de invocar persist, y sólo emite 'done'
-    // después de que la promesa se resuelva. Una rechazo publica 'save-failed'
-    // sin pasar por 'done'.
+    // después de que la promesa se resuelva. Un rechazo publica 'save-failed'
+    // (sin pasar por 'done') y registra la entrada en el registry para retry
+    // save-only. `apply` NO persiste — la escritura ocurre acá.
     setStatus(itemState.id, 'persisting');
+    beginSaving();
     try {
-      const detached = deepFreeze(detachSnapshot(retained)) as Readonly<unknown>;
-      await task.persist(detached, appliedIdentity);
+      await task.persist(retained, appliedIdentity);
+      // Éxito: no hace falta tocar el registry (no habíamos registrado nada
+      // para esta revisión) y cualquier entrada más vieja ya se invalidó
+      // arriba. `done`.
       setStatus(itemState.id, 'done');
     } catch (err) {
+      // Falla: registrar entrada save-only cerrada sobre el task, para que
+      // retrySaves / retryItem la reintenten sin invocar provider ni apply.
+      const entry: SaveRetryEntry = {
+        identity: appliedIdentity,
+        snapshot: retained,
+        provenance: {
+          sourceRevision: appliedIdentity.generatedRevision,
+          contentHash: null,
+        },
+        persist: task.persist as SaveRetryEntry['persist'],
+      };
+      registry.register(entry);
       setStatus(
         itemState.id,
         'save-failed',
         err instanceof Error ? err.message : 'Error guardando imagen'
       );
+    } finally {
+      endSaving();
     }
   };
 
-  /** Sólo re-ejecuta persist con el snapshot/identidad retenidos. */
-  const executePersistOnly = async (itemState: InternalItemState): Promise<void> => {
-    const task = itemState.task;
-    if (!task || isLegacyTask(task)) return;
-    if (!itemState.retainedSnapshot || !itemState.retainedIdentity) return;
+  /**
+   * Ejecuta un retry save-only para una entrada específica del registry.
+   *
+   * Contrato (A3/S3):
+   *  - Nunca invoca provider ni apply — sólo `entry.persist`.
+   *  - Revalida contra el registry INMEDIATAMENTE antes de llamar persist:
+   *    si la entrada ya no está (fue invalidada por epoch bump / story swap
+   *    / apply N+1), no se hace ninguna escritura y el ítem queda como
+   *    estaba.
+   *  - Además revalida contra la identidad viva provista (`liveStoryId` /
+   *    `liveEpoch`): si el snapshot es de otra story o epoch, no persiste.
+   *  - Éxito → clearExact de esta identidad, ítem → `done`.
+   *  - Rechazo → entrada permanece, ítem → `save-failed` (nunca `done`
+   *    mientras esté sin salvar).
+   */
+  const executeSaveRetry = async (
+    entry: SaveRetryEntry,
+    liveStoryId: string | null,
+    liveEpoch: number,
+  ): Promise<void> => {
+    const itemId = entry.identity.itemId;
+    // Revalidación síncrona previa: registry vigente + identidad viva.
+    if (!registry.has(entry.identity)) return;
+    if (entry.identity.storyId !== liveStoryId || entry.identity.epoch !== liveEpoch) {
+      return;
+    }
+    // Doble check: ¿sigue siendo la entrada más nueva? Un apply concurrente
+    // podría haber inyectado una N+1 (que invalida esta) en el mismo tick.
+    const latest = registry.getLatestForItem(
+      entry.identity.storyId,
+      entry.identity.epoch,
+      itemId,
+    );
+    if (!latest || latest.identity.generatedRevision > entry.identity.generatedRevision) {
+      return;
+    }
 
-    setStatus(itemState.id, 'persisting');
+    setStatus(itemId, 'persisting');
+    beginSaving();
     try {
-      const detached = deepFreeze(
-        detachSnapshot(itemState.retainedSnapshot)
-      ) as Readonly<unknown>;
-      await task.persist(detached, itemState.retainedIdentity);
-      setStatus(itemState.id, 'done');
+      // Revalidación final justo antes de la llamada — cubre el caso en el
+      // que una invalidación ocurre entre la revalidación arriba y el await.
+      if (!registry.has(entry.identity)) {
+        endSaving();
+        return;
+      }
+      await entry.persist(entry.snapshot, entry.identity);
+      // Sólo limpia esta entrada exacta; entradas de otros items no se tocan.
+      registry.clearExact(entry.identity);
+      setStatus(itemId, 'done');
     } catch (err) {
+      // Entrada permanece — el ítem no puede llegar a `done` mientras siga
+      // sin persistir.
       setStatus(
-        itemState.id,
+        itemId,
         'save-failed',
         err instanceof Error ? err.message : 'Error guardando imagen'
       );
+    } finally {
+      endSaving();
     }
   };
 
@@ -528,24 +649,40 @@ export function createStoryImagePipelineRunner(
     const s = items.get(itemId);
     if (!s || !s.task) return;
     if (s.status === 'save-failed') {
-      // Solo re-persistir. No usa runToken; no aborta corridas activas.
-      await executePersistOnly(s);
+      // Save-only retry: mira SIEMPRE al registry (fuente de verdad para
+      // fallas de persist). No usa runToken; no aborta corridas activas; no
+      // llama provider ni apply.
+      const entry = registry.getLatestForItem(identity.storyId, identity.epoch, itemId);
+      if (!entry) return;
+      await executeSaveRetry(entry, identity.storyId, identity.epoch);
       return;
     }
     if (s.status === 'error') {
-      // Regenerar: nueva mini-corrida para este ítem.
+      // Regenerar: nueva mini-corrida para este ítem — genera + apply +
+      // persist. Es explícitamente el path de retry de GENERACIÓN, separado
+      // del path de retry save-only.
       await runItems({ tasks: [s.task], identity });
       return;
     }
   };
 
   const retryFailed: StoryImagePipelineRunner['retryFailed'] = async (identity) => {
-    // Save-failed primero: no abren una nueva corrida, no invalidan token.
-    const saveFailedItems = insertionOrder
-      .map((id) => items.get(id))
-      .filter((s): s is InternalItemState => !!s && s.status === 'save-failed');
-    for (const s of saveFailedItems) {
-      await executePersistOnly(s);
+    // Save-failed primero: sale del registry, no invalida token ni provider.
+    // Orden por insertionOrder para reproducibilidad (los tests fijan orden
+    // determinista).
+    const entriesByItem = new Map<string, SaveRetryEntry>();
+    for (const entry of registry.entriesForIdentity(identity.storyId, identity.epoch)) {
+      const existing = entriesByItem.get(entry.identity.itemId);
+      if (
+        !existing ||
+        entry.identity.generatedRevision > existing.identity.generatedRevision
+      ) {
+        entriesByItem.set(entry.identity.itemId, entry);
+      }
+    }
+    for (const id of insertionOrder) {
+      const entry = entriesByItem.get(id);
+      if (entry) await executeSaveRetry(entry, identity.storyId, identity.epoch);
     }
     const erroredTasks = insertionOrder
       .map((id) => items.get(id))
@@ -553,6 +690,36 @@ export function createStoryImagePipelineRunner(
       .map((s) => s.task as PipelineItemTask | LegacyPipelineTask);
     if (erroredTasks.length > 0) {
       await runItems({ tasks: erroredTasks, identity });
+    }
+  };
+
+  const retrySaves: StoryImagePipelineRunner['retrySaves'] = async (identity) => {
+    // Sólo entradas del registry para la identidad viva (storyId, epoch).
+    // Nunca corre provider ni apply. Cada entrada se revalida contra el
+    // registry justo antes de persistir.
+    const entriesByItem = new Map<string, SaveRetryEntry>();
+    for (const entry of registry.entriesForIdentity(identity.storyId, identity.epoch)) {
+      const existing = entriesByItem.get(entry.identity.itemId);
+      if (
+        !existing ||
+        entry.identity.generatedRevision > existing.identity.generatedRevision
+      ) {
+        entriesByItem.set(entry.identity.itemId, entry);
+      }
+    }
+    // Orden determinista: primero por insertionOrder de items conocidos,
+    // luego el resto por orden de aparición del registry.
+    const seen = new Set<string>();
+    for (const id of insertionOrder) {
+      const entry = entriesByItem.get(id);
+      if (entry) {
+        seen.add(id);
+        await executeSaveRetry(entry, identity.storyId, identity.epoch);
+      }
+    }
+    for (const [id, entry] of entriesByItem) {
+      if (seen.has(id)) continue;
+      await executeSaveRetry(entry, identity.storyId, identity.epoch);
     }
   };
 
@@ -598,16 +765,38 @@ export function createStoryImagePipelineRunner(
 
   const getRunToken: StoryImagePipelineRunner['getRunToken'] = () => currentRunToken;
 
+  const isSaving: StoryImagePipelineRunner['isSaving'] = () => savingCount > 0;
+
+  const saveFailedCount: StoryImagePipelineRunner['saveFailedCount'] = () =>
+    registry.size();
+
+  const getSaveRetryRegistry: StoryImagePipelineRunner['getSaveRetryRegistry'] = () =>
+    registry;
+
+  const invalidateSaveRetries: StoryImagePipelineRunner['invalidateSaveRetries'] = (
+    scope,
+  ) => {
+    if ('epoch' in scope) {
+      return registry.invalidateEpoch(scope.storyId, scope.epoch);
+    }
+    return registry.invalidateStory(scope.storyId);
+  };
+
   return {
     runItems,
     retryItem,
     retryFailed,
+    retrySaves,
     cancel,
     isBusy,
+    isSaving,
     getItems,
     statusOf,
     subscribe,
     markResolved,
     getRunToken,
+    saveFailedCount,
+    getSaveRetryRegistry,
+    invalidateSaveRetries,
   };
 }

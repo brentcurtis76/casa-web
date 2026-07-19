@@ -24,6 +24,7 @@ import {
   type RunToken,
   type StoryImagePipelineRunner,
 } from './storyImagePipelineRunner';
+export type { SaveRetryRegistry } from './saveRetryRegistry';
 
 export type { PipelineItemKind, PipelineItemStatus } from './storyImagePipelineRunner';
 // Sentinels de retorno explícito de `apply` (F3). Re-exportados para que los
@@ -46,11 +47,19 @@ export interface UseStoryImagePipelineReturn {
   /** Items de la corrida actual (o la última), en orden de encolado. */
   items: PipelineItem[];
   isRunning: boolean;
+  /**
+   * Señal reactiva de guardado: `true` mientras hay al menos una operación
+   * `persist` en vuelo — inicial o retry. Cubre ambas para que el UI muestre
+   * un indicador de "guardando…" consistente.
+   */
+  isSaving: boolean;
   /** Lectura síncrona del estado de ejecución (isRunning puede ir un render atrás). */
   isBusy: () => boolean;
   /** Conteos derivados de la corrida actual. */
   doneCount: number;
   errorCount: number;
+  /** Conteo derivado del registry — persistencias fallidas pendientes de retry. */
+  saveFailedCount: number;
   totalCount: number;
   /**
    * API legado: ejecuta las tareas con pool de 3 (se reduce a 1 si aparece un
@@ -67,8 +76,22 @@ export interface UseStoryImagePipelineReturn {
   ) => Promise<RunToken>;
   /** Reintenta ítems `error` y `save-failed`. Los `save-failed` no llaman al provider. */
   retryFailed: (identity?: RunIdentity) => Promise<void>;
+  /**
+   * Reintenta ÚNICAMENTE persistencias fallidas del registry para la
+   * identidad viva. Nunca invoca provider/generación. Cada entrada revalida
+   * su identidad frente al registry antes de escribir; entradas stale no
+   * producen ninguna escritura.
+   */
+  retrySaves: (identity: RunIdentity) => Promise<void>;
   /** Reintento por ítem específico (A2). */
   retryItem: (itemId: string, identity: RunIdentity) => Promise<void>;
+  /**
+   * Invalida el registry de save-retries por scope. La ha de llamar el hook
+   * del draft en cambios de lifecycle (bump epoch, cambio de story activa).
+   */
+  invalidateSaveRetries: (
+    scope: { storyId: string | null; epoch: number } | { storyId: string | null },
+  ) => number;
   /** Deja de sacar tareas de la cola; invalida token antes de abortar. */
   cancel: () => void;
   /** Estado de un item por id (undefined si no está en la corrida). */
@@ -96,14 +119,22 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
   }
   const runner = runnerRef.current;
 
-  // Snapshot combinado (items + isRunning) para que `useSyncExternalStore`
-  // dispare re-render tanto por cambios de items como de estado de ejecución.
-  // Devolvemos misma referencia cuando nada cambió.
+  // Snapshot combinado (items + isRunning + isSaving + saveFailedCount) para
+  // que `useSyncExternalStore` dispare re-render por cambios de items, de
+  // estado de ejecución, de guardado en vuelo, o del registry. Devolvemos
+  // misma referencia cuando nada cambió.
   interface Snapshot {
     items: PipelineItem[];
     isRunning: boolean;
+    isSaving: boolean;
+    saveFailedCount: number;
   }
-  const snapshotRef = useRef<Snapshot>({ items: [], isRunning: false });
+  const snapshotRef = useRef<Snapshot>({
+    items: [],
+    isRunning: false,
+    isSaving: false,
+    saveFailedCount: 0,
+  });
   const subscribe = useCallback(
     (listener: () => void) => runner.subscribe(listener),
     [runner]
@@ -111,6 +142,8 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
   const getSnapshot = useCallback((): Snapshot => {
     const nextItems = runner.getItems();
     const nextIsRunning = runner.isBusy();
+    const nextIsSaving = runner.isSaving();
+    const nextSaveFailedCount = runner.saveFailedCount();
     const prev = snapshotRef.current;
     const itemsEqual =
       prev.items.length === nextItems.length &&
@@ -124,17 +157,26 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
           p.label === n.label
         );
       });
-    if (itemsEqual && prev.isRunning === nextIsRunning) return prev;
+    if (
+      itemsEqual &&
+      prev.isRunning === nextIsRunning &&
+      prev.isSaving === nextIsSaving &&
+      prev.saveFailedCount === nextSaveFailedCount
+    ) {
+      return prev;
+    }
     const copy: Snapshot = {
       items: itemsEqual ? prev.items : nextItems.map((v) => ({ ...v })),
       isRunning: nextIsRunning,
+      isSaving: nextIsSaving,
+      saveFailedCount: nextSaveFailedCount,
     };
     snapshotRef.current = copy;
     return copy;
   }, [runner]);
 
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const { items, isRunning } = snapshot;
+  const { items, isRunning, isSaving, saveFailedCount } = snapshot;
 
   const runAll = useCallback(
     async (tasks: PipelineTask[]): Promise<boolean> => {
@@ -166,6 +208,20 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
     [runner]
   );
 
+  const retrySaves = useCallback(
+    (identity: RunIdentity) => runner.retrySaves(identity),
+    [runner]
+  );
+
+  const invalidateSaveRetries = useCallback(
+    (
+      scope:
+        | { storyId: string | null; epoch: number }
+        | { storyId: string | null },
+    ) => runner.invalidateSaveRetries(scope),
+    [runner]
+  );
+
   const cancel = useCallback(() => runner.cancel(), [runner]);
   const isBusy = useCallback(() => runner.isBusy(), [runner]);
   const statusOf = useCallback((id: string) => runner.statusOf(id), [runner]);
@@ -189,18 +245,22 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
   return {
     items,
     isRunning,
+    isSaving,
     isBusy,
     doneCount: counts.done,
     errorCount: counts.error,
+    saveFailedCount,
     totalCount: items.length,
     runAll,
     runItems,
     retryFailed,
+    retrySaves,
     retryItem,
     cancel,
     statusOf,
     errorOf,
     markResolved,
     getRunToken,
+    invalidateSaveRetries,
   };
 }
