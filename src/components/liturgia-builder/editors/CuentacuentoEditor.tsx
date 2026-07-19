@@ -60,7 +60,8 @@ import type {
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull, type DraftPatch } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
-import type { PipelineItemTask, AppliedIdentity, RunIdentity } from '@/hooks/storyImagePipelineRunner';
+import type { PipelineItemTask, AppliedIdentity, RunIdentity, ApplyOutcome } from '@/hooks/storyImagePipelineRunner';
+import { APPLY_STALE, APPLY_EPHEMERAL } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -584,6 +585,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     bumpDraftEpoch,
     setActiveDraftStoryId,
     enqueueGeneratedSnapshot,
+    getDraftIdentity,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
   // Estado del diálogo de confirmación de eliminación
@@ -639,8 +641,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   }, [story, setActiveDraftStoryId]);
 
   const pipeline = useStoryImagePipeline();
-  // Métodos estables del pipeline (el objeto cambia de identidad por render)
-  const { markResolved: markPipelineResolved, cancel: cancelPipeline } = pipeline;
+  // Método estable del pipeline (el objeto cambia de identidad por render).
+  // `markResolved` no se re-exporta: apply YA no publica estado terminal — ese
+  // rol es exclusivo del runner (ver storyImagePipelineRunner.executePhase).
+  const { cancel: cancelPipeline } = pipeline;
 
   // Derivadores del estado del runner. Un ítem está "ocupado" mientras el
   // provider está corriendo o mientras el snapshot se persiste; el UI no
@@ -1538,12 +1542,11 @@ Instrucciones críticas:
   // (storyId vs storyIdRef) protege de resucitar resultados de un story
   // eliminado/reemplazado dentro de la misma corrida.
 
-  // Helper: identidad de corrida actual (epoch 0 por convención mientras no
-  // haya un getter de epoch expuesto por el draft hook).
-  const buildRunIdentity = useCallback((): RunIdentity => ({
-    storyId: story?.id ?? null,
-    epoch: 0,
-  }), [story]);
+  // Identidad de corrida actual: lee del getter estable del hook, que a su vez
+  // lee refs live (storyId + epoch). No captura valores del render — cada
+  // invocación devuelve la identidad viva en el instante exacto en que el
+  // runner arma `AppliedIdentity`.
+  const buildRunIdentity = useCallback((): RunIdentity => getDraftIdentity(), [getDraftIdentity]);
 
   // Builder: character sheet
   const buildCharacterSheetTask = useCallback((
@@ -1580,10 +1583,13 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        // Guard: si el story cambió durante la generación, descartar.
-        if (appliedIdentity.storyId !== storyIdRef.current) {
-          return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        // Identidad viva del hook: si storyId O epoch cambiaron durante la
+        // generación, descartar explícitamente (APPLY_STALE) — el runner deja
+        // el ítem en `pending` sin mergear ni persistir.
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
         }
         const base = characterSheetOptionsRef.current;
         const existingOptions = append ? (base[character.id] || []) : [];
@@ -1599,19 +1605,17 @@ Instrucciones críticas:
           setSelectedCharacterSheets(nextSelection);
         }
 
-        markPipelineResolved(`sheet-${character.id}`);
-
         return {
           currentStep: currentStepRef.current,
           characterSheetOptions: nextOptions,
           selectedCharacterSheets: nextSelection,
-        };
+        } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
       },
     };
-  }, [story, markPipelineResolved, enqueueGeneratedSnapshot]);
+  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar character sheet para un personaje (botón manual)
   const handleGenerateCharacterSheet = useCallback(async (
@@ -1724,10 +1728,12 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        // Guard: si el story cambió durante la generación, descartar.
-        if (appliedIdentity.storyId !== storyIdRef.current) {
-          return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<never> => {
+        // Identidad viva: si storyId o epoch cambiaron, descartar (APPLY_STALE)
+        // — el runner deja el ítem en `pending`, sin mergear candidatas huérfanas.
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
         }
         const base = propSheetOptionsRef.current;
         const merged = { ...base, [prop.id]: result.images };
@@ -1742,16 +1748,15 @@ Instrucciones críticas:
           return next;
         });
 
-        markPipelineResolved(`prop-${prop.id}`);
-
-        // Prop sheets son efímeras — no se persisten en el draft.
-        return null;
+        // Prop sheets son efímeras por diseño — apply exitoso, sin persistir.
+        // El runner marca `done` sin invocar persist.
+        return APPLY_EPHEMERAL;
       },
       persist: async () => {
         // No-op: prop sheets no se persisten (ephemeral by design).
       },
     };
-  }, [story, markPipelineResolved]);
+  }, [story, getDraftIdentity]);
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
     if (!story) return;
@@ -1891,10 +1896,10 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        // Guard: si el story cambió durante la generación, descartar.
-        if (appliedIdentity.storyId !== storyIdRef.current) {
-          return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
         }
         const base = sceneImageOptionsRef.current;
         const existingSceneOptions = append ? (base[scene.number] || []) : [];
@@ -1910,20 +1915,18 @@ Instrucciones críticas:
           setSelectedSceneImages(nextSelection);
         }
 
-        markPipelineResolved(`scene-${scene.number}`);
-
         return {
           currentStep: currentStepRef.current,
           sceneImageOptions: nextOptions,
           selectedSceneImages: nextSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
-        };
+        } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
       },
     };
-  }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, markPipelineResolved, enqueueGeneratedSnapshot]);
+  }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen para una escena (botón manual)
   const handleGenerateSceneImage = useCallback(async (
@@ -2075,19 +2078,20 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) {
-          return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
         }
         const nextOptions = result.images;
         setCoverOptions(nextOptions);
-        return { coverOptions: nextOptions };
+        return { coverOptions: nextOptions } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
       },
     };
-  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, enqueueGeneratedSnapshot]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar portada
   const handleGenerateCover = useCallback(async (customPrompt?: string) => {
@@ -2182,19 +2186,20 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) {
-          return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
         }
         const nextOptions = result.images;
         setEndOptions(nextOptions);
-        return { endOptions: nextOptions };
+        return { endOptions: nextOptions } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
       },
     };
-  }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, enqueueGeneratedSnapshot]);
+  }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
@@ -2355,8 +2360,11 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
+        }
         const refined = result.images[0];
         const existing = characterSheetOptionsRef.current[character.id] || [];
         const currentSelected = selectedCharacterSheetsRef.current[character.id];
@@ -2364,7 +2372,9 @@ Instrucciones críticas:
           typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
             ? currentSelected
             : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return null;
+        // Slot no encontrado: la fuente ya fue reemplazada por otra escritura;
+        // discard como stale para que el runner deje el ítem en `pending`.
+        if (slotIdx < 0) return APPLY_STALE;
 
         const updated = existing.slice();
         updated[slotIdx] = refined;
@@ -2375,19 +2385,17 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        markPipelineResolved(`sheet-${character.id}`);
-
         return {
           currentStep: currentStepRef.current,
           characterSheetOptions: newOptions,
           selectedCharacterSheets: newSelection,
-        };
+        } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
       },
     };
-  }, [story, markPipelineResolved, enqueueGeneratedSnapshot]);
+  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleRefineCharacterSheet = useCallback(
     async (characterId: string, sourceImage: string, feedback: string) => {
@@ -2475,8 +2483,11 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
+        }
         const refined = result.images[0];
         const existing = sceneImageOptionsRef.current[scene.number] || [];
         const currentSelected = selectedSceneImagesRef.current[scene.number];
@@ -2484,7 +2495,7 @@ Instrucciones críticas:
           typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
             ? currentSelected
             : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return null;
+        if (slotIdx < 0) return APPLY_STALE;
 
         const updated = existing.slice();
         updated[slotIdx] = refined;
@@ -2495,14 +2506,12 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        markPipelineResolved(`scene-${scene.number}`);
-
         return {
           currentStep: currentStepRef.current,
           sceneImageOptions: newSceneOptions,
           selectedSceneImages: newSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
-        };
+        } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
@@ -2515,7 +2524,7 @@ Instrucciones críticas:
     sceneReferenceImages,
     getCharactersWithReferences,
     getPropsForScene,
-    markPipelineResolved,
+    getDraftIdentity,
     enqueueGeneratedSnapshot,
   ]);
 
@@ -2610,8 +2619,11 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
+        }
         const refined = result.images[0];
         const prev = coverOptionsRef.current;
         const selected = selectedCoverRef.current;
@@ -2619,13 +2631,13 @@ Instrucciones críticas:
           typeof selected === 'number' && prev[selected] === sourceImage
             ? selected
             : prev.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return null;
+        if (slotIdx < 0) return APPLY_STALE;
         const nextOptions = prev.slice();
         nextOptions[slotIdx] = refined;
         coverOptionsRef.current = nextOptions;
         setCoverOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        return { coverOptions: nextOptions };
+        return { coverOptions: nextOptions } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
@@ -2637,6 +2649,7 @@ Instrucciones críticas:
     coverReferenceImage,
     editingCoverPrompt,
     getPrimaryProps,
+    getDraftIdentity,
     enqueueGeneratedSnapshot,
   ]);
 
@@ -2716,8 +2729,11 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity) => {
-        if (appliedIdentity.storyId !== storyIdRef.current) return null;
+      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
+        const live = getDraftIdentity();
+        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
+          return APPLY_STALE;
+        }
         const refined = result.images[0];
         const prev = endOptionsRef.current;
         const selected = selectedEndRef.current;
@@ -2725,13 +2741,13 @@ Instrucciones críticas:
           typeof selected === 'number' && prev[selected] === sourceImage
             ? selected
             : prev.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return null;
+        if (slotIdx < 0) return APPLY_STALE;
         const nextOptions = prev.slice();
         nextOptions[slotIdx] = refined;
         endOptionsRef.current = nextOptions;
         setEndOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        return { endOptions: nextOptions };
+        return { endOptions: nextOptions } as DraftPatch;
       },
       persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
         await enqueueGeneratedSnapshot({ patch: snapshot as DraftPatch, identity: appliedIdentity });
@@ -2742,6 +2758,7 @@ Instrucciones críticas:
     endReferenceImage,
     editingEndPrompt,
     endIncludedCharacters,
+    getDraftIdentity,
     enqueueGeneratedSnapshot,
   ]);
 
@@ -3955,7 +3972,7 @@ Instrucciones críticas:
                   {(sheetErrors > 0 || sheetSaveFailed > 0) && (
                     <button
                       type="button"
-                      onClick={() => void pipeline.retryFailed({ storyId: story?.id ?? null, epoch: 0 })}
+                      onClick={() => void pipeline.retryFailed(buildRunIdentity())}
                       disabled={pipeline.isRunning || refiningCharId !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
@@ -4132,7 +4149,6 @@ Instrucciones críticas:
           onRemove={handleRemoveProp}
           onAdd={handleAddProp}
           onUpdateDescription={handleUpdatePropDescription}
-          onRetryPersist={(propId) => void pipeline.retryItem(`prop-${propId}`, buildRunIdentity())}
         />
 
         {/* Error */}
@@ -4306,7 +4322,7 @@ Instrucciones críticas:
                   {(sceneErrorCount > 0 || sceneSaveFailed > 0) && (
                     <button
                       type="button"
-                      onClick={() => void pipeline.retryFailed({ storyId: story?.id ?? null, epoch: 0 })}
+                      onClick={() => void pipeline.retryFailed(buildRunIdentity())}
                       disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}

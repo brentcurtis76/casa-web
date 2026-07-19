@@ -8,6 +8,11 @@
 
 import React, { useState } from 'react';
 import { Loader2, RefreshCw, Camera, MapPin, Package, Plus, Trash2, Check } from 'lucide-react';
+// PropSheetSection sólo maneja estados alcanzables para candidatas efímeras
+// (`pending`/`running`/`done`/`error`). Las hojas de referencia NO se persisten
+// en el draft — apply devuelve APPLY_EPHEMERAL y el runner marca `done` sin
+// invocar persist, por lo que `persisting` y `save-failed` son inalcanzables
+// para ítems `prop-*` y no existe una acción de "reintentar guardado".
 import { CASA_BRAND } from '@/lib/brand-kit';
 import ImageUploadButton from '@/components/shared/ImageUploadButton';
 import type { StoryProp, PropKind } from '@/types/shared/story';
@@ -28,8 +33,6 @@ export interface PropSheetSectionProps {
   onRemove: (propId: string) => void;
   onAdd: (draft: { name: string; kind: PropKind; narrativeRole: string; visualDescription: string }) => void;
   onUpdateDescription: (propId: string, visualDescription: string) => void;
-  /** Reintenta la persistencia (sin llamar al provider) para un `save-failed`. */
-  onRetryPersist: (propId: string) => void;
 }
 
 const PropSheetSection: React.FC<PropSheetSectionProps> = ({
@@ -44,7 +47,6 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
   onRemove,
   onAdd,
   onUpdateDescription,
-  onRetryPersist,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
@@ -155,8 +157,6 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
         const hasPhotos = (prop.referenceImages?.length ?? 0) > 0;
         const propStatus = statusOf(`prop-${prop.id}`);
         const isGeneratingThis = propStatus === 'running';
-        const isSavingThis = propStatus === 'persisting';
-        const isSaveFailed = propStatus === 'save-failed';
 
         return (
           <div key={prop.id} className="p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
@@ -177,9 +177,6 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
                 {propStatus === 'error' && !pipelineBusy && (
                   <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Error</span>
                 )}
-                {isSaveFailed && !pipelineBusy && (
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>No se guardó</span>
-                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -191,26 +188,12 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
                 >
                   {isGeneratingThis ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
-                  ) : isSavingThis ? (
-                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : options.length > 0 ? (
                     <><RefreshCw size={14} /> Regenerar</>
                   ) : (
                     <><Camera size={14} /> Generar referencia</>
                   )}
                 </button>
-                {isSaveFailed && (
-                  <button
-                    type="button"
-                    onClick={() => onRetryPersist(prop.id)}
-                    disabled={busy}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
-                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
-                    title="Reintenta guardar la imagen ya generada"
-                  >
-                    <RefreshCw size={14} /> Reintentar guardado
-                  </button>
-                )}
                 <ImageUploadButton label="foto" onUpload={(base64) => onUploadPhoto(prop.id, base64)} disabled={busy} />
                 <button
                   type="button"
