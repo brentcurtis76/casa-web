@@ -55,7 +55,7 @@ import type {
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
-import { useCuentacuentosDraft, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
+import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
@@ -461,6 +461,43 @@ async function invokeGenerateSceneImagesRequest(
   return data as ProviderResult;
 }
 
+// F4/cleanup — Helpers puros compartidos por los 4 handlers de aprobación/
+// finalización (dedup del metadata-spread y de los maps de selección). El flag
+// `keepExisting` preserva la diferencia real entre aprobar (fallback undefined)
+// y finalizar (fallback = valor existente en el story).
+function withStatus(story: Story, status: Story['metadata']['status']): Story {
+  return {
+    ...story,
+    metadata: { ...story.metadata, status, updatedAt: new Date().toISOString() },
+  };
+}
+function applyCharacterSelections(
+  characters: Story['characters'],
+  options: Record<string, string[]>,
+  selected: Record<string, number>,
+  keepExisting: boolean,
+): Story['characters'] {
+  return characters.map((char) => {
+    const opts = options[char.id];
+    const idx = selected[char.id];
+    const url = opts && idx !== undefined ? opts[idx] : (keepExisting ? char.characterSheetUrl : undefined);
+    return { ...char, characterSheetOptions: opts, characterSheetUrl: url };
+  });
+}
+function applySceneSelections(
+  scenes: Story['scenes'],
+  options: Record<number, string[]>,
+  selected: Record<number, number>,
+  keepExisting: boolean,
+): Story['scenes'] {
+  return scenes.map((scene) => {
+    const opts = options[scene.number];
+    const idx = selected[scene.number];
+    const url = opts && idx !== undefined ? opts[idx] : (keepExisting ? scene.selectedImageUrl : undefined);
+    return { ...scene, imageOptions: opts, selectedImageUrl: url };
+  });
+}
+
 const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   context,
   initialStory,
@@ -623,6 +660,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     acceptRecovery,
     declineRecovery,
     enqueueDraftWrite,
+    enqueueAuthoritativeWrite,
     flushPendingDraftWrites,
     bumpDraftEpoch,
     setActiveDraftStoryId,
@@ -632,6 +670,13 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     activeIdentity,
     bumpContentRevision,
   } = useCuentacuentosDraft({ liturgyId: context.id });
+
+  // F4 — Latch de re-entrancy del envelope de aprobación/finalización. El REF
+  // cierra la carrera de doble-click de forma síncrona (un setState no alcanza:
+  // se aplica async y no bloquea un doble-disparo en el mismo tick). El STATE es
+  // sólo feedback visual: deshabilita los botones durante el envelope en vuelo.
+  const isApprovingRef = useRef(false);
+  const [isApproving, setIsApproving] = useState(false);
 
   // Estado del diálogo de confirmación de eliminación
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -3203,65 +3248,88 @@ Instrucciones críticas:
       onSuccess: (committedStory: Story) => void;
     }) => {
       const { deriveNextStory, nextStep, staleMessage, errorMessage, onSuccess } = params;
-      // 1) Captura síncrona ANTES de cualquier await.
-      const startIdentity = getDraftWriteIdentity();
-      // 2) Flush + drain — nunca descartar ediciones debounceadas.
-      await flushPendingDraftWrites();
-      // 3) Comparación campo a campo inmediatamente después del drain.
-      const postDrain = getDraftWriteIdentity();
-      const drainStable =
-        postDrain.epoch === startIdentity.epoch &&
-        postDrain.storyId === startIdentity.storyId &&
-        postDrain.revision === startIdentity.revision &&
-        postDrain.contentRevision === startIdentity.contentRevision;
-      if (!drainStable) {
-        setError(staleMessage);
-        return;
-      }
-      // 4) Re-leer gate DESPUÉS del drain contra la identidad viva actual.
-      const liveIdentity = getDraftIdentity();
-      const liveSaveFailedCount = pipeline.getSaveFailedCount(liveIdentity);
-      const liveIsSaving = pipeline.isBusySaving();
-      const gateState = { isSaving: liveIsSaving, saveFailedCount: liveSaveFailedCount };
-      await runApprovalTransaction<EnqueueDraftWriteResult | EnqueueDraftWriteStale>({
-        state: gateState,
-        // 5) Story y patch derivados de refs vivas DENTRO del tail.
-        enqueue: () => enqueueDraftWrite(
-          () => {
-            const liveStory = storyRef.current;
-            if (!liveStory) {
-              // Sin story viva no hay transición legítima; el throw viaja al
-              // caller como outcome `error` (cero transición, cero kick).
-              throw new Error('runAuthoritativeApproval: no hay story activa');
-            }
-            return buildAuthoritativeDraftPatch(deriveNextStory(liveStory), nextStep);
+      // B7 — Latch de re-entrancy SÍNCRONO: un segundo click (o disparo por
+      // teclado) mientras el envelope está en vuelo se descarta acá, antes de
+      // arrancar un segundo envelope concurrente que fallaría el drainStable
+      // tras el commit del primero y mostraría un "vuelve a intentar" falso.
+      if (isApprovingRef.current) return;
+      isApprovingRef.current = true;
+      setIsApproving(true);
+      try {
+        // B6 — Limpiar cualquier banner de error previo: stale-then-retry es el
+        // mainline diseñado, y sin esto un retry exitoso arrastra el rojo.
+        setError(null);
+        // 1) Captura síncrona ANTES de cualquier await.
+        const startIdentity = getDraftWriteIdentity();
+        // 2) Flush + drain — nunca descartar ediciones debounceadas.
+        await flushPendingDraftWrites();
+        // 3) Comparación campo a campo inmediatamente después del drain (vía el
+        //    comparador único). Un cambio (lifecycle O edición same-story) ⇒
+        //    stale ANTES de encolar: no hubo escritura autoritativa, así que no
+        //    hay fila que corregir — sólo retenemos step/story y avisamos.
+        const postDrain = getDraftWriteIdentity();
+        if (!draftIdentitiesEqual(startIdentity, postDrain)) {
+          setError(staleMessage);
+          return;
+        }
+        // 4) Re-leer gate DESPUÉS del drain. `postDrain` ya es la identidad viva
+        //    {storyId, epoch, …}; se reutiliza para scopear saveFailedCount.
+        const gateState = {
+          isSaving: pipeline.isBusySaving(),
+          saveFailedCount: pipeline.getSaveFailedCount(postDrain),
+        };
+        const outcome = await runApprovalTransaction<EnqueueDraftWriteResult | EnqueueDraftWriteStale>({
+          state: gateState,
+          // 5) Story y patch derivados de refs vivas DENTRO del tail, vía el
+          //    camino autoritativo de primera clase. Un resultado "persistió
+          //    pero sin commit vivo" (sin `committed`) se mapea a stale, de modo
+          //    que el outcome `'ok'` implique SIEMPRE un commit vivo.
+          enqueue: () =>
+            enqueueAuthoritativeWrite(() => {
+              const liveStory = storyRef.current;
+              if (!liveStory) {
+                throw new Error('runAuthoritativeApproval: no hay story activa');
+              }
+              return buildAuthoritativeDraftPatch(deriveNextStory(liveStory), nextStep);
+            }).then((r) =>
+              r.stale !== true && !r.committed ? ({ stale: true } as EnqueueDraftWriteStale) : r,
+            ),
+          // 7) Transicionar SÓLO con el snapshot commiteado por la persistencia.
+          onSuccess: (result) => {
+            const committedStory = result.stale !== true ? result.committed?.story ?? null : null;
+            if (committedStory) onSuccess(committedStory);
           },
-          { authoritative: true },
-        ),
-        // 7) Transicionar SÓLO con el snapshot commiteado por la persistencia.
-        onSuccess: (result) => {
-          const committedStory =
-            result && result.stale !== true ? result.committed?.story ?? null : null;
-          if (!committedStory) {
-            // Persistió sin commit vivo (p.ej. provenance-rechazado) — para el
-            // envelope eso es stale: cero transición, cero kick.
-            setError(staleMessage);
-            return;
-          }
-          onSuccess(committedStory);
-        },
-        onBlocked: () => setError(gateWarning),
-        onStale: () => setError(staleMessage),
-        onError: () => setError(errorMessage),
-      });
+          onBlocked: () => setError(gateWarning),
+          onStale: () => setError(staleMessage),
+          onError: () => setError(errorMessage),
+        });
+        // B8 — Phantom-finalize: si el envelope quedó `'stale'`, la escritura
+        // autoritativa YA corrió su upsert (escribió el step de transición —
+        // p.ej. 'complete' en finalize — a la fila del draft) pero NO commiteó
+        // ni transicionó. Re-persistimos INMEDIATAMENTE el step VIVO
+        // (no-autoritativo: sin bump de contentRevision para no invalidar el
+        // debounce de la edición que causó el stale), deshaciendo la fila
+        // huérfana en vez de esperar ≤2s al debounce (una tab-close en esa
+        // ventana dejaba varada una historia finalizada, invisible al recovery).
+        if (outcome === 'stale' && storyRef.current) {
+          const recoverStory = storyRef.current;
+          const recoverStep = currentStepRef.current;
+          void enqueueDraftWrite(() => buildAuthoritativeDraftPatch(recoverStory, recoverStep)).catch(
+            () => {},
+          );
+        }
+      } finally {
+        isApprovingRef.current = false;
+        setIsApproving(false);
+      }
     },
     [
       getDraftWriteIdentity,
       flushPendingDraftWrites,
-      getDraftIdentity,
       pipeline,
       buildAuthoritativeDraftPatch,
       enqueueDraftWrite,
+      enqueueAuthoritativeWrite,
     ],
   );
 
@@ -3271,14 +3339,7 @@ Instrucciones críticas:
   const handleApproveStory = useCallback(async () => {
     if (!story) return;
     await runAuthoritativeApproval({
-      deriveNextStory: (liveStory) => ({
-        ...liveStory,
-        metadata: {
-          ...liveStory.metadata,
-          status: 'characters-pending',
-          updatedAt: new Date().toISOString(),
-        },
-      }),
+      deriveNextStory: (liveStory) => withStatus(liveStory, 'characters-pending'),
       nextStep: 'characters',
       staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
       errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
@@ -3295,28 +3356,19 @@ Instrucciones críticas:
   const handleApproveCharacters = useCallback(async () => {
     if (!story) return;
     await runAuthoritativeApproval({
-      deriveNextStory: (liveStory) => {
-        const liveOptions = characterSheetOptionsRef.current;
-        const liveSelected = selectedCharacterSheetsRef.current;
-        const updatedCharacters = liveStory.characters.map(char => {
-          const options = liveOptions[char.id];
-          const selectedIdx = liveSelected[char.id];
-          return {
-            ...char,
-            characterSheetOptions: options,
-            characterSheetUrl: options && selectedIdx !== undefined ? options[selectedIdx] : undefined,
-          };
-        });
-        return {
-          ...liveStory,
-          characters: updatedCharacters,
-          metadata: {
-            ...liveStory.metadata,
-            status: 'characters-approved',
-            updatedAt: new Date().toISOString(),
+      deriveNextStory: (liveStory) =>
+        withStatus(
+          {
+            ...liveStory,
+            characters: applyCharacterSelections(
+              liveStory.characters,
+              characterSheetOptionsRef.current,
+              selectedCharacterSheetsRef.current,
+              false,
+            ),
           },
-        };
-      },
+          'characters-approved',
+        ),
       nextStep: 'scenes',
       staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
       errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
@@ -3331,28 +3383,19 @@ Instrucciones críticas:
   const handleApproveScenes = useCallback(async () => {
     if (!story) return;
     await runAuthoritativeApproval({
-      deriveNextStory: (liveStory) => {
-        const liveOptions = sceneImageOptionsRef.current;
-        const liveSelected = selectedSceneImagesRef.current;
-        const updatedScenes = liveStory.scenes.map(scene => {
-          const options = liveOptions[scene.number];
-          const selectedIdx = liveSelected[scene.number];
-          return {
-            ...scene,
-            imageOptions: options,
-            selectedImageUrl: options && selectedIdx !== undefined ? options[selectedIdx] : undefined,
-          };
-        });
-        return {
-          ...liveStory,
-          scenes: updatedScenes,
-          metadata: {
-            ...liveStory.metadata,
-            status: 'scenes-pending',
-            updatedAt: new Date().toISOString(),
+      deriveNextStory: (liveStory) =>
+        withStatus(
+          {
+            ...liveStory,
+            scenes: applySceneSelections(
+              liveStory.scenes,
+              sceneImageOptionsRef.current,
+              selectedSceneImagesRef.current,
+              false,
+            ),
           },
-        };
-      },
+          'scenes-pending',
+        ),
       nextStep: 'cover',
       staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
       errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
@@ -3375,45 +3418,16 @@ Instrucciones críticas:
     await runAuthoritativeApproval({
       // F4 — TODO el armado del finalStory ocurre dentro del tail sobre la
       // story y las opciones/selecciones VIVAS (refs), nunca sobre closures
-      // del render del click.
+      // del render del click. `keepExisting: true` conserva el URL ya presente
+      // en el story cuando no hay selección (diferencia real vs aprobar).
       deriveNextStory: (liveStory) => {
-        const liveSceneOptions = sceneImageOptionsRef.current;
-        const liveSceneSelected = selectedSceneImagesRef.current;
-        const liveCharOptions = characterSheetOptionsRef.current;
-        const liveCharSelected = selectedCharacterSheetsRef.current;
         const liveCoverOptions = coverOptionsRef.current;
         const liveSelectedCover = selectedCoverRef.current;
         const liveEndOptions = endOptionsRef.current;
         const liveSelectedEnd = selectedEndRef.current;
-
-        // Build final scenes with selected images (may be base64 or URL)
-        const finalScenes = liveStory.scenes.map(scene => {
-          const options = liveSceneOptions[scene.number];
-          const selectedIdx = liveSceneSelected[scene.number];
-          const selectedImage = options && selectedIdx !== undefined ? options[selectedIdx] : scene.selectedImageUrl;
-          return {
-            ...scene,
-            imageOptions: options,
-            selectedImageUrl: selectedImage,
-          };
-        });
-
-        // Get selected cover and end images (may be base64 or URL)
+        // Cover/end seleccionados (pueden ser base64 o URL).
         const finalCoverImage = liveSelectedCover !== null ? liveCoverOptions[liveSelectedCover] : undefined;
         const finalEndImage = liveSelectedEnd !== null ? liveEndOptions[liveSelectedEnd] : undefined;
-
-        // Build final story with character sheets included
-        const finalCharacters = liveStory.characters.map(char => {
-          const charOptions = liveCharOptions[char.id];
-          const selectedIdx = liveCharSelected[char.id];
-          const selectedSheet = charOptions && selectedIdx !== undefined ? charOptions[selectedIdx] : char.characterSheetUrl;
-          return {
-            ...char,
-            characterSheetOptions: charOptions,
-            characterSheetUrl: selectedSheet,
-          };
-        });
-
         // Props: solo referencias ya persistidas (URLs). saveLiturgy no sube base64
         // de props, así que un base64 residual quedaría incrustado para siempre en
         // el JSON de la liturgia guardada. Las URLs ya viven en Storage vía el draft.
@@ -3421,22 +3435,29 @@ Instrucciones críticas:
           ...p,
           referenceImages: (p.referenceImages || []).filter(img => img.startsWith('http')),
         }));
-
-        return {
-          ...liveStory,
-          characters: finalCharacters,
-          scenes: finalScenes,
-          props: finalProps,
-          coverImageOptions: [...liveCoverOptions],
-          coverImageUrl: finalCoverImage,
-          endImageOptions: [...liveEndOptions],
-          endImageUrl: finalEndImage,
-          metadata: {
-            ...liveStory.metadata,
-            status: 'ready',
-            updatedAt: new Date().toISOString(),
+        return withStatus(
+          {
+            ...liveStory,
+            characters: applyCharacterSelections(
+              liveStory.characters,
+              characterSheetOptionsRef.current,
+              selectedCharacterSheetsRef.current,
+              true,
+            ),
+            scenes: applySceneSelections(
+              liveStory.scenes,
+              sceneImageOptionsRef.current,
+              selectedSceneImagesRef.current,
+              true,
+            ),
+            props: finalProps,
+            coverImageOptions: [...liveCoverOptions],
+            coverImageUrl: finalCoverImage,
+            endImageOptions: [...liveEndOptions],
+            endImageUrl: finalEndImage,
           },
-        };
+          'ready',
+        );
       },
       nextStep: 'complete',
       staleMessage: 'El borrador cambió durante la finalización; vuelve a intentar.',
@@ -4024,7 +4045,7 @@ Instrucciones críticas:
           <button
             type="button"
             onClick={() => void handleApproveStory()}
-            disabled={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
+            disabled={isApproving || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
             title={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount }) ? 'Hay imágenes sin guardar; reintenta antes de aprobar' : undefined}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
@@ -4307,6 +4328,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleApproveCharacters()}
             disabled={
+              isApproving ||
               pipeline.isRunning ||
               !allCharactersHaveSheets ||
               !allCharactersSelected ||
@@ -5138,6 +5160,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleApproveScenes()}
             disabled={
+              isApproving ||
               pipeline.isRunning ||
               scenesSelected < story.scenes.length ||
               !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
@@ -6124,6 +6147,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleFinalize()}
             disabled={
+              isApproving ||
               selectedCover === null ||
               selectedEnd === null ||
               !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })

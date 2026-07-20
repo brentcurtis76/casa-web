@@ -12,13 +12,19 @@
  *
  *   2) Cuando la puerta permite pasar, el runner escribe primero el snapshot
  *      autoritativo (nextStory + EditorStateV1 completo) vía la cola serializada
- *      del hook. SÓLO cuando la escritura devuelve `{ stale: false }` (persistió
- *      Y su identidad sigue viva) se aplica la transición local (setStory,
- *      currentStep, kick post-transición).
+ *      del hook. `onSuccess` se llama SÓLO cuando la escritura resolvió un
+ *      resultado NO-stale y presente (el outcome `'ok'`). Un `{ stale: true }`,
+ *      un rechazo, o un resultado ausente NO transicionan.
  *
- *   3) Si `enqueueDraftWrite` rechaza o devuelve `{ stale: true }`, el runner
- *      NO llama `onSuccess`. El caller retiene el story/step actual y el
- *      registry queda listo para un retry — nunca "aprueba en falso".
+ *   3) `'ok'` NO garantiza por sí solo un commit vivo a nivel de tipos: el
+ *      resultado del enqueue puede ser "persistió pero identidad viva cambió"
+ *      (sin `committed`). El caller DEBE verificar su discriminador de commit
+ *      vivo (`committed` en `EnqueueDraftWriteResult`) dentro de `onSuccess`
+ *      antes de transicionar — o, mejor, hacer que su thunk mapee un resultado
+ *      sin `committed` a `{ stale: true }` para que `'ok'` implique commit vivo.
+ *      Si el enqueue rechaza o resuelve stale/ausente, el runner NO llama
+ *      `onSuccess`: el caller retiene story/step y el registry queda listo para
+ *      un retry — nunca "aprueba en falso".
  *
  * Este archivo es puro (no importa React) para permitir tests deterministas
  * con deferred promises y sin montar el editor.
@@ -60,12 +66,13 @@ export interface ApprovalTransactionInput<R extends EnqueueLikeResult = EnqueueL
   enqueue: () => Promise<R | undefined>;
   /**
    * Aplica la transición local (setStory, currentStep, kick). Se llama SÓLO en
-   * `ok`, y recibe el resultado del enqueue para que el caller consuma el
-   * snapshot COMMITEADO por la persistencia (F4: nunca un closure pre-drain).
-   * El caller debe verificar el discriminador de commit vivo de su resultado
-   * (`committed` en `EnqueueDraftWriteResult`) antes de transicionar.
+   * `ok`, y recibe el resultado NO-stale y PRESENTE del enqueue para que el
+   * caller consuma el snapshot COMMITEADO por la persistencia (F4: nunca un
+   * closure pre-drain). El runner garantiza que `result` no es `undefined` ni
+   * `{ stale: true }`; el caller debe verificar el discriminador de commit vivo
+   * (`committed`) antes de transicionar (o mapear no-committed→stale en su thunk).
    */
-  onSuccess: (result: R | undefined) => void;
+  onSuccess: (result: R) => void;
   /** Notificación de bloqueo — típicamente un warning UI. */
   onBlocked?: () => void;
   /** Notificación de stale — retenemos story/step, no anunciamos éxito. */
@@ -79,8 +86,9 @@ export interface ApprovalTransactionInput<R extends EnqueueLikeResult = EnqueueL
  *   - Consulta la puerta ANTES de encolar. Si está bloqueada → `blocked`
  *     (cero encolamientos, cero onSuccess).
  *   - Si el enqueue rechaza → `error` (cero onSuccess).
- *   - Si el enqueue resuelve con `{ stale: true }` → `stale` (cero onSuccess).
- *   - Sólo `ok` invoca `onSuccess`, pasándole el resultado del enqueue.
+ *   - Si el enqueue resuelve con `{ stale: true }` o AUSENTE (`undefined`) →
+ *     `stale` (cero onSuccess): no se persistió/commiteó nada que transicionar.
+ *   - Sólo `ok` invoca `onSuccess`, pasándole el resultado presente y no-stale.
  */
 export async function runApprovalTransaction<R extends EnqueueLikeResult = EnqueueLikeResult>(
   input: ApprovalTransactionInput<R>
@@ -96,7 +104,9 @@ export async function runApprovalTransaction<R extends EnqueueLikeResult = Enque
     input.onError?.(err);
     return 'error';
   }
-  if (result && result.stale === true) {
+  // Un resultado ausente (undefined) o `{ stale: true }` = nada commiteado que
+  // transicionar. Sólo un resultado PRESENTE y no-stale llega a onSuccess.
+  if (!result || result.stale === true) {
     input.onStale?.();
     return 'stale';
   }
