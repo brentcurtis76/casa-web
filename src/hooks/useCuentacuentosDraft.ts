@@ -2230,13 +2230,20 @@ export function useCuentacuentosDraft({
     const currentIdentity = captureDraftIdentity();
 
     const prev = pendingDataRef.current;
+    // Fix (pre-existing data-loss): el MERGE del patch pendiente distingue ciclo
+    // de vida por {epoch, storyId, revision} — NO por contentRevision. Un edit
+    // dentro de la ventana de debounce bumpea contentRevision; con el criterio
+    // viejo (incluía contentRevision) un patch parcial pendiente (p.ej.
+    // `saveDraft({story})` de una descripción de prop) se DESCARTABA al recibir
+    // el siguiente patch buffer, perdiendo sus claves sin que nada las
+    // re-cubriera. Mismo ciclo de vida ⇒ acumular claves; el patch fusionado
+    // toma la identidad más nueva y el CAS de queue-start sigue siendo el que
+    // decide staleness al disparar el timer. (Un cambio de epoch/story/revision
+    // sí descarta: pertenece a otro ciclo de vida.)
     const identityMatches =
-      prev !== null && draftIdentitiesEqual(prev.identity, currentIdentity);
+      prev !== null &&
+      draftIdentitiesEqual(prev.identity, currentIdentity, { includeContentRevision: false });
 
-    // Merge sólo si la identidad coincide (own-key presence: claves posteriores
-    // sobreescriben). Si la identidad cambió, el patch previo pertenece a otro
-    // ciclo de vida y se descarta — nunca se combinan patches de identidades
-    // distintas.
     pendingDataRef.current = {
       patch: identityMatches ? { ...prev!.patch, ...data } : { ...data },
       identity: currentIdentity,

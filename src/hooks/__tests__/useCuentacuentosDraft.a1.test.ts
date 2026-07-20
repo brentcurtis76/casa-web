@@ -909,3 +909,61 @@ describe('F3 saveDraft debounce (lifecycle-canceled pending data)', () => {
     }
   });
 });
+
+// -----------------------------------------------------------------------------
+// T-D14 (pre-existing data-loss fix) — el MERGE del pending debounce distingue
+// ciclo de vida por {epoch, storyId, revision}, NO por contentRevision. Un edit
+// que sólo bumpea contentRevision dentro de la ventana de debounce debe
+// ACUMULAR las claves de un patch parcial pendiente, no descartarlo. (El bug:
+// un `saveDraft({story})` de descripción de prop se perdía al recibir el
+// siguiente patch buffer con una contentRevision distinta.)
+// -----------------------------------------------------------------------------
+describe('T-D14 saveDraft debounce (contentRevision-only change merges partial patches)', () => {
+  it('un partial patch pendiente sobrevive y se fusiona cuando sólo cambia contentRevision', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUserId = 'u1';
+      const { result } = renderHook(() => useCuentacuentosDraft({ liturgyId: 'lit-1' }));
+      await vi.waitFor(
+        () => expect(result.current.isLoading).toBe(false),
+        { timeout: 2000, interval: 10 }
+      );
+
+      act(() => {
+        result.current.setActiveDraftStoryId('story-1');
+      });
+
+      // Patch parcial A (sólo selectedCover) bajo la contentRevision inicial.
+      act(() => {
+        result.current.saveDraft({ selectedCover: 1 });
+      });
+      // Edit editor-visible: bumpea contentRevision (mismo lifecycle).
+      act(() => {
+        result.current.bumpContentRevision();
+      });
+      // Patch parcial B (sólo selectedEnd) bajo la nueva contentRevision.
+      act(() => {
+        result.current.saveDraft({ selectedEnd: 1 });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(2100);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Un único upsert que lleva AMBAS claves: el patch parcial A NO se
+      // descartó. Bajo el bug previo (contentRevision en la clave de merge) sólo
+      // persistía selectedEnd y selectedCover se perdía.
+      expect(upsertCalls).toHaveLength(1);
+      const payload = upsertCalls[0].payload as Record<string, unknown>;
+      expect(payload.selected_cover).toBe(1);
+      expect(payload.selected_end).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
