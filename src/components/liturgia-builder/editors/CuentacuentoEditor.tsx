@@ -51,10 +51,6 @@ import type {
   OverlayPosition,
   OverlayColor,
   OverlaySize,
-  GenerateSceneImagesCharacterRequest,
-  GenerateSceneImagesSceneRequest,
-  GenerateSceneImagesCoverRequest,
-  GenerateSceneImagesEndRequest,
   SuggestedStoryProp,
 } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
@@ -62,7 +58,6 @@ import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approval
 import { useCuentacuentosDraft, type CuentacuentosDraftFull, type DraftPatch } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
-import { APPLY_STALE, APPLY_EPHEMERAL } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -90,7 +85,18 @@ interface CuentacuentoEditorProps {
   onNavigateToFullEditor?: () => void;
 }
 
-import { buildSnapshotTask } from '@/lib/cuentacuentos/pipelineTaskAdapter';
+import {
+  makeCharacterSheetTask,
+  makeCoverTask,
+  makeEndTask,
+  makePropSheetTask,
+  makeRefineCharacterSheetTask,
+  makeRefineCoverTask,
+  makeRefineEndTask,
+  makeRefineSceneTask,
+  makeSceneTask,
+  type ProviderResult,
+} from '@/lib/cuentacuentos/taskFactories';
 
 // Lugares predefinidos para Chile
 const LOCATION_PRESETS = [
@@ -432,12 +438,27 @@ const StepIndicator: React.FC<{
   );
 };
 
-// Resultado crudo del provider de generación de imágenes (compartido por todos los tipos).
-interface ProviderResult {
-  success: boolean;
-  images: string[];
-  referenceImagesCount?: number;
-  error?: string;
+/**
+ * Wrapper alrededor de `supabase.functions.invoke('generate-scene-images', {body})`
+ * que desempaqueta FunctionsHttpError vía extractInvokeError y valida
+ * `success`/`images` para producir un `ProviderResult` o un `Error` con
+ * mensaje útil. Todas las factories del pipeline (character/prop/scene/
+ * cover/end + refines) usan este mismo canal — el editor inyecta esta
+ * función a cada factory como `invokeGenerateSceneImages`.
+ */
+async function invokeGenerateSceneImagesRequest(
+  body: unknown,
+  emptyImagesFallback: string,
+): Promise<ProviderResult> {
+  const { data, error: fnError } = await supabase.functions.invoke(
+    'generate-scene-images',
+    { body: body as Record<string, unknown> },
+  );
+  if (fnError) throw await extractInvokeError(fnError);
+  if (!data?.success || !data.images?.length) {
+    throw new Error(data?.error || emptyImagesFallback);
+  }
+  return data as ProviderResult;
 }
 
 const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
@@ -1685,7 +1706,8 @@ Instrucciones críticas:
   // runner arma `AppliedIdentity`.
   const buildRunIdentity = useCallback((): RunIdentity => getDraftIdentity(), [getDraftIdentity]);
 
-  // Builder: character sheet
+  // Builder: character sheet — delega en la factory de producción
+  // (`makeCharacterSheetTask`) para no repetir la construcción de la tarea.
   const buildCharacterSheetTask = useCallback((
     character: StoryCharacter,
     customPrompt?: string,
@@ -1694,53 +1716,18 @@ Instrucciones críticas:
     if (!story) throw new Error('No hay cuento activo');
     const effectivePrompt = customPrompt ?? character.visualDescription;
     if (!effectivePrompt.trim()) throw new Error('El personaje no tiene descripción visual');
-    const capturedStyle = story.illustrationStyle;
 
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: `sheet-${character.id}`,
-      kind: 'sheet',
-      label: character.name,
-      provider: async () => {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-          body: {
-            type: 'character',
-            styleId: capturedStyle,
-            character: {
-              name: character.name,
-              description: character.description,
-              visualDescription: effectivePrompt,
-            },
-            count: 2,
-            modelTier: 'flash',
-          },
-        });
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudieron generar imágenes');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const base = characterSheetOptionsRef.current;
-        const existingOptions = append ? (base[character.id] || []) : [];
-        const nextOptions = { ...base, [character.id]: [...existingOptions, ...result.images] };
-        characterSheetOptionsRef.current = nextOptions;
-        setCharacterSheetOptions(nextOptions);
-
-        let nextSelection = selectedCharacterSheetsRef.current;
-        if (!append && nextSelection[character.id] !== undefined) {
-          nextSelection = { ...nextSelection };
-          delete nextSelection[character.id];
-          selectedCharacterSheetsRef.current = nextSelection;
-          setSelectedCharacterSheets(nextSelection);
-        }
-
-        return {
-          currentStep: currentStepRef.current,
-          characterSheetOptions: nextOptions,
-          selectedCharacterSheets: nextSelection,
-        };
-      },
+    return makeCharacterSheetTask({
+      character,
+      effectivePrompt,
+      append,
+      illustrationStyle: story.illustrationStyle,
+      characterSheetOptionsRef,
+      selectedCharacterSheetsRef,
+      currentStepRef,
+      setCharacterSheetOptions,
+      setSelectedCharacterSheets,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -1815,7 +1802,8 @@ Instrucciones críticas:
     return nextProps;
   }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap]);
 
-  // Builder: prop sheet (candidatas efímeras — apply retorna null, no se persisten)
+  // Builder: prop sheet (candidatas efímeras — apply retorna APPLY_EPHEMERAL,
+  // no se persisten). Delega en `makePropSheetTask`.
   const buildPropSheetTask = useCallback((prop: StoryProp): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
     if (!prop.visualDescription?.trim()) {
@@ -1830,51 +1818,15 @@ Instrucciones críticas:
       .slice(prop.sheetGenerated ? 1 : 0)
       .filter(img => !sessionCandidates.has(img))
       .slice(0, 2);
-    const capturedStyle = story.illustrationStyle;
 
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: `prop-${prop.id}`,
-      kind: 'prop',
-      label: prop.name,
-      provider: async () => {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-          body: {
-            type: 'prop',
-            styleId: capturedStyle,
-            prop: {
-              name: prop.name,
-              kind: prop.kind,
-              visualDescription: prop.visualDescription,
-              referenceImages: photoRefs.length > 0 ? photoRefs : undefined,
-            },
-            count: 2,
-            modelTier: 'flash',
-          },
-        });
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudieron generar imágenes');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const base = propSheetOptionsRef.current;
-        const merged = { ...base, [prop.id]: result.images };
-        propSheetOptionsRef.current = merged;
-        setPropSheetOptions(merged);
-
-        // Regenerar invalida la selección previa de candidata
-        setSelectedPropSheets(prev => {
-          if (prev[prop.id] === undefined) return prev;
-          const next = { ...prev };
-          delete next[prop.id];
-          return next;
-        });
-
-        // Prop sheets son efímeras por diseño: el runner marca `done` sin
-        // invocar persist ni enqueueGeneratedSnapshot.
-        return APPLY_EPHEMERAL;
-      },
+    return makePropSheetTask({
+      prop,
+      illustrationStyle: story.illustrationStyle,
+      photoRefs,
+      propSheetOptionsRef,
+      setPropSheetOptions,
+      setSelectedPropSheets,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -1961,7 +1913,7 @@ Instrucciones críticas:
     saveDraft({ story: nextStory });
   }, [story, storyProps, saveDraft]);
 
-  // Builder: imagen de escena
+  // Builder: imagen de escena — delega en `makeSceneTask`.
   const buildSceneTask = useCallback((
     scene: StoryScene,
     customPrompt?: string,
@@ -1996,58 +1948,22 @@ Instrucciones críticas:
           ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
         };
 
-    const sceneRefImage = sceneReferenceImages[scene.number];
-    const propsForScene = getPropsForScene(scene);
-    const capturedStyle = story.illustrationStyle;
-    const capturedLocation = story.location;
-
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: `scene-${scene.number}`,
-      kind: 'scene',
-      label: `Escena ${scene.number}`,
-      provider: async () => {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-          body: {
-            type: 'scene',
-            styleId: capturedStyle,
-            scene: sceneData,
-            characters: charactersWithReferences,
-            location: capturedLocation,
-            sceneReferenceImage: sceneRefImage,
-            sceneReferenceMode: sceneReferenceModeRef.current[scene.number] ?? 'style',
-            props: propsForScene.length > 0 ? propsForScene : undefined,
-            count: 2,
-            modelTier: 'flash',
-          },
-        });
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudieron generar imágenes');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const base = sceneImageOptionsRef.current;
-        const existingSceneOptions = append ? (base[scene.number] || []) : [];
-        const nextOptions = { ...base, [scene.number]: [...existingSceneOptions, ...result.images] };
-        sceneImageOptionsRef.current = nextOptions;
-        setSceneImageOptions(nextOptions);
-
-        let nextSelection = selectedSceneImagesRef.current;
-        if (!append && nextSelection[scene.number] !== undefined) {
-          nextSelection = { ...nextSelection };
-          delete nextSelection[scene.number];
-          selectedSceneImagesRef.current = nextSelection;
-          setSelectedSceneImages(nextSelection);
-        }
-
-        return {
-          currentStep: currentStepRef.current,
-          sceneImageOptions: nextOptions,
-          selectedSceneImages: nextSelection,
-          sceneReferenceModes: sceneReferenceModeRef.current,
-        };
-      },
+    return makeSceneTask({
+      scene,
+      sceneData,
+      charactersWithReferences,
+      location: story.location,
+      sceneReferenceImage: sceneReferenceImages[scene.number],
+      propsForScene: getPropsForScene(scene),
+      illustrationStyle: story.illustrationStyle,
+      append,
+      sceneImageOptionsRef,
+      selectedSceneImagesRef,
+      sceneReferenceModeRef,
+      currentStepRef,
+      setSceneImageOptions,
+      setSelectedSceneImages,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2148,7 +2064,7 @@ Instrucciones críticas:
 - Atmósfera cálida y acogedora`;
   }, [story, coverExcludedCharacters, editingCoverPrompt]);
 
-  // Builder: portada
+  // Builder: portada — delega en `makeCoverTask`.
   const buildCoverTask = useCallback((customPrompt?: string): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
 
@@ -2168,46 +2084,20 @@ Instrucciones críticas:
       });
 
     const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
-    const primaryProps = getPrimaryProps();
-    const capturedStyle = story.illustrationStyle;
-    const capturedTitle = story.title;
-    const capturedLocation = story.location;
-    const capturedCoverRef = coverReferenceImage;
-    const capturedCoverPrompt = customPrompt || editingCoverPrompt || undefined;
 
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: 'cover',
-      kind: 'cover',
-      label: 'Portada',
-      provider: async () => {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-          body: {
-            type: 'cover',
-            styleId: capturedStyle,
-            title: capturedTitle,
-            protagonist: {
-              visualDescription: protagonist?.visualDescription || 'A friendly child character',
-            },
-            location: capturedLocation,
-            characters: charactersWithReferences,
-            sceneReferenceImage: capturedCoverRef,
-            props: primaryProps.length > 0 ? primaryProps : undefined,
-            customPrompt: capturedCoverPrompt,
-            count: 4,
-            modelTier: 'pro',
-          },
-        });
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudieron generar imágenes de portada');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const nextOptions = result.images;
-        setCoverOptions(nextOptions);
-        return { coverOptions: nextOptions };
-      },
+    return makeCoverTask({
+      illustrationStyle: story.illustrationStyle,
+      title: story.title,
+      protagonistVisualDescription: protagonist?.visualDescription || 'A friendly child character',
+      location: story.location,
+      charactersWithReferences,
+      coverReferenceImage,
+      primaryProps: getPrimaryProps(),
+      customPrompt: customPrompt || editingCoverPrompt || undefined,
+      coverOptionsRef,
+      selectedCoverRef,
+      setCoverOptions,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2262,7 +2152,7 @@ Instrucciones críticas:
 - Puede ser abstracta o con elementos del cuento`;
   }, [story, editingEndPrompt, endIncludedCharacters]);
 
-  // Builder: imagen final
+  // Builder: imagen final — delega en `makeEndTask`.
   const buildEndTask = useCallback((customPrompt?: string): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
 
@@ -2280,37 +2170,15 @@ Instrucciones críticas:
         };
       });
 
-    const capturedStyle = story.illustrationStyle;
-    const capturedEndRef = endReferenceImage || undefined;
-    const capturedEndPrompt = customPrompt || editingEndPrompt || undefined;
-
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: 'end',
-      kind: 'end',
-      label: 'Imagen final',
-      provider: async () => {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-          body: {
-            type: 'end',
-            styleId: capturedStyle,
-            referenceImage: capturedEndRef,
-            characters: charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
-            customPrompt: capturedEndPrompt,
-            count: 4,
-            modelTier: 'pro',
-          },
-        });
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudieron generar imágenes de fin');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const nextOptions = result.images;
-        setEndOptions(nextOptions);
-        return { endOptions: nextOptions };
-      },
+    return makeEndTask({
+      illustrationStyle: story.illustrationStyle,
+      endReferenceImage: endReferenceImage || undefined,
+      charactersWithReferences,
+      customPrompt: customPrompt || editingEndPrompt || undefined,
+      endOptionsRef,
+      selectedEndRef,
+      setEndOptions,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2436,7 +2304,7 @@ Instrucciones críticas:
   // the selection index does not move and cover/end never auto-fire sibling
   // derivations.
 
-  // Builder: refine character sheet
+  // Builder: refine character sheet — delega en `makeRefineCharacterSheetTask`.
   const buildRefineCharacterSheetTask = useCallback((
     character: StoryCharacter,
     sourceImage: string,
@@ -2445,63 +2313,19 @@ Instrucciones críticas:
     if (!story) throw new Error('No hay cuento activo');
     const visualDescription =
       editingCharacterPromptRef.current[character.id] ?? character.visualDescription;
-    const capturedStyle = story.illustrationStyle;
-    const capturedName = character.name;
-    const capturedDesc = character.description;
 
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: `sheet-${character.id}`,
-      kind: 'sheet',
-      label: character.name,
-      provider: async () => {
-        const body: GenerateSceneImagesCharacterRequest = {
-          type: 'character',
-          styleId: capturedStyle,
-          character: {
-            name: capturedName,
-            description: capturedDesc,
-            visualDescription,
-          },
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar el personaje');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const refined = result.images[0];
-        const existing = characterSheetOptionsRef.current[character.id] || [];
-        const currentSelected = selectedCharacterSheetsRef.current[character.id];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        // Slot no encontrado: la fuente ya fue reemplazada por otra escritura;
-        // discard como stale para que el runner deje el ítem en `pending`.
-        if (slotIdx < 0) return APPLY_STALE;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newOptions = { ...characterSheetOptionsRef.current, [character.id]: updated };
-        const newSelection = { ...selectedCharacterSheetsRef.current, [character.id]: slotIdx };
-        characterSheetOptionsRef.current = newOptions;
-        selectedCharacterSheetsRef.current = newSelection;
-        setCharacterSheetOptions(newOptions);
-        setSelectedCharacterSheets(newSelection);
-
-        return {
-          currentStep: currentStepRef.current,
-          characterSheetOptions: newOptions,
-          selectedCharacterSheets: newSelection,
-        };
-      },
+    return makeRefineCharacterSheetTask({
+      character,
+      illustrationStyle: story.illustrationStyle,
+      visualDescription,
+      sourceImage,
+      feedback,
+      characterSheetOptionsRef,
+      selectedCharacterSheetsRef,
+      currentStepRef,
+      setCharacterSheetOptions,
+      setSelectedCharacterSheets,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2537,7 +2361,7 @@ Instrucciones críticas:
     [story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
   );
 
-  // Builder: refine scene image
+  // Builder: refine scene image — delega en `makeRefineSceneTask`.
   const buildRefineSceneTask = useCallback((
     scene: StoryScene,
     sourceImage: string,
@@ -2569,65 +2393,23 @@ Instrucciones críticas:
           ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
         };
 
-    const sceneRefImage = sceneReferenceImages[scene.number];
-    const propsForScene = getPropsForScene(scene);
-    const capturedStyle = story.illustrationStyle;
-    const capturedLocation = story.location;
-    const capturedRefMode = sceneReferenceModeRef.current[scene.number] ?? 'style';
-
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: `scene-${scene.number}`,
-      kind: 'scene',
-      label: `Escena ${scene.number}`,
-      provider: async () => {
-        const body: GenerateSceneImagesSceneRequest = {
-          type: 'scene',
-          styleId: capturedStyle,
-          scene: sceneData,
-          characters: charactersWithReferences,
-          location: capturedLocation,
-          sceneReferenceImage: sceneRefImage,
-          sceneReferenceMode: capturedRefMode,
-          props: propsForScene.length > 0 ? propsForScene : undefined,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la escena');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const refined = result.images[0];
-        const existing = sceneImageOptionsRef.current[scene.number] || [];
-        const currentSelected = selectedSceneImagesRef.current[scene.number];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return APPLY_STALE;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newSceneOptions = { ...sceneImageOptionsRef.current, [scene.number]: updated };
-        const newSelection = { ...selectedSceneImagesRef.current, [scene.number]: slotIdx };
-        sceneImageOptionsRef.current = newSceneOptions;
-        selectedSceneImagesRef.current = newSelection;
-        setSceneImageOptions(newSceneOptions);
-        setSelectedSceneImages(newSelection);
-
-        return {
-          currentStep: currentStepRef.current,
-          sceneImageOptions: newSceneOptions,
-          selectedSceneImages: newSelection,
-          sceneReferenceModes: sceneReferenceModeRef.current,
-        };
-      },
+    return makeRefineSceneTask({
+      scene,
+      sceneData,
+      charactersWithReferences,
+      location: story.location,
+      sceneReferenceImage: sceneReferenceImages[scene.number],
+      propsForScene: getPropsForScene(scene),
+      illustrationStyle: story.illustrationStyle,
+      sourceImage,
+      feedback,
+      sceneImageOptionsRef,
+      selectedSceneImagesRef,
+      sceneReferenceModeRef,
+      currentStepRef,
+      setSceneImageOptions,
+      setSelectedSceneImages,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2672,7 +2454,7 @@ Instrucciones críticas:
     [story, buildRefineSceneTask, buildRunIdentity, pipeline],
   );
 
-  // Builder: refine cover
+  // Builder: refine cover — delega en `makeRefineCoverTask`.
   const buildRefineCoverTask = useCallback((
     sourceImage: string,
     feedback: string,
@@ -2696,59 +2478,22 @@ Instrucciones críticas:
 
     const protagonist =
       story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
-    const primaryProps = getPrimaryProps();
-    const capturedStyle = story.illustrationStyle;
-    const capturedTitle = story.title;
-    const capturedLocation = story.location;
-    const capturedCoverRef = coverReferenceImage || undefined;
-    const capturedCoverPrompt = editingCoverPrompt || undefined;
 
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: 'cover',
-      kind: 'cover',
-      label: 'Portada',
-      provider: async () => {
-        const body: GenerateSceneImagesCoverRequest = {
-          type: 'cover',
-          styleId: capturedStyle,
-          title: capturedTitle,
-          protagonist: {
-            visualDescription: protagonist?.visualDescription || 'A friendly child character',
-          },
-          location: capturedLocation,
-          characters: charactersWithReferences,
-          sceneReferenceImage: capturedCoverRef,
-          props: primaryProps.length > 0 ? primaryProps : undefined,
-          customPrompt: capturedCoverPrompt,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la portada');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const refined = result.images[0];
-        const prev = coverOptionsRef.current;
-        const selected = selectedCoverRef.current;
-        const slotIdx =
-          typeof selected === 'number' && prev[selected] === sourceImage
-            ? selected
-            : prev.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return APPLY_STALE;
-        const nextOptions = prev.slice();
-        nextOptions[slotIdx] = refined;
-        coverOptionsRef.current = nextOptions;
-        setCoverOptions(nextOptions);
-        // Selection index intentionally preserved; no sibling derivation triggered.
-        return { coverOptions: nextOptions };
-      },
+    return makeRefineCoverTask({
+      illustrationStyle: story.illustrationStyle,
+      title: story.title,
+      protagonistVisualDescription: protagonist?.visualDescription || 'A friendly child character',
+      location: story.location,
+      charactersWithReferences,
+      coverReferenceImage: coverReferenceImage || undefined,
+      primaryProps: getPrimaryProps(),
+      customPrompt: editingCoverPrompt || undefined,
+      sourceImage,
+      feedback,
+      coverOptionsRef,
+      selectedCoverRef,
+      setCoverOptions,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -2788,7 +2533,7 @@ Instrucciones críticas:
     [story, buildRefineCoverTask, buildRunIdentity, pipeline],
   );
 
-  // Builder: refine end image
+  // Builder: refine end image — delega en `makeRefineEndTask`.
   const buildRefineEndTask = useCallback((
     sourceImage: string,
     feedback: string,
@@ -2809,51 +2554,17 @@ Instrucciones críticas:
         };
       });
 
-    const capturedStyle = story.illustrationStyle;
-    const capturedEndRef = endReferenceImage || undefined;
-    const capturedEndPrompt = editingEndPrompt || undefined;
-
-    return buildSnapshotTask<ProviderResult, DraftPatch>({
-      id: 'end',
-      kind: 'end',
-      label: 'Imagen final',
-      provider: async () => {
-        const body: GenerateSceneImagesEndRequest = {
-          type: 'end',
-          styleId: capturedStyle,
-          referenceImage: capturedEndRef,
-          characters:
-            charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
-          customPrompt: capturedEndPrompt,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la imagen final');
-        }
-        return data as ProviderResult;
-      },
-      computePatch: (result) => {
-        const refined = result.images[0];
-        const prev = endOptionsRef.current;
-        const selected = selectedEndRef.current;
-        const slotIdx =
-          typeof selected === 'number' && prev[selected] === sourceImage
-            ? selected
-            : prev.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return APPLY_STALE;
-        const nextOptions = prev.slice();
-        nextOptions[slotIdx] = refined;
-        endOptionsRef.current = nextOptions;
-        setEndOptions(nextOptions);
-        // Selection index intentionally preserved; no sibling derivation triggered.
-        return { endOptions: nextOptions };
-      },
+    return makeRefineEndTask({
+      illustrationStyle: story.illustrationStyle,
+      endReferenceImage: endReferenceImage || undefined,
+      charactersWithReferences,
+      customPrompt: editingEndPrompt || undefined,
+      sourceImage,
+      feedback,
+      endOptionsRef,
+      selectedEndRef,
+      setEndOptions,
+      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });

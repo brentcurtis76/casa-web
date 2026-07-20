@@ -930,13 +930,20 @@ describe('T-A2/S4.9 cancellation with abort-ignoring invoke', () => {
 
 // -----------------------------------------------------------------------------
 // T-A2/S4.10 — Source-tree audit assertions. These are not tests of runtime
-// behaviour but of the code-level invariants promised by Subtask 4:
-//   (a) `CuentacuentoEditor.tsx` has ZERO image-generation-related calls to
-//       `supabase.functions.invoke('generate-scene-images', ...)` that are
-//       NOT inside a PipelineItemTask.provider. The two `generate-story` and
-//       one `refine-story` invocations produce TEXT (title/summary/scenes),
-//       not images, and are outside A2's scope by design.
-//   (b) `saveDraftNow` has EXACTLY ONE production caller
+// behaviour but of the code-level invariants promised by Subtask 4 and its
+// F5 extraction (A3a/S3-subtask4):
+//   (a) `CuentacuentoEditor.tsx` no longer inlines nine copies of the
+//       generate-scene-images call. It has EXACTLY ONE
+//       `supabase.functions.invoke('generate-scene-images', ...)` inside the
+//       module-scope helper `invokeGenerateSceneImagesRequest`, which every
+//       factory consumes via injection. The two `generate-story` and one
+//       `refine-story` invocations produce TEXT (title/summary/scenes) and are
+//       outside A2's scope by design.
+//   (b) In the extracted `taskFactories.ts`, every call to the injected
+//       `invokeGenerateSceneImages` sits inside a `provider:` closure — i.e.
+//       image generation is gated by the runner's provider phase, never the
+//       apply/persist phases.
+//   (c) `saveDraftNow` has EXACTLY ONE production caller
 //       (`useCuentacuentosDraft.ts`, inside `enqueueDraftWrite`). All other
 //       references are test-scoped.
 // -----------------------------------------------------------------------------
@@ -951,31 +958,50 @@ describe('T-A2/S4.10 source-tree audit invariants', () => {
     return await fs.readFile(abs, 'utf8');
   }
 
-  it('every generate-scene-images invocation in CuentacuentoEditor.tsx sits inside a runner task provider', async () => {
+  it('CuentacuentoEditor.tsx has exactly one generate-scene-images invocation, inside the shared wrapper', async () => {
     const src = await readFile('src/components/liturgia-builder/editors/CuentacuentoEditor.tsx');
+    // Strip block and line comments before scanning so docstring references
+    // (e.g. the wrapper's JSDoc) don't get counted as call sites.
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');
     const invokeMatches = [
-      ...src.matchAll(/supabase\.functions\.invoke\(\s*['"]generate-scene-images['"]/g),
+      ...codeOnly.matchAll(/supabase\.functions\.invoke\(\s*['"]generate-scene-images['"]/g),
     ];
-    // Each match must fall inside a `provider: async` closure — we check the
-    // enclosing lines. This is a coarse but robust guard: the last occurrence
-    // of `provider: async` before the invoke offset must appear before the
-    // next occurrence of `persist: async` past it (i.e. it lives inside the
-    // provider phase of a PipelineItemTask). If ANY invoke fails this, the
-    // audit fails.
-    for (const m of invokeMatches) {
+    // Post-F5 extraction: the editor no longer inlines nine copies of this
+    // call. There is exactly one, inside `invokeGenerateSceneImagesRequest`,
+    // which each factory receives via injection.
+    expect(invokeMatches).toHaveLength(1);
+    const idx = invokeMatches[0].index ?? 0;
+    const before = codeOnly.slice(0, idx);
+    const lastWrapperDecl = before.lastIndexOf(
+      'async function invokeGenerateSceneImagesRequest'
+    );
+    expect(lastWrapperDecl).toBeGreaterThan(-1);
+    // No `provider:` or `apply:` should appear between the wrapper decl and
+    // the invoke call — the wrapper is module-scope, not inside a factory.
+    const between = codeOnly.slice(lastWrapperDecl, idx);
+    expect(between).not.toMatch(/\bprovider:\s*(async\s*)?\(/);
+    expect(between).not.toMatch(/\bapply:\s*\(/);
+  });
+
+  it('taskFactories.ts routes every image-generation call through a provider closure', async () => {
+    const src = await readFile('src/lib/cuentacuentos/taskFactories.ts');
+    const invokeCalls = [...src.matchAll(/\binvokeGenerateSceneImages\(/g)];
+    // Sanity: 5 generate + 4 refine = 9 factories.
+    expect(invokeCalls.length).toBeGreaterThanOrEqual(9);
+    for (const m of invokeCalls) {
       const idx = m.index ?? 0;
       const before = src.slice(0, idx);
-      const lastProvider = before.lastIndexOf('provider: async');
+      const lastProvider = before.lastIndexOf('provider:');
       const lastApply = before.lastIndexOf('apply:');
-      // The most recent structural marker before the invoke must be
-      // `provider: async` (i.e. we're inside the provider closure).
+      const lastPersist = before.lastIndexOf('persist:');
+      // The most recent structural marker before the call must be `provider:`
+      // (i.e. we're inside the provider phase, not apply or persist).
       expect(lastProvider).toBeGreaterThan(-1);
       expect(lastProvider).toBeGreaterThan(lastApply);
+      expect(lastProvider).toBeGreaterThan(lastPersist);
     }
-    // Sanity: there is at least one per generate builder (5) + one per refine
-    // builder (4) = 9 invocations. Guard against accidental deletion, which
-    // would silently regress the audit.
-    expect(invokeMatches.length).toBeGreaterThanOrEqual(9);
   });
 
   it('generate-story and refine-story invocations sit outside any PipelineItemTask.provider closure', async () => {
