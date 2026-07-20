@@ -1395,6 +1395,152 @@ describe('A3a/S2 round-trip: long narrative text and prompts survive persist+loa
     expect(d.editingEndPrompt).toBe(longEndPrompt);
     expect(d.editingSceneText?.[1]).toBe(longSceneText);
   });
+
+  it('round-trip mixing >512-char narrative + invalid image refs: narrative survives verbatim, refs are scrubbed', async () => {
+    // Combines the two invariants in one persist+load cycle:
+    //   - long narrative fields (>512 chars) on title/summary/spiritualConnection,
+    //     on scene.text/visualDescription, on character description, and on
+    //     edited prompts survive byte-for-byte through save AND reload.
+    //   - invalid image refs (data: URLs) placed in image-reference slots that
+    //     survive the save pipeline's targeted `undefined` wipes (props.
+    //     referenceImages) are scrubbed; zero `data:image` fragments end up in
+    //     the persisted JSON.
+    const draft = baseSnapshot();
+    const longTitle = 'Título — '.repeat(80); // ~720 chars, accented + punctuation
+    const longSummary = 'Resumen extenso, con detalles narrativos: '.repeat(20); // ~840 chars
+    const longSpiritual = 'Conexión espiritual profunda con la lectura. '.repeat(20); // ~900 chars
+    const longSceneText = 'Los discípulos caminaban por la ribera. '.repeat(20); // ~800 chars
+    const longSceneDescription = 'Escena luminosa junto al lago. '.repeat(25); // ~775 chars
+    const longCharNotes = 'Personaje reflexivo, mirada serena, gestos suaves. '.repeat(15); // ~765 chars
+    const longScenePrompt = 'Prompt escena editado con contexto extenso. '.repeat(20); // ~880 chars
+    const longCoverPrompt = 'Prompt portada editado con contexto extenso. '.repeat(20); // ~900 chars
+
+    for (const s of [longTitle, longSummary, longSpiritual, longSceneText, longSceneDescription, longCharNotes, longScenePrompt, longCoverPrompt]) {
+      expect(s.length).toBeGreaterThan(512);
+    }
+
+    draft.story = {
+      ...draft.story!,
+      title: longTitle,
+      summary: longSummary,
+      spiritualConnection: longSpiritual,
+      characters: [
+        {
+          id: 'char-1',
+          name: 'Pedro',
+          role: 'primary',
+          description: longCharNotes,
+          visualDescription: longCharNotes,
+        } as unknown as Story['characters'][number],
+      ],
+      scenes: [
+        {
+          number: 1,
+          text: longSceneText,
+          visualDescription: longSceneDescription,
+        } as unknown as Story['scenes'][number],
+      ],
+      // props.referenceImages hits `stripImageRef` in the save pipeline and
+      // then the field-aware scrub — both must cooperate to drop data: URLs
+      // while keeping HTTP URLs even at length >512.
+      props: [
+        {
+          id: 'p-invalid',
+          kind: 'object',
+          name: 'p-invalid',
+          narrativeRole: '',
+          visualDescription: longCharNotes,
+          referenceImages: [
+            'data:image/png;base64,AAAA',
+            'https://cdn/keep-prop-' + 'x'.repeat(600) + '.png',
+          ],
+          role: 'primary',
+        } as unknown as NonNullable<Story['props']>[number],
+      ],
+    };
+    draft.editingTitle = longTitle;
+    draft.editingScenePrompt = { 1: longScenePrompt };
+    draft.editingCoverPrompt = longCoverPrompt;
+
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: {
+        currentStep: 'cover',
+        story: draft.story,
+        editingTitle: draft.editingTitle,
+        editingScenePrompt: draft.editingScenePrompt,
+        editingCoverPrompt: draft.editingCoverPrompt,
+      },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const payload = upsertCalls[0].payload;
+    const persistedStory = payload.story as Record<string, unknown>;
+
+    // Narrative preservation (byte-for-byte) on the persisted payload.
+    expect(persistedStory.title).toBe(longTitle);
+    expect(persistedStory.summary).toBe(longSummary);
+    expect(persistedStory.spiritualConnection).toBe(longSpiritual);
+    const persistedScene = (persistedStory.scenes as Array<Record<string, unknown>>)[0];
+    expect(persistedScene.text).toBe(longSceneText);
+    expect(persistedScene.visualDescription).toBe(longSceneDescription);
+    const persistedChar = (persistedStory.characters as Array<Record<string, unknown>>)[0];
+    expect(persistedChar.description).toBe(longCharNotes);
+    expect(persistedChar.visualDescription).toBe(longCharNotes);
+
+    // Embedded snapshot preserved long edited prompts verbatim.
+    const embedded = persistedStory.editorStateV1 as {
+      edited: { title: string; scenePrompt: Record<number, string>; coverPrompt: string };
+    };
+    expect(embedded.edited.title).toBe(longTitle);
+    expect(embedded.edited.scenePrompt[1]).toBe(longScenePrompt);
+    expect(embedded.edited.coverPrompt).toBe(longCoverPrompt);
+
+    // Invalid image refs scrubbed in props.referenceImages; HTTP URL kept
+    // even though it's much longer than 512 chars.
+    const persistedProp = (persistedStory.props as Array<Record<string, unknown>>)[0];
+    const propRefs = persistedProp.referenceImages as string[];
+    expect(propRefs.length).toBe(1);
+    expect(propRefs[0].startsWith('https://cdn/keep-prop-')).toBe(true);
+    expect(propRefs[0].length).toBeGreaterThan(512);
+    // The prop's own long visualDescription (narrative text, not an image
+    // field) survives verbatim regardless of length.
+    expect(persistedProp.visualDescription).toBe(longCharNotes);
+    // Whole-story JSON: not a single data:image fragment anywhere.
+    expect(JSON.stringify(persistedStory)).not.toContain('data:image');
+
+    // Round-trip: reload and re-verify narrative preservation + no data URLs.
+    loadedDraftRow = {
+      current_step: payload.current_step,
+      config: payload.config,
+      story: persistedStory,
+      selected_character_sheets: payload.selected_character_sheets,
+      selected_scene_images: payload.selected_scene_images,
+      selected_cover: payload.selected_cover,
+      selected_end: payload.selected_end,
+      image_paths: payload.image_paths,
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    const d = loaded!;
+    expect(d.story?.title).toBe(longTitle);
+    expect(d.story?.summary).toBe(longSummary);
+    expect(d.story?.spiritualConnection).toBe(longSpiritual);
+    expect(d.story?.scenes[0].text).toBe(longSceneText);
+    expect(d.story?.scenes[0].visualDescription).toBe(longSceneDescription);
+    expect(d.story?.characters[0].description).toBe(longCharNotes);
+    expect(d.editingTitle).toBe(longTitle);
+    expect(d.editingScenePrompt?.[1]).toBe(longScenePrompt);
+    expect(d.editingCoverPrompt).toBe(longCoverPrompt);
+    expect(JSON.stringify(d.story)).not.toContain('data:image');
+  });
 });
 
 // =============================================================================
