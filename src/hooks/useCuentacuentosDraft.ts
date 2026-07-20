@@ -1587,6 +1587,18 @@ export interface EnqueueDraftWriteOptions {
    */
   preStart?: () => boolean;
   /**
+   * D15 — Excluye `contentRevision` del CAS de queue-start para ESTA escritura.
+   * El `contentRevision` rastrea ediciones de CONTENIDO del editor (y el bump de
+   * un commit autoritative); es la señal correcta para invalidar debounces
+   * obsoletos, pero es ORTOGONAL a una persistencia de snapshot generado por el
+   * pipeline: su validez la gobierna su propia identidad
+   * ({storyId, epoch, itemId, generatedRevision} + provenance) vía `preStart`.
+   * Sin este opt-out, el bump de contentRevision de una aprobación en vuelo
+   * volvía stale a un persist de imagen generada encolado detrás — y la imagen
+   * (pagada) se perdía. El path generado lo pone en `true`; nunca el editor.
+   */
+  skipContentRevisionGuard?: boolean;
+  /**
    * Validación de provenance opcional que corre DESPUÉS del upsert y ANTES
    * de los URL swaps al React state. Si devuelve `false`, la persistencia
    * igual ocurrió (I/O ya completado) pero el hook NO commitea el swap ni
@@ -2010,7 +2022,8 @@ export function useCuentacuentosDraft({
     onCommit?: EnqueueDraftWriteOptions['onCommit'],
     preStart?: EnqueueDraftWriteOptions['preStart'],
     validateProvenanceBeforeSwap?: EnqueueDraftWriteOptions['validateProvenanceBeforeSwap'],
-    authoritative?: boolean
+    authoritative?: boolean,
+    skipContentRevisionGuard?: boolean
   ): Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
@@ -2043,12 +2056,16 @@ export function useCuentacuentosDraft({
         // A3a/S2 — Guard de operation-start INCONDICIONAL. Corre síncronamente
         // en el boundary del tail, ANTES de cualquier efecto (saveDraftNow,
         // upsert, upload, storage, URL swap, React commit). Compara la
-        // identidad {storyId, epoch, revision, contentRevision} capturada al
+        // identidad {storyId, epoch, revision[, contentRevision]} capturada al
         // ENCOLAR contra las refs vivas. Un mismatch ⇒ `{stale:true}` con cero
         // efectos. `contentRevision` (A3a/S7) invalida debounces obsoletos
         // cuando una escritura autoritative previa ya comprometió el step
-        // siguiente. `preStart` (arriba) es un veto opt-in complementario.
-        const identityLiveAtStart = draftIdentitiesEqual(captured, captureDraftIdentity());
+        // siguiente — pero se OMITE (D15) para persistencias de snapshot generado
+        // (`skipContentRevisionGuard`), cuya identidad la gobierna `preStart`.
+        // `preStart` (arriba) es un veto opt-in complementario.
+        const identityLiveAtStart = draftIdentitiesEqual(captured, captureDraftIdentity(), {
+          includeContentRevision: !skipContentRevisionGuard,
+        });
         if (!identityLiveAtStart) {
           console.log(
             '[useCuentacuentosDraft] Operation-start identity mismatch: skipping I/O ' +
@@ -2195,7 +2212,8 @@ export function useCuentacuentosDraft({
       options?.onCommit,
       options?.preStart,
       options?.validateProvenanceBeforeSwap,
-      options?.authoritative
+      options?.authoritative,
+      options?.skipContentRevisionGuard
     );
   }, [performDraftWrite, captureDraftIdentity]);
 
@@ -2415,7 +2433,14 @@ export function useCuentacuentosDraft({
           perItemGeneratedRevisionsRef.current.delete(identity.itemId);
         }
       };
-      return enqueueDraftWrite(patch, { preStart, validateProvenanceBeforeSwap }).then(
+      return enqueueDraftWrite(patch, {
+        preStart,
+        validateProvenanceBeforeSwap,
+        // D15 — la validez del snapshot generado la gobierna su propia identidad
+        // (preStart); el contentRevision del editor es ortogonal. Sin esto, el
+        // bump de una aprobación en vuelo perdía la imagen generada encolada detrás.
+        skipContentRevisionGuard: true,
+      }).then(
         (result): EnqueueGeneratedSnapshotResult => {
           if ((result as EnqueueDraftWriteStale).stale) {
             // A3a/S3 subtask 3: el downstream reportó stale (preStart guard,

@@ -278,6 +278,63 @@ describe('A3/F1 operation-start guard (enqueue-before-lifecycle-change, start-af
 });
 
 // -----------------------------------------------------------------------------
+// D15 (pre-existing fix) — Un bump de `contentRevision` (p.ej. el commit de una
+// aprobación en vuelo) entre el enqueue y el arranque de un snapshot generado NO
+// debe volverlo stale: su validez la gobierna su propia identidad
+// {storyId, epoch, itemId, generatedRevision} (preStart), no el contentRevision
+// del editor. Antes de este fix la imagen (pagada) se perdía silenciosamente.
+// -----------------------------------------------------------------------------
+describe('D15 generated snapshot survives an editor/approval contentRevision bump', () => {
+  it('bump de contentRevision entre enqueue y arranque: el generated upsertea (no stale)', async () => {
+    const dfdBlocker = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfdBlocker);
+
+    const result = await mountReadyHook();
+    act(() => {
+      result.current.setActiveDraftStoryId('story-1');
+    });
+
+    // Blocker: mantiene el tail ocupado mientras encolamos el generated.
+    let opBlock: Promise<unknown>;
+    act(() => {
+      opBlock = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    // Generated encolado detrás del blocker.
+    let opGen: Promise<EnqueueGeneratedSnapshotResult>;
+    act(() => {
+      opGen = result.current.enqueueGeneratedSnapshot({
+        patch: sampleScenePatch(),
+        identity: { storyId: 'story-1', epoch: 0, itemId: 'scene-1', generatedRevision: 1 },
+      });
+    });
+
+    // Una aprobación autoritative en vuelo bumpea contentRevision (mismo
+    // lifecycle: epoch/story/revision no cambian).
+    act(() => {
+      result.current.bumpContentRevision();
+    });
+
+    // Resolver el blocker: el tail avanza y el generated arranca.
+    await act(async () => {
+      dfdBlocker.resolve({ error: null });
+      await opBlock;
+    });
+    let genResult: EnqueueGeneratedSnapshotResult;
+    await act(async () => {
+      genResult = await opGen;
+    });
+
+    // El generated NO fue stale por el bump de contentRevision: hizo su upsert
+    // (2do) y commiteó (resultado undefined, no {stale:true}). Sin el fix, el CAS
+    // de queue-start lo habría staleado y la imagen se perdería (upsertCalls=1).
+    expect(upsertCalls).toHaveLength(2);
+    expect(genResult!).toBeUndefined();
+  });
+});
+
+// -----------------------------------------------------------------------------
 // A3/F2 — Stale result explícito: `enqueueDraftWrite` con `preStart` falso
 // devuelve `{stale:true}` y no toca Supabase.
 // -----------------------------------------------------------------------------
