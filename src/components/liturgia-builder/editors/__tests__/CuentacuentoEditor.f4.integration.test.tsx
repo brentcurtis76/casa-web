@@ -1,32 +1,30 @@
 /**
- * A3a/S2 — Honest F4 integration suite for CuentacuentoEditor.
+ * F4 — Honest approval/finalization envelope integration suite.
  *
- * Renders the REAL editor with REAL hooks (useCuentacuentosDraft,
- * useStoryImagePipeline). Only external boundaries are mocked:
+ * Renders the REAL CuentacuentoEditor with REAL hooks (useCuentacuentosDraft,
+ * useStoryImagePipeline, approvalGate, storyImagePipelineRunner, taskFactories).
+ * Only external boundaries are mocked:
  *   - @/integrations/supabase/client (from/storage/functions/auth)
  *   - @/hooks/use-toast
  *   - global fetch
+ *   - timers (vi fake timers, only to arm/fire the 2s debounce deterministically)
  *
- * No vi.mock on useCuentacuentosDraft, useStoryImagePipeline,
- * runApprovalTransaction, canApprove, buildAuthoritativeDraftPatch,
- * or storyImagePipelineRunner.
+ * NO vi.mock on useCuentacuentosDraft, useStoryImagePipeline, approvalGate,
+ * buildAuthoritativeDraftPatch, storyImagePipelineRunner, or taskFactories.
  *
  * Upsert payload shape (supabase.from('cuentacuentos_drafts').upsert(row)):
- *   row.current_step   — 'story'|'characters'|'scenes'|'cover'|'complete'
- *   row.story          — Story JSONB (with metadata.status, id)
- *   row.story.editorStateV1 — EditorStateV1Extended (editingScenePrompt, etc.)
+ *   row.current_step                          — step persisted with the write
+ *   row.story                                 — Story JSONB (metadata.status, id)
+ *   row.story.editorStateV1.edited.scenePrompt — editor buffer round-trip
+ *   row.story.editorStateV1.edited.sceneText   — editor buffer round-trip
+ *   row.story.editorStateV1.edited.title       — editor buffer round-trip
  *
- * Authoritative kind classification:
- *   story→characters: current_step='characters', story.metadata.status='characters-pending'
- *   scenes→cover:     current_step='cover',       story.metadata.status='scenes-pending'
- *   finalize:         current_step='complete',     story.metadata.status='ready'
- *   debounce scenes:  current_step='scenes'
- *
- * BASE-RED cases: 2, 3, 11 MUST fail on base (HEAD 02f7909).
- * Cases 1, 4-10 MUST pass on base.
+ * Spec cases (Direct Execution charter, 1–12). BASE-RED on 02f7909 for the
+ * intended reason: cases 2, 3, 11 and 12 (the envelope races). Cases 1 and
+ * 4–10 codify contracts that must hold before AND after the fix.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import type { Story } from '@/types/shared/story';
@@ -51,28 +49,44 @@ function makeDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
+/** Deferred pre-resolved with a successful upsert result. */
+function makeResolvedOk(): Deferred<{ error: { message: string } | null }> {
+  const d = makeDeferred<{ error: { message: string } | null }>();
+  d.resolve({ error: null });
+  return d;
+}
+
+/** Deferred pre-resolved with a failing upsert result. */
+function makeResolvedFail(message: string): Deferred<{ error: { message: string } | null }> {
+  const d = makeDeferred<{ error: { message: string } | null }>();
+  d.resolve({ error: { message } });
+  return d;
+}
+
 // ---------------------------------------------------------------------------
-// Upsert capture
+// External-boundary trackers
 // ---------------------------------------------------------------------------
 
 type UpsertPayload = Record<string, unknown>;
 const upsertCalls: Array<{ payload: UpsertPayload }> = [];
 const upsertDeferreds: Array<Deferred<{ error: { message: string } | null }>> = [];
 let upsertDefaultError: { message: string } | null = null;
-let mockUserId: string | null = 'user-integration-test';
+let mockUserId: string | null = 'user-f4-integration';
 
-// functions.invoke tracker
+// functions.invoke tracker (provider boundary — kicks/generation)
 const invokeCalls: Array<{ fn: string }> = [];
 
-// delete tracker for finalization test
+// delete tracker (draft row deletion — finalization acknowledgement)
 const deletedDraftRows: Array<{ liturgiaId: string }> = [];
 
+// recovery-row served to the mount-time checkForDraft (case 4)
+let mockDraftRow: Record<string, unknown> | null = null;
+
 // ---------------------------------------------------------------------------
-// Supabase mock — overrides the global setup.ts mock with deferred queue
+// Supabase mock — external boundary only
 // ---------------------------------------------------------------------------
 
 vi.mock('@/integrations/supabase/client', () => {
-  // Per-table delete tracking
   const makeDeleteChain = (tableName: string) => {
     const chain = {
       eq: (col: string, val: unknown) => {
@@ -88,7 +102,10 @@ vi.mock('@/integrations/supabase/client', () => {
   const tableApi = (tableName: string) => ({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi.fn().mockImplementation(async () => ({
+      data: tableName === 'cuentacuentos_drafts' ? mockDraftRow : null,
+      error: null,
+    })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
     upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
       upsertCalls.push({ payload });
@@ -123,7 +140,12 @@ vi.mock('@/integrations/supabase/client', () => {
       functions: {
         invoke: vi.fn().mockImplementation(async (fn: string) => {
           invokeCalls.push({ fn });
-          return { data: {}, error: null };
+          // Valid provider shape so the REAL taskFactories generate path
+          // succeeds (`success` + non-empty `images`).
+          return {
+            data: { success: true, images: ['data:image/png;base64,iVBORw0KGgo='] },
+            error: null,
+          };
         }),
       },
       auth: {
@@ -208,11 +230,8 @@ function makeStoryGeneratedStory(id = 'story-sg-1'): Story {
 /** characters-approved → scenes step */
 function makeCharactersApprovedStory(id = 'story-ca-1'): Story {
   return {
-    id,
+    ...makeStoryGeneratedStory(id),
     title: 'Cuento aprobado chars',
-    summary: 'Resumen',
-    location: { name: 'Jerusalén' } as unknown as Story['location'],
-    illustrationStyle: 'ghibli',
     characters: [
       {
         id: 'char-1',
@@ -237,8 +256,6 @@ function makeCharactersApprovedStory(id = 'story-ca-1'): Story {
         selectedImageUrl: 'https://mock/scene-2.png',
       } as unknown as Story['scenes'][number],
     ],
-    props: [],
-    spiritualConnection: 'Esperanza',
     metadata: {
       createdAt: '',
       updatedAt: '',
@@ -247,40 +264,11 @@ function makeCharactersApprovedStory(id = 'story-ca-1'): Story {
   } as Story;
 }
 
-/** scenes-pending → cover step (used for finalization tests) */
+/** scenes-pending → cover step (finalization flows) */
 function makeScenesPendingStory(id = 'story-fin'): Story {
   return {
-    id,
+    ...makeCharactersApprovedStory(id),
     title: 'Cuento a finalizar',
-    summary: 'Resumen',
-    location: { name: 'Jerusalén' } as unknown as Story['location'],
-    illustrationStyle: 'ghibli',
-    characters: [
-      {
-        id: 'char-1',
-        name: 'María',
-        role: 'protagonist',
-        description: 'Niña curiosa',
-        visualDescription: 'niña con vestido azul',
-        characterSheetUrl: 'https://mock/char-1.png',
-      } as unknown as Story['characters'][number],
-    ],
-    scenes: [
-      {
-        number: 1,
-        text: 'Escena de apertura',
-        visualDescription: 'plaza soleada',
-        selectedImageUrl: 'https://mock/scene-1.png',
-      } as unknown as Story['scenes'][number],
-      {
-        number: 2,
-        text: 'Escena de nudo',
-        visualDescription: 'templo antiguo',
-        selectedImageUrl: 'https://mock/scene-2.png',
-      } as unknown as Story['scenes'][number],
-    ],
-    props: [],
-    spiritualConnection: 'Esperanza',
     coverImageUrl: 'https://mock/cover.png',
     endImageUrl: 'https://mock/end.png',
     metadata: {
@@ -292,26 +280,31 @@ function makeScenesPendingStory(id = 'story-fin'): Story {
 }
 
 // ---------------------------------------------------------------------------
-// Upsert payload helpers — use snake_case keys as sent by saveDraftToSupabase
+// Upsert payload helpers
 // ---------------------------------------------------------------------------
 
 function parseUpsertRow(payload: UpsertPayload) {
-  const currentStep = payload['current_step'] as string | null ?? null;
-  const story = payload['story'] as Record<string, unknown> | null ?? null;
-  const metadata = story?.['metadata'] as Record<string, unknown> | null ?? null;
-  const status = metadata?.['status'] as string | null ?? null;
-  const storyId = story?.['id'] as string | null ?? null;
-  // editorStateV1 embeds the editor buffers under `.edited.scenePrompt`
-  // (see buildEditorStateV1FromDraft in recoverySnapshot.ts)
-  const editorStateV1 = story?.['editorStateV1'] as Record<string, unknown> | null ?? null;
-  const edited = editorStateV1?.['edited'] as Record<string, unknown> | null ?? null;
+  const currentStep = (payload['current_step'] as string | null) ?? null;
+  const story = (payload['story'] as Record<string, unknown> | null) ?? null;
+  const metadata = (story?.['metadata'] as Record<string, unknown> | null) ?? null;
+  const status = (metadata?.['status'] as string | null) ?? null;
+  const storyId = (story?.['id'] as string | null) ?? null;
+  const editorStateV1 = (story?.['editorStateV1'] as Record<string, unknown> | null) ?? null;
+  const edited = (editorStateV1?.['edited'] as Record<string, unknown> | null) ?? null;
   const editingScenePrompt = edited?.['scenePrompt'] as Record<number, string> | undefined;
-  return { currentStep, status, storyId, editingScenePrompt };
+  const editingSceneText = edited?.['sceneText'] as Record<number, string> | undefined;
+  const editedTitle = edited?.['title'] as string | null | undefined;
+  return { currentStep, status, storyId, editingScenePrompt, editingSceneText, editedTitle };
 }
 
 function isAuthoritativeStoryToCharacters(payload: UpsertPayload): boolean {
   const { currentStep, status } = parseUpsertRow(payload);
   return currentStep === 'characters' && status === 'characters-pending';
+}
+
+function isAuthoritativeCharactersToScenes(payload: UpsertPayload): boolean {
+  const { currentStep, status } = parseUpsertRow(payload);
+  return currentStep === 'scenes' && status === 'characters-approved';
 }
 
 function isAuthoritativeScenesToCover(payload: UpsertPayload): boolean {
@@ -324,6 +317,33 @@ function isAuthoritativeFinalize(payload: UpsertPayload): boolean {
   return currentStep === 'complete' && status === 'ready';
 }
 
+/** Step recorded by an upsert row. */
+function stepOf(c: { payload: UpsertPayload }): string | null {
+  return parseUpsertRow(c.payload).currentStep;
+}
+
+/** All writes that persisted a given step. */
+function writesAtStep(step: string) {
+  return upsertCalls.filter((c) => stepOf(c) === step);
+}
+
+/**
+ * Number of TRANSITIONS into `step` across the upsert sequence: an index i
+ * counts when step(i) === step and step(i-1) !== step. Robust against
+ * follow-up pipeline persists that keep writing the same step, while still
+ * catching a stale write that regresses the step and re-enters it.
+ */
+function countStepTransitions(step: string): number {
+  let n = 0;
+  let prev: string | null = null;
+  for (const c of upsertCalls) {
+    const s = stepOf(c);
+    if (s === step && prev !== step) n++;
+    prev = s;
+  }
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
@@ -334,7 +354,8 @@ beforeEach(() => {
   upsertDefaultError = null;
   invokeCalls.length = 0;
   deletedDraftRows.length = 0;
-  mockUserId = 'user-integration-test';
+  mockUserId = 'user-f4-integration';
+  mockDraftRow = null;
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
@@ -352,8 +373,12 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Render helpers
+// Drive helpers
 // ---------------------------------------------------------------------------
+
+async function yields(n: number) {
+  for (let i = 0; i < n; i++) await Promise.resolve();
+}
 
 async function renderAtStoryStep(storyId = 'story-sg') {
   const onStoryCreated = vi.fn();
@@ -380,7 +405,6 @@ async function renderAtScenesStep(storyId = 'story-ca') {
       onStoryCreated={onStoryCreated}
     />
   );
-  // characters-approved → scenes step shows "Aprobar escenas" button
   await waitFor(
     () => expect(screen.getByRole('button', { name: /Aprobar escenas/i })).toBeTruthy(),
     { timeout: 3000 }
@@ -389,14 +413,12 @@ async function renderAtScenesStep(storyId = 'story-ca') {
 }
 
 /**
- * At the scenes step, expand the scene prompt panel and type into the PROMPT
- * textarea (index 1 after expansion: scene text is [0], prompt is [1]).
- * This triggers setEditingScenePrompt → auto-persist effect → saveDraft
- * → arms a 2s debounce with current_step='scenes'.
- * Returns the prompt textarea element (index 1).
+ * At the scenes step, expand scene 1's prompt panel and type into the PROMPT
+ * textarea (textareas[1] after expansion; [0] is scene text). Triggers
+ * setEditingScenePrompt → auto-persist effect → bumpContentRevision + saveDraft
+ * → arms the 2s debounce with current_step='scenes'.
  */
-async function armDebounceAtScenesStep(promptValue = 'EDITED PROMPT'): Promise<HTMLElement> {
-  // Find and click "Ver prompt" button for scene 1 to reveal the expansion panel
+async function armScenePromptDebounce(promptValue = 'EDITED PROMPT'): Promise<HTMLElement> {
   const verPromptBtns = screen.queryAllByRole('button', { name: /Ver prompt/i });
   if (verPromptBtns.length === 0) {
     throw new Error('No "Ver prompt" button found at scenes step');
@@ -404,8 +426,6 @@ async function armDebounceAtScenesStep(promptValue = 'EDITED PROMPT'): Promise<H
   await act(async () => {
     fireEvent.click(verPromptBtns[0]);
   });
-  // After expansion: textareas[0] = scene text, textareas[1] = prompt.
-  // We target the PROMPT textarea (index 1) to test editingScenePrompt.
   const textareas = screen.queryAllByRole('textbox');
   expect(textareas.length).toBeGreaterThanOrEqual(2);
   const promptTextarea = textareas[1];
@@ -415,464 +435,503 @@ async function armDebounceAtScenesStep(promptValue = 'EDITED PROMPT'): Promise<H
   return promptTextarea;
 }
 
+/** Same as above but for the scene TEXT textarea (textareas[0]). */
+function armSceneTextDebounceSync(textValue: string): void {
+  act(() => {
+    const verPromptBtns = screen.queryAllByRole('button', { name: /Ver prompt/i });
+    if (verPromptBtns.length > 0) fireEvent.click(verPromptBtns[0]);
+  });
+  act(() => {
+    const textareas = screen.queryAllByRole('textbox');
+    expect(textareas.length).toBeGreaterThanOrEqual(1);
+    fireEvent.change(textareas[0], { target: { value: textValue } });
+  });
+}
+
 // ---------------------------------------------------------------------------
-// Case 1: Debounce drain + one authoritative commit + transition + auto-kick
+// Case 1 — Normal approval: pending debounce drains, exactly ONE authoritative
+// commit, then transition and exactly ONE auto-kick, strictly after persistence.
 // ---------------------------------------------------------------------------
-describe('Case 1: debounce drain + authoritative commit + transition + auto-kick', () => {
-  it('transitions to characters step and fires auto-kick after approval', async () => {
+describe('Case 1: debounce drains, one authoritative commit, one kick after persistence', () => {
+  it('story→characters: kick fires only AFTER the authoritative upsert resolves, exactly once', { timeout: 15000 }, async () => {
     await renderAtStoryStep('story-c1');
 
-    const approveBtn = screen.getByRole('button', {
-      name: /Aprobar cuento y generar imágenes/i,
-    });
+    // Block the authoritative upsert to observe ordering.
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
 
+    const approveBtn = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i });
     await act(async () => {
       fireEvent.click(approveBtn);
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await yields(10);
     });
 
-    // Transition: approve button disappears
+    // While persistence is in flight: no transition, no kick.
+    expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).not.toBeNull();
+    expect(invokeCalls).toHaveLength(0);
+
+    await act(async () => {
+      authBlocker.resolve({ error: null });
+      await yields(15);
+    });
+
+    // Transition happened.
     await waitFor(
-      () =>
-        expect(
-          screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })
-        ).toBeNull(),
+      () => expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    // Exactly ONE transition into 'characters' (follow-up pipeline persists
+    // stay at the same step and must not re-enter it).
+    expect(countStepTransitions('characters')).toBe(1);
+    // And the transition write itself is the authoritative one.
+    const firstCharactersWrite = upsertCalls.find((c) => stepOf(c) === 'characters');
+    expect(firstCharactersWrite && isAuthoritativeStoryToCharacters(firstCharactersWrite.payload)).toBe(true);
+    // Exactly one kick (1 character → 1 sheet generation invoke), post-commit.
+    await waitFor(() => expect(invokeCalls.length).toBeGreaterThanOrEqual(1), { timeout: 4000 });
+    await act(async () => { await yields(10); });
+    expect(invokeCalls).toHaveLength(1);
+  });
+
+  it('scenes→cover: a pending debounced edit is drained (persisted) before the single authoritative commit', { timeout: 15000 }, async () => {
+    await renderAtScenesStep('story-c1b');
+
+    // Arm a debounce with a real UI edit; the envelope must flush it, not drop it.
+    await armScenePromptDebounce('PENDING EDIT');
+
+    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(20);
+    });
+
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
       { timeout: 5000 }
     );
 
-    // Exactly one authoritative story→characters upsert
-    const authUpserts = upsertCalls.filter((c) => isAuthoritativeStoryToCharacters(c.payload));
-    expect(authUpserts).toHaveLength(1);
-
-    // Auto-kick: functions.invoke called for character sheets generation
-    await waitFor(() => expect(invokeCalls.length).toBeGreaterThanOrEqual(1), {
-      timeout: 3000,
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Case 2 (BASE-RED): Concurrent edit during blocked authoritative upsert →
-// newest edit NOT captured in the committed authoritative patch
-//
-// Steps:
-// 1. At scenes step, arm debounce by editing scene prompt ('ORIGINAL EDIT')
-//    This also freezes buildAuthoritativeDraftPatch callback with 'ORIGINAL EDIT'
-// 2. Push instantDrain (pre-resolved) + authBlocker to upsertDeferreds:
-//    - instantDrain: for the debounce flush (pending from step 1)
-//    - authBlocker: blocks the authoritative upsert AFTER drain completes
-// 3. Click "Aprobar escenas" → drain fires with 'ORIGINAL EDIT' (instant) →
-//    buildAuthoritativeDraftPatch called (stale closure: 'ORIGINAL EDIT') →
-//    auth upsert starts and blocks on authBlocker
-// 4. While auth is blocked, change scene prompt to 'NEW EDIT'
-// 5. Release authBlocker → auth commits with stale 'ORIGINAL EDIT'
-// 6. Assert: authoritative patch has 'NEW EDIT' → FAILS on base ('ORIGINAL EDIT')
-//
-// BASE DEFECT: buildAuthoritativeDraftPatch is a useCallback with editingScenePrompt
-// in its closure. The closure is captured at click time. Post-drain state changes
-// are NOT reflected — the stale 'ORIGINAL EDIT' is committed.
-// ---------------------------------------------------------------------------
-describe('Case 2 (BASE-RED): same-story edit during blocked authoritative upsert → newest edit must be in authoritative patch', () => {
-  it('authoritative patch contains newest edit, not the pre-click value', async () => {
-    await renderAtScenesStep('story-c2');
-
-    // 1. Arm debounce with 'ORIGINAL EDIT'. This freezes buildAuthoritativeDraftPatch's
-    //    closure to capture editingScenePrompt={1:'ORIGINAL EDIT'} at this render.
-    const textarea = await armDebounceAtScenesStep('ORIGINAL EDIT');
-
-    // 2. Two deferreds:
-    //    - instantDrain: for the pending debounce upsert (from step 1 flush), resolves immediately
-    //    - authBlocker: blocks the authoritative upsert AFTER the drain completes
-    //    buildAuthoritativeDraftPatch is called between drain and auth — using the stale closure.
-    const instantDrain = makeDeferred<{ error: null }>();
-    instantDrain.resolve({ error: null }); // flush resolves immediately
-    const authBlocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(instantDrain, authBlocker);
-
-    // 3. Click Approve Scenes — flush fires debounce (instant), auth starts (blocked)
-    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
-    await act(async () => {
-      fireEvent.click(approveBtn);
-      for (let i = 0; i < 12; i++) await Promise.resolve();
-    });
-
-    // Auth is in-flight (blocked). buildAuthoritativeDraftPatch was called with 'ORIGINAL EDIT'.
-    // No cover transition yet.
-    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
-
-    // 4. While auth is blocked, change prompt to 'NEW EDIT'
-    await act(async () => {
-      fireEvent.change(textarea, { target: { value: 'NEW EDIT' } });
-      for (let i = 0; i < 4; i++) await Promise.resolve();
-    });
-
-    // 5. Release the authoritative upsert
-    await act(async () => {
-      authBlocker.resolve({ error: null });
-      for (let i = 0; i < 15; i++) await Promise.resolve();
-    });
-
-    // The authoritative upsert (scenes→cover) must exist.
-    // Hard assertion: if this fails, the setup is broken (not a real base-red failure).
-    const authUpserts = upsertCalls.filter((c) => isAuthoritativeScenesToCover(c.payload));
-    expect(authUpserts).toHaveLength(1);
-
-    // BASE-RED: the authoritative patch was built BEFORE 'NEW EDIT' was committed
-    // (stale closure in buildAuthoritativeDraftPatch captures 'ORIGINAL EDIT' at click time).
-    // A fixed implementation would re-read live state, producing 'NEW EDIT'.
-    // On base: 'ORIGINAL EDIT' → assertion FAILS.
-    const { editingScenePrompt } = parseUpsertRow(authUpserts[0].payload);
-    const scene1Prompt = editingScenePrompt?.[1] ?? '';
-
-    expect(
-      scene1Prompt,
-      `Expected authoritative patch to have newest edit 'NEW EDIT' but got '${scene1Prompt}'. ` +
-      `This reveals the stale closure defect in buildAuthoritativeDraftPatch.`
-    ).toBe('NEW EDIT');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Case 3 (BASE-RED): Late debounce armed during in-flight authoritative upsert
-// overwrites committed step
-//
-// Steps:
-// 1. At scenes step, render (skipNextAutoPersistRef = no mount debounce)
-// 2. Push authoritativeBlocker to upsertDeferreds (ONE deferred: blocks the auth)
-// 3. Click "Aprobar escenas" → flushPendingDraftWrites no-op → auth starts (blocked)
-// 4. While auth is in-flight, switch to fake timers and arm a new debounce
-//    by expanding a scene prompt and changing scene text
-// 5. Advance fake timers 2100ms → debounce fires → performDraftWrite with 'scenes'
-//    enqueued AFTER authoritative (which is still blocked) via writeTailRef chain
-// 6. Release authoritative → auth commits (current_step='cover') → transition to cover
-// 7. Debounce write executes (post-auth) → writes current_step='scenes' (DEFECT)
-//
-// BASE DEFECT: debounce armed at 'scenes' step fires AFTER auth commits 'cover'
-// because debounce chains onto writeTailRef (behind the blocked auth). The stale
-// patch overwrites the committed step. Test asserts no post-auth 'scenes' write → FAILS.
-// ---------------------------------------------------------------------------
-describe('Case 3 (BASE-RED): same-story edit during blocked authoritative → late debounce overwrites committed step', () => {
-  it('no stale scenes upsert appears after authoritative cover commit', async () => {
-    // Render with real timers, wait for initial state
-    await renderAtScenesStep('story-c3');
-
-    // flushPendingDraftWrites() is a no-op here (skipNextAutoPersistRef means
-    // the first auto-persist effect is skipped on mount; no debounce is armed).
-    // The only upsert from clicking "Aprobar escenas" is the authoritative one.
-    // Push ONE deferred: the authoritative blocker.
-    const authoritativeBlocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(authoritativeBlocker);
-
-    // 2. Click Approve Scenes → flush is no-op → auth upsert starts (blocked)
-    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
-    await act(async () => {
-      fireEvent.click(approveBtn);
-      for (let i = 0; i < 8; i++) await Promise.resolve();
-    });
-
-    // Authoritative is in-flight (blocked by authoritativeBlocker). No transition yet.
-    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
-
-    // 3. Now switch to fake timers to control debounce timing
-    vi.useFakeTimers({ shouldAdvanceTime: false });
-
-    // Arm a debounce while authoritative is in-flight.
-    // Use synchronous act() so React commits the expansion and textarea change
-    // immediately (microtask flushing still works with fake timers).
-    act(() => {
-      const verPromptBtns = screen.queryAllByRole('button', { name: /Ver prompt/i });
-      if (verPromptBtns.length > 0) {
-        fireEvent.click(verPromptBtns[0]);
-      }
-    });
-    // After expansion: textareas[0] = scene text, textareas[1] = prompt.
-    // Change scene text to arm the debounce with current_step='scenes'.
-    act(() => {
-      const textareas = screen.queryAllByRole('textbox');
-      if (textareas.length > 0) {
-        // setEditingSceneText → auto-persist effect → saveDraft →
-        // setTimeout(callback, 2000) — mocked by fake timers
-        fireEvent.change(textareas[0], { target: { value: 'CONCURRENT EDIT' } });
-      }
-    });
-
-    // 4. Advance fake timers to fire the debounce (2100ms > 2000ms debounce)
-    await act(async () => {
-      vi.advanceTimersByTime(2100);
-      for (let i = 0; i < 4; i++) await Promise.resolve();
-    });
-
-    // The debounce write is now enqueued AFTER the authoritative (which is blocked)
-    // Queue: [authoritative(cover), debounce(scenes)]
-
-    // 5. Release the authoritative upsert → transition to cover
-    vi.useRealTimers();
-    await act(async () => {
-      authoritativeBlocker.resolve({ error: null });
-      for (let i = 0; i < 15; i++) await Promise.resolve();
-    });
-
-    // Wait for all remaining writes
-    await act(async () => {
-      for (let i = 0; i < 10; i++) await Promise.resolve();
-    });
-
-    // Find the authoritative upsert (cover).
-    // Hard assertion: if authIdx < 0, the setup is broken (auth upsert never fired).
     const authIdx = upsertCalls.findIndex((c) => isAuthoritativeScenesToCover(c.payload));
     expect(authIdx).toBeGreaterThanOrEqual(0);
-
-    // BASE-RED: after the authoritative commit (cover), NO upsert should have
-    // current_step='scenes'. On base production, the late debounce writes 'scenes'.
-    const postAuthUpserts = upsertCalls.slice(authIdx + 1);
-    const staleSceneUpserts = postAuthUpserts.filter((c) => {
-      const { currentStep } = parseUpsertRow(c.payload);
-      return currentStep === 'scenes';
-    });
-
-    expect(
-      staleSceneUpserts,
-      `Expected no post-authoritative 'scenes' upsert but found ${staleSceneUpserts.length}. ` +
-      `This reveals the debounce-overwrites-committed-step defect.`
-    ).toHaveLength(0);
+    // Exactly ONE transition into 'cover' (post-transition pipeline persists
+    // keep the step; they must not re-enter it).
+    expect(countStepTransitions('cover')).toBe(1);
+    // The drained debounce write ran BEFORE the authoritative one (a
+    // 'scenes'-step write precedes the first 'cover' write).
+    const drainIdx = upsertCalls.findIndex((c) => stepOf(c) === 'scenes');
+    expect(drainIdx).toBeGreaterThanOrEqual(0);
+    expect(drainIdx).toBeLessThan(authIdx);
+    // And the authoritative snapshot itself carries the drained edit — the
+    // envelope read LIVE refs, not a pre-drain closure.
+    expect(parseUpsertRow(upsertCalls[authIdx].payload).editingScenePrompt?.[1]).toBe('PENDING EDIT');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 4: Lifecycle change before enqueue → zero authoritative effects for old id
+// Case 2 (BASE-RED) — Same-story edit while the initial DRAIN is blocked ⇒
+// stale: zero authoritative enqueue/transition/kick effects; newest edit kept.
+//
+// BASE DEFECT: the envelope captures no pre-drain identity — after the drain it
+// re-baselines on the (already mutated) live identity and proceeds to commit.
 // ---------------------------------------------------------------------------
-describe('Case 4: lifecycle change before enqueue → no authoritative upsert for old story', () => {
-  it('bumping epoch via key remount before authoritative resolves drops the authoritative commit', async () => {
-    let remountFn!: () => void;
-    const Wrapper = () => {
-      const [key, setKey] = useState(0);
-      remountFn = () => setKey((k) => k + 1);
-      return (
-        <CuentacuentoEditor
-          key={key}
-          context={baseContext}
-          initialStory={makeStoryGeneratedStory(key === 0 ? 'story-old-c4' : 'story-new-c4')}
-          onStoryCreated={vi.fn()}
-        />
-      );
+describe('Case 2 (BASE-RED): edit during blocked drain ⇒ stale with zero authoritative effects', () => {
+  it('returns stale, enqueues no authoritative write, keeps the newest edit', { timeout: 15000 }, async () => {
+    await renderAtScenesStep('story-c2');
+
+    // 1. Arm the pending debounce the envelope will have to drain.
+    const promptTextarea = await armScenePromptDebounce('ORIGINAL EDIT');
+
+    // 2. Block the DRAIN: the flushed pending write consumes this deferred.
+    const drainBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(drainBlocker);
+
+    // 3. Click approve — envelope captures identity, flush starts, drain blocks.
+    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(8);
+    });
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
+
+    // 4. While the drain is blocked, edit through the UI (arms a NEW debounce
+    //    under fake timers so we can fire it deterministically later).
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    act(() => {
+      fireEvent.change(promptTextarea, { target: { value: 'NEW EDIT' } });
+    });
+    // Fire the new debounce: its write queues BEHIND the blocked drain write.
+    await act(async () => {
+      vi.advanceTimersByTime(2100);
+      await yields(4);
+    });
+    vi.useRealTimers();
+
+    // 5. Release the drain → envelope's post-drain comparison must see the
+    //    mid-drain edit (contentRevision) and go stale BEFORE the gate/enqueue.
+    await act(async () => {
+      drainBlocker.resolve({ error: null });
+      await yields(20);
+    });
+
+    // ZERO authoritative effects: the envelope aborted BEFORE enqueue, so no
+    // write at the target step exists at all.
+    expect(writesAtStep('cover')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
+    expect(invokeCalls).toHaveLength(0);
+    // Stale is surfaced to the user.
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i).length).toBeGreaterThan(0);
+    // The UI still shows the newest edit (retained, not clobbered).
+    expect((promptTextarea as HTMLTextAreaElement).value).toBe('NEW EDIT');
+
+    // Retention end-to-end: approving again (everything default-succeeds now)
+    // commits a transition whose authoritative snapshot carries the newest
+    // edit — the mid-drain edit was preserved and is able to persist.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Aprobar escenas/i }));
+      await yields(25);
+    });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    expect(countStepTransitions('cover')).toBe(1);
+    const commitWrite = upsertCalls.find((c) => isAuthoritativeScenesToCover(c.payload));
+    expect(commitWrite && parseUpsertRow(commitWrite.payload).editingScenePrompt?.[1]).toBe('NEW EDIT');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 3 (BASE-RED) — Same-story edit while the AUTHORITATIVE upsert is in
+// flight ⇒ persistence resolves stale: no transition; newest edit retained
+// and able to persist.
+//
+// BASE DEFECT: the post-persistence CAS ignores contentRevision for
+// authoritative writes — the stale approval commits, transitions, and its
+// authoritative bump invalidates the edit's queued debounce.
+// ---------------------------------------------------------------------------
+describe('Case 3 (BASE-RED): edit during blocked authoritative upsert ⇒ stale, edit persists', () => {
+  it('does not transition, surfaces stale, and the mid-flight edit persists afterwards', { timeout: 15000 }, async () => {
+    await renderAtScenesStep('story-c3');
+
+    // 1. Block the authoritative upsert (no pending debounce at this point).
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
+
+    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(8);
+    });
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
+
+    // 2. While the authoritative write is in flight, edit through the UI.
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    armSceneTextDebounceSync('MID-FLIGHT EDIT');
+    await act(async () => {
+      vi.advanceTimersByTime(2100); // edit's own write queues behind the auth
+      await yields(4);
+    });
+    vi.useRealTimers();
+
+    // 3. Release the authoritative upsert.
+    await act(async () => {
+      authBlocker.resolve({ error: null });
+      await yields(20);
+    });
+
+    // The authoritative I/O ran (allowed) but resolved STALE: no transition,
+    // no kick, stale surfaced.
+    const authWrites = writesAtStep('cover');
+    expect(authWrites).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
+    expect(invokeCalls).toHaveLength(0);
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i).length).toBeGreaterThan(0);
+
+    // The mid-flight edit's own queued write RAN after the stale authoritative
+    // one (its debounce identity stayed valid — no authoritative bump killed
+    // it): a 'scenes'-step write exists after the stale 'cover' write.
+    await waitFor(
+      () => {
+        const authIdx = upsertCalls.findIndex((c) => stepOf(c) === 'cover');
+        const lateIdx = upsertCalls.findIndex((c, i) => i > authIdx && stepOf(c) === 'scenes');
+        expect(lateIdx).toBeGreaterThan(authIdx);
+      },
+      { timeout: 3000 }
+    );
+
+    // Retention end-to-end: approving again commits and the authoritative
+    // snapshot carries the mid-flight edit.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Aprobar escenas/i }));
+      await yields(25);
+    });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    const commitWrite = upsertCalls.filter((c) => isAuthoritativeScenesToCover(c.payload)).pop();
+    expect(commitWrite && parseUpsertRow(commitWrite.payload).editingSceneText?.[1]).toBe('MID-FLIGHT EDIT');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 4 — Lifecycle identity change while the DRAIN is blocked ⇒ ZERO old
+// authoritative effects (strict zero — no enqueue at all).
+//
+// Lifecycle trigger is real UI: declining the recovery prompt ("Empezar de
+// nuevo") bumps the draft epoch.
+// ---------------------------------------------------------------------------
+describe('Case 4: lifecycle identity change while drain is blocked ⇒ zero authoritative effects', () => {
+  it('declining recovery (epoch bump) during the blocked drain aborts the envelope before enqueue', async () => {
+    // Serve a recovery row so the recovery modal is present at mount.
+    mockDraftRow = {
+      current_step: 'scenes',
+      story: {
+        id: 'story-rec',
+        title: 'Recuperado',
+        characters: [],
+        scenes: [],
+        props: [],
+        metadata: { createdAt: '', updatedAt: '', status: 'characters-approved' },
+      },
+      config: {},
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-05-01T00:00:00Z',
     };
 
-    render(<Wrapper />);
+    await renderAtScenesStep('story-c4');
+    // Recovery modal is up (real UI lifecycle control available).
     await waitFor(
-      () => screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i }),
+      () => expect(screen.getByRole('button', { name: /Empezar de nuevo/i })).toBeTruthy(),
       { timeout: 3000 }
     );
 
-    // Block the authoritative upsert
-    const blocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(blocker);
+    // Arm a pending debounce so the envelope has a real drain to block.
+    await armScenePromptDebounce('EDIT BEFORE LIFECYCLE');
+    const drainBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(drainBlocker);
 
-    const approveBtn = screen.getByRole('button', {
-      name: /Aprobar cuento y generar imágenes/i,
-    });
+    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
     await act(async () => {
       fireEvent.click(approveBtn);
-      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await yields(8);
     });
 
-    // Bump lifecycle (key remount — bumpDraftEpoch is called via setActiveDraftStoryId)
+    // While the drain is blocked, the user declines recovery → epoch bump.
     await act(async () => {
-      remountFn();
-      for (let i = 0; i < 4; i++) await Promise.resolve();
+      fireEvent.click(screen.getByRole('button', { name: /Empezar de nuevo/i }));
+      await yields(4);
     });
 
-    // Release the old upsert
+    // Release the drain.
     await act(async () => {
-      blocker.resolve({ error: null });
-      for (let i = 0; i < 8; i++) await Promise.resolve();
+      drainBlocker.resolve({ error: null });
+      await yields(20);
     });
 
-    // The old authoritative upsert for story-old-c4 should NOT have committed a
-    // characters step — the identity check (epoch mismatch) would mark it stale.
-    const oldAuthUpserts = upsertCalls.filter((c) => {
-      const { storyId, currentStep, status } = parseUpsertRow(c.payload);
-      return (
-        currentStep === 'characters' &&
-        status === 'characters-pending' &&
-        storyId === 'story-old-c4'
-      );
-    });
-    // The upsert MAY have executed (I/O ran) but the React commit should be stale.
-    // We can't directly observe the React commit from outside, but we can verify
-    // the editor did NOT transition (no characters step visible for new component).
-    // Either 0 upserts (pre-start guard) or the upsert exists but was stale.
-    // Key: the old story should not have a characters-pending commit visible.
-    expect(oldAuthUpserts.length).toBeLessThanOrEqual(1); // 0 or 1 (stale I/O is ok)
+    // STRICT ZERO authoritative effects for the old lifecycle: no write at
+    // the target step exists at all (the envelope aborted before enqueue).
+    expect(writesAtStep('cover')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
+    expect(invokeCalls).toHaveLength(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 5: Lifecycle change (unmount) during persistence → no success transition
+// Case 5 — Lifecycle identity change during PERSISTENCE ⇒ no success-only
+// effect (no transition, no kick, no parent callback).
+//
+// Lifecycle trigger is real UI: the story step's "Regenerar" button
+// (handleRegenerate → epoch bump + story replacement).
 // ---------------------------------------------------------------------------
-describe('Case 5: unmounting during blocked persistence → no onStoryCreated', () => {
-  it('unmounting while authoritative upsert is in-flight does not call onStoryCreated', async () => {
-    const onStoryCreated = vi.fn();
-    const { unmount } = render(
-      <CuentacuentoEditor
-        context={baseContext}
-        initialStory={makeStoryGeneratedStory('story-c5')}
-        onStoryCreated={onStoryCreated}
-      />
-    );
+describe('Case 5: lifecycle identity change during persistence ⇒ no success transition', () => {
+  it('clicking Regenerar while the authoritative upsert is in flight yields zero success effects', async () => {
+    const { onStoryCreated } = await renderAtStoryStep('story-c5');
 
-    await waitFor(
-      () => screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i }),
-      { timeout: 3000 }
-    );
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
 
-    const blocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(blocker);
-
-    const approveBtn = screen.getByRole('button', {
-      name: /Aprobar cuento y generar imágenes/i,
-    });
+    const approveBtn = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i });
     await act(async () => {
       fireEvent.click(approveBtn);
-      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await yields(6);
     });
 
-    // Unmount while upsert is blocked (simulates navigation)
-    act(() => {
-      unmount();
-    });
-
-    // Release the upsert
+    // Real UI lifecycle change while persistence is in flight.
     await act(async () => {
-      blocker.resolve({ error: null });
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      fireEvent.click(screen.getByRole('button', { name: /^Regenerar$/i }));
+      await yields(6);
     });
 
-    // onStoryCreated should NOT have been called (story→characters doesn't call it anyway,
-    // but auto-kick runItems should not fire, and no transition side-effects)
+    await act(async () => {
+      authBlocker.resolve({ error: null });
+      await yields(20);
+    });
+
+    // The I/O ran, but success-only effects are all absent: the editor is back
+    // at the config form (regenerate), never at the characters step.
+    expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeNull();
+    expect(invokeCalls).toHaveLength(0); // no auto-kick for the dead approval
     expect(onStoryCreated).not.toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 6: Save failure via real pipeline creates save-failed entry and blocks
+// Case 6 — A REAL save-failed pipeline entry (driven through the UI + mocked
+// external persistence failure) blocks approval with zero authoritative effects.
 // ---------------------------------------------------------------------------
-describe('Case 6: save-failed pipeline entry blocks approval gate', () => {
-  it('canApprove gate is disabled and consulted when pipeline has save-failed status', async () => {
-    // Get to characters step by approving story
+describe('Case 6: real save-failed pipeline entry blocks approval', () => {
+  it('a failed pipeline persist creates a save-failed entry; approval is blocked with zero effects', { timeout: 15000 }, async () => {
     await renderAtStoryStep('story-c6');
 
-    const approveStory = screen.getByRole('button', {
-      name: /Aprobar cuento y generar imágenes/i,
-    });
-    await act(async () => {
-      fireEvent.click(approveStory);
-      for (let i = 0; i < 10; i++) await Promise.resolve();
-    });
+    // FIFO deferred plan: [auth ok] then [pipeline persist FAILS].
+    upsertDeferreds.push(makeResolvedOk(), makeResolvedFail('persist boom'));
 
+    // Approve story → transition → auto-kick generates the character sheet →
+    // apply → pipeline persist consumes the failing deferred → save-failed.
+    const approveBtn = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(25);
+    });
     await waitFor(
       () => expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeNull(),
       { timeout: 5000 }
     );
-
-    // Now at characters step. The approve button for characters exists.
-    // If pipeline.saveFailedCount > 0, the characters approve button should be
-    // disabled (via canApprove gate in renderCharactersStep).
-    // We verify: at characters step with no save-failed entries, button IS enabled.
-    // (Functional gate test — saving a character image failure is too complex to
-    // trigger via UI in this test; the gate logic is proven by cases 1-3.)
-    const approveCharsBtn = screen.queryByRole('button', { name: /Aprobar personajes/i });
-    if (approveCharsBtn) {
-      // Button exists; if not disabled it means no save-failed entries → gate clear
-      // This passes on base (gate logic works when no failure is registered)
-      expect(approveCharsBtn).toBeTruthy();
-    }
-    // Test passes: gate is present and checked correctly for no-failure case
-    expect(true).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Case 7: canApprove gate is open when no pipeline save-failed entries exist.
-//
-// At the scenes step with no image pipeline in-flight (saveFailedCount=0,
-// isBusySaving=false), canApprove returns true. Clicking "Aprobar escenas"
-// runs handleApproveScenes → runAuthoritativeApproval → runApprovalTransaction,
-// which passes the gate and enqueues the authoritative scenes→cover write.
-//
-// The button may be disabled for the unrelated reason (scenesSelected < total)
-// but fireEvent.click in jsdom still dispatches the click event to React,
-// which calls the onClick handler. The test asserts gate behavior, NOT the
-// button's disabled state.
-// ---------------------------------------------------------------------------
-describe('Case 7: canApprove gate is open when no pipeline save-failed entries exist', () => {
-  it('approval runs through when pipeline has no save-failed entries (gate is open)', async () => {
-    await renderAtScenesStep('story-c7');
-
-    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
-
-    // Click approve — fireEvent.click triggers onClick even on a disabled button
-    // in jsdom. The handler runs, canApprove returns true (no pipeline errors),
-    // the authoritative scenes→cover write is enqueued, and the editor transitions.
-    await act(async () => {
-      fireEvent.click(approveBtn);
-      for (let i = 0; i < 20; i++) await Promise.resolve();
-    });
-
-    // Gate was open → exactly one authoritative scenes→cover upsert was made.
-    // This proves canApprove returned true (saveFailedCount=0, isBusySaving=false).
+    // The kick really ran (provider invoked) and its persist really failed:
+    // the save-retry banner appears with the retry button.
+    await waitFor(() => expect(invokeCalls.length).toBeGreaterThanOrEqual(1), { timeout: 4000 });
     await waitFor(
-      () => {
-        const authUpserts = upsertCalls.filter((c) => isAuthoritativeScenesToCover(c.payload));
-        expect(authUpserts).toHaveLength(1);
-      },
-      { timeout: 3000 }
-    );
-
-    // Transition: "Aprobar escenas" button disappears (editor moved to cover step).
-    await waitFor(
-      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
+      () => expect(screen.queryAllByText(/Reintentar guardado/i).length).toBeGreaterThan(0),
       { timeout: 5000 }
     );
+
+    // Now try to approve characters — the gate must block with zero effects.
+    const beforeCount = upsertCalls.length;
+    const approveChars = screen.getByRole('button', { name: /Aprobar personajes/i });
+    await act(async () => {
+      fireEvent.click(approveChars);
+      await yields(20);
+    });
+
+    expect(upsertCalls.slice(beforeCount).filter((c) => stepOf(c) === 'scenes')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Aprobar personajes/i })).not.toBeNull(); // no transition
+    expect(screen.queryAllByText(/Hay imágenes sin guardar; reintenta antes de aprobar/i).length).toBeGreaterThan(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 8: Authoritative persistence rejection → no transition, no auto-kick
+// Case 7 — REAL in-flight pipeline persistence blocks approval until it
+// settles; afterwards the same approval path succeeds.
 // ---------------------------------------------------------------------------
-describe('Case 8: authoritative persistence rejection preserves story step and no auto-kick', () => {
-  it('on upsert error, editor stays on story step and no functions.invoke is called', async () => {
-    await renderAtStoryStep('story-c8');
+describe('Case 7: real in-flight pipeline persistence blocks approval', () => {
+  it('approval produces zero authoritative effects while a pipeline persist is held; succeeds after it settles', { timeout: 20000 }, async () => {
+    await renderAtStoryStep('story-c7');
 
-    // Make the authoritative upsert fail
-    upsertDefaultError = { message: 'boom — persistence rejected' };
+    // FIFO plan: [auth ok] then [pipeline persist HELD in-flight].
+    const persistHold = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(makeResolvedOk(), persistHold);
 
-    const approveBtn = screen.getByRole('button', {
-      name: /Aprobar cuento y generar imágenes/i,
-    });
+    const approveBtn = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i });
     await act(async () => {
       fireEvent.click(approveBtn);
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await yields(25);
+    });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    await waitFor(() => expect(invokeCalls.length).toBeGreaterThanOrEqual(1), { timeout: 4000 });
+
+    // While the pipeline persist is held in flight, try to approve characters.
+    const beforeCount = upsertCalls.length;
+    const approveChars = screen.getByRole('button', { name: /Aprobar personajes/i });
+    await act(async () => {
+      fireEvent.click(approveChars);
+      await yields(25);
+    });
+    // Blocked: zero writes at the target step, no transition.
+    expect(upsertCalls.slice(beforeCount).filter((c) => stepOf(c) === 'scenes')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Aprobar personajes/i })).not.toBeNull();
+
+    // Release the pipeline persist → item settles.
+    await act(async () => {
+      persistHold.resolve({ error: null });
+      await yields(25);
     });
 
-    // Should remain on story step (approve button still visible)
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })
-      ).not.toBeNull()
+    // Complete the REAL user flow: select the generated sheet (the approve
+    // button also requires a selection), then approve. The button's disabled
+    // gate includes canApprove/isRunning — wait (bounded) until the settled
+    // pipeline re-enables it.
+    const sheetOptionBtn = await waitFor(
+      () => {
+        const btns = screen.getAllByRole('button', { name: /Opción 1/i });
+        expect(btns.length).toBeGreaterThan(0);
+        return btns[0];
+      },
+      { timeout: 5000 }
     );
+    await act(async () => {
+      fireEvent.click(sheetOptionBtn);
+      await yields(5);
+    });
+    const approveAfter = screen.getByRole('button', { name: /Aprobar personajes/i });
+    await waitFor(() => expect((approveAfter as HTMLButtonElement).disabled).toBe(false), {
+      timeout: 5000,
+    });
+    await act(async () => {
+      fireEvent.click(approveAfter);
+      await yields(25);
+    });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar personajes/i })).toBeNull(),
+      { timeout: 8000 }
+    );
+    // Exactly ONE transition into 'scenes', and its write is the
+    // authoritative one (follow-up scene-batch persists keep the step).
+    expect(countStepTransitions('scenes')).toBe(1);
+    const firstScenesWrite = upsertCalls.find((c) => stepOf(c) === 'scenes');
+    expect(firstScenesWrite && isAuthoritativeCharactersToScenes(firstScenesWrite.payload)).toBe(true);
+  });
+});
 
-    // No auto-kick (no functions.invoke call)
+// ---------------------------------------------------------------------------
+// Case 8 — Authoritative persistence REJECTION leaves story and step unchanged
+// (no transition, no kick), and surfaces the error.
+// ---------------------------------------------------------------------------
+describe('Case 8: authoritative persistence rejection preserves story/step', () => {
+  it('on upsert error the editor stays on the story step, with no kick and a visible error', async () => {
+    await renderAtStoryStep('story-c8');
+
+    upsertDefaultError = { message: 'boom — persistence rejected' };
+
+    const approveBtn = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(15);
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).not.toBeNull()
+    );
     expect(invokeCalls).toHaveLength(0);
+    expect(screen.queryAllByText(/No se pudo guardar antes de aprobar/i).length).toBeGreaterThan(0);
 
     upsertDefaultError = null;
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 9: Finalization calls parent only after commit + draft deletion
+// Case 9 — Finalization success calls the parent and deletes the draft
+// EXACTLY once, and only AFTER the authoritative commit.
 // ---------------------------------------------------------------------------
-describe('Case 9: finalization calls onStoryCreated only after commit', () => {
-  it('onStoryCreated not called while blocked; called exactly once with ready status after release', async () => {
+describe('Case 9: finalization success → parent + deleteDraft exactly once, after commit', () => {
+  it('onStoryCreated and the draft deletion happen only after the finalize upsert resolves', async () => {
     const onStoryCreated = vi.fn();
     render(
       <CuentacuentoEditor
@@ -882,60 +941,56 @@ describe('Case 9: finalization calls onStoryCreated only after commit', () => {
       />
     );
 
-    // scenes-pending → scenes step
     const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
-
-    // Let approve scenes go through (no blocker)
     await act(async () => {
       fireEvent.click(approveScenes);
-      for (let i = 0; i < 12; i++) await Promise.resolve();
+      await yields(15);
     });
 
     const finalizeBtn = await screen.findByRole('button', { name: /Finalizar cuento/i });
 
-    // Two upserts happen during handleFinalize:
-    //   1. flushPendingDraftWrites drains the cover auto-persist debounce (from setCurrentStep)
-    //      → upsert #1 (cover, instant, no deferred needed)
-    //   2. The finalize authoritative upsert (current_step='complete', status='ready')
-    //      → upsert #2 (blocked by finalizeBlocker)
-    // Push ONE deferred: finalizeBlocker for the auth.
-    const finalizeBlocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(finalizeBlocker);
+    // The cover auto-persist debounce is pending; the envelope drains it first.
+    // FIFO plan: [drain ok] then [finalize auth HELD].
+    const finalizeBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(makeResolvedOk(), finalizeBlocker);
 
     await act(async () => {
       fireEvent.click(finalizeBtn);
-      // Enough yields to drain the cover auto-persist AND start the finalize auth block
-      for (let i = 0; i < 16; i++) await Promise.resolve();
+      await yields(20);
     });
 
-    // While blocked: onStoryCreated must NOT have been called
+    // While the finalize upsert is blocked: no parent callback, no deletion.
     expect(onStoryCreated).not.toHaveBeenCalled();
+    expect(deletedDraftRows).toHaveLength(0);
 
-    // Release → onSuccess fires → onStoryCreated called exactly once
     await act(async () => {
       finalizeBlocker.resolve({ error: null });
-      for (let i = 0; i < 15; i++) await Promise.resolve();
+      await yields(20);
     });
 
-    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), {
-      timeout: 3000,
-    });
-
+    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    expect(onStoryCreated.mock.calls).toHaveLength(1);
     const [finalStory] = onStoryCreated.mock.calls[0] as [Story, unknown];
     expect(finalStory.metadata.status).toBe('ready');
+    // Draft deleted exactly once, strictly after the commit (it was 0 above).
+    expect(deletedDraftRows).toHaveLength(1);
+    // Exactly one transition into 'complete', and it is the finalize write.
+    expect(countStepTransitions('complete')).toBe(1);
+    const completeWrite = upsertCalls.find((c) => stepOf(c) === 'complete');
+    expect(completeWrite && isAuthoritativeFinalize(completeWrite.payload)).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 10A: Finalization rejection → no parent callback
+// Case 10 — Finalization REJECTION calls neither the parent nor deleteDraft.
 // ---------------------------------------------------------------------------
-describe('Case 10A: finalization rejection → no onStoryCreated', () => {
-  it('when finalize upsert fails, onStoryCreated is not called and button stays visible', async () => {
+describe('Case 10: finalization rejection → neither parent nor deleteDraft', () => {
+  it('a failing finalize upsert leaves the draft, the parent uncalled, and the button visible', async () => {
     const onStoryCreated = vi.fn();
     render(
       <CuentacuentoEditor
         context={baseContext}
-        initialStory={makeScenesPendingStory('story-c10a')}
+        initialStory={makeScenesPendingStory('story-c10')}
         onStoryCreated={onStoryCreated}
       />
     );
@@ -943,43 +998,39 @@ describe('Case 10A: finalization rejection → no onStoryCreated', () => {
     const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
     await act(async () => {
       fireEvent.click(approveScenes);
-      for (let i = 0; i < 12; i++) await Promise.resolve();
+      await yields(15);
     });
 
     const finalizeBtn = await screen.findByRole('button', { name: /Finalizar cuento/i });
 
-    // Make ALL upserts fail (including the cover drain AND the finalize auth)
-    // The cover drain fails gracefully (flushPendingDraftWrites catches the error).
-    // The finalize auth fail triggers onError → no transition, button stays visible.
+    // Every upsert fails from here (drain fails gracefully; finalize auth fails).
     upsertDefaultError = { message: 'io error' };
-
     await act(async () => {
       fireEvent.click(finalizeBtn);
-      // Extra yields to drain cover auto-persist AND complete the failed finalize auth
-      for (let i = 0; i < 16; i++) await Promise.resolve();
+      await yields(20);
     });
 
     expect(onStoryCreated).not.toHaveBeenCalled();
+    expect(deletedDraftRows).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).not.toBeNull();
+    expect(screen.queryAllByText(/No se pudo guardar antes de finalizar/i).length).toBeGreaterThan(0);
 
     upsertDefaultError = null;
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 10B: Sequential finalization — verify gate allows exactly one commit
-//
-// Ensures that when finalize upsert is blocked and then released, onStoryCreated
-// is called exactly once (no double-commit). The drain deferred auto-resolves so
-// the authoritative upsert starts and blocks.
+// Case 11 (BASE-RED) — Finalization STALE (edit while the finalize upsert is
+// in flight) calls neither the parent nor deleteDraft; the edit is retained;
+// a subsequent finalize succeeds and carries the edit.
 // ---------------------------------------------------------------------------
-describe('Case 10B: blocked finalize then released → onStoryCreated called exactly once', () => {
-  it('onStoryCreated is called exactly once after blocked finalize releases', async () => {
+describe('Case 11 (BASE-RED): finalization stale → neither parent nor deleteDraft; edit retained', () => {
+  it('an edit during the blocked finalize upsert makes it stale: no parent, no deletion, edit kept', { timeout: 20000 }, async () => {
     const onStoryCreated = vi.fn();
     render(
       <CuentacuentoEditor
         context={baseContext}
-        initialStory={makeScenesPendingStory('story-c10b')}
+        initialStory={makeScenesPendingStory('story-c11')}
         onStoryCreated={onStoryCreated}
       />
     );
@@ -987,148 +1038,145 @@ describe('Case 10B: blocked finalize then released → onStoryCreated called exa
     const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
     await act(async () => {
       fireEvent.click(approveScenes);
-      for (let i = 0; i < 12; i++) await Promise.resolve();
+      await yields(15);
     });
 
     const finalizeBtn = await screen.findByRole('button', { name: /Finalizar cuento/i });
 
-    // Two upserts during handleFinalize:
-    //   1. flushPendingDraftWrites drains the cover auto-persist debounce (instant, no deferred)
-    //   2. Finalize authoritative upsert (blocked by finalizeBlocker)
-    // Push ONE deferred: finalizeBlocker for the auth.
-    const finalizeBlocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(finalizeBlocker);
+    // FIFO plan: [drain ok] then [finalize auth HELD].
+    const finalizeBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(makeResolvedOk(), finalizeBlocker);
 
     await act(async () => {
       fireEvent.click(finalizeBtn);
-      // Extra yields to drain cover auto-persist AND start the finalize auth block
-      for (let i = 0; i < 16; i++) await Promise.resolve();
+      await yields(20);
     });
-
-    // While finalizeBlocker is held: not yet called
     expect(onStoryCreated).not.toHaveBeenCalled();
 
-    // Release → auth completes → onStoryCreated fires
+    // While the finalize upsert is in flight, edit the title through the UI
+    // (click-to-edit heading at the cover step → input → change).
+    const titleHeading = screen.getByTitle(/Haz clic para editar el título/i);
+    await act(async () => {
+      fireEvent.click(titleHeading);
+    });
+    // Two inputs can carry this display value (another field uses it as its
+    // placeholder-backed value); the click-to-edit title input is the
+    // autofocused text input rendered in place of the heading.
+    const titleInput = screen
+      .getAllByDisplayValue('Cuento a finalizar')
+      .find((el) => el.className.includes('font-semibold'));
+    expect(titleInput).toBeTruthy();
+    await act(async () => {
+      fireEvent.change(titleInput!, { target: { value: 'TITULO EDITADO EN VUELO' } });
+    });
+
+    // Release the finalize upsert → must resolve STALE.
     await act(async () => {
       finalizeBlocker.resolve({ error: null });
-      for (let i = 0; i < 15; i++) await Promise.resolve();
+      await yields(20);
     });
 
-    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), {
-      timeout: 3000,
-    });
+    // Neither parent nor deleteDraft; no complete transition; stale surfaced.
+    expect(onStoryCreated).not.toHaveBeenCalled();
+    expect(deletedDraftRows).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).not.toBeNull();
+    expect(screen.queryAllByText(/El borrador cambió durante la finalización/i).length).toBeGreaterThan(0);
 
-    // Exactly one call, no double-commit
-    expect(onStoryCreated.mock.calls).toHaveLength(1);
-    const [story] = onStoryCreated.mock.calls[0] as [Story, unknown];
-    expect(story.metadata.status).toBe('ready');
+    // Retention end-to-end: finalizing again (all upserts default-succeed now)
+    // drains the pending title edit and completes; the committed final story
+    // carries the newest title.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Finalizar cuento/i }));
+      await yields(25);
+    });
+    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    const [finalStory] = onStoryCreated.mock.calls[0] as [Story, unknown];
+    expect(finalStory.metadata.status).toBe('ready');
+    // The second finalize's authoritative snapshot carries the edited title.
+    const finalizeUpserts = upsertCalls.filter((c) => isAuthoritativeFinalize(c.payload));
+    expect(finalizeUpserts.length).toBeGreaterThanOrEqual(1);
+    const lastFinalize = finalizeUpserts[finalizeUpserts.length - 1];
+    expect(parseUpsertRow(lastFinalize.payload).editedTitle).toBe('TITULO EDITADO EN VUELO');
+    expect(deletedDraftRows).toHaveLength(1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Case 11 (BASE-RED): Debounce armed during in-flight authoritative upsert
-// overwrites committed step (same defect as Case 3, different fixture/trigger)
+// Case 12 (BASE-RED) — A debounce armed during the approval envelope can never
+// overwrite a committed transition.
 //
-// Steps:
-// 1. At scenes step, render with real timers
-//    (skipNextAutoPersistRef = no mount debounce; ONE deferred needed)
-// 2. Push authoritativeBlocker to upsertDeferreds
-// 3. Click "Aprobar escenas" → flushPendingDraftWrites no-op → auth starts (blocked)
-// 4. Switch to fake timers
-// 5. Arm debounce via "Ver prompt" expansion + changing scene text
-//    → saveDraft({ currentStep:'scenes', ... }) with fake setTimeout(cb, 2000)
-// 6. Advance fake timers 2100ms → timer fires → performDraftWrite({currentStep:'scenes'})
-//    chained onto writeTailRef AFTER the blocked authoritative
-// 7. Release authoritative → auth commits (current_step='cover') → cover transition
-// 8. Debounce write executes post-auth → writes current_step='scenes' (DEFECT)
+// Under the fixed protocol the mid-envelope edit makes the authoritative write
+// STALE (no committed transition exists to overwrite) and the edit persists;
+// a later approval commits and nothing pending can regress the step.
 //
-// BASE DEFECT: late debounce with stale current_step overwrites committed step.
-// Test asserts: no post-authoritative upsert has current_step='scenes' → FAILS on base.
+// BASE DEFECT: the stale approval COMMITS the transition and the late debounce
+// then overwrites the committed step with the old one.
 // ---------------------------------------------------------------------------
-describe('Case 11 (BASE-RED): late debounce armed during approval cannot overwrite committed step', () => {
-  it('no post-authoritative upsert with current_step=scenes appears after transition to cover', async () => {
-    // 1. Render at scenes step with real timers
-    await renderAtScenesStep('story-c11');
+describe('Case 12 (BASE-RED): envelope-armed debounce cannot overwrite a committed transition', () => {
+  it('mid-envelope edit ⇒ stale (no commit); after the later committed approval no stale step write appears', { timeout: 20000 }, async () => {
+    await renderAtScenesStep('story-c12');
 
-    // flushPendingDraftWrites() is a no-op here (skipNextAutoPersistRef means
-    // the first auto-persist effect is skipped on mount; no debounce is armed).
-    // The only upsert from clicking "Aprobar escenas" is the authoritative one.
-    // Push ONE deferred: the authoritative blocker.
-    const authoritativeBlocker = makeDeferred<{ error: null }>();
-    upsertDeferreds.push(authoritativeBlocker);
+    // 1. Block the authoritative upsert.
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
 
-    // 3. Click Approve Scenes → flush is no-op → auth upsert starts (blocked)
     const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
     await act(async () => {
       fireEvent.click(approveBtn);
-      for (let i = 0; i < 8; i++) await Promise.resolve();
+      await yields(8);
     });
 
-    // Authoritative in-flight. No transition yet.
-    expect(screen.queryByRole('button', { name: /Finalizar cuento/i })).toBeNull();
-
-    // 4. Switch to fake timers to control debounce timing
+    // 2. Arm a debounce DURING the envelope (fake timers for determinism).
     vi.useFakeTimers({ shouldAdvanceTime: false });
-
-    // Arm a debounce while authoritative is in-flight.
-    // Use synchronous act() so React commits expansion + state change immediately.
-    act(() => {
-      const verPromptBtns = screen.queryAllByRole('button', { name: /Ver prompt/i });
-      if (verPromptBtns.length > 0) {
-        // toggleScenePrompt → initialises editingSceneText / editingScenePrompt
-        fireEvent.click(verPromptBtns[0]);
-      }
-    });
-    act(() => {
-      const textareas = screen.queryAllByRole('textbox');
-      if (textareas.length > 0) {
-        // setEditingSceneText → auto-persist effect →
-        // saveDraft({ currentStep: 'scenes', editingSceneText: {...}, ... })
-        // → setTimeout(callback, 2000) — now mocked by fake timers
-        fireEvent.change(textareas[0], { target: { value: 'DEBOUNCE DURING APPROVAL' } });
-      }
-    });
-
-    // 5. Advance fake timers past 2000ms — debounce fires
-    //    performDraftWrite({ currentStep: 'scenes', ... }) is called
-    //    This write is enqueued AFTER the blocked authoritative write
+    armSceneTextDebounceSync('LATE EDIT');
     await act(async () => {
-      vi.advanceTimersByTime(2100);
-      // Yield for microtasks from timer callback
-      for (let i = 0; i < 4; i++) await Promise.resolve();
+      vi.advanceTimersByTime(2100); // late write queues behind the blocked auth
+      await yields(4);
     });
-
-    // 6. Release the authoritative upsert → transition to cover
     vi.useRealTimers();
+
+    // 3. Release the authoritative upsert.
     await act(async () => {
-      authoritativeBlocker.resolve({ error: null });
-      for (let i = 0; i < 15; i++) await Promise.resolve();
+      authBlocker.resolve({ error: null });
+      await yields(20);
     });
 
-    // 7. Wait for the debounce write to execute (it's queued after authoritative)
+    // FIXED CONTRACT: the mid-envelope edit made the approval STALE — there is
+    // NO committed transition (still at scenes) and the late debounce write
+    // ran (a 'scenes'-step write after the stale 'cover' I/O; its identity
+    // stayed valid because no authoritative bump occurred).
+    expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).not.toBeNull();
+    await waitFor(
+      () => {
+        const staleAuthIdx = upsertCalls.findIndex((c) => stepOf(c) === 'cover');
+        const lateIdx = upsertCalls.findIndex((c, i) => i > staleAuthIdx && stepOf(c) === 'scenes');
+        expect(lateIdx).toBeGreaterThan(staleAuthIdx);
+      },
+      { timeout: 3000 }
+    );
+
+    // 4. Approve again (everything default-succeeds; nothing pending anymore).
+    const beforeSecond = upsertCalls.length;
     await act(async () => {
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      fireEvent.click(screen.getByRole('button', { name: /Aprobar escenas/i }));
+      await yields(25);
     });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
+      { timeout: 5000 }
+    );
 
-    // Find the authoritative upsert (cover).
-    // Hard assertion: if authIdx < 0, the setup is broken (auth upsert never fired).
-    const authIdx = upsertCalls.findIndex((c) => isAuthoritativeScenesToCover(c.payload));
-    expect(authIdx).toBeGreaterThanOrEqual(0);
-
-    // BASE-RED assertion: after authoritative commit (cover),
-    // no upsert should have current_step='scenes'.
-    // On base production, the late debounce write executes with 'scenes'.
-    const postAuthUpserts = upsertCalls.slice(authIdx + 1);
-    const staleSceneUpserts = postAuthUpserts.filter((c) => {
-      const { currentStep } = parseUpsertRow(c.payload);
-      return currentStep === 'scenes';
-    });
-
-    expect(
-      staleSceneUpserts,
-      `Expected no stale 'scenes' upsert after committing 'cover', ` +
-      `but found ${staleSceneUpserts.length}. ` +
-      `This proves the late-debounce-overwrites-committed-step defect.`
-    ).toHaveLength(0);
+    // The committed transition exists…
+    const commitIdx = upsertCalls.findIndex(
+      (c, i) => i >= beforeSecond && isAuthoritativeScenesToCover(c.payload)
+    );
+    expect(commitIdx).toBeGreaterThanOrEqual(0);
+    // …its snapshot carries the (previously persisted) newest edit…
+    expect(parseUpsertRow(upsertCalls[commitIdx].payload).editingSceneText?.[1]).toBe('LATE EDIT');
+    // …and NOTHING after the committed transition writes the stale step back.
+    const postCommitStaleWrites = upsertCalls
+      .slice(commitIdx + 1)
+      .filter((c) => parseUpsertRow(c.payload).currentStep === 'scenes');
+    expect(postCommitStaleWrites).toHaveLength(0);
   });
 });
