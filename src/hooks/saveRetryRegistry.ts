@@ -91,6 +91,12 @@ export interface SaveRetryRegistry {
   ): ReadonlyArray<SaveRetryEntry>;
   /** Tamaño total del registro (fuente de `saveFailedCount`). */
   size(): number;
+  /**
+   * Tamaño restringido al par `(storyId, epoch)`. Fuente del `saveFailedCount`
+   * scopeado a la identidad viva: una falla en Story A no se cuenta contra
+   * Story B.
+   */
+  sizeForIdentity(storyId: string | null, epoch: number): number;
   /** Presencia por identidad exacta. */
   has(identity: SaveRetryIdentity): boolean;
   /** Suscripción a cambios (register/clear/invalidate). */
@@ -192,6 +198,15 @@ export function createSaveRetryRegistry(): SaveRetryRegistry {
     },
     size() {
       return entries.size;
+    },
+    sizeForIdentity(storyId, epoch) {
+      let count = 0;
+      for (const entry of entries.values()) {
+        if (entry.identity.storyId === storyId && entry.identity.epoch === epoch) {
+          count++;
+        }
+      }
+      return count;
     },
     has(identity) {
       return entries.has(makeKey(identity));

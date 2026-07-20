@@ -41,6 +41,7 @@
  */
 
 import { retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
+import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
 import {
   createSaveRetryRegistry,
   type SaveRetryEntry,
@@ -223,8 +224,15 @@ export interface StoryImagePipelineRunner {
   markResolved: (id: string) => void;
   /** Token actualmente vigente (o null si no hay corrida activa). Diagnóstico/tests. */
   getRunToken: () => RunToken | null;
-  /** Conteo derivado del registry — número de saves fallidos pendientes. */
-  saveFailedCount: () => number;
+  /**
+   * Conteo derivado del registry — número de saves fallidos pendientes.
+   *
+   * Sin argumento: total absoluto (todas las stories/epochs). Con `identity`:
+   * scopeado al par `(storyId, epoch)` — una falla en Story A no incrementa
+   * el conteo mientras la UI está en Story B. La versión scopeada es la que
+   * el hook expone al UI (via `activeIdentity`).
+   */
+  saveFailedCount: (identity?: RunIdentity) => number;
   /** Acceso de sólo lectura al registry (para diagnósticos y tests). */
   getSaveRetryRegistry: () => SaveRetryRegistry;
   /**
@@ -495,12 +503,15 @@ export function createStoryImagePipelineRunner(
     } catch (err) {
       // Falla: registrar entrada save-only cerrada sobre el task, para que
       // retrySaves / retryItem la reintenten sin invocar provider ni apply.
+      // Provenance (A3a/S4): hash determinista del snapshot retenido +
+      // sourceRevision = generatedRevision. Nunca null: los consumidores
+      // (draft hook, validaciones pre-swap) requieren un hash comparable.
       const entry: SaveRetryEntry = {
         identity: appliedIdentity,
         snapshot: retained,
         provenance: {
           sourceRevision: appliedIdentity.generatedRevision,
-          contentHash: null,
+          contentHash: hashSnapshot(retained),
         },
         persist: task.persist as SaveRetryEntry['persist'],
       };
@@ -518,7 +529,7 @@ export function createStoryImagePipelineRunner(
   /**
    * Ejecuta un retry save-only para una entrada específica del registry.
    *
-   * Contrato (A3/S3):
+   * Contrato (A3/S3 + A3a/S4):
    *  - Nunca invoca provider ni apply — sólo `entry.persist`.
    *  - Revalida contra el registry INMEDIATAMENTE antes de llamar persist:
    *    si la entrada ya no está (fue invalidada por epoch bump / story swap
@@ -526,9 +537,20 @@ export function createStoryImagePipelineRunner(
    *    estaba.
    *  - Además revalida contra la identidad viva provista (`liveStoryId` /
    *    `liveEpoch`): si el snapshot es de otra story o epoch, no persiste.
-   *  - Éxito → clearExact de esta identidad, ítem → `done`.
+   *  - Provenance guard (A3a/S4): antes de persistir valida que el hash del
+   *    snapshot retenido siga coincidiendo con la provenance registrada.
+   *  - **Post-persist revalidation (A3a)**: cuando persist RESUELVE, antes
+   *    de tocar el registry o marcar `done`, revalida que el mismo objeto
+   *    de entrada siga siendo la última (`getExact === entry`), que la
+   *    identidad viva siga apuntando al mismo (storyId, epoch), y que no
+   *    haya llegado una revisión N+1 durante el await. Si algo cambió, NO
+   *    se limpia la entrada nueva ni se marca `done` — el estado del ítem
+   *    queda al mando de la revisión más nueva.
+   *  - Éxito válido → clearExact de esta identidad, ítem → `done`.
    *  - Rechazo → entrada permanece, ítem → `save-failed` (nunca `done`
    *    mientras esté sin salvar).
+   *  - **Saving counter**: `beginSaving()` y exactamente UN `endSaving()`
+   *    por invocación — el `finally` único cubre todos los caminos.
    */
   const executeSaveRetry = async (
     entry: SaveRetryEntry,
@@ -552,28 +574,65 @@ export function createStoryImagePipelineRunner(
       return;
     }
 
+    // Provenance guard: el snapshot está deep-frozen — cualquier divergencia
+    // frente a la provenance registrada indica corrupción, y no debemos
+    // persistir un snapshot cuya provenance no coincida.
+    if (entry.provenance.contentHash !== null) {
+      const currentHash = hashSnapshot(entry.snapshot);
+      if (currentHash !== entry.provenance.contentHash) {
+        setStatus(itemId, 'save-failed', 'Snapshot provenance mismatch');
+        return;
+      }
+    }
+
     setStatus(itemId, 'persisting');
     beginSaving();
     try {
       // Revalidación final justo antes de la llamada — cubre el caso en el
       // que una invalidación ocurre entre la revalidación arriba y el await.
       if (!registry.has(entry.identity)) {
-        endSaving();
         return;
       }
       await entry.persist(entry.snapshot, entry.identity);
+      // Post-persist revalidation (A3a): un N+1 (o epoch/story swap) podría
+      // haber llegado durante el await. Si nuestra entrada ya no es la
+      // vigente, NO limpiar (no hay nada nuestro que limpiar) y NO marcar
+      // `done` — la revisión nueva es la fuente de verdad.
+      const stillExact = registry.getExact(entry.identity);
+      if (stillExact !== entry) return;
+      if (entry.identity.storyId !== liveStoryId || entry.identity.epoch !== liveEpoch) {
+        return;
+      }
+      const latestAfter = registry.getLatestForItem(
+        entry.identity.storyId,
+        entry.identity.epoch,
+        itemId,
+      );
+      if (
+        latestAfter &&
+        latestAfter.identity.generatedRevision > entry.identity.generatedRevision
+      ) {
+        return;
+      }
       // Sólo limpia esta entrada exacta; entradas de otros items no se tocan.
       registry.clearExact(entry.identity);
       setStatus(itemId, 'done');
     } catch (err) {
       // Entrada permanece — el ítem no puede llegar a `done` mientras siga
-      // sin persistir.
-      setStatus(
-        itemId,
-        'save-failed',
-        err instanceof Error ? err.message : 'Error guardando imagen'
-      );
+      // sin persistir. Sólo publicamos `save-failed` si nuestra entrada
+      // sigue viva: si un N+1 la reemplazó durante el await, dejamos que
+      // la revisión nueva mande el estado.
+      const stillExact = registry.getExact(entry.identity);
+      if (stillExact === entry) {
+        setStatus(
+          itemId,
+          'save-failed',
+          err instanceof Error ? err.message : 'Error guardando imagen'
+        );
+      }
     } finally {
+      // Un único decremento — el `beginSaving()` de arriba está pareado
+      // aquí para todos los caminos (early return, éxito, error).
       endSaving();
     }
   };
@@ -767,8 +826,10 @@ export function createStoryImagePipelineRunner(
 
   const isSaving: StoryImagePipelineRunner['isSaving'] = () => savingCount > 0;
 
-  const saveFailedCount: StoryImagePipelineRunner['saveFailedCount'] = () =>
-    registry.size();
+  const saveFailedCount: StoryImagePipelineRunner['saveFailedCount'] = (identity) => {
+    if (identity) return registry.sizeForIdentity(identity.storyId, identity.epoch);
+    return registry.size();
+  };
 
   const getSaveRetryRegistry: StoryImagePipelineRunner['getSaveRetryRegistry'] = () =>
     registry;

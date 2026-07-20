@@ -111,7 +111,23 @@ export interface UseStoryImagePipelineReturn {
 // Identidad "neutra" usada por los caminos legados (sin epoch/storyId externos).
 const LEGACY_IDENTITY: RunIdentity = { storyId: null, epoch: 0 };
 
-export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
+/**
+ * Opciones del hook. `activeIdentity` es la identidad viva `(storyId, epoch)`
+ * del draft que actualmente muestra el UI — se usa para SCOPEAR el conteo de
+ * `saveFailedCount` y la señal que gatea aprobación: una falla en Story A
+ * NO afecta el conteo/gate visible en Story B.
+ *
+ * Cuando el caller no provee `activeIdentity` (paths legacy sin storyId),
+ * `saveFailedCount` cae al conteo global — comportamiento previo.
+ */
+export interface UseStoryImagePipelineOptions {
+  activeIdentity?: RunIdentity | null;
+}
+
+export function useStoryImagePipeline(
+  options: UseStoryImagePipelineOptions = {},
+): UseStoryImagePipelineReturn {
+  const { activeIdentity } = options;
   // El runner vive durante toda la vida del hook. No se re-crea en re-renders.
   const runnerRef = useRef<StoryImagePipelineRunner | null>(null);
   if (runnerRef.current === null) {
@@ -143,6 +159,10 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
     const nextItems = runner.getItems();
     const nextIsRunning = runner.isBusy();
     const nextIsSaving = runner.isSaving();
+    // Snapshot store expone SIEMPRE el total global del registry: es la
+    // señal reactiva que gatilla notificaciones. El count SCOPEADO por
+    // activeIdentity se deriva en el consumidor via useMemo — así el
+    // memo se recalcula al cambiar activeIdentity O al cambiar el store.
     const nextSaveFailedCount = runner.saveFailedCount();
     const prev = snapshotRef.current;
     const itemsEqual =
@@ -176,7 +196,20 @@ export function useStoryImagePipeline(): UseStoryImagePipelineReturn {
   }, [runner]);
 
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const { items, isRunning, isSaving, saveFailedCount } = snapshot;
+  const { items, isRunning, isSaving, saveFailedCount: globalSaveFailedCount } = snapshot;
+
+  // saveFailedCount SCOPEADO al `activeIdentity` — el UI muestra sólo el
+  // count del par (storyId, epoch) actualmente visible. Si no hay identidad
+  // activa, cae al total global (comportamiento previo).
+  const saveFailedCount = useMemo(() => {
+    if (!activeIdentity) return globalSaveFailedCount;
+    // Recomputar contra el runner cuando cambia activeIdentity o el store.
+    return runner.saveFailedCount(activeIdentity);
+  }, [
+    activeIdentity,
+    globalSaveFailedCount,
+    runner,
+  ]);
 
   const runAll = useCallback(
     async (tasks: PipelineTask[]): Promise<boolean> => {
