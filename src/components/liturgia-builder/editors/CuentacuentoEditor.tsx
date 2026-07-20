@@ -61,7 +61,7 @@ import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull, type DraftPatch } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
-import type { PipelineItemTask, AppliedIdentity, RunIdentity, ApplyOutcome } from '@/hooks/storyImagePipelineRunner';
+import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
 import { APPLY_STALE, APPLY_EPHEMERAL } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -90,7 +90,7 @@ interface CuentacuentoEditorProps {
   onNavigateToFullEditor?: () => void;
 }
 
-import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
+import { buildSnapshotTask } from '@/lib/cuentacuentos/pipelineTaskAdapter';
 
 // Lugares predefinidos para Chile
 const LOCATION_PRESETS = [
@@ -1664,10 +1664,8 @@ Instrucciones críticas:
     const effectivePrompt = customPrompt ?? character.visualDescription;
     if (!effectivePrompt.trim()) throw new Error('El personaje no tiene descripción visual');
     const capturedStyle = story.illustrationStyle;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: `sheet-${character.id}`,
       kind: 'sheet',
       label: character.name,
@@ -1691,14 +1689,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        // Identidad viva del hook: si storyId O epoch cambiaron durante la
-        // generación, descartar explícitamente (APPLY_STALE) — el runner deja
-        // el ítem en `pending` sin mergear ni persistir.
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const base = characterSheetOptionsRef.current;
         const existingOptions = append ? (base[character.id] || []) : [];
         const nextOptions = { ...base, [character.id]: [...existingOptions, ...result.images] };
@@ -1713,22 +1704,15 @@ Instrucciones críticas:
           setSelectedCharacterSheets(nextSelection);
         }
 
-        const patch: DraftPatch = {
+        return {
           currentStep: currentStepRef.current,
           characterSheetOptions: nextOptions,
           selectedCharacterSheets: nextSelection,
         };
-        capturedHash = hashSnapshot(patch);
-        return patch;
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar character sheet para un personaje (botón manual)
@@ -1817,7 +1801,7 @@ Instrucciones críticas:
       .slice(0, 2);
     const capturedStyle = story.illustrationStyle;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: `prop-${prop.id}`,
       kind: 'prop',
       label: prop.name,
@@ -1842,13 +1826,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<never> => {
-        // Identidad viva: si storyId o epoch cambiaron, descartar (APPLY_STALE)
-        // — el runner deja el ítem en `pending`, sin mergear candidatas huérfanas.
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const base = propSheetOptionsRef.current;
         const merged = { ...base, [prop.id]: result.images };
         propSheetOptionsRef.current = merged;
@@ -1862,15 +1840,14 @@ Instrucciones críticas:
           return next;
         });
 
-        // Prop sheets son efímeras por diseño — apply exitoso, sin persistir.
-        // El runner marca `done` sin invocar persist.
+        // Prop sheets son efímeras por diseño: el runner marca `done` sin
+        // invocar persist ni enqueueGeneratedSnapshot.
         return APPLY_EPHEMERAL;
       },
-      persist: async () => {
-        // No-op: prop sheets no se persisten (ephemeral by design).
-      },
-    };
-  }, [story, getDraftIdentity]);
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
     if (!story) return;
@@ -1992,10 +1969,8 @@ Instrucciones críticas:
     const propsForScene = getPropsForScene(scene);
     const capturedStyle = story.illustrationStyle;
     const capturedLocation = story.location;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: `scene-${scene.number}`,
       kind: 'scene',
       label: `Escena ${scene.number}`,
@@ -2020,11 +1995,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const base = sceneImageOptionsRef.current;
         const existingSceneOptions = append ? (base[scene.number] || []) : [];
         const nextOptions = { ...base, [scene.number]: [...existingSceneOptions, ...result.images] };
@@ -2039,23 +2010,16 @@ Instrucciones críticas:
           setSelectedSceneImages(nextSelection);
         }
 
-        const patch: DraftPatch = {
+        return {
           currentStep: currentStepRef.current,
           sceneImageOptions: nextOptions,
           selectedSceneImages: nextSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
         };
-        capturedHash = hashSnapshot(patch);
-        return patch;
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen para una escena (botón manual)
@@ -2179,10 +2143,8 @@ Instrucciones críticas:
     const capturedLocation = story.location;
     const capturedCoverRef = coverReferenceImage;
     const capturedCoverPrompt = customPrompt || editingCoverPrompt || undefined;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'cover',
       kind: 'cover',
       label: 'Portada',
@@ -2210,25 +2172,14 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const nextOptions = result.images;
         setCoverOptions(nextOptions);
-        const patch: DraftPatch = { coverOptions: nextOptions };
-        capturedHash = hashSnapshot(patch);
-        return patch;
+        return { coverOptions: nextOptions };
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar portada
@@ -2301,10 +2252,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedEndRef = endReferenceImage || undefined;
     const capturedEndPrompt = customPrompt || editingEndPrompt || undefined;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'end',
       kind: 'end',
       label: 'Imagen final',
@@ -2326,25 +2275,14 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const nextOptions = result.images;
         setEndOptions(nextOptions);
-        const patch: DraftPatch = { endOptions: nextOptions };
-        capturedHash = hashSnapshot(patch);
-        return patch;
+        return { endOptions: nextOptions };
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen final
@@ -2479,10 +2417,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedName = character.name;
     const capturedDesc = character.description;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: `sheet-${character.id}`,
       kind: 'sheet',
       label: character.name,
@@ -2508,11 +2444,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const refined = result.images[0];
         const existing = characterSheetOptionsRef.current[character.id] || [];
         const currentSelected = selectedCharacterSheetsRef.current[character.id];
@@ -2533,22 +2465,15 @@ Instrucciones críticas:
         setCharacterSheetOptions(newOptions);
         setSelectedCharacterSheets(newSelection);
 
-        const patch: DraftPatch = {
+        return {
           currentStep: currentStepRef.current,
           characterSheetOptions: newOptions,
           selectedCharacterSheets: newSelection,
         };
-        capturedHash = hashSnapshot(patch);
-        return patch;
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleRefineCharacterSheet = useCallback(
@@ -2618,10 +2543,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedLocation = story.location;
     const capturedRefMode = sceneReferenceModeRef.current[scene.number] ?? 'style';
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: `scene-${scene.number}`,
       kind: 'scene',
       label: `Escena ${scene.number}`,
@@ -2648,11 +2571,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const refined = result.images[0];
         const existing = sceneImageOptionsRef.current[scene.number] || [];
         const currentSelected = selectedSceneImagesRef.current[scene.number];
@@ -2671,23 +2590,16 @@ Instrucciones críticas:
         setSceneImageOptions(newSceneOptions);
         setSelectedSceneImages(newSelection);
 
-        const patch: DraftPatch = {
+        return {
           currentStep: currentStepRef.current,
           sceneImageOptions: newSceneOptions,
           selectedSceneImages: newSelection,
           sceneReferenceModes: sceneReferenceModeRef.current,
         };
-        capturedHash = hashSnapshot(patch);
-        return patch;
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [
     story,
     sceneExcludedCharacters,
@@ -2759,10 +2671,8 @@ Instrucciones críticas:
     const capturedLocation = story.location;
     const capturedCoverRef = coverReferenceImage || undefined;
     const capturedCoverPrompt = editingCoverPrompt || undefined;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'cover',
       kind: 'cover',
       label: 'Portada',
@@ -2792,11 +2702,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const refined = result.images[0];
         const prev = coverOptionsRef.current;
         const selected = selectedCoverRef.current;
@@ -2810,18 +2716,11 @@ Instrucciones críticas:
         coverOptionsRef.current = nextOptions;
         setCoverOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        const patch: DraftPatch = { coverOptions: nextOptions };
-        capturedHash = hashSnapshot(patch);
-        return patch;
+        return { coverOptions: nextOptions };
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [
     story,
     coverExcludedCharacters,
@@ -2882,10 +2781,8 @@ Instrucciones críticas:
     const capturedStyle = story.illustrationStyle;
     const capturedEndRef = endReferenceImage || undefined;
     const capturedEndPrompt = editingEndPrompt || undefined;
-    // Hash capturado en apply y usado en persist (A3/S4).
-    let capturedHash: string | null = null;
 
-    return {
+    return buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'end',
       kind: 'end',
       label: 'Imagen final',
@@ -2910,11 +2807,7 @@ Instrucciones críticas:
         }
         return data as ProviderResult;
       },
-      apply: (result, appliedIdentity: AppliedIdentity): ApplyOutcome<DraftPatch> => {
-        const live = getDraftIdentity();
-        if (appliedIdentity.storyId !== live.storyId || appliedIdentity.epoch !== live.epoch) {
-          return APPLY_STALE;
-        }
+      computePatch: (result) => {
         const refined = result.images[0];
         const prev = endOptionsRef.current;
         const selected = selectedEndRef.current;
@@ -2928,18 +2821,11 @@ Instrucciones críticas:
         endOptionsRef.current = nextOptions;
         setEndOptions(nextOptions);
         // Selection index intentionally preserved; no sibling derivation triggered.
-        const patch: DraftPatch = { endOptions: nextOptions };
-        capturedHash = hashSnapshot(patch);
-        return patch;
+        return { endOptions: nextOptions };
       },
-      persist: async (snapshot, appliedIdentity: AppliedIdentity) => {
-        await enqueueGeneratedSnapshot({
-          patch: snapshot as DraftPatch,
-          identity: appliedIdentity,
-          provenance: { sourceRevision: appliedIdentity.generatedRevision, contentHash: capturedHash! },
-        });
-      },
-    };
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
   }, [
     story,
     endReferenceImage,
