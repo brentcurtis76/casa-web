@@ -55,6 +55,19 @@ export interface UseStoryImagePipelineReturn {
   isSaving: boolean;
   /** Lectura síncrona del estado de ejecución (isRunning puede ir un render atrás). */
   isBusy: () => boolean;
+  /**
+   * Lectura síncrona de "hay al menos un persist en vuelo". Igual que `isSaving`
+   * pero sin depender del render — útil DESPUÉS de un drain para re-chequear el
+   * gate contra el estado real del runner en el mismo microtask.
+   */
+  isBusySaving: () => boolean;
+  /**
+   * Lectura síncrona del conteo de save-failed scopeado a `identity`. Igual que
+   * `saveFailedCount` (memo scopeado) pero sin depender del render. Diseñado
+   * para el envelope de aprobación: tras `flushPendingDraftWrites`, el estado
+   * reactivo aún no propagó; este getter va directo al registry.
+   */
+  getSaveFailedCount: (identity: RunIdentity) => number;
   /** Conteos derivados de la corrida actual. */
   doneCount: number;
   errorCount: number;
@@ -257,6 +270,11 @@ export function useStoryImagePipeline(
 
   const cancel = useCallback(() => runner.cancel(), [runner]);
   const isBusy = useCallback(() => runner.isBusy(), [runner]);
+  const isBusySaving = useCallback(() => runner.isSaving(), [runner]);
+  const getSaveFailedCount = useCallback(
+    (identity: RunIdentity) => runner.saveFailedCount(identity),
+    [runner],
+  );
   const statusOf = useCallback((id: string) => runner.statusOf(id), [runner]);
   const errorOf = useCallback(
     (id: string) => runner.getItems().find((v) => v.id === id)?.error,

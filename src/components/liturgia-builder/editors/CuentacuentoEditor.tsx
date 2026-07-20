@@ -588,10 +588,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     acceptRecovery,
     declineRecovery,
     enqueueDraftWrite,
+    flushPendingDraftWrites,
     bumpDraftEpoch,
     setActiveDraftStoryId,
     enqueueGeneratedSnapshot,
     getDraftIdentity,
+    activeIdentity,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
   // Estado del diálogo de confirmación de eliminación
@@ -638,6 +640,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // Id del cuento vigente: las tareas en vuelo lo comparan antes de aplicar
   // resultados, para que un reset/regeneración no reciba imágenes huérfanas.
   const storyIdRef = useRef<string | null>(null);
+  // A3a/S6 — recuerda el storyId previo para poder invalidar el registry de
+  // save-retries del ciclo abandonado en cada reemplazo (nuevo id o null).
+  // Consumido por el effect que corre DESPUÉS de declarar `pipeline`.
+  const prevStoryIdRef = useRef<string | null>(null);
   useEffect(() => {
     storyIdRef.current = story?.id ?? null;
     // También registrar el story activo en el hook para que enqueueDraftWrite
@@ -700,11 +706,28 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     endReferenceImage,
   ]);
 
-  const pipeline = useStoryImagePipeline();
+  // A3a/S6 — pasamos `activeIdentity` para que `pipeline.saveFailedCount`
+  // sea el conteo scopeado al (storyId, epoch) actual. Fallas de Story A no
+  // deben bloquear el gate mientras el UI está en Story B.
+  const pipeline = useStoryImagePipeline({ activeIdentity });
   // Método estable del pipeline (el objeto cambia de identidad por render).
   // `markResolved` no se re-exporta: apply YA no publica estado terminal — ese
   // rol es exclusivo del runner (ver storyImagePipelineRunner.executePhase).
-  const { cancel: cancelPipeline } = pipeline;
+  const { cancel: cancelPipeline, invalidateSaveRetries: pipelineInvalidateSaveRetries } = pipeline;
+
+  // A3a/S6 — Story replacement detector. Corre DESPUÉS de que `pipeline` está
+  // declarado (TDZ) y sincronizado con el ciclo anterior de `story`. Cuando el
+  // storyId cambia (nuevo id O null), purga las entradas save-failed del ciclo
+  // abandonado — pertenecen a un lifecycle ya cerrado y no deben bloquear el
+  // gate del próximo cuento.
+  useEffect(() => {
+    const nextStoryId = story?.id ?? null;
+    const prevStoryId = prevStoryIdRef.current;
+    if (prevStoryId !== null && prevStoryId !== nextStoryId) {
+      pipelineInvalidateSaveRetries({ storyId: prevStoryId });
+    }
+    prevStoryIdRef.current = nextStoryId;
+  }, [story, pipelineInvalidateSaveRetries]);
 
   // Derivadores del estado del runner. Un ítem está "ocupado" mientras el
   // provider está corriendo o mientras el snapshot se persiste; el UI no
@@ -1143,17 +1166,21 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   }, [story?.characters]);
 
   // Manejar aceptación de recuperación
+  // A3a/S6: recovery = reemplazo de ciclo de vida — purgar registry del
+  // ciclo abandonado ANTES de mutar identidad para no arrastrar entradas.
   const handleAcceptRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
     const recoveredDraft = acceptRecovery();
     if (recoveredDraft) {
       restoreFromDraft(recoveredDraft);
     }
-  }, [acceptRecovery, restoreFromDraft]);
+  }, [acceptRecovery, restoreFromDraft, pipeline, activeIdentity]);
 
-  // Manejar rechazo de recuperación
+  // Manejar rechazo de recuperación (equivalente lifecycle a delete).
   const handleDeclineRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
     declineRecovery();
-  }, [declineRecovery]);
+  }, [declineRecovery, pipeline, activeIdentity]);
 
   const selectedLocation = location === 'custom' ? customLocation : location;
 
@@ -1588,6 +1615,10 @@ Instrucciones críticas:
     // auto-descartan al ver que storyIdRef ya no coincide. El bump de epoch
     // asegura que además cualquier guardado encolado ya en vuelo hacia el
     // hook persista pero no commitee al estado (drop del stale commit).
+    // A3a/S6: invalidar el registry de save-retries ATÓMICAMENTE con la
+    // transición de lifecycle — entradas save-failed del ciclo actual no
+    // deben bloquear la próxima aprobación (Story A → Story B isolation).
+    pipeline.invalidateSaveRetries(activeIdentity);
     cancelPipeline();
     storyIdRef.current = null;
     bumpDraftEpoch();
@@ -1638,7 +1669,7 @@ Instrucciones críticas:
       setIsDeleting(false);
       setShowDeleteDialog(false);
     }
-  }, [deleteStoryImages, onStoryDeleted, cancelPipeline, bumpDraftEpoch]);
+  }, [deleteStoryImages, onStoryDeleted, cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity]);
 
   // ===== Builders de tareas del pipeline A2 =====
   // Cada builder devuelve un PipelineItemTask con tres fases:
@@ -3270,10 +3301,129 @@ Instrucciones críticas:
   // usuario (Reintentar guardado) — este handler es la última defensa.
   const gateWarning = 'Hay imágenes sin guardar; reintenta antes de aprobar';
 
+  // A3a/S6 — Snapshot autoritativo. Construye UN patch que refleja el estado
+  // COMPLETO del editor en el momento de la transición (nextStory + nextStep +
+  // todo lo listado en el spec: edited prompts, referencias, selecciones,
+  // include/exclude, title, scene text, uploads/options, landmarkVisible).
+  // Los overlays y el visualDescription viven dentro de `nextStory`; los props
+  // referenceImages vienen de `nextStory.props`. `sceneReferenceModes` se lee
+  // desde ref (siempre live).
+  //
+  // Este patch se pasa a `enqueueDraftWrite` — es la única escritura que
+  // dispara la transición. El hook computa el EditorStateV1 canónico a partir
+  // de los campos del patch, e incrementa `recoveryRevision`.
+  const buildAuthoritativeDraftPatch = useCallback(
+    (nextStory: Story, nextStep: CreationStep): DraftPatch => {
+      const landmarkVisible: Record<number, boolean> = {};
+      for (const s of nextStory.scenes ?? []) {
+        if (typeof s.landmarkVisible === 'boolean') landmarkVisible[s.number] = s.landmarkVisible;
+      }
+      const propReferenceImages: Record<string, string[]> = {};
+      for (const p of nextStory.props ?? []) {
+        propReferenceImages[p.id] = p.referenceImages ?? [];
+      }
+      return {
+        currentStep: nextStep,
+        config: {
+          location,
+          customLocation,
+          characters,
+          style,
+          illustrationStyle,
+          additionalNotes,
+        },
+        story: nextStory,
+        // Uploads / options — every derived asset the editor holds live.
+        characterSheetOptions,
+        sceneImageOptions,
+        coverOptions,
+        endOptions,
+        propReferenceImages,
+        // Selections.
+        selectedCharacterSheets,
+        selectedSceneImages,
+        selectedCover,
+        selectedEnd,
+        sceneReferenceModes: sceneReferenceModeRef.current,
+        // Editor buffers — read from live state (not the debounced snapshot).
+        editingScenePrompt,
+        editingCharacterPrompt,
+        editingCoverPrompt,
+        editingEndPrompt,
+        editingSceneText,
+        editingTitle,
+        // Include / exclude — scoped by kind.
+        sceneIncludedCharacters,
+        sceneExcludedCharacters,
+        coverIncludedCharacters,
+        coverExcludedCharacters,
+        endIncludedCharacters,
+        endExcludedCharacters,
+        // Reference images (base64 or path).
+        sceneReferenceImages,
+        coverReferenceImage,
+        endReferenceImage,
+        // Canonical EditorStateV1 slot for round-trip.
+        landmarkVisible,
+      };
+    },
+    [
+      location, customLocation, characters, style, illustrationStyle, additionalNotes,
+      characterSheetOptions, sceneImageOptions, coverOptions, endOptions,
+      selectedCharacterSheets, selectedSceneImages, selectedCover, selectedEnd,
+      editingScenePrompt, editingCharacterPrompt, editingCoverPrompt, editingEndPrompt,
+      editingSceneText, editingTitle,
+      sceneIncludedCharacters, sceneExcludedCharacters,
+      coverIncludedCharacters, coverExcludedCharacters,
+      endIncludedCharacters, endExcludedCharacters,
+      sceneReferenceImages, coverReferenceImage, endReferenceImage,
+    ],
+  );
+
+  // A3a/S6 — Persist-first envelope: flushea debounce pendiente, drena la
+  // cola, RE-lee el gate contra la identidad viva actual y sólo entonces
+  // arma+encola el patch autoritativo. Cualquier transición (setStory,
+  // setCurrentStep, callbacks, auto-kick, delete draft) DEBE ir en `onSuccess`.
+  const runAuthoritativeApproval = useCallback(
+    async (params: {
+      nextStory: Story;
+      nextStep: CreationStep;
+      staleMessage: string;
+      errorMessage: string;
+      onSuccess: () => void;
+    }) => {
+      const { nextStory, nextStep, staleMessage, errorMessage, onSuccess } = params;
+      // 1) Flush + drain — nunca descartar ediciones debounceadas.
+      await flushPendingDraftWrites();
+      // 2) Re-leer gate DESPUÉS del drain contra la identidad viva actual.
+      const liveIdentity = getDraftIdentity();
+      const liveSaveFailedCount = pipeline.getSaveFailedCount(liveIdentity);
+      const liveIsSaving = pipeline.isBusySaving();
+      const gateState = { isSaving: liveIsSaving, saveFailedCount: liveSaveFailedCount };
+      // 3) Armar UN patch autoritativo desde refs/state live.
+      const patch = buildAuthoritativeDraftPatch(nextStory, nextStep);
+      // 4) Transacción: onSuccess sólo tras commit vivo (no stale, no error).
+      await runApprovalTransaction({
+        state: gateState,
+        enqueue: () => enqueueDraftWrite(patch),
+        onSuccess,
+        onBlocked: () => setError(gateWarning),
+        onStale: () => setError(staleMessage),
+        onError: () => setError(errorMessage),
+      });
+    },
+    [
+      flushPendingDraftWrites,
+      getDraftIdentity,
+      pipeline,
+      buildAuthoritativeDraftPatch,
+      enqueueDraftWrite,
+    ],
+  );
+
   // Aprobar cuento y avanzar a personajes
   const handleApproveStory = useCallback(async () => {
     if (!story) return;
-    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
     const nextStory: Story = {
       ...story,
       metadata: {
@@ -3282,25 +3432,21 @@ Instrucciones críticas:
         updatedAt: new Date().toISOString(),
       },
     };
-    await runApprovalTransaction({
-      state: gateState,
-      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'characters' }),
+    await runAuthoritativeApproval({
+      nextStory,
+      nextStep: 'characters',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
       onSuccess: () => {
         setStory(nextStory);
         setCurrentStep('characters');
       },
-      onBlocked: () => setError(gateWarning),
-      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
-      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-  }, [story, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
+  }, [story, runAuthoritativeApproval]);
 
   // Aprobar personajes y avanzar a escenas
   const handleApproveCharacters = useCallback(async () => {
     if (!story) return;
-    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
-
-    // Actualizar story con character sheets seleccionados
     const updatedCharacters = story.characters.map(char => {
       const options = characterSheetOptions[char.id];
       const selectedIdx = selectedCharacterSheets[char.id];
@@ -3320,25 +3466,21 @@ Instrucciones críticas:
         updatedAt: new Date().toISOString(),
       },
     };
-    await runApprovalTransaction({
-      state: gateState,
-      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'scenes' }),
+    await runAuthoritativeApproval({
+      nextStory,
+      nextStep: 'scenes',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
       onSuccess: () => {
         setStory(nextStory);
         setCurrentStep('scenes');
       },
-      onBlocked: () => setError(gateWarning),
-      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
-      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-  }, [story, characterSheetOptions, selectedCharacterSheets, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, runAuthoritativeApproval]);
 
   // Aprobar escenas y avanzar a portada
   const handleApproveScenes = useCallback(async () => {
     if (!story) return;
-    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
-
-    // Actualizar story con imágenes de escenas seleccionadas
     const updatedScenes = story.scenes.map(scene => {
       const options = sceneImageOptions[scene.number];
       const selectedIdx = selectedSceneImages[scene.number];
@@ -3358,18 +3500,17 @@ Instrucciones críticas:
         updatedAt: new Date().toISOString(),
       },
     };
-    await runApprovalTransaction({
-      state: gateState,
-      enqueue: () => enqueueDraftWrite({ story: nextStory, currentStep: 'cover' }),
+    await runAuthoritativeApproval({
+      nextStory,
+      nextStep: 'cover',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
       onSuccess: () => {
         setStory(nextStory);
         setCurrentStep('cover');
       },
-      onBlocked: () => setError(gateWarning),
-      onStale: () => setError('El borrador cambió durante la aprobación; vuelve a intentar.'),
-      onError: () => setError('No se pudo guardar antes de aprobar. Reintenta.'),
     });
-  }, [story, sceneImageOptions, selectedSceneImages, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
+  }, [story, sceneImageOptions, selectedSceneImages, runAuthoritativeApproval]);
 
   // Finalizar cuento
   // A3/S6 — Igual que las aprobaciones: primero persiste, después transiciona.
@@ -3379,7 +3520,6 @@ Instrucciones críticas:
   // happens in saveLiturgy when the user clicks "Guardar Liturgia".
   const handleFinalize = useCallback(async () => {
     if (!story) return;
-    const gateState = { isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount };
 
     // Build final scenes with selected images (may be base64 or URL)
     const finalScenes = story.scenes.map(scene => {
@@ -3440,27 +3580,26 @@ Instrucciones críticas:
       },
     };
 
-    await runApprovalTransaction({
-      state: gateState,
-      enqueue: () => enqueueDraftWrite({ story: finalStory, currentStep: 'complete' }),
+    await runAuthoritativeApproval({
+      nextStory: finalStory,
+      nextStep: 'complete',
+      staleMessage: 'El borrador cambió durante la finalización; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de finalizar. Reintenta.',
       onSuccess: () => {
         setStory(finalStory);
-        // Generate final slides
         const slides = createPreviewSlideGroup(finalStory);
         setPreviewSlides(slides as unknown as SlideGroup);
-        // Pass story to parent - images will be uploaded when user clicks "Guardar Liturgia"
         onStoryCreated(finalStory, slides as unknown as SlideGroup);
         setConfirmed(true);
         setCurrentStep('complete');
-        // Delete the draft since story is finalized (only tras persistencia viva).
+        // A3a/S6: finalize also drops the draft — purga el registry del ciclo
+        // que acabamos de cerrar (mismo lifecycle-boundary que delete/replace).
+        pipeline.invalidateSaveRetries(activeIdentity);
         deleteDraft();
         console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
       },
-      onBlocked: () => setError(gateWarning),
-      onStale: () => setError('El borrador cambió durante la finalización; vuelve a intentar.'),
-      onError: () => setError('No se pudo guardar antes de finalizar. Reintenta.'),
     });
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft, pipeline.isSaving, pipeline.saveFailedCount, enqueueDraftWrite]);
+  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft, runAuthoritativeApproval, pipeline, activeIdentity]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
@@ -3468,6 +3607,10 @@ Instrucciones críticas:
     // ver que storyIdRef ya no coincide. El bump de epoch además hace que
     // cualquier guardado encolado en el hook persista pero no commitee al
     // estado (stale write drop) — nunca resucita estado del cuento viejo.
+    // A3a/S6: junto con el bump, purgar el registry del ciclo actual — sin
+    // esto, entradas save-failed sobrevivirían y bloquearían la aprobación
+    // del próximo cuento generado.
+    pipeline.invalidateSaveRetries(activeIdentity);
     cancelPipeline();
     storyIdRef.current = null;
     bumpDraftEpoch();
@@ -3494,7 +3637,7 @@ Instrucciones críticas:
     setStoryProps([]);
     setPropSheetOptions({});
     setSelectedPropSheets({});
-  }, [cancelPipeline, bumpDraftEpoch]);
+  }, [cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity]);
 
   // Editar cuento existente (sin borrar)
   const handleEditStory = useCallback(() => {
