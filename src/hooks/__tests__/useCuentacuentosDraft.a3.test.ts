@@ -1088,3 +1088,311 @@ describe('T-A3.5 landmarkVisible reload half', () => {
     expect(s2?.landmarkVisible).toBe(false);
   });
 });
+
+// -----------------------------------------------------------------------------
+// A3a/S2 items 5 & 11 — Legacy recovery: currentStep and selection fallbacks
+// must preserve dedicated DB columns whenever the embedded EditorStateV1 slot
+// is missing/invalid or contains defaulted/empty data.
+// -----------------------------------------------------------------------------
+describe('A3a/S2 legacy recovery fallbacks (currentStep + selections)', () => {
+  it('legacy row missing editorStateV1 entirely: current_step column wins', async () => {
+    loadedDraftRow = {
+      current_step: 'scenes',
+      config: baseSnapshot().config,
+      // Story without editorStateV1 block at all.
+      story: { ...baseSnapshot().story, id: 'legacy-1' } as unknown as Record<string, unknown>,
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.currentStep).toBe('scenes');
+  });
+
+  it('embedded editorStateV1 without a currentStep field: falls back to current_step column', async () => {
+    loadedDraftRow = {
+      current_step: 'characters',
+      config: baseSnapshot().config,
+      story: {
+        ...baseSnapshot().story,
+        id: 'legacy-2',
+        // Envelope valid but no currentStep on the snapshot itself.
+        editorStateV1: { version: 1, selections: {} },
+      } as unknown as Record<string, unknown>,
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.currentStep).toBe('characters');
+  });
+
+  it('embedded editorStateV1 with invalid currentStep value: falls back to current_step column', async () => {
+    loadedDraftRow = {
+      current_step: 'cover',
+      config: baseSnapshot().config,
+      story: {
+        ...baseSnapshot().story,
+        id: 'legacy-3',
+        editorStateV1: { version: 1, selections: {}, currentStep: 'garbage' },
+      } as unknown as Record<string, unknown>,
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.currentStep).toBe('cover');
+  });
+
+  it('character selection: empty `{}` on column falls back to embedded v1 selections', async () => {
+    const opts = ['https://cdn/a-0.png', 'https://cdn/a-1.png', 'https://cdn/a-2.png'];
+    loadedDraftRow = {
+      current_step: 'scenes',
+      config: baseSnapshot().config,
+      story: {
+        ...baseSnapshot().story,
+        id: 'legacy-4',
+        editorStateV1: {
+          version: 1,
+          selections: {
+            selectedCharacterSheets: { charA: 2 },
+            selectedSceneImages: {},
+            selectedCover: null,
+            selectedEnd: null,
+          },
+          currentStep: 'scenes',
+        },
+      } as unknown as Record<string, unknown>,
+      // Empty dedicated column — write partial before columns caught up.
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {
+        characterSheetPaths: { charA: ['u1/lit-1/characters/charA_0.png', 'u1/lit-1/characters/charA_1.png', 'u1/lit-1/characters/charA_2.png'] },
+        sceneImagePaths: {},
+        coverPaths: [],
+        endPaths: [],
+      },
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    // Silence: unused option array in mock (paths already cover public URL generation).
+    void opts;
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.selectedCharacterSheets).toEqual({ charA: 2 });
+  });
+
+  it('scene selection: empty `{}` on column falls back to embedded v1 selections', async () => {
+    loadedDraftRow = {
+      current_step: 'scenes',
+      config: baseSnapshot().config,
+      story: {
+        ...baseSnapshot().story,
+        id: 'legacy-5',
+        editorStateV1: {
+          version: 1,
+          selections: {
+            selectedCharacterSheets: {},
+            selectedSceneImages: { 1: 1 },
+            selectedCover: null,
+            selectedEnd: null,
+          },
+          currentStep: 'scenes',
+        },
+      } as unknown as Record<string, unknown>,
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {
+        characterSheetPaths: {},
+        sceneImagePaths: { 1: ['u1/lit-1/scenes/scene1_0.png', 'u1/lit-1/scenes/scene1_1.png'] },
+        coverPaths: [],
+        endPaths: [],
+      },
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.selectedSceneImages).toEqual({ 1: 1 });
+  });
+
+  it('meaningful dedicated columns override embedded v1 selections', async () => {
+    loadedDraftRow = {
+      current_step: 'scenes',
+      config: baseSnapshot().config,
+      story: {
+        ...baseSnapshot().story,
+        id: 'legacy-6',
+        editorStateV1: {
+          version: 1,
+          selections: {
+            selectedCharacterSheets: { charA: 0 },
+            selectedSceneImages: { 1: 0 },
+            selectedCover: null,
+            selectedEnd: null,
+          },
+          currentStep: 'scenes',
+        },
+      } as unknown as Record<string, unknown>,
+      // Columns hold newer, meaningful data — must win.
+      selected_character_sheets: { charA: 2 },
+      selected_scene_images: { 1: 1 },
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {
+        characterSheetPaths: { charA: ['u1/lit-1/characters/charA_0.png', 'u1/lit-1/characters/charA_1.png', 'u1/lit-1/characters/charA_2.png'] },
+        sceneImagePaths: { 1: ['u1/lit-1/scenes/scene1_0.png', 'u1/lit-1/scenes/scene1_1.png'] },
+        coverPaths: [],
+        endPaths: [],
+      },
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.selectedCharacterSheets).toEqual({ charA: 2 });
+    expect(loaded!.selectedSceneImages).toEqual({ 1: 1 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A3a/S2 item 6 — Round-trip preservation of arbitrary long narrative fields
+// (title, summary, description, prompts, scene.text) across a persist+load
+// cycle. Field-aware scrubbing must never truncate story text.
+// -----------------------------------------------------------------------------
+describe('A3a/S2 round-trip: long narrative text and prompts survive persist+load', () => {
+  it('title/summary/description and prompts >512 chars persist verbatim', async () => {
+    const draft = baseSnapshot();
+    const longTitle = 'Titulo largo '.repeat(80); // ~1040 chars
+    const longSummary = 'Resumen extenso — '.repeat(64); // ~1150 chars
+    const longSpiritual = 'Conexión espiritual: '.repeat(50); // ~1050 chars
+    const longScenePrompt = 'Prompt escena editado. '.repeat(30); // ~700 chars
+    const longCoverPrompt = 'Prompt portada editado. '.repeat(30); // ~720 chars
+    const longEndPrompt = 'Prompt fin editado. '.repeat(30); // ~600 chars
+    const longSceneText = 'Texto narrativo de la escena. '.repeat(25); // ~750 chars
+
+    expect(longTitle.length).toBeGreaterThan(512);
+    expect(longSummary.length).toBeGreaterThan(512);
+    expect(longSpiritual.length).toBeGreaterThan(512);
+    expect(longScenePrompt.length).toBeGreaterThan(512);
+    expect(longCoverPrompt.length).toBeGreaterThan(512);
+    expect(longEndPrompt.length).toBeGreaterThan(512);
+    expect(longSceneText.length).toBeGreaterThan(512);
+
+    if (draft.story) {
+      draft.story = {
+        ...draft.story,
+        title: longTitle,
+        summary: longSummary,
+        spiritualConnection: longSpiritual,
+      };
+    }
+    draft.editingTitle = longTitle;
+    draft.editingScenePrompt = { 1: longScenePrompt };
+    draft.editingCoverPrompt = longCoverPrompt;
+    draft.editingEndPrompt = longEndPrompt;
+    draft.editingSceneText = { 1: longSceneText };
+
+    await saveDraftNow({
+      userId: 'u1',
+      liturgyId: 'lit-1',
+      currentDraft: draft,
+      patch: {
+        currentStep: 'cover',
+        editingTitle: draft.editingTitle,
+        editingScenePrompt: draft.editingScenePrompt,
+        editingCoverPrompt: draft.editingCoverPrompt,
+        editingEndPrompt: draft.editingEndPrompt,
+        editingSceneText: draft.editingSceneText,
+        story: draft.story,
+      },
+    });
+
+    expect(upsertCalls).toHaveLength(1);
+    const payload = upsertCalls[0].payload;
+    const persistedStory = payload.story as Record<string, unknown>;
+    // Story-tree narrative fields survive verbatim.
+    expect(persistedStory.title).toBe(longTitle);
+    expect(persistedStory.summary).toBe(longSummary);
+    expect(persistedStory.spiritualConnection).toBe(longSpiritual);
+    // Embedded snapshot preserves long edited prompts + scene text + title.
+    const embedded = persistedStory.editorStateV1 as {
+      edited: {
+        scenePrompt: Record<number, string>;
+        coverPrompt: string;
+        endPrompt: string;
+        sceneText: Record<number, string>;
+        title: string;
+      };
+    };
+    expect(embedded.edited.title).toBe(longTitle);
+    expect(embedded.edited.scenePrompt[1]).toBe(longScenePrompt);
+    expect(embedded.edited.coverPrompt).toBe(longCoverPrompt);
+    expect(embedded.edited.endPrompt).toBe(longEndPrompt);
+    expect(embedded.edited.sceneText[1]).toBe(longSceneText);
+
+    loadedDraftRow = {
+      current_step: payload.current_step,
+      config: payload.config,
+      story: persistedStory,
+      selected_character_sheets: payload.selected_character_sheets,
+      selected_scene_images: payload.selected_scene_images,
+      selected_cover: payload.selected_cover,
+      selected_end: payload.selected_end,
+      image_paths: payload.image_paths,
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+    const result = await mountReadyHook();
+    let loaded: CuentacuentosDraftFull | null = null;
+    await act(async () => {
+      loaded = await result.current.loadDraft();
+    });
+    expect(loaded).not.toBeNull();
+    const d = loaded!;
+    expect(d.story?.title).toBe(longTitle);
+    expect(d.story?.summary).toBe(longSummary);
+    expect(d.story?.spiritualConnection).toBe(longSpiritual);
+    expect(d.editingTitle).toBe(longTitle);
+    expect(d.editingScenePrompt?.[1]).toBe(longScenePrompt);
+    expect(d.editingCoverPrompt).toBe(longCoverPrompt);
+    expect(d.editingEndPrompt).toBe(longEndPrompt);
+    expect(d.editingSceneText?.[1]).toBe(longSceneText);
+  });
+});

@@ -193,7 +193,13 @@ export interface EditorStateRestoreOutput {
   coverTextOverlay: TextOverlay | null;
   endTextOverlay: TextOverlay | null;
   landmarkVisible: Record<number, boolean>;
-  currentStep: EditorCreationStep;
+  /**
+   * `null` if the raw snapshot did not explicitly contain a valid
+   * `EditorCreationStep`. Callers must fall back to `data.current_step`
+   * (the dedicated DB column) before applying a hard `'config'` default —
+   * otherwise a snapshot missing this slot would silently rewind step.
+   */
+  currentStep: EditorCreationStep | null;
   recoveryRevision: number;
 }
 
@@ -264,7 +270,7 @@ export function restoreEditorStateV1(
     coverTextOverlay: null,
     endTextOverlay: null,
     landmarkVisible: {},
-    currentStep: 'config',
+    currentStep: null,
     recoveryRevision: 0,
   };
 
@@ -355,7 +361,7 @@ export function restoreEditorStateV1(
     ),
     currentStep: VALID_STEPS.includes(step as EditorCreationStep)
       ? (step as EditorCreationStep)
-      : 'config',
+      : null,
     recoveryRevision: isNumber(rev) ? rev : 0,
   };
 }
@@ -382,11 +388,35 @@ function sanitizeOverlay(raw: unknown): TextOverlay | null {
 }
 
 /**
- * Recursively strips any base64 or data-URL image reference from a value tree.
- * Storage paths (short strings, or URLs starting with http) are kept as-is.
+ * Known image-reference field names in the persisted Story tree. Only values
+ * living under these keys are candidates for base64/data-URL scrubbing —
+ * arbitrary narrative fields (title, summary, text, prompts, descriptions,
+ * spiritualConnection, etc.) are preserved verbatim regardless of length.
+ */
+const IMAGE_REF_FIELDS: ReadonlySet<string> = new Set([
+  'characterSheetUrl',
+  'characterSheetOptions',
+  'selectedReferenceUrl',
+  'referenceImages',
+  'referenceImage',
+  'imageOptions',
+  'selectedImageUrl',
+  'imageUrl',
+  'coverImageUrl',
+  'coverImageOptions',
+  'endImageUrl',
+  'endImageOptions',
+]);
+
+/**
+ * Field-aware scrub: recursively walks the value tree and, when it encounters
+ * a value under one of the known image-reference field names, drops entries
+ * that look like non-path image strings (`data:` URLs or long base64-like
+ * blobs). Every other string — including long narrative text, prompts, and
+ * summaries — passes through unchanged.
  *
  * Used before persisting Story JSON so the invariant "no data URLs in
- * persisted JSON" holds regardless of which nested field carried the string.
+ * persisted JSON" holds without ever truncating story content.
  */
 export function scrubImageRefsDeep<T>(value: T): T {
   return _scrub(value) as T;
@@ -394,28 +424,50 @@ export function scrubImageRefsDeep<T>(value: T): T {
 
 function _scrub(value: unknown): unknown {
   if (value == null) return value;
-  if (typeof value === 'string') {
-    return isNonPathImageString(value) ? undefined : value;
-  }
   if (Array.isArray(value)) {
-    return value
-      .map(_scrub)
-      .filter((v) => v !== undefined);
+    return value.map(_scrub);
   }
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const scrubbed = _scrub(v);
-      if (scrubbed !== undefined) out[k] = scrubbed;
+      out[k] = IMAGE_REF_FIELDS.has(k) ? _scrubImageValue(v) : _scrub(v);
     }
     return out;
   }
   return value;
 }
 
-/** Mirrors the private isNonPathImageRef in useCuentacuentosDraft. */
+/**
+ * Scrubs values discovered under a known image-reference key. Strings are
+ * validated with image-specific rules; arrays are filtered element-wise;
+ * nested objects (rare on image fields) pass through the generic walker.
+ */
+function _scrubImageValue(value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === 'string') {
+    return isNonPathImageString(value) ? undefined : value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map(_scrubImageValue)
+      .filter((v) => v !== undefined);
+  }
+  if (typeof value === 'object') return _scrub(value);
+  return value;
+}
+
+/**
+ * Image-specific validator: true iff the string looks like an inline image
+ * payload (data URL or a long base64-like blob) rather than a Storage path
+ * or HTTP(S) URL. Not a length heuristic on arbitrary text — arbitrary text
+ * outside of known image fields is never inspected by the deep scrub.
+ */
 export function isNonPathImageString(value: string): boolean {
   if (value.startsWith('data:')) return true;
-  if (!value.startsWith('http') && value.length > 512) return true;
-  return false;
+  if (value.startsWith('http')) return false;
+  // Storage paths are short-ish (`userId/liturgyId/kind/file.png`). A very
+  // long value that isn't an HTTP URL and is composed of base64-alphabet
+  // characters is treated as raw inline image data.
+  if (value.length <= 512) return false;
+  return /^[A-Za-z0-9+/=\r\n]+$/.test(value);
 }

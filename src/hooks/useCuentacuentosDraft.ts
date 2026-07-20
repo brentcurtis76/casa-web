@@ -1359,20 +1359,45 @@ async function loadDraftFromSupabase(
     } = imageOptions;
     void propRefs; // ya inyectado en story.props arriba.
 
+    // A3a/S2 (item 5): currentStep — solo confiamos en el snapshot embebido
+    // si el raw EditorStateV1 contenía un step válido explícito
+    // (`restored.currentStep` no null). Cualquier otro caso (missing/invalid/
+    // defaulted) preserva la columna dedicada `data.current_step`; solo si
+    // ambos faltan aplicamos el default 'config'.
+    const rawColumnStep = (data.current_step as CuentacuentosDraft['currentStep'] | null | undefined) ?? null;
+    const resolvedCurrentStep: CuentacuentosDraft['currentStep'] =
+      restored.currentStep ?? rawColumnStep ?? 'config';
+
+    // A3a/S2 (item 11): selections — la columna dedicada gana solo cuando
+    // trae datos significativos. Un `{}` vacío (escritura parcial legada) cae
+    // al snapshot v1 embebido; `null`/`undefined` también.
+    const hasMeaningfulRecord = (v: unknown): v is Record<string, unknown> =>
+      !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as Record<string, unknown>).length > 0;
+
+    const dataCharSheets = data.selected_character_sheets as Record<string, number> | null | undefined;
+    const dataSceneImages = data.selected_scene_images as Record<number, number> | null | undefined;
+
+    const resolvedCharacterSheets: Record<string, number> = hasMeaningfulRecord(dataCharSheets)
+      ? (dataCharSheets as Record<string, number>)
+      : restored.selectedCharacterSheets;
+    const resolvedSceneImages: Record<number, number> = hasMeaningfulRecord(dataSceneImages)
+      ? (dataSceneImages as Record<number, number>)
+      : restored.selectedSceneImages;
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
-      currentStep: (restored.currentStep ?? (data.current_step as CuentacuentosDraft['currentStep'])),
+      currentStep: resolvedCurrentStep,
       config: data.config as CuentacuentosDraft['config'],
       story,
       // Selections: la columna dedicada de DB es la fuente autoritativa (el
-      // editor la escribe directo). El snapshot v1 sólo cubre casos donde la
-      // columna esté vacía por escritura parcial.
+      // editor la escribe directo). El snapshot v1 cubre los casos donde la
+      // columna esté vacía por escritura parcial (`{}` cae al v1).
       selectedCharacterSheets: sanitizeSelections(
-        ((data.selected_character_sheets as Record<string, number>) || restored.selectedCharacterSheets),
+        resolvedCharacterSheets,
         characterSheetOptions
       ),
       selectedSceneImages: sanitizeSelections(
-        ((data.selected_scene_images as Record<number, number>) || restored.selectedSceneImages),
+        resolvedSceneImages,
         sceneImageOptions
       ),
       selectedCover: (data.selected_cover as number | null) ?? restored.selectedCover,
