@@ -1603,7 +1603,7 @@ describe('A3a/S3 F1 enqueueDraftWrite: pre-start stale returns explicit {stale:t
     });
     // Rewire preStart to reflect the new epoch mismatch — we captured 0 at
     // enqueue time, live is now 1, so we return false.
-    preStart.mockImplementation(() => 0 === 1);
+    preStart.mockImplementation(() => false);
 
     // Release the blocker → tail advances → stale op starts → preStart false.
     await act(async () => {

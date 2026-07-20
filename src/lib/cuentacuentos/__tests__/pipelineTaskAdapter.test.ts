@@ -251,7 +251,9 @@ describe('buildSnapshotTask: identity guard', () => {
 
   it('computePatch returning APPLY_STALE propagates (refine slot-not-found path)', () => {
     const enqueueSpy = makeEnqueueSpy();
-    const computePatch = vi.fn(() => APPLY_STALE);
+    const computePatch = vi.fn<
+      (result: ProviderResult, identity: AppliedIdentity) => DraftPatch | typeof APPLY_STALE | typeof APPLY_EPHEMERAL
+    >(() => APPLY_STALE);
     const task = buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'scene-1',
       kind: 'scene',
@@ -346,7 +348,9 @@ describe('buildSnapshotTask + real runner: save-only retry invariants', () => {
       providerAttempts: 1,
     });
     const enqueueSpy = makeEnqueueSpy();
-    const computePatch = vi.fn(() => APPLY_EPHEMERAL);
+    const computePatch = vi.fn<
+      (result: ProviderResult, identity: AppliedIdentity) => DraftPatch | typeof APPLY_STALE | typeof APPLY_EPHEMERAL
+    >(() => APPLY_EPHEMERAL);
     const provider = vi.fn(async () => ({ images: ['https://cdn/prop.png'] }));
     const task = buildSnapshotTask<ProviderResult, DraftPatch>({
       id: 'prop-p1',
