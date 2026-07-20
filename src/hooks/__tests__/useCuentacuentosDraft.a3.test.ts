@@ -108,6 +108,7 @@ import {
   type EditorStateV1,
   type EnqueueDraftWriteResult,
   type EnqueueDraftWriteStale,
+  type EnqueueGeneratedSnapshotResult,
 } from '../useCuentacuentosDraft';
 
 beforeEach(() => {
@@ -204,7 +205,7 @@ describe('A3/F1 operation-start guard (enqueue-before-lifecycle-change, start-af
 
     // Generated encolado detrás del blocker. Su identidad quedará stale por el
     // bump del epoch antes de que arranque el tail.
-    let opGen: Promise<void>;
+    let opGen: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opGen = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -250,7 +251,7 @@ describe('A3/F1 operation-start guard (enqueue-before-lifecycle-change, start-af
     });
     await waitFor(() => expect(upsertCalls).toHaveLength(1));
 
-    let opGen: Promise<void>;
+    let opGen: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opGen = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -618,7 +619,7 @@ describe('A3/S4 preStart contentHash guard', () => {
     const provenanceA = makeProvenance(1, 'hash-A');
 
     // Encolar snapshot A.
-    let opA: Promise<void>;
+    let opA: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opA = result.current.enqueueGeneratedSnapshot({ patch: patchA, identity, provenance: provenanceA });
     });
@@ -630,7 +631,7 @@ describe('A3/S4 preStart contentHash guard', () => {
     const identityB = { ...identity, generatedRevision: 2 };
     const patchB: DraftPatch = { sceneImageOptions: { 1: ['https://cdn/scene-b.png'] } };
     const provenanceB = makeProvenance(2, 'hash-B');
-    let opB: Promise<void>;
+    let opB: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opB = result.current.enqueueGeneratedSnapshot({ patch: patchB, identity: identityB, provenance: provenanceB });
     });
@@ -677,7 +678,7 @@ describe('A3/S4 validateProvenanceBeforeSwap rejects obsolete snapshot swap', ()
     const provenanceA = makeProvenance(1, 'hash-HA');
 
     // Enqueue A — upsert is deferred (blocked in queue).
-    let opA: Promise<void>;
+    let opA: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opA = result.current.enqueueGeneratedSnapshot({ patch: patchA, identity: identityA, provenance: provenanceA });
     });
@@ -690,7 +691,7 @@ describe('A3/S4 validateProvenanceBeforeSwap rejects obsolete snapshot swap', ()
     const identityB = { storyId: 'story-1', epoch: 0, itemId: 'cover', generatedRevision: 2 };
     const patchB: DraftPatch = { coverOptions: ['https://cdn/cover-B.png'] };
     const provenanceB = makeProvenance(2, 'hash-HB');
-    let opB: Promise<void>;
+    let opB: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opB = result.current.enqueueGeneratedSnapshot({ patch: patchB, identity: identityB, provenance: provenanceB });
     });
@@ -793,7 +794,7 @@ describe('A3/S4 save-only retry: provider called zero times', () => {
     const provenance = makeProvenance(1, 'hash-retry1');
 
     // First attempt: fails (upsertError is set).
-    let op1: Promise<void>;
+    let op1: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op1 = result.current.enqueueGeneratedSnapshot({ patch, identity, provenance }).catch(() => {});
     });
@@ -803,7 +804,7 @@ describe('A3/S4 save-only retry: provider called zero times', () => {
 
     // Clear error, retry save-only (same rev, same hash, state = 'failed').
     upsertError = null;
-    let op2: Promise<void>;
+    let op2: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op2 = result.current.enqueueGeneratedSnapshot({ patch, identity, provenance });
     });

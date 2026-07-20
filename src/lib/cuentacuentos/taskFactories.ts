@@ -45,6 +45,7 @@ import type {
   GenerateSceneImagesCoverRequest,
   GenerateSceneImagesEndRequest,
   GenerateSceneImagesSceneRequest,
+  LocationInfo,
   StoryCharacter,
   StoryProp,
   StoryScene,
@@ -159,10 +160,12 @@ export interface SceneRequestData {
   landmarkVisible?: boolean;
 }
 
-export interface StoryLocation {
-  name?: string;
-  description?: string;
-}
+/**
+ * Location used by scene/cover generation. Alias of the shared `LocationInfo`
+ * (the `Story.location` shape carried by the editor). Kept as `StoryLocation`
+ * so factory-input names remain self-describing at the call site.
+ */
+export type StoryLocation = LocationInfo;
 
 // =============================================================================
 // 1) CHARACTER SHEET — GENERATE

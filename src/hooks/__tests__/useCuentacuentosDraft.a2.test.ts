@@ -94,7 +94,11 @@ vi.mock('@/integrations/supabase/client', () => {
   };
 });
 
-import { useCuentacuentosDraft, type DraftPatch } from '../useCuentacuentosDraft';
+import {
+  useCuentacuentosDraft,
+  type DraftPatch,
+  type EnqueueGeneratedSnapshotResult,
+} from '../useCuentacuentosDraft';
 
 beforeEach(() => {
   upsertCalls.length = 0;
@@ -591,7 +595,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     });
 
     // Attempt #1: rev 1 → reserved → upsert en vuelo.
-    let op1: Promise<void>;
+    let op1: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op1 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -607,7 +611,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     });
 
     // Attempt #2: MISMA revision (1). El estado 'failed' permite reintentar.
-    let op2: Promise<void>;
+    let op2: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op2 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -636,7 +640,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     });
 
     // Intento #1 falla.
-    let op1: Promise<void>;
+    let op1: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op1 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -650,7 +654,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     });
 
     // Intento #2 con MISMA rev — permitido (estado 'failed') — vuelve a fallar.
-    let op2: Promise<void>;
+    let op2: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op2 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -665,7 +669,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
 
     // Intento #3 con MISMA rev — sigue siendo 'failed' → reintento permitido.
     // Esta vez resuelve: el estado pasa a 'committed'.
-    let op3: Promise<void>;
+    let op3: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op3 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -757,7 +761,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     });
 
     // Rev 5 falla.
-    let opHi: Promise<void>;
+    let opHi: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       opHi = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -796,7 +800,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
       result.current.setActiveDraftStoryId('story-1');
     });
 
-    let op1: Promise<void>;
+    let op1: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op1 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -813,7 +817,7 @@ describe('F2 estado por ítem (reserved | committed | failed)', () => {
     const uploadsBefore = uploadCalls.length;
 
     // Save-only retry con la MISMA rev.
-    let op2: Promise<void>;
+    let op2: Promise<EnqueueGeneratedSnapshotResult>;
     act(() => {
       op2 = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),

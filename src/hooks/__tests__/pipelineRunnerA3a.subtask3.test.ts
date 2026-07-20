@@ -34,9 +34,11 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   createStoryImagePipelineRunner,
   PERSIST_STALE,
+  type PersistOutcome,
   type PipelineItemTask,
   type RunIdentity,
 } from '../storyImagePipelineRunner';
+import type { DraftPatch } from '../useCuentacuentosDraft';
 import { buildSnapshotTask } from '@/lib/cuentacuentos/pipelineTaskAdapter';
 import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
 
@@ -64,7 +66,7 @@ describe('A3a/S3 subtask 3 — identity change before persist begins', () => {
     const runner = createStoryImagePipelineRunner({ staggerMs: 0, providerAttempts: 1 });
     const identity: RunIdentity = { storyId: 'story-A', epoch: 0 };
 
-    const persist = vi.fn(async () => PERSIST_STALE);
+    const persist = vi.fn(async (): Promise<PersistOutcome> => PERSIST_STALE);
     const task: PipelineItemTask<{ url: string }, { url: string }> = {
       id: 'scene-1',
       kind: 'scene',
@@ -98,12 +100,12 @@ describe('A3a/S3 subtask 3 — identity change before persist begins', () => {
     const enqueueGeneratedSnapshot = vi.fn(async () => ({ stale: true as const }));
     const getLiveIdentity = () => ({ storyId: 'story-A' as string | null, epoch: 0 });
 
-    const task = buildSnapshotTask<{ url: string }, { url: string }>({
+    const task = buildSnapshotTask<{ url: string }>({
       id: 'scene-1',
       kind: 'scene',
       label: 'S1',
       provider: async () => ({ url: 'v1' }),
-      computePatch: (r) => ({ url: r.url }),
+      computePatch: (r) => ({ url: r.url }) as unknown as DraftPatch,
       getLiveIdentity,
       enqueueGeneratedSnapshot,
     });
@@ -138,7 +140,7 @@ describe('A3a/S3 subtask 3 — identity change before persist begins', () => {
     };
 
     // Stale task → pending.
-    const persistStale = vi.fn(async () => PERSIST_STALE);
+    const persistStale = vi.fn(async (): Promise<PersistOutcome> => PERSIST_STALE);
     const staleTask: PipelineItemTask<{ url: string }, { url: string }> = {
       id: 'stale-item',
       kind: 'scene',
@@ -173,7 +175,7 @@ describe('A3a/S3 subtask 3 — identity change while persist in-flight', () => {
 
     // Gate the persist so we can observe `persisting` before it settles.
     const gate = makeDeferred<typeof PERSIST_STALE>();
-    const persist = vi.fn(async () => gate.promise);
+    const persist = vi.fn(async (): Promise<PersistOutcome> => gate.promise);
     const task: PipelineItemTask<{ url: string }, { url: string }> = {
       id: 'scene-1',
       kind: 'scene',
@@ -217,7 +219,7 @@ describe('A3a/S3 subtask 3 — identity change while persist in-flight', () => {
     // 1st call: throw (initial persist fails → registers save-failed).
     // 2nd call: retry — resolves PERSIST_STALE.
     const gate = makeDeferred<typeof PERSIST_STALE>();
-    const persist = vi.fn(async () => {
+    const persist = vi.fn(async (): Promise<PersistOutcome> => {
       call++;
       if (call === 1) throw new Error('io down');
       return gate.promise;
@@ -270,7 +272,7 @@ describe('A3a/S3 subtask 3 — identity change while persist in-flight', () => {
 
     let call = 0;
     const gate = makeDeferred<typeof PERSIST_STALE>();
-    const persist = vi.fn(async () => {
+    const persist = vi.fn(async (): Promise<PersistOutcome> => {
       call++;
       if (call === 1) throw new Error('io down');
       return gate.promise;
@@ -334,9 +336,11 @@ describe('A3a/S3 subtask 3 — adapter propagates stale identically on initial a
       return { stale: true as const };
     });
     const providerSpy = vi.fn(async () => ({ url: 'v1' }));
-    const computePatchSpy = vi.fn((r: { url: string }) => ({ url: r.url }));
+    const computePatchSpy = vi.fn(
+      (r: { url: string }) => ({ url: r.url }) as unknown as DraftPatch,
+    );
 
-    const task = buildSnapshotTask<{ url: string }, { url: string }>({
+    const task = buildSnapshotTask<{ url: string }>({
       id: 'scene-1',
       kind: 'scene',
       label: 'S1',

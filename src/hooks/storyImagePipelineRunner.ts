@@ -105,7 +105,7 @@ export type ApplyEphemeral = typeof APPLY_EPHEMERAL;
  *     estados existente: en persist inicial vuelve a `pending`; en retry
  *     save-only mantiene el `save-failed` para reintentos posteriores.
  */
-export const PERSIST_STALE = PERSIST_STALE_SYMBOL;
+export const PERSIST_STALE: typeof PERSIST_STALE_SYMBOL = PERSIST_STALE_SYMBOL;
 export type PersistStale = typeof PERSIST_STALE_SYMBOL;
 
 /**

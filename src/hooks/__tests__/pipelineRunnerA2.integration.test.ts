@@ -143,7 +143,12 @@ import {
   type AppliedIdentity,
 } from '../storyImagePipelineRunner';
 import { supabase } from '@/integrations/supabase/client';
-import { useCuentacuentosDraft, type DraftPatch } from '../useCuentacuentosDraft';
+import {
+  useCuentacuentosDraft,
+  type DraftPatch,
+  type EnqueueGeneratedSnapshotInput,
+  type EnqueueGeneratedSnapshotResult,
+} from '../useCuentacuentosDraft';
 
 // -----------------------------------------------------------------------------
 // Common setup + helpers.
@@ -218,10 +223,9 @@ function makeEditorLikeTask(
   kind: PipelineItemKind,
   label: string,
   liveStoryIdRef: { current: string | null },
-  enqueue: (input: {
-    patch: DraftPatch;
-    identity: AppliedIdentity;
-  }) => Promise<void>,
+  enqueue: (
+    input: EnqueueGeneratedSnapshotInput,
+  ) => Promise<EnqueueGeneratedSnapshotResult>,
   opts: { fn?: string; ephemeral?: boolean } = {}
 ): PipelineItemTask<{ success: true; images: string[] }, DraftPatch> {
   const fn = opts.fn ?? 'generate-scene-images';

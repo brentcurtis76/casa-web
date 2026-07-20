@@ -63,10 +63,11 @@ import {
   TASK_FACTORIES,
   TASK_FACTORY_KEYS,
   TASK_FACTORY_KIND,
+  type InvokeGenerateSceneImages,
   type ProviderResult,
   type TaskFactoryKey,
 } from '@/lib/cuentacuentos/taskFactories';
-import type { StoryCharacter, StoryProp, StoryScene } from '@/types/shared/story';
+import type { LocationInfo, StoryCharacter, StoryProp, StoryScene } from '@/types/shared/story';
 
 // -----------------------------------------------------------------------------
 // Registry-level invariants: the exported list must enumerate all nine
@@ -188,7 +189,7 @@ const CHARACTER: StoryCharacter = {
 
 const PROP: StoryProp = {
   id: 'prop-1',
-  kind: 'object',
+  kind: 'prop',
   name: 'linterna',
   narrativeRole: 'guía a Ana en la cueva',
   visualDescription: 'linterna metálica plateada',
@@ -203,7 +204,14 @@ const SCENE: StoryScene = {
   landmarkVisible: true,
 };
 
-const LOCATION = { name: 'Chiloé', description: 'Isla de mitos' };
+const LOCATION: LocationInfo = {
+  name: 'Chiloé',
+  type: 'costa',
+  description: 'Isla de mitos',
+  visualElements: [],
+  colors: [],
+  lighting: 'natural',
+};
 
 // -----------------------------------------------------------------------------
 // Per-factory verification. Each `describe.each` case exercises one of the
@@ -214,7 +222,7 @@ describe('makeCharacterSheetTask (generate)', () => {
   it('provider posts a character body with count=2 modelTier=flash; apply mutates refs, returns patch with characterSheetOptions', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['a.png', 'b.png'],
     } as ProviderResult));
@@ -281,7 +289,7 @@ describe('makePropSheetTask (generate — ephemeral)', () => {
   it('provider posts a prop body with dedup photoRefs; apply returns APPLY_EPHEMERAL and never persists', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['p1.png', 'p2.png'],
     } as ProviderResult));
@@ -306,7 +314,7 @@ describe('makePropSheetTask (generate — ephemeral)', () => {
       styleId: 'storybook',
       prop: {
         name: 'linterna',
-        kind: 'object',
+        kind: 'prop',
         visualDescription: 'linterna metálica plateada',
         referenceImages: ['user-photo.jpg'],
       },
@@ -329,7 +337,7 @@ describe('makePropSheetTask (generate — ephemeral)', () => {
 
   it('omits referenceImages when no photoRefs are supplied', async () => {
     const harness = makeHarness();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['p1.png', 'p2.png'],
     } as ProviderResult));
@@ -355,7 +363,7 @@ describe('makeSceneTask (generate)', () => {
     const harness = makeHarness();
     harness.sceneReferenceModeRef.current = { 1: 'pov' };
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['s1.png', 's2.png'],
     } as ProviderResult));
@@ -462,7 +470,7 @@ describe('makeCoverTask (generate)', () => {
   it('provider posts cover body with count=4 modelTier=pro; apply sets coverOptions', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['c1.png', 'c2.png', 'c3.png', 'c4.png'],
     } as ProviderResult));
@@ -523,7 +531,7 @@ describe('makeEndTask (generate)', () => {
   it('provider posts end body with count=4 modelTier=pro; omits characters when empty', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['e1.png', 'e2.png', 'e3.png', 'e4.png'],
     } as ProviderResult));
@@ -570,7 +578,7 @@ describe('makeRefineCharacterSheetTask', () => {
     harness.characterSheetOptionsRef.current = { 'char-1': ['old-a.png', 'old-b.png'] };
     harness.selectedCharacterSheetsRef.current = { 'char-1': 1 };
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['refined.png'],
     } as ProviderResult));
@@ -617,7 +625,7 @@ describe('makeRefineCharacterSheetTask', () => {
   it('returns APPLY_STALE when the source slot is gone (post-refine race)', () => {
     const harness = makeHarness();
     harness.characterSheetOptionsRef.current = { 'char-1': ['other.png'] };
-    const invoke = vi.fn();
+    const invoke = vi.fn<InvokeGenerateSceneImages>();
     const task = makeRefineCharacterSheetTask({
       character: CHARACTER,
       illustrationStyle: 'ghibli',
@@ -649,7 +657,7 @@ describe('makeRefineSceneTask', () => {
     harness.selectedSceneImagesRef.current = { 1: 0 };
     harness.sceneReferenceModeRef.current = { 1: 'style' };
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['s-refined.png'],
     } as ProviderResult));
@@ -739,7 +747,7 @@ describe('makeRefineCoverTask', () => {
     harness.coverOptionsRef.current = ['cov-a.png', 'cov-b.png'];
     harness.selectedCoverRef.current = 1;
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['cov-refined.png'],
     } as ProviderResult));
@@ -814,7 +822,7 @@ describe('makeRefineEndTask', () => {
     harness.endOptionsRef.current = ['end-a.png', 'end-b.png'];
     harness.selectedEndRef.current = 0;
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['end-refined.png'],
     } as ProviderResult));
@@ -888,7 +896,7 @@ interface GuardCase {
   build: (
     harness: EditorHarness,
     services: {
-      invoke: ReturnType<typeof vi.fn>;
+      invoke: ReturnType<typeof vi.fn<InvokeGenerateSceneImages>>;
       getLiveIdentity: () => RunIdentity;
       enqueueGeneratedSnapshot: ReturnType<typeof makeEnqueueSpy>;
     },
@@ -1085,7 +1093,7 @@ const GUARD_CASES: GuardCase[] = [
 describe('identity-guard: every factory returns APPLY_STALE when the live identity drifted', () => {
   it.each(GUARD_CASES)('$key returns APPLY_STALE on storyId mismatch — persistence untouched', ({ itemId, build }) => {
     const harness = makeHarness();
-    const invoke = vi.fn();
+    const invoke = vi.fn<InvokeGenerateSceneImages>();
     const enqueue = makeEnqueueSpy();
     const task = build(harness, {
       invoke,
@@ -1103,7 +1111,7 @@ describe('identity-guard: every factory returns APPLY_STALE when the live identi
 
   it.each(GUARD_CASES)('$key returns APPLY_STALE on epoch mismatch — persistence untouched', ({ itemId, build }) => {
     const harness = makeHarness();
-    const invoke = vi.fn();
+    const invoke = vi.fn<InvokeGenerateSceneImages>();
     const enqueue = makeEnqueueSpy();
     const task = build(harness, {
       invoke,
@@ -1146,7 +1154,7 @@ describe('save-only retry: every persist-bearing factory reuses the captured has
       persistCall++;
       if (persistCall < 2) throw new Error('io down'); // initial failure
     });
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['g1.png', 'g2.png'],
     } as ProviderResult));
@@ -1189,7 +1197,7 @@ describe('save-only retry: every persist-bearing factory reuses the captured has
     });
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['p1.png', 'p2.png'],
     } as ProviderResult));
@@ -1231,7 +1239,7 @@ describe('PERSIST_STALE propagation (A3a/S3 F3) via a representative factory', (
     const enqueue = vi.fn(async (_input: EnqueueGeneratedSnapshotInput) => ({
       stale: true as const,
     }));
-    const invoke = vi.fn(async () => ({
+    const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
       success: true,
       images: ['c1.png', 'c2.png', 'c3.png', 'c4.png'],
     } as ProviderResult));
