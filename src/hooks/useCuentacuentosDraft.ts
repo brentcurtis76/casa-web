@@ -1614,6 +1614,21 @@ export interface EnqueueGeneratedSnapshotInput {
 }
 
 /**
+ * Resultado de `enqueueGeneratedSnapshot` (A3a/S3 subtask 3).
+ *
+ * `undefined` (void): la escritura commiteó — el snapshot es la fuente de
+ * verdad React actual y el runner puede marcar el ítem como `done`.
+ *
+ * `{ stale: true }`: la I/O corrió (o se saltó por preStart) pero la
+ * identidad viva del hook cambió antes o durante la persistencia. El
+ * snapshot NO se commiteó a `draftRef`/`setDraft`. El runner lo interpreta
+ * como `PERSIST_STALE` — el ítem NO se marca `done` ni `save-failed`; el
+ * estado retorna a `pending` (initial) o queda `save-failed` retryable
+ * (retry save-only). Distinto de un throw (que sí es save-failed).
+ */
+export type EnqueueGeneratedSnapshotResult = void | { stale: true };
+
+/**
  * Identidad viva del draft — sólo los campos que el pipeline A2 necesita para
  * armar `AppliedIdentity`. Se lee desde refs (no rerender-capturados), así el
  * caller siempre ve el valor actual, no una foto vieja de un render previo.
@@ -1702,13 +1717,17 @@ export interface UseCuentacuentosDraftReturn {
    *    completó (I/O real), no antes. El runner marcará `done` sólo entonces.
    *  - Fallo: propaga el rechazo del `enqueueDraftWrite` para que el runner
    *    lo observe como `save-failed`.
-   *  - No-op (identidad stale): resuelve `undefined` sin encolar ni tocar la
-   *    reserva por ítem. El runner marcará `done` — la escritura relevante
-   *    llegará (o llegó) por otra vía y sobreescribirá.
+   *  - Stale (identidad ya no coincide, o preStart guard vetó, o mismatch
+   *    post-await): resuelve `{ stale: true }` — un valor discriminado que
+   *    el adaptador `buildSnapshotTask` traduce a `PERSIST_STALE` para el
+   *    runner. El runner NO marca `done` (no hubo commit React) ni
+   *    `save-failed` (no fue error de I/O). También libera la reserva por
+   *    ítem si sigue siendo nuestra (`state === 'reserved'`) para no
+   *    dejarla stranded.
    */
   enqueueGeneratedSnapshot: (
     input: EnqueueGeneratedSnapshotInput
-  ) => Promise<void>;
+  ) => Promise<EnqueueGeneratedSnapshotResult>;
 }
 
 /**
@@ -2095,7 +2114,7 @@ export function useCuentacuentosDraft({
   // hash de provenance (A3/S4); no toca `saveDraftNow` directamente ni
   // consulta el `runToken`.
   const enqueueGeneratedSnapshot = useCallback(
-    (input: EnqueueGeneratedSnapshotInput): Promise<void> => {
+    (input: EnqueueGeneratedSnapshotInput): Promise<EnqueueGeneratedSnapshotResult> => {
       const { patch, identity, provenance } = input;
 
       // Guardas pre-enqueue (síncronas):
@@ -2108,19 +2127,25 @@ export function useCuentacuentosDraft({
       //  3) (A3/S4) contentHash: si hay un hash registrado para este ítem+rev y
       //     el caller presenta un hash diferente, rechazar — otro apply más
       //     nuevo ya tomó ownership.
-      if (identity.storyId !== activeStoryIdRef.current) return Promise.resolve();
-      if (identity.epoch !== epochRef.current) return Promise.resolve();
+      // Cualquier rechazo pre-enqueue resuelve `{stale:true}` (A3a/S3
+      // subtask 3): el downstream traduce a PERSIST_STALE para el runner.
+      if (identity.storyId !== activeStoryIdRef.current) {
+        return Promise.resolve({ stale: true });
+      }
+      if (identity.epoch !== epochRef.current) {
+        return Promise.resolve({ stale: true });
+      }
 
       const current = perItemGeneratedRevisionsRef.current.get(identity.itemId);
       if (current) {
         if (identity.generatedRevision < current.revision) {
-          return Promise.resolve();
+          return Promise.resolve({ stale: true });
         }
         if (identity.generatedRevision === current.revision) {
           // Sólo un save-only retry legítimo puede re-encolar al mismo rev:
           // eso requiere que el intento anterior haya quedado en `failed`.
           if (current.state !== 'failed') {
-            return Promise.resolve();
+            return Promise.resolve({ stale: true });
           }
           // (A3/S4) Para el retry save-only con provenance: el contentHash debe
           // coincidir con el registrado para esta revisión (mismo snapshot).
@@ -2132,7 +2157,7 @@ export function useCuentacuentosDraft({
               existingHash.contentHash !== provenance.contentHash
             ) {
               // Hash diferente para la misma revisión → snapshot distinto, stale.
-              return Promise.resolve();
+              return Promise.resolve({ stale: true });
             }
           }
         }
@@ -2216,12 +2241,32 @@ export function useCuentacuentosDraft({
           }
         : undefined;
 
+      // Libera la reserva por ítem si sigue siendo NUESTRA (`reserved`) —
+      // sólo entonces esta ruta puede haberla creado y dejarla stranded.
+      // Un `committed`/`failed` implicaría que ya settle-amos por otro
+      // camino; un rev distinto significa que otra reserva tomó ownership
+      // y no debemos tocarla. (A3a/S3 subtask 3: evita el strand de
+      // reservación en el path stale del downstream.)
+      const releaseReservationIfOurs = () => {
+        const now = perItemGeneratedRevisionsRef.current.get(identity.itemId);
+        if (
+          now &&
+          now.revision === identity.generatedRevision &&
+          now.state === 'reserved'
+        ) {
+          perItemGeneratedRevisionsRef.current.delete(identity.itemId);
+        }
+      };
       return enqueueDraftWrite(patch, { preStart, validateProvenanceBeforeSwap }).then(
-        (result) => {
+        (result): EnqueueGeneratedSnapshotResult => {
           if ((result as EnqueueDraftWriteStale).stale) {
-            // Operation-start guard rechazó: no tocamos la reserva porque
-            // ya fue reemplazada/limpiada por el lifecycle change.
-            return undefined;
+            // A3a/S3 subtask 3: el downstream reportó stale (preStart guard,
+            // operation-start guard incondicional, o post-await identity
+            // mismatch). Devolvemos `{stale:true}` explícito — el runner lo
+            // ve como PERSIST_STALE via el adaptador y NO marca `done`. La
+            // reserva se libera para no strand.
+            releaseReservationIfOurs();
+            return { stale: true };
           }
           settle('committed');
           return undefined;

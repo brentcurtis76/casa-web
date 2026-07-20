@@ -780,7 +780,9 @@ describe('T-A2/S4.7 story-switch invalidates in-flight apply/persist', () => {
       },
     });
 
-    expect(returned).toBeUndefined();
+    // A3a/S3 subtask 3: contrato discriminado — stale devuelve
+    // `{stale:true}` (el adaptador lo mapea a PERSIST_STALE para el runner).
+    expect(returned).toEqual({ stale: true });
     expect(upsertCalls).toHaveLength(0);
     expect(uploadCalls).toHaveLength(0);
   });
@@ -813,7 +815,9 @@ describe('T-A2/S4.8 epoch-switch invalidates in-flight persist', () => {
       },
     });
 
-    expect(returned).toBeUndefined();
+    // A3a/S3 subtask 3: contrato discriminado — stale devuelve
+    // `{stale:true}` (el adaptador lo mapea a PERSIST_STALE para el runner).
+    expect(returned).toEqual({ stale: true });
     expect(upsertCalls).toHaveLength(0);
 
     // Fresh persist with the current epoch (1) still works — proves the guard

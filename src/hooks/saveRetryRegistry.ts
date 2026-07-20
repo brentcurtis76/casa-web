@@ -35,6 +35,18 @@ export interface SaveRetryProvenance {
   contentHash: string | null;
 }
 
+/**
+ * Sentinel de stale-persist compartido con el runner. Se resuelve por
+ * `Symbol.for` para que ambos módulos apunten a la MISMA referencia sin
+ * dependencia circular. Un `persist` que resuelve con este símbolo indica
+ * que la I/O corrió sin excepción pero el downstream no commiteó por
+ * identity drift — el runner NO lo trata como éxito ni como save-failed.
+ */
+export const PERSIST_STALE_SYMBOL: unique symbol = Symbol.for(
+  'a3a.pipelineRunner.persist.stale',
+);
+export type PersistOutcome = void | typeof PERSIST_STALE_SYMBOL;
+
 export interface SaveRetryEntry<TSnapshot = unknown> {
   identity: SaveRetryIdentity;
   snapshot: Readonly<TSnapshot>;
@@ -42,12 +54,13 @@ export interface SaveRetryEntry<TSnapshot = unknown> {
   /**
    * Operación "save-only": persistir sin generar. Cerrada sobre el task
    * original; no toca provider ni apply. El registry la re-invoca tal cual en
-   * cada reintento.
+   * cada reintento. Puede resolver `undefined` (commit) o `PERSIST_STALE`
+   * (I/O corrió sin commit).
    */
   persist: (
     snapshot: Readonly<TSnapshot>,
     identity: SaveRetryIdentity,
-  ) => Promise<void>;
+  ) => Promise<PersistOutcome>;
 }
 
 export interface SaveRetryRegistry {

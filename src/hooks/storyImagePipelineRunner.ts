@@ -44,12 +44,15 @@ import { retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
 import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
 import {
   createSaveRetryRegistry,
+  PERSIST_STALE_SYMBOL,
+  type PersistOutcome,
   type SaveRetryEntry,
   type SaveRetryIdentity,
   type SaveRetryRegistry,
 } from './saveRetryRegistry';
 
 export type {
+  PersistOutcome,
   SaveRetryEntry,
   SaveRetryIdentity,
   SaveRetryRegistry,
@@ -85,6 +88,25 @@ export const APPLY_EPHEMERAL: unique symbol = Symbol.for(
 );
 export type ApplyStale = typeof APPLY_STALE;
 export type ApplyEphemeral = typeof APPLY_EPHEMERAL;
+
+/**
+ * Sentinel de retorno de `persist` (A3a/S3 subtask 3). Explícito y comparable
+ * por referencia — el runner lo distingue de:
+ *   - `undefined` (persistencia commiteada) → item → `done`.
+ *   - promesa rechazada (`throw`) → item → `save-failed` + registry.
+ *
+ * `PERSIST_STALE` significa: la persistencia CORRIÓ sin excepción pero la
+ * identidad viva en el downstream (draft hook) cambió durante o antes de la
+ * I/O, así que NO hubo commit — el snapshot no se aplicó al estado React.
+ * El runner debe:
+ *   - NUNCA marcar el ítem como `done` (no hay commit real).
+ *   - NUNCA registrarlo como `save-failed` (no fue error de I/O).
+ *   - Dejar el item en un estado retryable/superseded según el modelo de
+ *     estados existente: en persist inicial vuelve a `pending`; en retry
+ *     save-only mantiene el `save-failed` para reintentos posteriores.
+ */
+export const PERSIST_STALE = PERSIST_STALE_SYMBOL;
+export type PersistStale = typeof PERSIST_STALE_SYMBOL;
 
 /**
  * Resultado explícito de `apply`. Callers nuevos DEBEN devolver uno de los
@@ -139,7 +161,10 @@ export interface PipelineItemTask<TResult = unknown, TSnapshot = unknown> {
     result: TResult,
     identity: AppliedIdentity,
   ) => ApplyOutcome<TSnapshot> | null | undefined;
-  persist: (snapshot: Readonly<TSnapshot>, identity: AppliedIdentity) => Promise<void>;
+  persist: (
+    snapshot: Readonly<TSnapshot>,
+    identity: AppliedIdentity,
+  ) => Promise<PersistOutcome>;
 }
 
 /** Tarea "legacy": una única función `run()` que hace todo internamente. */
@@ -495,7 +520,20 @@ export function createStoryImagePipelineRunner(
     setStatus(itemState.id, 'persisting');
     beginSaving();
     try {
-      await task.persist(retained, appliedIdentity);
+      const persistResult = await task.persist(retained, appliedIdentity);
+      // A3a/S3 subtask 3: discriminated stale-persist result. Un downstream
+      // (draft hook) puede reportar `PERSIST_STALE` cuando la I/O corrió
+      // pero la identidad viva cambió antes/durante el await → no hubo
+      // commit real. Distinto de éxito y distinto de error:
+      //   - NO marca `done` (nunca hubo commit).
+      //   - NO registra save-failed (no fue error de I/O; no es retryable
+      //     bajo esta identidad — un lifecycle change ya la superseded).
+      //   - Devuelve el ítem a `pending` para que la corrida nueva lo
+      //     empuje otra vez. Análogo al tratamiento de APPLY_STALE.
+      if (persistResult === PERSIST_STALE) {
+        setStatus(itemState.id, 'pending');
+        return;
+      }
       // Éxito: no hace falta tocar el registry (no habíamos registrado nada
       // para esta revisión) y cualquier entrada más vieja ya se invalidó
       // arriba. `done`.
@@ -593,7 +631,30 @@ export function createStoryImagePipelineRunner(
       if (!registry.has(entry.identity)) {
         return;
       }
-      await entry.persist(entry.snapshot, entry.identity);
+      const persistResult = await entry.persist(entry.snapshot, entry.identity);
+      // A3a/S3 subtask 3: discriminated stale-persist result — retry path.
+      // Un `PERSIST_STALE` aquí significa que la I/O corrió sin excepción
+      // pero el downstream no commiteó por identity drift. Debemos:
+      //   - NUNCA limpiar la entrada del registry (no persistimos bajo la
+      //     identidad viva) → sigue siendo retryable en futuros ticks.
+      //   - NUNCA marcar `done` (no hay commit real).
+      //   - Si la entrada sigue siendo la vigente Y aún corresponde a la
+      //     identidad viva, dejar `save-failed` para que la UI y
+      //     `saveFailedCount` reflejen que sigue pendiente. Si fue
+      //     superseded por rev N+1 o por lifecycle change, no tocar el
+      //     status — la revisión nueva es la fuente de verdad (idéntico
+      //     al tratamiento del rechazo `throw` más abajo).
+      if (persistResult === PERSIST_STALE) {
+        const stillExactStale = registry.getExact(entry.identity);
+        if (
+          stillExactStale === entry &&
+          entry.identity.storyId === liveStoryId &&
+          entry.identity.epoch === liveEpoch
+        ) {
+          setStatus(itemId, 'save-failed', 'Persistencia stale — identidad cambió');
+        }
+        return;
+      }
       // Post-persist revalidation (A3a): un N+1 (o epoch/story swap) podría
       // haber llegado durante el await. Si nuestra entrada ya no es la
       // vigente, NO limpiar (no hay nada nuestro que limpiar) y NO marcar

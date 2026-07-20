@@ -163,7 +163,7 @@ describe('A2.1 ruta única de persistencia (enqueueDraftWrite)', () => {
 // A2.2 — Pre-enqueue guards: storyId/epoch/generatedRevision mismatch = no-op.
 // -----------------------------------------------------------------------------
 describe('A2.2 pre-enqueue guards (identity/revision mismatch = no-op)', () => {
-  it('storyId distinto al activo: no encola, no upsert, resuelve undefined', async () => {
+  it('storyId distinto al activo: no encola, no upsert, resuelve {stale:true}', async () => {
     const result = await mountReadyHook();
     act(() => {
       result.current.setActiveDraftStoryId('story-1');
@@ -179,7 +179,9 @@ describe('A2.2 pre-enqueue guards (identity/revision mismatch = no-op)', () => {
       },
     });
 
-    expect(ret).toBeUndefined();
+    // A3a/S3 subtask 3: contrato discriminado — stale devuelve
+    // `{stale:true}` (el adaptador lo mapea a PERSIST_STALE para el runner).
+    expect(ret).toEqual({ stale: true });
     expect(upsertCalls).toHaveLength(0);
     expect(uploadCalls).toHaveLength(0);
   });
@@ -303,8 +305,8 @@ describe('A2.3 reserva síncrona (rev menor encolada después queda no-op)', () 
       result.current.setActiveDraftStoryId('story-1');
     });
 
-    let opHigh: Promise<void>;
-    let opLow: Promise<void>;
+    let opHigh: Promise<void | { stale: true }>;
+    let opLow: Promise<void | { stale: true }>;
     act(() => {
       opHigh = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -317,8 +319,9 @@ describe('A2.3 reserva síncrona (rev menor encolada después queda no-op)', () 
       });
     });
 
-    // La rev menor resuelve inmediato (no-op).
-    await expect(opLow!).resolves.toBeUndefined();
+    // La rev menor resuelve inmediato (no-op) con el contrato discriminado
+    // A3a/S3 subtask 3: `{stale:true}`.
+    await expect(opLow!).resolves.toEqual({ stale: true });
     // La rev mayor sigue esperando su deferred en la cola.
     await flushMicrotasks();
     expect(upsertCalls).toHaveLength(1);

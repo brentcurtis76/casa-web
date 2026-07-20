@@ -497,11 +497,14 @@ describe('A3/F5 validateProvenanceBeforeSwap (persist without swap if provenance
 
 // -----------------------------------------------------------------------------
 // A3/F6 — Zero stale writes desde la ruta A2: enqueueGeneratedSnapshot devuelve
-// undefined (no success reporting) cuando la guard bloqueó, y no toca la
-// reserva por-ítem que ya fue reseteada por el lifecycle change.
+// `{stale:true}` (A3a/S3 subtask 3: contrato discriminado) cuando la guard
+// bloqueó. El adaptador `buildSnapshotTask` traduce este valor a
+// `PERSIST_STALE` para el runner, que NO marca `done` (no hubo commit) ni
+// `save-failed` (no hubo error de I/O). La reserva por-ítem se libera si
+// sigue siendo nuestra, para no dejarla stranded.
 // -----------------------------------------------------------------------------
 describe('A3/F6 zero stale writes end-to-end desde enqueueGeneratedSnapshot', () => {
-  it('lifecycle change antes del arranque: resuelve undefined; upsert cero', async () => {
+  it('lifecycle change antes del arranque: resuelve {stale:true}; upsert cero', async () => {
     const dfdBlocker = makeDeferred<{ error: null }>();
     upsertDeferreds.push(dfdBlocker);
 
@@ -516,7 +519,7 @@ describe('A3/F6 zero stale writes end-to-end desde enqueueGeneratedSnapshot', ()
     });
     await waitFor(() => expect(upsertCalls).toHaveLength(1));
 
-    let opGen: Promise<void>;
+    let opGen: Promise<void | { stale: true }>;
     act(() => {
       opGen = result.current.enqueueGeneratedSnapshot({
         patch: sampleScenePatch(),
@@ -533,14 +536,16 @@ describe('A3/F6 zero stale writes end-to-end desde enqueueGeneratedSnapshot', ()
       await opBlock;
     });
 
-    let genResult: void | undefined;
+    let genResult: void | { stale: true } | undefined;
     await act(async () => {
       genResult = await opGen;
     });
 
-    // undefined = mismo shape que un no-op pre-enqueue: el runner marca `done`
-    // sin creer que la persistencia relevante ocurrió por esta vía.
-    expect(genResult).toBeUndefined();
+    // {stale:true} = contrato discriminado (A3a/S3 subtask 3). El adaptador
+    // en la ruta de producción traduce esto a PERSIST_STALE para el runner,
+    // que NO marca el ítem `done` (no hubo commit React) ni `save-failed`
+    // (no hubo error de I/O). Aquí probamos el shape en el hook boundary.
+    expect(genResult).toEqual({ stale: true });
     // Cero upserts adicionales (sólo el del blocker).
     expect(upsertCalls).toHaveLength(1);
     await flushMicrotasks();

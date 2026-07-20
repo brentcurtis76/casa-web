@@ -35,6 +35,7 @@ import type {
   AppliedIdentity,
   ApplyEphemeral,
   ApplyStale,
+  PersistOutcome,
   PipelineItemKind,
   PipelineItemTask,
   ProviderContext,
@@ -42,10 +43,12 @@ import type {
 import {
   APPLY_EPHEMERAL,
   APPLY_STALE,
+  PERSIST_STALE,
 } from '@/hooks/storyImagePipelineRunner';
 import type {
   DraftPatch,
   EnqueueGeneratedSnapshotInput,
+  EnqueueGeneratedSnapshotResult,
 } from '@/hooks/useCuentacuentosDraft';
 import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
 
@@ -79,7 +82,9 @@ export interface BuildSnapshotTaskConfig<
   /** Returns the currently-live draft identity ({storyId, epoch}). */
   getLiveIdentity: () => { storyId: string | null; epoch: number };
   /** Single persistence surface used by every generated snapshot. */
-  enqueueGeneratedSnapshot: (input: EnqueueGeneratedSnapshotInput) => Promise<void>;
+  enqueueGeneratedSnapshot: (
+    input: EnqueueGeneratedSnapshotInput,
+  ) => Promise<EnqueueGeneratedSnapshotResult>;
 }
 
 /**
@@ -124,8 +129,8 @@ export function buildSnapshotTask<
       capturedHash = hashSnapshot(outcome);
       return outcome;
     },
-    persist: async (snapshot, appliedIdentity) => {
-      await enqueueGeneratedSnapshot({
+    persist: async (snapshot, appliedIdentity): Promise<PersistOutcome> => {
+      const result = await enqueueGeneratedSnapshot({
         patch: snapshot as DraftPatch,
         identity: appliedIdentity,
         provenance: {
@@ -133,6 +138,14 @@ export function buildSnapshotTask<
           contentHash: capturedHash!,
         },
       });
+      // A3a/S3 subtask 3: propagar el stale del draft hook al runner via el
+      // sentinel `PERSIST_STALE`. Sin esto, un stale downstream se veía como
+      // `undefined` (éxito) y el runner marcaba el ítem como `done` sin que
+      // hubiese habido commit React. El runner interpreta `PERSIST_STALE`
+      // explícitamente y NO marca done ni registra save-failed.
+      if (result && (result as { stale?: boolean }).stale === true) {
+        return PERSIST_STALE;
+      }
     },
   };
 }
