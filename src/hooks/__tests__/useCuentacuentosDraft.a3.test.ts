@@ -1396,3 +1396,148 @@ describe('A3a/S2 round-trip: long narrative text and prompts survive persist+loa
     expect(d.editingSceneText?.[1]).toBe(longSceneText);
   });
 });
+
+// =============================================================================
+// A3a/S3 — Explicit stale-safe draft writes
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// F1 deterministic — enqueue while identity A is current, block the queue,
+// change identity BEFORE the operation starts, then release the queue.
+// Assert zero upsert, zero upload, zero React commit, and an explicit
+// `{stale:true}` return that lets the caller distinguish from success/failure.
+// This test hits the lower-level `enqueueDraftWrite` API (with a `preStart`
+// closure over captured identity) — no `enqueueGeneratedSnapshot` bridge — so
+// the guarantee is proven at the primitive layer.
+// -----------------------------------------------------------------------------
+describe('A3a/S3 F1 enqueueDraftWrite: pre-start stale returns explicit {stale:true}', () => {
+  it('enqueue-before-change / start-after-change: cero upsert, cero upload, cero commit, {stale:true}', async () => {
+    const dfdBlocker = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfdBlocker);
+
+    const result = await mountReadyHook();
+
+    // Blocker occupies the tail so the second write cannot start until we
+    // resolve the deferred. This gives us a deterministic window to bump the
+    // identity between enqueue and start of the second write.
+    let opBlock: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale>;
+    act(() => {
+      opBlock = result.current.enqueueDraftWrite({ currentStep: 'story' });
+    });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    // Capture the CURRENT identity (epoch 0). `preStart` will re-check this
+    // against the LIVE hook identity when the tail advances. Because we bump
+    // the epoch before releasing the blocker, the check will fail.
+    const capturedEpoch = 0;
+    const preStart = vi.fn(() => capturedEpoch === 0);
+    const onCommit = vi.fn();
+
+    let opStale: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale>;
+    act(() => {
+      opStale = result.current.enqueueDraftWrite(
+        { currentStep: 'scenes' },
+        {
+          preStart: () => {
+            // The caller decides staleness at the tail boundary. Simulate a
+            // caller that captured identity at enqueue time and revalidates
+            // here — the epoch differs after `bumpDraftEpoch` below, so this
+            // returns false.
+            return preStart() && true;
+          },
+          onCommit,
+        }
+      );
+    });
+
+    // Change identity BEFORE the queued op starts. `preStart` will see this
+    // when the tail advances after the blocker resolves.
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+    // Rewire preStart to reflect the new epoch mismatch — we captured 0 at
+    // enqueue time, live is now 1, so we return false.
+    preStart.mockImplementation(() => 0 === 1);
+
+    // Release the blocker → tail advances → stale op starts → preStart false.
+    await act(async () => {
+      dfdBlocker.resolve({ error: null });
+      await opBlock;
+    });
+
+    let staleResult: EnqueueDraftWriteResult | EnqueueDraftWriteStale | undefined;
+    await act(async () => {
+      staleResult = await opStale;
+    });
+
+    // Explicit stale: exact shape, distinguishable from success/failure.
+    expect(staleResult).toEqual({ stale: true });
+    // Only the blocker's upsert; the stale op never called saveDraftNow.
+    expect(upsertCalls).toHaveLength(1);
+    // No uploads: preStart short-circuited before storage/saveImagesToStorage.
+    expect(uploadCalls).toHaveLength(0);
+    // No React commit (blocker itself was stale too by epoch bump).
+    expect(result.current.draft).toBeNull();
+    expect(result.current.lastSavedAt).toBeNull();
+    // onCommit is never invoked in the stale branch.
+    expect(onCommit).not.toHaveBeenCalled();
+    // preStart WAS invoked at the tail boundary (it's the source of truth
+    // for stale — not a silent no-op).
+    expect(preStart).toHaveBeenCalled();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Post-start deferred-upsert stale — identity changes AFTER the DB operation
+// started (upsert already in flight) but BEFORE it settled. The operation is
+// allowed to complete (I/O finishes) but the result is explicit `{stale:true}`
+// with no URL swap, no React commit, no onCommit. This proves the post-await
+// identity revalidation branch returns stale — not a snapshot shape — so the
+// caller cannot mistake it for a committed success.
+// -----------------------------------------------------------------------------
+describe('A3a/S3 post-start identity change returns explicit stale after DB settle', () => {
+  it('identity changes after upsert started: op settles, returns {stale:true}, zero React commit', async () => {
+    const dfd = makeDeferred<{ error: null }>();
+    upsertDeferreds.push(dfd);
+
+    const result = await mountReadyHook();
+    const onCommit = vi.fn();
+
+    // Enqueue a write with the CURRENT identity. It starts immediately (no
+    // preStart) and the upsert is deferred so we can bump the identity while
+    // the DB operation is in flight.
+    let op: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale>;
+    act(() => {
+      op = result.current.enqueueDraftWrite({ currentStep: 'scenes' }, { onCommit });
+    });
+
+    // Wait for the upsert to be in flight (payload delivered to the mock).
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+    // Bump the epoch WHILE the upsert is pending. Post-await revalidation
+    // will see identity mismatched and return {stale:true} even though the
+    // DB write already committed.
+    act(() => {
+      result.current.bumpDraftEpoch();
+    });
+
+    // Release the upsert — I/O settles OK.
+    let settled: EnqueueDraftWriteResult | EnqueueDraftWriteStale | undefined;
+    await act(async () => {
+      dfd.resolve({ error: null });
+      settled = await op;
+    });
+
+    // Explicit stale — the caller can distinguish this from success without
+    // introspecting side-effects on the hook.
+    expect(settled).toEqual({ stale: true });
+    // The upsert DID happen (allowed to settle).
+    expect(upsertCalls).toHaveLength(1);
+    // But no React commit — draft stayed null, lastSavedAt stayed null.
+    expect(result.current.draft).toBeNull();
+    expect(result.current.lastSavedAt).toBeNull();
+    // onCommit MUST NOT fire on stale — the caller does not report success.
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+});
+

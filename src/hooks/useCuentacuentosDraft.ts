@@ -1518,10 +1518,21 @@ export interface EnqueueDraftWriteResult {
 }
 
 /**
- * Resultado explícito devuelto cuando la guard de operation-start rechaza la
- * escritura ANTES del upsert. Semántica: cero upserts, cero uploads, cero URL
- * swaps, cero success reporting. La reserva por-ítem (si aplica) queda intacta:
- * el caller es responsable de decidir qué hacer con ella.
+ * Resultado explícito de una escritura descartada. Dos rutas producen este
+ * shape:
+ *
+ * 1. Pre-start (preStart guard): la operación NO tocó Supabase ni Storage.
+ *    Cero upsert, cero upload, cero URL swap, cero React commit, cero
+ *    success reporting. La reserva por-ítem (si aplica) queda intacta.
+ *
+ * 2. Post-start identity mismatch: el upsert YA corrió (I/O contra Supabase
+ *    completada) pero la identidad lógica cambió entre la captura inicial
+ *    y la re-lectura tras el `await`. En ese caso NO hay URL swap, NO se
+ *    muta `draftRef`, NO se llama `setDraft`/`setLastSavedAt`, NO se
+ *    dispara `onCommit`. El caller distingue esto de un `EnqueueDraftWriteResult`
+ *    exitoso por la ausencia del snapshot: no debe reportar success río
+ *    arriba (por ejemplo, el runner del pipeline A2 no debe marcar `done`
+ *    con este resultado).
  */
 export interface EnqueueDraftWriteStale {
   stale: true;
@@ -1903,17 +1914,32 @@ export function useCuentacuentosDraft({
               console.error('[useCuentacuentosDraft] onCommit callback threw:', err);
             }
           }
-        } else if (!identityStillMatches) {
+          return { snapshot, uploadedUrls };
+        }
+
+        // Post-start identity mismatch: the DB operation was allowed to
+        // settle (I/O already happened) but the write is stale for the
+        // React state. Return explicit `{stale:true}` so callers can
+        // distinguish this from a committed success without inspecting
+        // side-effects. No URL swap, no draftRef mutation, no setDraft,
+        // no setLastSavedAt, no onCommit — zero transition-facing success.
+        if (!identityStillMatches) {
           console.log(
             '[useCuentacuentosDraft] Stale write: persisted but skipped React commit ' +
             `(epoch ${captured.epoch}→${epochRef.current}, storyId ${captured.storyId}→${activeStoryIdRef.current}, revision ${captured.revision}→${revisionRef.current})`
           );
-        } else {
-          console.log(
-            '[useCuentacuentosDraft] Provenance validation rejected swap: persisted but no React commit'
-          );
+          return { stale: true } as EnqueueDraftWriteStale;
         }
 
+        // Provenance rejection post-upsert: identidad intacta pero el hook
+        // vetó el swap. La persistencia sí ocurrió y el snapshot puede
+        // seguir siendo útil para el caller (por ejemplo, para inspeccionar
+        // el estado persistido); devolvemos la shape normal sin commit ni
+        // onCommit. Semántica distinta de identity-stale para preservar el
+        // canal informativo (snapshot + uploadedUrls).
+        console.log(
+          '[useCuentacuentosDraft] Provenance validation rejected swap: persisted but no React commit'
+        );
         return { snapshot, uploadedUrls };
       } finally {
         pendingWritesRef.current -= 1;
