@@ -615,6 +615,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     enqueueGeneratedSnapshot,
     getDraftIdentity,
     activeIdentity,
+    bumpContentRevision,
   } = useCuentacuentosDraft({ liturgyId: context.id });
 
   // Estado del diálogo de confirmación de eliminación
@@ -644,7 +645,22 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const editingScenePromptRef = useRef<Record<number, string>>({});
   const editingCharacterPromptRef = useRef<Record<string, string>>({});
 
-  useEffect(() => { editingScenePromptRef.current = editingScenePrompt; }, [editingScenePrompt]);
+  // A3a/S7 — Mutación en sitio (no reemplazo): el snapshot autoritativo pasa
+  // `editingScenePromptRef.current` por referencia al patch. Un reemplazo del
+  // objeto desde una edición posterior dejaría el patch apuntando al objeto
+  // viejo. Mutamos claves para que un patch encolado observe siempre el estado
+  // más nuevo, incluso si el .upsert() ya capturó la referencia.
+  useEffect(() => {
+    const target = editingScenePromptRef.current;
+    for (const key of Object.keys(target)) {
+      if (!Object.prototype.hasOwnProperty.call(editingScenePrompt, key)) {
+        delete (target as Record<string, string>)[key];
+      }
+    }
+    for (const [key, value] of Object.entries(editingScenePrompt)) {
+      (target as Record<string, string>)[key] = value;
+    }
+  }, [editingScenePrompt]);
   useEffect(() => { editingCharacterPromptRef.current = editingCharacterPrompt; }, [editingCharacterPrompt]);
   useEffect(() => { propSheetOptionsRef.current = propSheetOptions; }, [propSheetOptions]);
   useEffect(() => { characterSheetOptionsRef.current = characterSheetOptions; }, [characterSheetOptions]);
@@ -657,6 +673,53 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   useEffect(() => { selectedCoverRef.current = selectedCover; }, [selectedCover]);
   useEffect(() => { endOptionsRef.current = endOptions; }, [endOptions]);
   useEffect(() => { selectedEndRef.current = selectedEnd; }, [selectedEnd]);
+
+  // A3a/S7 — Refs vivos para TODO campo editor-visible que el
+  // `buildAuthoritativeDraftPatch` lee al armar el snapshot autoritativo.
+  // El patch se resuelve DESPUÉS del CAS de queue-start (patch factory), así
+  // que cualquier edición hecha ENTRE el click y el momento del snapshot
+  // debe reflejarse — closures de useCallback quedarían stale. Cada ref se
+  // sincroniza en un useEffect de una sola dependencia para minimizar
+  // invalidaciones y evitar el patrón de "stale ref" (Ver F4/Case 2).
+  const editingSceneTextRef = useRef<Record<number, string>>({});
+  const editingTitleRef = useRef<string | null>(null);
+  const editingCoverPromptRef = useRef<string>('');
+  const editingEndPromptRef = useRef<string>('');
+  const sceneIncludedCharactersRef = useRef<Record<number, string[]>>({});
+  const sceneExcludedCharactersRef = useRef<Record<number, string[]>>({});
+  const coverIncludedCharactersRef = useRef<string[]>([]);
+  const coverExcludedCharactersRef = useRef<string[]>([]);
+  const endIncludedCharactersRef = useRef<string[]>([]);
+  const endExcludedCharactersRef = useRef<string[]>([]);
+  const sceneReferenceImagesRef = useRef<Record<number, string>>({});
+  const coverReferenceImageRef = useRef<string | null>(null);
+  const endReferenceImageRef = useRef<string | null>(null);
+  const locationRef = useRef<string>('');
+  const customLocationRef = useRef<string>('');
+  const charactersRef = useRef<string>('');
+  const styleRef = useRef<string>('reflexivo');
+  const illustrationStyleRef = useRef<string>('ghibli');
+  const additionalNotesRef = useRef<string>('');
+
+  useEffect(() => { editingSceneTextRef.current = editingSceneText; }, [editingSceneText]);
+  useEffect(() => { editingTitleRef.current = editingTitle; }, [editingTitle]);
+  useEffect(() => { editingCoverPromptRef.current = editingCoverPrompt; }, [editingCoverPrompt]);
+  useEffect(() => { editingEndPromptRef.current = editingEndPrompt; }, [editingEndPrompt]);
+  useEffect(() => { sceneIncludedCharactersRef.current = sceneIncludedCharacters; }, [sceneIncludedCharacters]);
+  useEffect(() => { sceneExcludedCharactersRef.current = sceneExcludedCharacters; }, [sceneExcludedCharacters]);
+  useEffect(() => { coverIncludedCharactersRef.current = coverIncludedCharacters; }, [coverIncludedCharacters]);
+  useEffect(() => { coverExcludedCharactersRef.current = coverExcludedCharacters; }, [coverExcludedCharacters]);
+  useEffect(() => { endIncludedCharactersRef.current = endIncludedCharacters; }, [endIncludedCharacters]);
+  useEffect(() => { endExcludedCharactersRef.current = endExcludedCharacters; }, [endExcludedCharacters]);
+  useEffect(() => { sceneReferenceImagesRef.current = sceneReferenceImages; }, [sceneReferenceImages]);
+  useEffect(() => { coverReferenceImageRef.current = coverReferenceImage; }, [coverReferenceImage]);
+  useEffect(() => { endReferenceImageRef.current = endReferenceImage; }, [endReferenceImage]);
+  useEffect(() => { locationRef.current = location; }, [location]);
+  useEffect(() => { customLocationRef.current = customLocation; }, [customLocation]);
+  useEffect(() => { charactersRef.current = characters; }, [characters]);
+  useEffect(() => { styleRef.current = style; }, [style]);
+  useEffect(() => { illustrationStyleRef.current = illustrationStyle; }, [illustrationStyle]);
+  useEffect(() => { additionalNotesRef.current = additionalNotes; }, [additionalNotes]);
 
   // Id del cuento vigente: las tareas en vuelo lo comparan antes de aplicar
   // resultados, para que un reset/regeneración no reciba imágenes huérfanas.
@@ -689,6 +752,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       return;
     }
     if (currentStep === 'config' || currentStep === 'complete') return;
+    // A3a/S7 — Bump SÍNCRONO del contentRevision ANTES de encolar el patch
+    // debounceado. Marca esta edición como una revisión nueva del contenido:
+    // si un debounce previo aún no disparó, la identidad capturada por el
+    // patch anterior queda invalidada (queue-start CAS lo detectará como
+    // stale). El propio saveDraft capturará el contentRev nuevo justo debajo.
+    bumpContentRevision();
     saveDraft({
       currentStep,
       editingScenePrompt,
@@ -709,6 +778,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     });
   }, [
     saveDraft,
+    bumpContentRevision,
     currentStep,
     editingScenePrompt,
     editingCharacterPrompt,
@@ -3023,6 +3093,12 @@ Instrucciones críticas:
   // Este patch se pasa a `enqueueDraftWrite` — es la única escritura que
   // dispara la transición. El hook computa el EditorStateV1 canónico a partir
   // de los campos del patch, e incrementa `recoveryRevision`.
+  // A3a/S7 — Fábrica del patch autoritativo. NO se invoca en el click: se
+  // pasa como thunk a `enqueueDraftWrite`, que la ejecuta DESPUÉS del CAS de
+  // queue-start (dentro del tail de la cola serializada). Lee EXCLUSIVAMENTE
+  // de refs vivas — cualquier campo capturado por closure quedaría stale si
+  // el usuario edita entre el click y el snapshot. `useCallback` sin deps es
+  // estable pero refleja siempre el valor actual porque las refs son mutables.
   const buildAuthoritativeDraftPatch = useCallback(
     (nextStory: Story, nextStep: CreationStep): DraftPatch => {
       const landmarkVisible: Record<number, boolean> = {};
@@ -3036,59 +3112,49 @@ Instrucciones críticas:
       return {
         currentStep: nextStep,
         config: {
-          location,
-          customLocation,
-          characters,
-          style,
-          illustrationStyle,
-          additionalNotes,
+          location: locationRef.current,
+          customLocation: customLocationRef.current,
+          characters: charactersRef.current,
+          style: styleRef.current,
+          illustrationStyle: illustrationStyleRef.current,
+          additionalNotes: additionalNotesRef.current,
         },
         story: nextStory,
         // Uploads / options — every derived asset the editor holds live.
-        characterSheetOptions,
-        sceneImageOptions,
-        coverOptions,
-        endOptions,
+        characterSheetOptions: characterSheetOptionsRef.current,
+        sceneImageOptions: sceneImageOptionsRef.current,
+        coverOptions: coverOptionsRef.current,
+        endOptions: endOptionsRef.current,
         propReferenceImages,
         // Selections.
-        selectedCharacterSheets,
-        selectedSceneImages,
-        selectedCover,
-        selectedEnd,
+        selectedCharacterSheets: selectedCharacterSheetsRef.current,
+        selectedSceneImages: selectedSceneImagesRef.current,
+        selectedCover: selectedCoverRef.current,
+        selectedEnd: selectedEndRef.current,
         sceneReferenceModes: sceneReferenceModeRef.current,
-        // Editor buffers — read from live state (not the debounced snapshot).
-        editingScenePrompt,
-        editingCharacterPrompt,
-        editingCoverPrompt,
-        editingEndPrompt,
-        editingSceneText,
-        editingTitle,
+        // Editor buffers — LIVE refs; nunca cerrar sobre state capturado.
+        editingScenePrompt: editingScenePromptRef.current,
+        editingCharacterPrompt: editingCharacterPromptRef.current,
+        editingCoverPrompt: editingCoverPromptRef.current,
+        editingEndPrompt: editingEndPromptRef.current,
+        editingSceneText: editingSceneTextRef.current,
+        editingTitle: editingTitleRef.current,
         // Include / exclude — scoped by kind.
-        sceneIncludedCharacters,
-        sceneExcludedCharacters,
-        coverIncludedCharacters,
-        coverExcludedCharacters,
-        endIncludedCharacters,
-        endExcludedCharacters,
+        sceneIncludedCharacters: sceneIncludedCharactersRef.current,
+        sceneExcludedCharacters: sceneExcludedCharactersRef.current,
+        coverIncludedCharacters: coverIncludedCharactersRef.current,
+        coverExcludedCharacters: coverExcludedCharactersRef.current,
+        endIncludedCharacters: endIncludedCharactersRef.current,
+        endExcludedCharacters: endExcludedCharactersRef.current,
         // Reference images (base64 or path).
-        sceneReferenceImages,
-        coverReferenceImage,
-        endReferenceImage,
+        sceneReferenceImages: sceneReferenceImagesRef.current,
+        coverReferenceImage: coverReferenceImageRef.current,
+        endReferenceImage: endReferenceImageRef.current,
         // Canonical EditorStateV1 slot for round-trip.
         landmarkVisible,
       };
     },
-    [
-      location, customLocation, characters, style, illustrationStyle, additionalNotes,
-      characterSheetOptions, sceneImageOptions, coverOptions, endOptions,
-      selectedCharacterSheets, selectedSceneImages, selectedCover, selectedEnd,
-      editingScenePrompt, editingCharacterPrompt, editingCoverPrompt, editingEndPrompt,
-      editingSceneText, editingTitle,
-      sceneIncludedCharacters, sceneExcludedCharacters,
-      coverIncludedCharacters, coverExcludedCharacters,
-      endIncludedCharacters, endExcludedCharacters,
-      sceneReferenceImages, coverReferenceImage, endReferenceImage,
-    ],
+    [],
   );
 
   // A3a/S6 — Persist-first envelope: flushea debounce pendiente, drena la
@@ -3111,12 +3177,20 @@ Instrucciones críticas:
       const liveSaveFailedCount = pipeline.getSaveFailedCount(liveIdentity);
       const liveIsSaving = pipeline.isBusySaving();
       const gateState = { isSaving: liveIsSaving, saveFailedCount: liveSaveFailedCount };
-      // 3) Armar UN patch autoritativo desde refs/state live.
-      const patch = buildAuthoritativeDraftPatch(nextStory, nextStep);
-      // 4) Transacción: onSuccess sólo tras commit vivo (no stale, no error).
+      // 3) A3a/S7 — Pasamos una FÁBRICA de patch, no el patch armado en el
+      //    click. `enqueueDraftWrite` la invoca DENTRO del tail de la cola
+      //    tras el CAS de queue-start; así el snapshot lee refs vivas y
+      //    refleja cualquier edición hecha entre click y snapshot.
+      // 4) `authoritative: true` bumpea `contentRevision` síncronamente en el
+      //    tail tras un commit vivo — invalida cualquier debounce encolado
+      //    detrás con la contentRev anterior (no puede pisar el step recién
+      //    comprometido).
       await runApprovalTransaction({
         state: gateState,
-        enqueue: () => enqueueDraftWrite(patch),
+        enqueue: () => enqueueDraftWrite(
+          () => buildAuthoritativeDraftPatch(nextStory, nextStep),
+          { authoritative: true },
+        ),
         onSuccess,
         onBlocked: () => setError(gateWarning),
         onStale: () => setError(staleMessage),
