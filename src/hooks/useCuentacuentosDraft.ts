@@ -1896,12 +1896,36 @@ export function useCuentacuentosDraft({
     // reciba la excepción real si falla la persistencia.
     const operation: Promise<EnqueueDraftWriteResult | EnqueueDraftWriteStale> = writeTailRef.current.then(async () => {
       try {
-        // Guard de operation-start: se evalúa síncronamente antes de tocar
-        // Supabase o Storage. Si el caller declara que la operación ya expiró,
-        // resolvemos con `{stale: true}` y NO ejecutamos saveDraftNow.
+        // Guard adicional del caller (opcional): tras el chequeo incondicional,
+        // el caller puede vetar por razones extra (ej. reserva por-ítem del
+        // adaptador A2, hash guard de provenance). NUNCA es la fuente de
+        // verdad para identidad — sólo un veto opt-in complementario. Se
+        // evalúa antes del chequeo incondicional para preservar el contrato
+        // del guard del caller cuando ambos coinciden en rechazar.
         if (preStart && !preStart()) {
           console.log(
             '[useCuentacuentosDraft] preStart guard rejected: skipping upsert, uploads, swaps'
+          );
+          return { stale: true } as EnqueueDraftWriteStale;
+        }
+
+        // A3a/S2 — Guard de operation-start INCONDICIONAL. Corre síncronamente
+        // en el boundary del tail, ANTES de cualquier efecto (saveDraftNow,
+        // upsert, upload, storage, URL swap, React commit). Compara la
+        // identidad {storyId, epoch, revision} capturada al ENCOLAR contra las
+        // refs vivas. Un mismatch ⇒ `{stale:true}` con cero efectos. No
+        // depende del caller: aplica al saveDraft debounced, al
+        // enqueueDraftWrite directo sin opciones, y a cualquier ruta futura
+        // que use la cola serializada. `preStart` (arriba) es un veto opt-in
+        // complementario, nunca la fuente de verdad para identidad.
+        const identityLiveAtStart =
+          captured.epoch === epochRef.current &&
+          captured.storyId === activeStoryIdRef.current &&
+          captured.revision === revisionRef.current;
+        if (!identityLiveAtStart) {
+          console.log(
+            '[useCuentacuentosDraft] Operation-start identity mismatch: skipping I/O ' +
+            `(epoch ${captured.epoch}→${epochRef.current}, storyId ${captured.storyId}→${activeStoryIdRef.current}, revision ${captured.revision}→${revisionRef.current})`
           );
           return { stale: true } as EnqueueDraftWriteStale;
         }
