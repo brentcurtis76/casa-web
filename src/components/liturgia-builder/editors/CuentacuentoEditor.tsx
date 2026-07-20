@@ -1893,6 +1893,9 @@ Instrucciones críticas:
   const applyPropsUpdate = useCallback(async (updater: (props: StoryProp[]) => StoryProp[]) => {
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = updater(baseProps);
+    // D13 — Mutación editor-visible sobre `story.props`: bumpea contentRevision
+    // para que una aprobación/finalización en vuelo la detecte y quede stale.
+    bumpContentRevision();
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -1922,7 +1925,7 @@ Instrucciones críticas:
       console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
     }
     return nextProps;
-  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory]);
+  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision]);
 
   // Builder: prop sheet (candidatas efímeras — apply retorna APPLY_EPHEMERAL,
   // no se persisten). Delega en `makePropSheetTask`.
@@ -2026,6 +2029,10 @@ Instrucciones críticas:
     // perdería al recargar (el auto-save continuo está deshabilitado).
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = baseProps.map(p => p.id === propId ? { ...p, visualDescription } : p);
+    // D13 — Mutación editor-visible: bumpea contentRevision para que una
+    // aprobación en vuelo la detecte (y el patch parcial pendiente ya no se
+    // descarta gracias a D14).
+    bumpContentRevision();
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -2033,7 +2040,7 @@ Instrucciones críticas:
       setStory(nextStory);
     }
     saveDraft({ story: nextStory });
-  }, [story, storyProps, saveDraft, setStory]);
+  }, [story, storyProps, saveDraft, setStory, bumpContentRevision]);
 
   // Builder: imagen de escena — delega en `makeSceneTask`.
   const buildSceneTask = useCallback((
@@ -3151,6 +3158,21 @@ Instrucciones críticas:
   // de refs vivas — cualquier campo capturado por closure quedaría stale si
   // el usuario edita entre el click y el snapshot. `useCallback` sin deps es
   // estable pero refleja siempre el valor actual porque las refs son mutables.
+  //
+  // D13 — Alcance del bump de contentRevision (detección de edición durante una
+  // aprobación en vuelo, invariante estrechada explícitamente):
+  //   BUMPEAN (mutaciones sobre `story` o estado persistido fuera de este
+  //   snapshot): overlays de texto (`updateTextOverlay`), props
+  //   (`applyPropsUpdate`, `handleUpdatePropDescription`) y los toggles de
+  //   `sceneReferenceModes`. Sin bump, `setStory(committedStory)` revertiría la
+  //   mutación al commitear una aprobación que corrió en paralelo.
+  //   NO bumpean (cubiertas de otra forma): las SELECCIONES de opción
+  //   (`selectedCharacterSheets/SceneImages/Cover/End`), los `sceneReferenceModes`
+  //   ya reflejados, las imágenes de referencia y el `editingSceneText` — este
+  //   builder las lee de refs vivas ACÁ, así que un cambio anterior al tail ya
+  //   queda capturado en el snapshot autoritativo; el estado de selección no lo
+  //   revierte `setStory` (es state aparte) y el texto de escena además se
+  //   rehidrata del buffer (`editorStateV1`) al recargar.
   const buildAuthoritativeDraftPatch = useCallback(
     (nextStory: Story, nextStep: CreationStep): DraftPatch => {
       const landmarkVisible: Record<number, boolean> = {};
@@ -4696,6 +4718,8 @@ Instrucciones críticas:
                                       onClick={() => {
                                         const next = { ...sceneReferenceMode, [scene.number]: 'style' as const };
                                         setSceneReferenceMode(next);
+                                        // D13 — mutación editor-visible: bumpea contentRevision.
+                                        bumpContentRevision();
                                         saveDraft({ sceneReferenceModes: next });
                                       }}
                                       className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
@@ -4709,6 +4733,8 @@ Instrucciones críticas:
                                       onClick={() => {
                                         const next = { ...sceneReferenceMode, [scene.number]: 'pov' as const };
                                         setSceneReferenceMode(next);
+                                        // D13 — mutación editor-visible: bumpea contentRevision.
+                                        bumpContentRevision();
                                         saveDraft({ sceneReferenceModes: next });
                                       }}
                                       className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
@@ -5239,6 +5265,10 @@ Instrucciones críticas:
   ) => {
     const base = getOverlayOrDefault(which, defaultText, defaultPosition);
     const next: TextOverlay = { ...base, ...patch };
+    // D13 — Mutación editor-visible sobre `story`: bumpea contentRevision para
+    // que una aprobación/finalización en vuelo la detecte (CAS post-persistencia)
+    // y quede stale en vez de que `setStory(committedStory)` la revierta.
+    bumpContentRevision();
     setStory(prev => {
       if (!prev) return prev;
       return {
