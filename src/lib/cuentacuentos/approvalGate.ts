@@ -48,7 +48,7 @@ export interface EnqueueLikeResult {
   stale?: boolean;
 }
 
-export interface ApprovalTransactionInput {
+export interface ApprovalTransactionInput<R extends EnqueueLikeResult = EnqueueLikeResult> {
   /** Snapshot del gate al momento de disparar; se re-evalúa en el gate check. */
   state: ApprovalGateState;
   /**
@@ -57,9 +57,15 @@ export interface ApprovalTransactionInput {
    * Puede rechazar (persistencia falló) o resolver con `{ stale: true }` (la
    * identidad viva cambió mientras la escritura estaba en vuelo).
    */
-  enqueue: () => Promise<EnqueueLikeResult | undefined>;
-  /** Aplica la transición local (setStory, currentStep, kick). Se llama SÓLO en `ok`. */
-  onSuccess: () => void;
+  enqueue: () => Promise<R | undefined>;
+  /**
+   * Aplica la transición local (setStory, currentStep, kick). Se llama SÓLO en
+   * `ok`, y recibe el resultado del enqueue para que el caller consuma el
+   * snapshot COMMITEADO por la persistencia (F4: nunca un closure pre-drain).
+   * El caller debe verificar el discriminador de commit vivo de su resultado
+   * (`committed` en `EnqueueDraftWriteResult`) antes de transicionar.
+   */
+  onSuccess: (result: R | undefined) => void;
   /** Notificación de bloqueo — típicamente un warning UI. */
   onBlocked?: () => void;
   /** Notificación de stale — retenemos story/step, no anunciamos éxito. */
@@ -74,16 +80,16 @@ export interface ApprovalTransactionInput {
  *     (cero encolamientos, cero onSuccess).
  *   - Si el enqueue rechaza → `error` (cero onSuccess).
  *   - Si el enqueue resuelve con `{ stale: true }` → `stale` (cero onSuccess).
- *   - Sólo `ok` invoca `onSuccess`.
+ *   - Sólo `ok` invoca `onSuccess`, pasándole el resultado del enqueue.
  */
-export async function runApprovalTransaction(
-  input: ApprovalTransactionInput
+export async function runApprovalTransaction<R extends EnqueueLikeResult = EnqueueLikeResult>(
+  input: ApprovalTransactionInput<R>
 ): Promise<ApprovalOutcome> {
   if (!canApprove(input.state)) {
     input.onBlocked?.();
     return 'blocked';
   }
-  let result: EnqueueLikeResult | undefined;
+  let result: R | undefined;
   try {
     result = await input.enqueue();
   } catch (err) {
@@ -94,6 +100,6 @@ export async function runApprovalTransaction(
     input.onStale?.();
     return 'stale';
   }
-  input.onSuccess();
+  input.onSuccess(result);
   return 'ok';
 }

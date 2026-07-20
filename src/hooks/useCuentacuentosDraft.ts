@@ -1515,6 +1515,18 @@ export interface EnqueueDraftWriteResult {
   snapshot: CuentacuentosDraftFull;
   uploadedUrls: DraftUploadedUrls;
   stale?: false;
+  /**
+   * F4 — Discriminador de commit VIVO. Presente SOLO cuando la escritura
+   * persistió Y su identidad seguía viva al re-chequeo post-await, es decir
+   * cuando el hook efectivamente commiteó `draftRef`/`setDraft`. Es el
+   * snapshot con los URL swaps aplicados — el MISMO objeto asignado a
+   * `draftRef.current`. Los callers que solo pueden transicionar tras un
+   * commit vivo (el envelope de aprobación/finalización) DEBEN consumir la
+   * story de este campo, nunca un closure pre-drain, y tratar su ausencia
+   * como stale. En la rama de provenance-rechazado (persistió sin commit)
+   * este campo está ausente.
+   */
+  committed?: CuentacuentosDraftFull;
 }
 
 /**
@@ -1585,7 +1597,7 @@ export interface EnqueueDraftWriteOptions {
 }
 
 /** Identidad lógica del draft capturada en un punto en el tiempo. */
-interface DraftIdentity {
+export interface DraftIdentity {
   epoch: number;
   storyId: string | null;
   revision: number;
@@ -1594,9 +1606,16 @@ interface DraftIdentity {
    * en toda mutación editor-visible del usuario (via `bumpContentRevision`).
    * Se compara en el CAS de queue-start para invalidar debounces obsoletos
    * cuando una escritura autoritative superviniente bumpea la revisión al
-   * commitear. NO se incluye en el CAS post-persistencia — el commit React
-   * usa sólo {epoch, storyId, revision} para no romper la semántica del
-   * pipeline A2/A3 con generatedRevisions.
+   * commitear.
+   *
+   * F4 — En el CAS post-persistencia se incluye SOLO para escrituras
+   * `authoritative`: una edición del usuario durante el await autoritativo
+   * bumpea contentRevision y fuerza `{stale:true}` ANTES de draftRef/
+   * setDraft/setLastSavedAt/onCommit/bump — la transición no ocurre y el
+   * debounce de la edición más nueva sigue siendo válido (no hay segundo
+   * bump que lo invalide). Las escrituras normales (debounce/pipeline)
+   * mantienen el CAS post-persistencia en {epoch, storyId, revision} para
+   * no romper la semántica del pipeline A2/A3 con generatedRevisions.
    */
   contentRevision: number;
 }
@@ -1671,6 +1690,15 @@ export interface UseCuentacuentosDraftReturn {
    * `AppliedIdentity` en el momento exacto de aplicar el resultado).
    */
   getDraftIdentity: () => DraftIdentitySnapshot;
+  /**
+   * F4 — Getter estable de la identidad de escritura COMPLETA
+   * {storyId, epoch, revision, contentRevision}, leída de refs vivas en cada
+   * invocación. El envelope de aprobación/finalización la captura
+   * SÍNCRONAMENTE antes de su primer await y la re-compara campo a campo
+   * inmediatamente después del drain: cualquier cambio (lifecycle o edición
+   * same-story vía contentRevision) ⇒ stale con cero efectos autoritativos.
+   */
+  getDraftWriteIdentity: () => DraftIdentity;
   /**
    * A3a/S6 — Espejo reactivo de `getDraftIdentity()`. Cambia cuando storyId
    * o epoch mutan (bump, delete, recovery, replace). Diseñado para pasarse
@@ -2015,10 +2043,19 @@ export function useCuentacuentosDraft({
         // capturó SÍNCRONAMENTE al encolar (antes del chaining sobre el tail).
         // Si algo cambió, la persistencia ya ocurrió pero NO commiteamos al
         // estado React ni disparamos onCommit.
+        //
+        // F4 — Para escrituras `authoritative` el CAS incluye ADEMÁS
+        // `contentRevision`: una edición del usuario durante el await
+        // autoritativo (que bumpea contentRevision) fuerza `{stale:true}`
+        // antes de cualquier efecto local. Así la aprobación no transiciona
+        // con un snapshot que ya no refleja el contenido más nuevo, no hay
+        // bump autoritativo que invalide el debounce de esa edición, y la
+        // edición más nueva persiste normalmente después.
         const identityStillMatches =
           captured.epoch === epochRef.current &&
           captured.storyId === activeStoryIdRef.current &&
-          captured.revision === revisionRef.current;
+          captured.revision === revisionRef.current &&
+          (!authoritative || captured.contentRevision === contentRevisionRef.current);
 
         // Provenance hook: aunque la identidad lógica coincida, el caller puede
         // vetar el URL swap si la revisión/hash de origen del snapshot ya no
@@ -2049,7 +2086,11 @@ export function useCuentacuentosDraft({
               console.error('[useCuentacuentosDraft] onCommit callback threw:', err);
             }
           }
-          return { snapshot, uploadedUrls };
+          // F4 — `committed` es el discriminador de commit vivo: el MISMO
+          // objeto (con URL swaps) asignado a draftRef. El envelope de
+          // aprobación consume `committed.story` como fuente de la
+          // transición — nunca un closure pre-drain.
+          return { snapshot, uploadedUrls, committed: swapped };
         }
 
         // Post-start identity mismatch: the DB operation was allowed to
@@ -2409,6 +2450,18 @@ export function useCuentacuentosDraft({
   }));
   const getDraftIdentity = getDraftIdentityRef.current;
 
+  // F4 — Identidad de escritura completa (incluye revision y contentRevision),
+  // siempre leída de refs vivas. La captura del envelope de aprobación debe
+  // ser SÍNCRONA (antes del primer await) para que la comparación post-drain
+  // detecte tanto cambios de lifecycle como ediciones same-story.
+  const getDraftWriteIdentityRef = useRef<() => DraftIdentity>(() => ({
+    storyId: activeStoryIdRef.current,
+    epoch: epochRef.current,
+    revision: revisionRef.current,
+    contentRevision: contentRevisionRef.current,
+  }));
+  const getDraftWriteIdentity = getDraftWriteIdentityRef.current;
+
   const bumpDraftEpoch = useCallback(() => {
     epochRef.current += 1;
     contentRevisionRef.current = 0;
@@ -2604,6 +2657,7 @@ export function useCuentacuentosDraft({
     isSaving,
     saveDraft,
     getDraftIdentity,
+    getDraftWriteIdentity,
     activeIdentity,
     enqueueDraftWrite,
     flushPendingDraftWrites,
