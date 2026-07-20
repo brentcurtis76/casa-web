@@ -3,7 +3,7 @@
  * Integra generación de cuentos con Claude y imágenes con Nano Banana Pro
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { supabase } from '@/integrations/supabase/client';
 import {

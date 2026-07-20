@@ -308,7 +308,7 @@ describe('storyImagePipelineRunner — token/identity boundary guards', () => {
       identity: { storyId: 'story-A', epoch: 1 },
     });
     // Yield until we're in the persisting phase.
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
 
     const tokenDuringPersist = capturedRunToken;
 

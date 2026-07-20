@@ -196,7 +196,7 @@ describe('F3.2 status ordering by outcome', () => {
       },
     };
     const run = runner.runItems({ tasks: [task], identity: { storyId: 's', epoch: 0 } });
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
     // MUST have observed `persisting` before persist resolves; MUST NOT have
     // seen `done` yet.
     expect(transitions).toContain('persisting');
@@ -444,7 +444,7 @@ describe('F3.6 runToken guards only generation→apply', () => {
       tasks: [task],
       identity: { storyId: 's', epoch: 0 },
     });
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
 
     // Flip the token by starting a fresh run for a DIFFERENT item.
     const second = runner.runItems({

@@ -396,7 +396,7 @@ describe('T-A3a.2 retry save-only guarantees', () => {
 
     // Kick off a retry — persist is now in flight and gated.
     const retryPromise = runner.retrySaves(identity);
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
     expect(runner.statusOf('scene-1')).toBe('persisting');
     // Image-saving signal is TRUE during in-flight retry persistence.
     expect(runner.isSaving()).toBe(true);

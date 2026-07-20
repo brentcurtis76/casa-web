@@ -359,7 +359,7 @@ describe('T-A2.3 persist identity validation', () => {
       tasks: [task],
       identity: { storyId: 'story-1', epoch: 0 },
     });
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
     // Flip token via a fresh run for a different item; then release persist.
     const second = runner.runItems({
       tasks: [
@@ -402,7 +402,7 @@ describe('T-A2.4 persist status ordering', () => {
       },
     };
     const run = runner.runItems({ tasks: [task], identity: { storyId: 's', epoch: 0 } });
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
     expect(runner.statusOf('scene-1')).toBe('persisting');
     gate.resolve();
     await run;
@@ -636,7 +636,7 @@ describe.each(REFINE_CASES)('refine parity — $name ($kind)', (c) => {
       tasks: [task],
       identity: { storyId: 'story-A', epoch: 0 },
     });
-    while (runner.statusOf(c.itemId) !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf(c.itemId)).toBe('persisting'), { timeout: 2000, interval: 1 });
     expect(runner.statusOf(c.itemId)).toBe('persisting');
     gate.resolve();
     await run;

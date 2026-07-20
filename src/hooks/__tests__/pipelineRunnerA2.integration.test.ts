@@ -614,7 +614,7 @@ describe('T-A2/S4.6 persistence race + newer revision wins on adapter', () => {
       tasks: [task],
       identity: { storyId: 'story-1', epoch: 0 },
     });
-    while (runner.statusOf('scene-9') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-9')).toBe('persisting'), { timeout: 2000, interval: 1 });
     const tokenDuringPersist = runner.getRunToken();
 
     // Flip token via a new run for a different item.

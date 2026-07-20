@@ -493,7 +493,7 @@ describe('regression 4 — status transitions', () => {
       tasks: [task],
       identity: { storyId: 's', epoch: 0 },
     });
-    while (runner.statusOf('scene-1') !== 'persisting') await wait(0);
+    await vi.waitFor(() => expect(runner.statusOf('scene-1')).toBe('persisting'), { timeout: 2000, interval: 1 });
     // At this point `persisting` MUST have already been observed and `done`
     // MUST NOT have been observed.
     expect(transitions).toContain('persisting');
