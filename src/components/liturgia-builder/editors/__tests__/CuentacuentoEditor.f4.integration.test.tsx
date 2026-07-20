@@ -784,8 +784,8 @@ describe('Case 5: lifecycle identity change during persistence ⇒ no success tr
 // Case 6 — A REAL save-failed pipeline entry (driven through the UI + mocked
 // external persistence failure) blocks approval with zero authoritative effects.
 // ---------------------------------------------------------------------------
-describe('Case 6: real save-failed pipeline entry blocks approval', () => {
-  it('a failed pipeline persist creates a save-failed entry; approval is blocked with zero effects', { timeout: 15000 }, async () => {
+describe('Case 6: real save-failed pipeline entry disables approval (gate wired to the button)', () => {
+  it('a failed pipeline persist creates a save-failed entry; the approve button is disabled and a click yields zero effects', { timeout: 15000 }, async () => {
     await renderAtStoryStep('story-c6');
 
     // FIFO deferred plan: [auth ok] then [pipeline persist FAILS].
@@ -810,17 +810,24 @@ describe('Case 6: real save-failed pipeline entry blocks approval', () => {
       { timeout: 5000 }
     );
 
-    // Now try to approve characters — the gate must block with zero effects.
-    const beforeCount = upsertCalls.length;
+    // HONEST gate assertion. The gate is ENFORCED via the disabled attribute:
+    // the approve button's `disabled` shares the `canApprove` predicate with the
+    // runtime gate, so a real save-failed entry disables it. A disabled button
+    // suppresses onClick (React does not dispatch to disabled form controls), so
+    // the integration truth is: button disabled + warning shown + a click yields
+    // zero authoritative effects. The runtime gate predicate and the
+    // `runApprovalTransaction` onBlocked path are unit-covered deterministically
+    // in src/lib/cuentacuentos/__tests__/approvalGate.a3.test.ts.
     const approveChars = screen.getByRole('button', { name: /Aprobar personajes/i });
+    expect((approveChars as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryAllByText(/Hay imágenes sin guardar; reintenta antes de aprobar/i).length).toBeGreaterThan(0);
+    const beforeCount = upsertCalls.length;
     await act(async () => {
       fireEvent.click(approveChars);
       await yields(20);
     });
-
     expect(upsertCalls.slice(beforeCount).filter((c) => stepOf(c) === 'scenes')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /Aprobar personajes/i })).not.toBeNull(); // no transition
-    expect(screen.queryAllByText(/Hay imágenes sin guardar; reintenta antes de aprobar/i).length).toBeGreaterThan(0);
   });
 });
 
@@ -828,8 +835,8 @@ describe('Case 6: real save-failed pipeline entry blocks approval', () => {
 // Case 7 — REAL in-flight pipeline persistence blocks approval until it
 // settles; afterwards the same approval path succeeds.
 // ---------------------------------------------------------------------------
-describe('Case 7: real in-flight pipeline persistence blocks approval', () => {
-  it('approval produces zero authoritative effects while a pipeline persist is held; succeeds after it settles', { timeout: 20000 }, async () => {
+describe('Case 7: real in-flight pipeline persistence disables approval; re-enables after it settles', () => {
+  it('the approve button is disabled (zero effects) while a pipeline persist is held; approval succeeds after it settles', { timeout: 20000 }, async () => {
     await renderAtStoryStep('story-c7');
 
     // FIFO plan: [auth ok] then [pipeline persist HELD in-flight].
@@ -847,14 +854,17 @@ describe('Case 7: real in-flight pipeline persistence blocks approval', () => {
     );
     await waitFor(() => expect(invokeCalls.length).toBeGreaterThanOrEqual(1), { timeout: 4000 });
 
-    // While the pipeline persist is held in flight, try to approve characters.
-    const beforeCount = upsertCalls.length;
+    // HONEST gate assertion: while the pipeline persist is in flight, canApprove
+    // is false ⇒ the button is disabled ⇒ a click is suppressed, yielding zero
+    // authoritative effects. (Runtime gate logic unit-covered in
+    // approvalGate.a3.test.ts.)
     const approveChars = screen.getByRole('button', { name: /Aprobar personajes/i });
+    expect((approveChars as HTMLButtonElement).disabled).toBe(true);
+    const beforeCount = upsertCalls.length;
     await act(async () => {
       fireEvent.click(approveChars);
       await yields(25);
     });
-    // Blocked: zero writes at the target step, no transition.
     expect(upsertCalls.slice(beforeCount).filter((c) => stepOf(c) === 'scenes')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /Aprobar personajes/i })).not.toBeNull();
 
@@ -1146,9 +1156,15 @@ describe('Case 12 (BASE-RED): envelope-armed debounce cannot overwrite a committ
     // ran (a 'scenes'-step write after the stale 'cover' I/O; its identity
     // stayed valid because no authoritative bump occurred).
     expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).not.toBeNull();
+    // Hard guard (mirror of Case 3): the blocked authoritative 'cover' I/O MUST
+    // have run, otherwise staleAuthIdx=-1 makes the ordering assertion below
+    // pass vacuously for any 'scenes' write. This proves the interleaving under
+    // test actually happened.
+    expect(writesAtStep('cover')).toHaveLength(1);
     await waitFor(
       () => {
         const staleAuthIdx = upsertCalls.findIndex((c) => stepOf(c) === 'cover');
+        expect(staleAuthIdx).toBeGreaterThanOrEqual(0);
         const lateIdx = upsertCalls.findIndex((c, i) => i > staleAuthIdx && stepOf(c) === 'scenes');
         expect(lateIdx).toBeGreaterThan(staleAuthIdx);
       },
@@ -1178,5 +1194,166 @@ describe('Case 12 (BASE-RED): envelope-armed debounce cannot overwrite a committ
       .slice(commitIdx + 1)
       .filter((c) => parseUpsertRow(c.payload).currentStep === 'scenes');
     expect(postCommitStaleWrites).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 13 (INTRODUCED FIX) — Phantom-finalize corrective. A stale finalize
+// wrote current_step='complete' to the draft row before going stale; the
+// corrective non-authoritative write restores the live step ('cover')
+// IMMEDIATELY, so the row is never left orphaned as 'complete' (a state the
+// recovery mount-check ignores → a stranded finished story on tab-close).
+// ---------------------------------------------------------------------------
+describe('Case 13 (INTRODUCED FIX): stale finalize corrects the phantom complete row back to cover', () => {
+  it('after a stale finalize the persisted current_step is restored to cover, not left at complete', { timeout: 20000 }, async () => {
+    const onStoryCreated = vi.fn();
+    render(
+      <CuentacuentoEditor
+        context={baseContext}
+        initialStory={makeScenesPendingStory('story-c13')}
+        onStoryCreated={onStoryCreated}
+      />
+    );
+    const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveScenes);
+      await yields(15);
+    });
+    const finalizeBtn = await screen.findByRole('button', { name: /Finalizar cuento/i });
+
+    // FIFO: [cover drain ok] then [finalize auth HELD].
+    const finalizeBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(makeResolvedOk(), finalizeBlocker);
+
+    await act(async () => {
+      fireEvent.click(finalizeBtn);
+      await yields(20);
+    });
+
+    // FREEZE the 2s debounce with fake timers so the ONLY thing that can restore
+    // the step is an IMMEDIATE corrective write — isolating the introduced fix
+    // from the pre-existing ≤2s debounce self-heal (which is what made this test
+    // pass against base with real timers).
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    // Edit the title while the finalize upsert is in flight → makes it stale.
+    act(() => {
+      fireEvent.click(screen.getByTitle(/Haz clic para editar el título/i));
+    });
+    const titleInput = screen
+      .getAllByDisplayValue('Cuento a finalizar')
+      .find((el) => el.className.includes('font-semibold'));
+    act(() => {
+      fireEvent.change(titleInput!, { target: { value: 'EDIT MID FINALIZE' } });
+    });
+
+    // Release → finalize resolves STALE (microtasks only; the debounce timer is
+    // frozen and never advanced, so no self-heal can fire).
+    await act(async () => {
+      finalizeBlocker.resolve({ error: null });
+      await yields(25);
+    });
+    vi.useRealTimers();
+
+    // Stale: no finalize side-effects.
+    expect(onStoryCreated).not.toHaveBeenCalled();
+    expect(deletedDraftRows).toHaveLength(0);
+
+    // The finalize upsert wrote 'complete' to the row…
+    const completeIdx = upsertCalls.findIndex((c) => isAuthoritativeFinalize(c.payload));
+    expect(completeIdx).toBeGreaterThanOrEqual(0);
+    // …and the IMMEDIATE corrective restored 'cover' right after it, WITHOUT the
+    // debounce ever firing. (Against base — no corrective, debounce frozen — no
+    // such 'cover' write exists, so this assertion fails there.)
+    const coverAfter = upsertCalls.findIndex((c, i) => i > completeIdx && stepOf(c) === 'cover');
+    expect(coverAfter).toBeGreaterThan(completeIdx);
+    // Net: the last persisted step is NOT 'complete' — no orphaned row.
+    expect(stepOf(upsertCalls[upsertCalls.length - 1])).not.toBe('complete');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 14 (INTRODUCED FIX) — Double-click re-entrancy. A synchronous
+// double-click runs a SINGLE envelope (isApprovingRef latches the 2nd) and
+// therefore shows no false "vuelve a intentar" banner after the transition.
+// ---------------------------------------------------------------------------
+describe('Case 14 (INTRODUCED FIX): double-click approve runs a single envelope, no false stale banner', () => {
+  it('a synchronous double-click transitions exactly once and surfaces no stale error', { timeout: 15000 }, async () => {
+    await renderAtStoryStep('story-c14');
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
+
+    const approveBtn = screen.getByRole('button', {
+      name: /Aprobar cuento y generar imágenes/i,
+    });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      // Second click in the SAME tick (before any re-render disables the button):
+      // only the synchronous isApprovingRef latch can prevent a 2nd envelope.
+      fireEvent.click(approveBtn);
+      await yields(10);
+    });
+    await act(async () => {
+      authBlocker.resolve({ error: null });
+      await yields(25);
+    });
+
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    // Exactly one transition — the second click did not start a second envelope.
+    expect(countStepTransitions('characters')).toBe(1);
+    // No false "the draft changed, try again" after a visibly successful approval.
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Case 15 (INTRODUCED FIX) — A successful retry clears the stale error banner
+// (setError(null) at envelope entry). Stale-then-retry is the designed
+// mainline, so the red banner must not survive a successful retry.
+// ---------------------------------------------------------------------------
+describe('Case 15 (INTRODUCED FIX): a successful retry clears the stale banner', () => {
+  it('the stale banner shown after a stale approval is cleared once a re-approval succeeds', { timeout: 20000 }, async () => {
+    await renderAtScenesStep('story-c15');
+
+    // Force stale via an edit during the blocked drain (drainStable early-out).
+    const promptTextarea = await armScenePromptDebounce('ORIGINAL');
+    const drainBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(drainBlocker);
+    const approveBtn = screen.getByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveBtn);
+      await yields(8);
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    act(() => {
+      fireEvent.change(promptTextarea, { target: { value: 'NEW' } });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(2100);
+      await yields(4);
+    });
+    vi.useRealTimers();
+    await act(async () => {
+      drainBlocker.resolve({ error: null });
+      await yields(20);
+    });
+
+    // Stale banner is present.
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i).length).toBeGreaterThan(0);
+
+    // Retry (all upserts default-succeed now) → transitions to cover.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Aprobar escenas/i }));
+      await yields(25);
+    });
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
+      { timeout: 5000 }
+    );
+    // The banner was cleared at envelope entry — it does not follow the user to
+    // the cover step after the successful retry.
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i)).toHaveLength(0);
   });
 });
