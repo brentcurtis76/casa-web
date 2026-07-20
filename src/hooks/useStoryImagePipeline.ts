@@ -293,11 +293,13 @@ export function useStoryImagePipeline(
     return { done, error };
   }, [items]);
 
-  return {
+  const value: UseStoryImagePipelineReturn = {
     items,
     isRunning,
     isSaving,
     isBusy,
+    isBusySaving,
+    getSaveFailedCount,
     doneCount: counts.done,
     errorCount: counts.error,
     saveFailedCount,
@@ -314,4 +316,5 @@ export function useStoryImagePipeline(
     getRunToken,
     invalidateSaveRetries,
   };
+  return value;
 }
