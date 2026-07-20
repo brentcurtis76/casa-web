@@ -1540,4 +1540,3 @@ describe('A3a/S3 post-start identity change returns explicit stale after DB sett
     expect(onCommit).not.toHaveBeenCalled();
   });
 });
-
