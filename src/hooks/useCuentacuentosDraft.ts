@@ -1978,7 +1978,18 @@ export function useCuentacuentosDraft({
       setIsLoading(true);
       try {
         const existingDraft = await loadDraftFromSupabase(userId, liturgyId);
-        if (existingDraft && existingDraft.currentStep !== 'config' && existingDraft.currentStep !== 'complete') {
+        if (existingDraft && existingDraft.currentStep === 'complete') {
+          // F2/F5 — Orphan cleanup. Una fila con current_step='complete' significa
+          // que una finalización escribió su step de transición pero su
+          // deleteDraft posterior al commit NUNCA aterrizó (la corrección
+          // phantom-finalize falló, o la pestaña se cerró dentro de su RTT). El
+          // cuento ya está entregado a la liturgia o nunca se finalizó en vivo;
+          // en cualquier caso esta fila es irrecuperable (recovery IGNORA
+          // 'complete') y quedaría varada. La borramos al montar para que no se
+          // acumule. Sin loop de reintentos — un solo intento best-effort.
+          console.warn('[useCuentacuentosDraft] Orphan complete draft row found on mount; cleaning up');
+          void deleteDraftFromSupabase(userId, liturgyId);
+        } else if (existingDraft && existingDraft.currentStep !== 'config') {
           setDraft(existingDraft);
           setShowRecoveryPrompt(true);
           console.log(`[useCuentacuentosDraft] Found existing draft at step: ${existingDraft.currentStep}`);
@@ -2597,7 +2608,16 @@ export function useCuentacuentosDraft({
   // debe descartar su commit para no resucitar estado que el usuario borró.
   const deleteDraft = useCallback(() => {
     if (!userId) return;
-    deleteDraftFromSupabase(userId, liturgyId);
+    // F2 — Serializar el DELETE DETRÁS de la cola de escrituras. Sin esto, un
+    // persist de snapshot generado que ya pasó su preStart y tiene su upsert en
+    // vuelo (o encolado) podía re-crear la fila DESPUÉS de este DELETE (out-of-
+    // queue), dejando una fila 'complete' huérfana tras finalizar. Encadenando
+    // sobre writeTailRef, el DELETE corre después del último upsert encolado, así
+    // que siempre gana. El bump de epoch (abajo) además invalida cualquier
+    // escritura que aún no arrancó. El tail nunca rechaza.
+    writeTailRef.current = writeTailRef.current
+      .then(() => deleteDraftFromSupabase(userId, liturgyId))
+      .then(() => {}, () => {});
     epochRef.current += 1;
     activeStoryIdRef.current = null;
     revisionRef.current = 0;

@@ -58,6 +58,10 @@ let upsertDefaultError: { message: string } | null = null;
 let mockUserId: string | null = 'user-f4fix';
 
 const invokeCalls: Array<{ fn: string }> = [];
+// Optional per-call blockers for functions.invoke (FIFO). When present, the
+// generation invoke awaits the deferred instead of resolving immediately —
+// lets a test hold the pipeline in its `isRunning` (pre-save) window.
+const invokeDeferreds: Array<Deferred<{ data: unknown; error: unknown }>> = [];
 const deletedDraftRows: Array<{ liturgiaId: string }> = [];
 let mockDraftRow: Record<string, unknown> | null = null;
 
@@ -122,6 +126,8 @@ vi.mock('@/integrations/supabase/client', () => {
           if (fn === 'refine-story') {
             return { data: { success: true, story: mockRefinedStory }, error: null };
           }
+          const blocker = invokeDeferreds.shift();
+          if (blocker) return blocker.promise;
           // Generation path: valid provider shape. Two distinct options so the
           // selectors render more than one clickable option (F4).
           return {
@@ -263,6 +269,7 @@ beforeEach(() => {
   upsertDeferreds.length = 0;
   upsertDefaultError = null;
   invokeCalls.length = 0;
+  invokeDeferreds.length = 0;
   deletedDraftRows.length = 0;
   mockUserId = 'user-f4fix';
   mockDraftRow = null;
@@ -501,5 +508,88 @@ describe('F4 (BASE-RED): option selectors are disabled during the finalize envel
     });
     await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 4000 });
     expect(writesAtStep('complete').every((c) => isAuthoritativeFinalize(c.payload))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F5/F2 (BASE-RED) — mount-time cleanup of an orphaned current_step='complete'
+// draft row. Recovery ignores 'complete', so a phantom-finalize (or a delete
+// that never landed) leaves it stranded forever. On mount it must be deleted.
+// ---------------------------------------------------------------------------
+describe('F5/F2 (BASE-RED): an orphaned complete draft row is cleaned up on mount', () => {
+  it('a complete draft row found at mount is deleted and not offered for recovery', async () => {
+    mockDraftRow = {
+      current_step: 'complete',
+      story: {
+        id: 'story-orphan',
+        title: 'Huérfano',
+        characters: [],
+        scenes: [],
+        props: [],
+        metadata: { createdAt: '', updatedAt: '', status: 'ready' },
+      },
+      config: {},
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-05-01T00:00:00Z',
+    };
+
+    // initialStory is story-generated (NOT ready) so the component itself never
+    // deletes the draft — the only delete can come from the mount-time scan.
+    const onStoryCreated = vi.fn();
+    render(
+      <CuentacuentoEditor context={baseContext} initialStory={makeStoryGeneratedStory('story-f5')} onStoryCreated={onStoryCreated} />
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeTruthy(), { timeout: 3000 });
+    await act(async () => { await yields(10); });
+
+    // The orphan row was deleted, and no recovery prompt was offered.
+    await waitFor(() => expect(deletedDraftRows.length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(screen.queryByRole('button', { name: /Empezar de nuevo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Recuperar/i })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F2 (BASE-RED) — Finalizar must be gated on pipeline.isRunning (matching the
+// characters/scenes approvals), so a generated-snapshot persist can't be racing
+// a finalize's deleteDraft. Base defect: finalize ignored isRunning.
+// ---------------------------------------------------------------------------
+describe('F2 (BASE-RED): Finalizar is disabled while a generation is in flight', () => {
+  it('the finalize button is disabled while cover generation runs, re-enabled after', { timeout: 25000 }, async () => {
+    await renderAtCoverStep(vi.fn(), 'story-f2');
+    await act(async () => { await yields(6); });
+
+    // Hold the cover-generation invoke so the pipeline stays isRunning (and has
+    // NOT yet reached its save step — canApprove is still true).
+    const genBlocker = makeDeferred<{ data: unknown; error: unknown }>();
+    invokeDeferreds.push(genBlocker);
+
+    await act(async () => {
+      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones/i })[0];
+      fireEvent.click(regen);
+      await yields(15);
+    });
+
+    // While generation is in flight, Finalizar is disabled (fix). At base it is
+    // enabled (selections set, canApprove true, isRunning ignored).
+    const finalizeBtn = screen.getByRole('button', { name: /Finalizar cuento/i }) as HTMLButtonElement;
+    expect(finalizeBtn.disabled).toBe(true);
+
+    // Release generation → it settles → finalize re-enables.
+    await act(async () => {
+      genBlocker.resolve({
+        data: { success: true, images: ['data:image/png;base64,iVBORw0KGgoAAA=', 'data:image/png;base64,iVBORw0KGgoBBB='] },
+        error: null,
+      });
+      await yields(25);
+    });
+    await waitFor(
+      () => expect((screen.getByRole('button', { name: /Finalizar cuento/i }) as HTMLButtonElement).disabled).toBe(false),
+      { timeout: 6000 }
+    );
   });
 });

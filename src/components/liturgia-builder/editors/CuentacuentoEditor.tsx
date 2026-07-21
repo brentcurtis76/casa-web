@@ -3367,8 +3367,19 @@ Instrucciones críticas:
         if (outcome === 'stale' && storyRef.current) {
           const recoverStory = storyRef.current;
           const recoverStep = currentStepRef.current;
+          // F5 — No tragar el fallo en silencio. Si esta corrección falla (o la
+          // pestaña se cierra dentro de su RTT), la fila queda varada en 'complete'
+          // (recovery la ignora). El backstop es el scan de mount que limpia filas
+          // 'complete' huérfanas (ver checkForDraft en useCuentacuentosDraft). Aquí
+          // sólo registramos — sin loop de reintentos.
           void enqueueDraftWrite(() => buildAuthoritativeDraftPatch(recoverStory, recoverStep)).catch(
-            () => {},
+            (err) => {
+              console.error(
+                '[CuentacuentoEditor] Phantom-finalize corrective write failed; ' +
+                'the draft row may be stranded until the next mount-time cleanup:',
+                err,
+              );
+            },
           );
         }
       } finally {
@@ -4098,7 +4109,7 @@ Instrucciones críticas:
           <button
             type="button"
             onClick={() => void handleApproveStory()}
-            disabled={isApproving || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
+            disabled={isApproving || pipeline.isRunning || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
             title={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount }) ? 'Hay imágenes sin guardar; reintenta antes de aprobar' : undefined}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
@@ -6222,6 +6233,7 @@ Instrucciones críticas:
             onClick={() => void handleFinalize()}
             disabled={
               isApproving ||
+              pipeline.isRunning ||
               selectedCover === null ||
               selectedEnd === null ||
               !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
