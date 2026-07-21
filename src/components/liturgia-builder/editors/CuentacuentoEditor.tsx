@@ -4734,11 +4734,16 @@ Instrucciones críticas:
                                     delete updated[scene.number];
                                     return updated;
                                   });
-                                  setSceneReferenceMode(prev => {
-                                    const updated = { ...prev };
-                                    delete updated[scene.number];
-                                    return updated;
-                                  });
+                                  // F7 — `sceneReferenceModes` NO está en el patch del
+                                  // auto-persist (sólo lo escriben los toggles), así que
+                                  // borrarlo aquí sólo del estado rehidrataría stale al
+                                  // recargar. Espejamos el patrón del toggle: computar el
+                                  // mapa nuevo, bump + saveDraft para persistirlo.
+                                  const nextModes = { ...sceneReferenceMode };
+                                  delete nextModes[scene.number];
+                                  setSceneReferenceMode(nextModes);
+                                  bumpContentRevision();
+                                  saveDraft({ sceneReferenceModes: nextModes });
                                 }}
                                 className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
                                 style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
@@ -4815,6 +4820,11 @@ Instrucciones críticas:
                                 reader.onload = () => {
                                   const result = reader.result as string;
                                   const base64 = result.split(',')[1];
+                                  // F6 — FileReader.onload commitea en DefaultLane
+                                  // (no-discreto): el bump del auto-persist quedaría
+                                  // diferido y el CAS de una aprobación en vuelo podría
+                                  // perder esta edición. Bumpeamos síncronamente acá.
+                                  bumpContentRevision();
                                   setSceneReferenceImages(prev => ({ ...prev, [scene.number]: base64 }));
                                 };
                                 reader.readAsDataURL(file);
@@ -5648,6 +5658,9 @@ Instrucciones críticas:
                             reader.onload = () => {
                               const result = reader.result as string;
                               const base64 = result.split(',')[1];
+                              // F6 — commit no-discreto (DefaultLane): bump síncrono
+                              // para que una aprobación en vuelo no pierda la edición.
+                              bumpContentRevision();
                               setCoverReferenceImage(base64);
                             };
                             reader.readAsDataURL(file);
@@ -5987,6 +6000,9 @@ Instrucciones críticas:
                             reader.onload = () => {
                               const result = reader.result as string;
                               const base64 = result.split(',')[1];
+                              // F6 — commit no-discreto (DefaultLane): bump síncrono
+                              // para que una aprobación en vuelo no pierda la edición.
+                              bumpContentRevision();
                               setEndReferenceImage(base64);
                             };
                             reader.readAsDataURL(file);
