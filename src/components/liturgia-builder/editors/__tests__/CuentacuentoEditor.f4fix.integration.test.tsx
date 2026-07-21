@@ -122,9 +122,13 @@ vi.mock('@/integrations/supabase/client', () => {
           if (fn === 'refine-story') {
             return { data: { success: true, story: mockRefinedStory }, error: null };
           }
-          // Generation path: valid provider shape.
+          // Generation path: valid provider shape. Two distinct options so the
+          // selectors render more than one clickable option (F4).
           return {
-            data: { success: true, images: ['data:image/png;base64,iVBORw0KGgo='] },
+            data: {
+              success: true,
+              images: ['data:image/png;base64,iVBORw0KGgoAAA=', 'data:image/png;base64,iVBORw0KGgoBBB='],
+            },
             error: null,
           };
         }),
@@ -417,5 +421,85 @@ describe('F3 (BASE-RED): refine during an in-flight approval makes the approval 
     expect(screen.queryAllByText(/CUENTO REFINADO/i).length).toBeGreaterThan(0);
     // No auto-kick fired for the dead approval (invoke count is refine-only).
     expect(invokeCalls.filter((c) => c.fn !== 'refine-story')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F4 (BASE-RED) — the option selectors must be disabled during the approval/
+// finalize envelope. Base defect: they stayed clickable, and a selection change
+// mid-upsert bumps nothing the CAS reads, so a finalize could publish the OLD
+// selection while the UI showed the new one.
+// ---------------------------------------------------------------------------
+describe('F4 (BASE-RED): option selectors are disabled during the finalize envelope', () => {
+  it('a cover-option click during an in-flight finalize is suppressed (selection unchanged)', { timeout: 25000 }, async () => {
+    const onStoryCreated = vi.fn();
+    await renderAtCoverStep(onStoryCreated, 'story-f4');
+    await act(async () => { await yields(6); });
+
+    // Generate a second cover option so there is a selection to (attempt to)
+    // change. The generation provider returns two images.
+    await act(async () => {
+      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones/i })[0];
+      fireEvent.click(regen);
+      await yields(25);
+    });
+    // Two cover options rendered; select option 1 (index 0) as the intended one.
+    const coverOpt2 = await waitFor(
+      () => {
+        const opts = screen.getAllByRole('button', { name: /Opción 2/i });
+        expect(opts.length).toBeGreaterThan(0);
+        return opts[0];
+      },
+      { timeout: 6000 }
+    );
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: /Opción 1/i })[0]);
+      await yields(6);
+    });
+    // Wait until the pipeline settles so the finalize button is enabled.
+    const finalizeBtn = await waitFor(
+      () => {
+        const btn = screen.getByRole('button', { name: /Finalizar cuento/i }) as HTMLButtonElement;
+        expect(btn.disabled).toBe(false);
+        return btn;
+      },
+      { timeout: 6000 }
+    );
+
+    // Cover option 1 is the selected one (ring-4); option 2 is not.
+    const coverOpt1 = screen.getAllByRole('button', { name: /Opción 1/i })[0];
+    expect(coverOpt1.className).toContain('ring-4');
+    expect(coverOpt2.className).not.toContain('ring-4');
+
+    // Block the finalize upsert (FIFO: [cover drain ok] then [finalize HELD]).
+    const finalizeBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(makeResolvedOk(), finalizeBlocker);
+
+    await act(async () => {
+      fireEvent.click(finalizeBtn);
+      await yields(20);
+    });
+
+    // While the finalize upsert is in flight, the cover selector is DISABLED, so
+    // a click on option 2 is suppressed and the selection cannot diverge from
+    // what will be published. At base the button is enabled and the click
+    // selects option 2 (published cover would then differ from the UI).
+    const coverOpt2Live = screen.getAllByRole('button', { name: /Opción 2/i })[0] as HTMLButtonElement;
+    expect(coverOpt2Live.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.click(coverOpt2Live);
+      await yields(6);
+    });
+    // Selection unchanged: option 1 still selected, option 2 still not.
+    expect(screen.getAllByRole('button', { name: /Opción 1/i })[0].className).toContain('ring-4');
+    expect(screen.getAllByRole('button', { name: /Opción 2/i })[0].className).not.toContain('ring-4');
+
+    // Release the finalize → it commits the intended (unchanged) selection.
+    await act(async () => {
+      finalizeBlocker.resolve({ error: null });
+      await yields(20);
+    });
+    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    expect(writesAtStep('complete').every((c) => isAuthoritativeFinalize(c.payload))).toBe(true);
   });
 });

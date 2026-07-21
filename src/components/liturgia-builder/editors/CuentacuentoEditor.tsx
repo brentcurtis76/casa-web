@@ -207,7 +207,15 @@ const ImageSelector: React.FC<{
   isSaving?: boolean;
   savedMessage?: string | null;
   label: string;
-}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label }) => {
+  /**
+   * F4 — Deshabilita la selección de opción mientras el envelope de aprobación/
+   * finalización está en vuelo. Cambiar la selección durante el upsert
+   * autoritativo NO bumpea contentRevision (es state aparte), así que el CAS no
+   * la detecta y una finalización publicaría la selección VIEJA mientras el UI
+   * muestra la nueva. Deshabilitar durante el envelope evita esa divergencia.
+   */
+  disabled?: boolean;
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled }) => {
   if (phase !== 'idle') {
     return (
       <div className="flex items-center justify-center p-8">
@@ -255,10 +263,11 @@ const ImageSelector: React.FC<{
           <button
             key={`${index}-${imageValue?.slice(-20) || 'empty'}`}
             type="button"
+            disabled={disabled}
             onClick={() => onSelect(index)}
             className={`relative rounded-lg overflow-hidden transition-all ${
               selectedIndex === index ? 'ring-4' : 'hover:ring-2'
-            }`}
+            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
             style={{
               ringColor: CASA_BRAND.colors.primary.amber,
             }}
@@ -3267,10 +3276,14 @@ Instrucciones críticas:
   //      `deriveNextStory(storyRef.current)` — story y DraftPatch salen de
   //      refs VIVAS post-drain, nunca de closures pre-drain.
   //   6) La escritura es `authoritative: true`: su CAS post-persistencia
-  //      incluye contentRevision — una edición durante el upsert en vuelo la
-  //      vuelve stale (sin commit, sin bump, sin transición) y la edición
-  //      sobrevive. Sólo un commit VIVO bumpea contentRevision, invalidando
-  //      debounces armados antes del commit (no pueden pisar el step nuevo).
+  //      incluye contentRevision — una edición de CONTENIDO (las que bumpean:
+  //      ver el alcance D13 sobre buildAuthoritativeDraftPatch) durante el upsert
+  //      en vuelo la vuelve stale (sin commit, sin bump, sin transición) y la
+  //      edición sobrevive. Sólo un commit VIVO bumpea contentRevision,
+  //      invalidando debounces armados antes del commit (no pueden pisar el step
+  //      nuevo). NOTA: los cambios de SELECCIÓN de opción NO bumpean, así que el
+  //      CAS no los detecta; para que una selección tardía no diverja de lo
+  //      publicado, los selectores se deshabilitan mientras `isApproving` (F4).
   //   7) `onSuccess` consume EXCLUSIVAMENTE la story del snapshot COMMITEADO
   //      (`result.committed.story`) — jamás un `nextStory` pre-drain.
   const runAuthoritativeApproval = useCallback(
@@ -4303,6 +4316,7 @@ Instrucciones críticas:
                       options={characterSheetOptions[character.id]}
                       selectedIndex={selectedCharacterSheets[character.id] ?? null}
                       onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
+                      disabled={isApproving}
                       onSave={() => handleSaveCharacterImage(character.id)}
                       onRegenerate={() => {
                         if (refiningCharId !== null || pipeline.isRunning) return;
@@ -5153,6 +5167,7 @@ Instrucciones críticas:
                           options={sceneImageOptions[scene.number]}
                           selectedIndex={selectedSceneImages[scene.number] ?? null}
                           onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
+                          disabled={isApproving}
                           onSave={() => handleSaveSceneImage(scene.number)}
                           onRegenerate={() => {
                             if (refiningSceneNumber !== null || pipeline.isRunning) return;
@@ -5814,6 +5829,7 @@ Instrucciones críticas:
                     options={coverOptions}
                     selectedIndex={selectedCover}
                     onSelect={setSelectedCover}
+                    disabled={isApproving}
                     onSave={handleSaveCover}
                     onRegenerate={() => handleGenerateCover()}
                     phase={phaseOf('cover')}
@@ -6155,6 +6171,7 @@ Instrucciones críticas:
                     options={endOptions}
                     selectedIndex={selectedEnd}
                     onSelect={setSelectedEnd}
+                    disabled={isApproving}
                     onSave={handleSaveEnd}
                     onRegenerate={() => handleGenerateEnd()}
                     phase={phaseOf('end')}
