@@ -1896,6 +1896,15 @@ Instrucciones críticas:
     // D13 — Mutación editor-visible sobre `story.props`: bumpea contentRevision
     // para que una aprobación/finalización en vuelo la detecte y quede stale.
     bumpContentRevision();
+    // F1 — El bump de arriba invalidaría cualquier patch de buffer editor
+    // pendiente en el debounce (queue-start CAS incluye contentRevision), y este
+    // sitio persiste con `enqueueDraftWrite` directo (no pasa por el merge del
+    // debounce). Disparamos un `saveDraft` mínimo — sólo `currentStep`, sin
+    // base64 de props — para que el merge D14 RE-ESTAMPE el patch pendiente bajo
+    // la identidad fresca (mismo lifecycle) en vez de dejarlo huérfano. La
+    // escritura de props sigue siendo la de `enqueueDraftWrite` de abajo (con su
+    // URL swap en onCommit); esto sólo preserva los buffers ya encolados.
+    saveDraft({ currentStep });
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -1925,7 +1934,7 @@ Instrucciones críticas:
       console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
     }
     return nextProps;
-  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision]);
+  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision, saveDraft, currentStep]);
 
   // Builder: prop sheet (candidatas efímeras — apply retorna APPLY_EPHEMERAL,
   // no se persisten). Delega en `makePropSheetTask`.
@@ -5265,21 +5274,30 @@ Instrucciones críticas:
   ) => {
     const base = getOverlayOrDefault(which, defaultText, defaultPosition);
     const next: TextOverlay = { ...base, ...patch };
+    if (!story) return;
+    const nextStory: Story = {
+      ...story,
+      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+      metadata: {
+        ...story.metadata,
+        updatedAt: new Date().toISOString(),
+      },
+    };
     // D13 — Mutación editor-visible sobre `story`: bumpea contentRevision para
     // que una aprobación/finalización en vuelo la detecte (CAS post-persistencia)
     // y quede stale en vez de que `setStory(committedStory)` la revierta.
     bumpContentRevision();
-    setStory(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
-        metadata: {
-          ...prev.metadata,
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    });
+    setStory(nextStory);
+    // F1 — Persistir vía `saveDraft` (debounce). Dos motivos:
+    //   1) El overlay ahora se GUARDA: antes vivía sólo en React state (no había
+    //      ni saveDraft ni enqueueDraftWrite) y se perdía al recargar.
+    //   2) El bump de arriba invalidaría cualquier patch de buffer pendiente en
+    //      el debounce (queue-start CAS incluye contentRevision). Pasar por
+    //      saveDraft dispara el merge D14 (llavea {epoch,storyId,revision},
+    //      excluye contentRevision), que RE-ESTAMPA el patch pendiente bajo la
+    //      identidad fresca en vez de dejarlo huérfano — mismo patrón que los
+    //      toggles de `sceneReferenceModes` y `handleUpdatePropDescription`.
+    saveDraft({ story: nextStory });
   };
 
   const renderTextOverlayControls = (
