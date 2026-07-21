@@ -1733,6 +1733,13 @@ Instrucciones críticas:
         },
       };
 
+      // F3 (D13) — Un refinamiento reemplaza title/summary/characters/scenes/
+      // spiritualConnection sobre `story`. Es una mutación editor-visible del
+      // contenido: bumpea contentRevision ANTES del setStory para que una
+      // aprobación en vuelo (handleApproveStory) lo detecte vía el CAS
+      // post-persistencia y quede stale (conservando el refinamiento) en vez de
+      // transicionar con la story pre-refine y revertirlo con setStory(committed).
+      bumpContentRevision();
       setStory(refinedStory);
       setStoryFeedback('');
       setShowFeedbackPanel(false);
@@ -1747,7 +1754,7 @@ Instrucciones críticas:
     } finally {
       setIsRefining(false);
     }
-  }, [story, storyFeedback, refinementType, context, setStory]);
+  }, [story, storyFeedback, refinementType, context, setStory, bumpContentRevision]);
 
   // Eliminar cuento completamente (historia + imágenes + draft)
   const handleDeleteStory = useCallback(async () => {
@@ -3172,9 +3179,11 @@ Instrucciones críticas:
   // aprobación en vuelo, invariante estrechada explícitamente):
   //   BUMPEAN (mutaciones sobre `story` o estado persistido fuera de este
   //   snapshot): overlays de texto (`updateTextOverlay`), props
-  //   (`applyPropsUpdate`, `handleUpdatePropDescription`) y los toggles de
-  //   `sceneReferenceModes`. Sin bump, `setStory(committedStory)` revertiría la
-  //   mutación al commitear una aprobación que corrió en paralelo.
+  //   (`applyPropsUpdate`, `handleUpdatePropDescription`), los toggles/remove de
+  //   `sceneReferenceModes` y el refinamiento de cuento (`handleRefineStory`,
+  //   que reemplaza title/summary/characters/scenes). Sin bump,
+  //   `setStory(committedStory)` revertiría la mutación al commitear una
+  //   aprobación que corrió en paralelo.
   //   NO bumpean (cubiertas de otra forma): las SELECCIONES de opción
   //   (`selectedCharacterSheets/SceneImages/Cover/End`), los `sceneReferenceModes`
   //   ya reflejados, las imágenes de referencia y el `editingSceneText` — este

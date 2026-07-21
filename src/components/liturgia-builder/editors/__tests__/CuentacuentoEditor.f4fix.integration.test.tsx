@@ -350,3 +350,72 @@ describe('F1 (BASE-RED): sibling content bump does not drop a pending buffer deb
     expect(titleWrites.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F3 (BASE-RED) — a refine resolving during an in-flight approval must make the
+// approval stale (refinement kept), not be silently reverted. Base defect:
+// handleRefineStory replaced `story` with no bumpContentRevision, so the
+// authoritative approval's post-persistence CAS missed it, transitioned, and
+// setStory(committedStory) reverted the refinement.
+// ---------------------------------------------------------------------------
+describe('F3 (BASE-RED): refine during an in-flight approval makes the approval stale', () => {
+  it('the mid-approval refinement survives and the approval does not transition', { timeout: 20000 }, async () => {
+    await renderAtStoryStep('story-f3');
+
+    // A refined story the edge fn will return (shape handleRefineStory expects).
+    mockRefinedStory = {
+      title: 'CUENTO REFINADO',
+      summary: 'Resumen refinado',
+      spiritualConnection: 'Nueva conexión',
+      characters: [{ name: 'María', role: 'protagonist', description: 'Más profunda', visualDescription: 'niña con vestido azul' }],
+      scenes: [
+        { number: 1, text: 'Apertura refinada', visualDescription: 'plaza soleada' },
+        { number: 2, text: 'Nudo refinado', visualDescription: 'templo antiguo' },
+      ],
+    };
+
+    // 1) Block the authoritative approval upsert.
+    const authBlocker = makeDeferred<{ error: { message: string } | null }>();
+    upsertDeferreds.push(authBlocker);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i }));
+      await yields(8);
+    });
+
+    // 2) While the approval upsert is in flight, refine the story through the UI.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /¿Quieres mejorar algo del cuento\?/i }));
+      await yields(2);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Describe qué te gustaría mejorar/i), {
+        target: { value: 'Hazlo más divertido' },
+      });
+      await yields(2);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Refinar Cuento/i }));
+      await yields(10);
+    });
+
+    // The refine really ran and applied (title updated in the UI).
+    expect(invokeCalls.some((c) => c.fn === 'refine-story')).toBe(true);
+    await waitFor(() => expect(screen.queryAllByText(/CUENTO REFINADO/i).length).toBeGreaterThan(0), { timeout: 3000 });
+
+    // 3) Release the approval upsert → it must resolve STALE.
+    await act(async () => {
+      authBlocker.resolve({ error: null });
+      await yields(20);
+    });
+
+    // Still at the story step (no transition to characters) and the stale banner
+    // is surfaced; the refinement is retained. At base the approval transitions
+    // (button gone, no stale banner) and the refinement is reverted.
+    expect(screen.queryByRole('button', { name: /Aprobar cuento y generar imágenes/i })).not.toBeNull();
+    expect(screen.queryAllByText(/El borrador cambió durante la aprobación/i).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/CUENTO REFINADO/i).length).toBeGreaterThan(0);
+    // No auto-kick fired for the dead approval (invoke count is refine-only).
+    expect(invokeCalls.filter((c) => c.fn !== 'refine-story')).toHaveLength(0);
+  });
+});
