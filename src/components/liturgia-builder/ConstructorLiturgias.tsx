@@ -4,7 +4,7 @@
  * Actualizado: Nueva estructura de elementos y editores
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import {
   BookOpen,
@@ -425,6 +425,23 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
 
   // Loading states
   const [isSaving, setIsSaving] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // B1 — Handshake de finalización PROPIEDAD DEL PADRE.
+  //
+  // Al finalizar un cuento, el editor ya NO borra su draft: entrega acá un
+  // cierre de un solo uso que ejecuta un DELETE guardado (compare-and-delete
+  // sobre `story->>'id'` + `updated_at`). El borrado ocurre únicamente DESPUÉS
+  // de que la liturgia se guardó con éxito, así que:
+  //   - si el usuario nunca guarda, el draft sigue siendo recuperable;
+  //   - si el guardado falla, el draft sigue siendo recuperable;
+  //   - si el draft cambió (otra edición) o pertenece a otra historia, el DELETE
+  //     guardado matchea 0 filas y no borra nada.
+  //
+  // Vive en un ref (no en state) porque debe SOBREVIVIR al desmontaje del editor
+  // — el padre dura más que el editor (cambio de pestaña, cerrar el elemento) y
+  // ese es justamente el caso que A5/A6a exigen cubrir.
+  const cuentacuentosFinalizationRef = useRef<(() => Promise<void>) | null>(null);
 
   // Dirty state tracking
   const [isDirty, setIsDirty] = useState(false);
@@ -990,6 +1007,25 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
       // Await the onSave callback to ensure the save completes before marking as not dirty
       await onSave?.(liturgy, sharedIllustration);
       setIsDirty(false);
+
+      // B1 — Recién ahora que la liturgia quedó guardada (el cuento ya vive en
+      // el elemento persistido) confirmamos la finalización del borrador. El
+      // cierre es de un solo uso y hace un compare-and-delete: si el draft ya
+      // no es el que se finalizó (otra historia, o una edición posterior movió
+      // `updated_at`), no borra nada. Un fallo acá NO invalida el guardado de la
+      // liturgia: el borrador simplemente queda recuperable.
+      const confirmFinalization = cuentacuentosFinalizationRef.current;
+      if (confirmFinalization) {
+        cuentacuentosFinalizationRef.current = null;
+        try {
+          await confirmFinalization();
+        } catch (err) {
+          console.error(
+            '[ConstructorLiturgias] confirmFinalization failed; the cuentacuentos draft stays recoverable:',
+            err,
+          );
+        }
+      }
     } catch (error) {
       console.error('[ConstructorLiturgias] Error saving:', error);
     } finally {
@@ -1097,12 +1133,22 @@ const ConstructorLiturgias: React.FC<ConstructorLiturgiasProps> = ({
           context={liturgyContext}
           initialStory={savedStory}
           initialSlides={existingElement?.slides}
-          onStoryCreated={(story: Story, slides: SlideGroup) => {
+          onStoryCreated={(
+            story: Story,
+            slides: SlideGroup,
+            confirmFinalization?: () => Promise<void>,
+          ) => {
             handleElementSlides('cuentacuentos', slides, { sourceId: story.id, storyData: story });
+            // B1 — Guardar el cierre de confirmación. Se consume en `handleSave`,
+            // después de que la liturgia se guardó. Si el editor se desmonta
+            // antes (cambio de pestaña), el cierre sobrevive acá.
+            cuentacuentosFinalizationRef.current = confirmFinalization ?? null;
           }}
           onStoryProgress={handleCuentacuentosProgress}
           onStoryDeleted={() => {
             handleClearElement('cuentacuentos');
+            // El cuento se borró: su confirmación de finalización ya no aplica.
+            cuentacuentosFinalizationRef.current = null;
           }}
         />
       );

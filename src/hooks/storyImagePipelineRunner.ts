@@ -214,9 +214,42 @@ export interface RetryItemInput {
   identity: RunIdentity;
 }
 
+/**
+ * E/A9a — Resultado de `tryStart`.
+ *
+ * `accepted` es la respuesta AUTORITATIVA a "¿esta corrida arrancó?". Es `true`
+ * si y sólo si la llamada transicionó el runner de `idle` a `running` en un
+ * único paso SÍNCRONO (reserva de `runToken` incluida). El caller puede, por
+ * tanto, consumir su intent (`pendingAutoKick`) en las sentencias inmediatamente
+ * siguientes con la garantía de que ningún otro código corrió en medio — no hay
+ * `await` entre la reserva y el retorno, y JS es de un solo hilo.
+ */
+export interface TryStartResult {
+  accepted: boolean;
+  /**
+   * Promesa que resuelve cuando la corrida terminó. Cuando `accepted` es
+   * `false` ya viene resuelta. NUNCA rechaza: los errores por ítem los absorbe
+   * `executePhase` publicando `error`/`save-failed` en el ítem.
+   */
+  completion: Promise<void>;
+}
+
 export interface StoryImagePipelineRunner {
   /** Corre un conjunto de ítems (uno o muchos). Devuelve el token de la corrida. */
   runItems: (input: RunItemsInput) => Promise<RunToken>;
+  /**
+   * E/A9a — Arranque ATÓMICO con aceptación explícita. A diferencia de
+   * `runItems` —que SIEMPRE arranca, invalidando la corrida previa— `tryStart`
+   * RECHAZA si ya hay una corrida activa: no mintea token, no aborta nada, no
+   * toca el mapa de ítems. Es el único camino válido para el auto-arranque:
+   * el intent se consume sólo cuando el runner confirma `accepted:true`, y si
+   * está ocupado el caller conserva el intent y reintenta al quedar idle.
+   *
+   * Con `tasks` vacío devuelve `accepted:false` (literalmente no arrancó nada);
+   * el caller decide si eso significa "intent satisfecho" (no había trabajo) o
+   * "reintentar".
+   */
+  tryStart: (input: RunItemsInput) => TryStartResult;
   /** Reintenta un ítem según su estado terminal. */
   retryItem: (input: RetryItemInput) => Promise<void>;
   /** Reintenta todos los ítems `error` y `save-failed` visibles. */
@@ -722,18 +755,28 @@ export function createStoryImagePipelineRunner(
     await Promise.all(Array.from({ length: workerCount }, (_, w) => worker(w)));
   };
 
-  const runItems: StoryImagePipelineRunner['runItems'] = async ({ tasks, identity }) => {
+  /**
+   * Prólogo SÍNCRONO de una corrida: invalida la corrida previa, mintea el
+   * token, encola los ítems y marca `running`. No contiene ningún `await`, de
+   * modo que al retornar el runner ya está reservado de forma observable
+   * (`isBusy() === true`). `runItems` y `tryStart` comparten este prólogo; la
+   * diferencia entre ambos está en el gate que lo precede, no acá.
+   */
+  const reserveRun = (
+    tasks: Array<PipelineItemTask | LegacyPipelineTask>,
+  ): { runToken: RunToken; itemsToRun: InternalItemState[]; signal: AbortSignal } => {
     // Invalidar corrida previa antes de abortar (orden importa).
     const priorAbort = currentAbortController;
     const runToken = mintRunToken();
     currentRunToken = runToken;
-    currentAbortController = new AbortController();
+    const abortController = new AbortController();
+    currentAbortController = abortController;
     if (priorAbort) priorAbort.abort();
 
     if (tasks.length === 0) {
       running = false;
       notify();
-      return runToken;
+      return { runToken, itemsToRun: [], signal: abortController.signal };
     }
 
     // Encolar/actualizar ítems. Preserva orden de aparición histórico.
@@ -753,8 +796,19 @@ export function createStoryImagePipelineRunner(
     const itemsToRun = tasks
       .map((t) => items.get(t.id))
       .filter((s): s is InternalItemState => !!s);
+    return { runToken, itemsToRun, signal: abortController.signal };
+  };
+
+  /** Drena la cola reservada por `reserveRun` y cierra la corrida. */
+  const drainRun = async (
+    runToken: RunToken,
+    itemsToRun: InternalItemState[],
+    identity: RunIdentity,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (itemsToRun.length === 0) return;
     try {
-      await runQueue(itemsToRun, runToken, identity, currentAbortController.signal);
+      await runQueue(itemsToRun, runToken, identity, signal);
     } finally {
       // Si nadie tomó el testigo, cerrar la corrida.
       if (currentRunToken === runToken) {
@@ -762,7 +816,28 @@ export function createStoryImagePipelineRunner(
         notify();
       }
     }
+  };
+
+  const runItems: StoryImagePipelineRunner['runItems'] = async ({ tasks, identity }) => {
+    const { runToken, itemsToRun, signal } = reserveRun(tasks);
+    await drainRun(runToken, itemsToRun, identity, signal);
     return runToken;
+  };
+
+  const tryStart: StoryImagePipelineRunner['tryStart'] = ({ tasks, identity }) => {
+    // Gate ATÓMICO: si ya hay una corrida activa, rechazamos SIN efectos
+    // secundarios — no se mintea token, no se aborta la corrida en vuelo, no se
+    // tocan los ítems. Ésta es la diferencia esencial con `runItems`, que
+    // siempre desplaza a la corrida previa.
+    if (running) return { accepted: false, completion: Promise.resolve() };
+    if (tasks.length === 0) return { accepted: false, completion: Promise.resolve() };
+    const { runToken, itemsToRun, signal } = reserveRun(tasks);
+    // `reserveRun` ya dejó `running = true` de forma síncrona: para cuando esta
+    // función retorna, el intent del caller puede consumirse con seguridad.
+    const completion = drainRun(runToken, itemsToRun, identity, signal).catch((err) => {
+      console.error('[storyImagePipelineRunner] tryStart run failed', err);
+    });
+    return { accepted: true, completion };
   };
 
   const retryItem: StoryImagePipelineRunner['retryItem'] = async ({ itemId, identity }) => {
@@ -906,6 +981,7 @@ export function createStoryImagePipelineRunner(
 
   return {
     runItems,
+    tryStart,
     retryItem,
     retryFailed,
     retrySaves,

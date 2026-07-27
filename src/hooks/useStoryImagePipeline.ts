@@ -23,7 +23,9 @@ import {
   type RunIdentity,
   type RunToken,
   type StoryImagePipelineRunner,
+  type TryStartResult,
 } from './storyImagePipelineRunner';
+export type { TryStartResult } from './storyImagePipelineRunner';
 export type { SaveRetryRegistry } from './saveRetryRegistry';
 
 export type { PipelineItemKind, PipelineItemStatus } from './storyImagePipelineRunner';
@@ -87,6 +89,17 @@ export interface UseStoryImagePipelineReturn {
     tasks: Array<PipelineItemTask | LegacyPipelineTask>,
     identity: RunIdentity
   ) => Promise<RunToken>;
+  /**
+   * E/A9a — Arranque atómico con aceptación explícita, para el auto-arranque.
+   * Devuelve SÍNCRONAMENTE `{accepted}`: `true` sólo si esta llamada transicionó
+   * el runner de idle a running. El caller consume su intent únicamente en ese
+   * caso, en el mismo paso síncrono; si `accepted:false` (runner ocupado) el
+   * intent se CONSERVA y se reintenta al quedar idle.
+   */
+  tryStart: (
+    tasks: Array<PipelineItemTask | LegacyPipelineTask>,
+    identity: RunIdentity
+  ) => TryStartResult;
   /** Reintenta ítems `error` y `save-failed`. Los `save-failed` no llaman al provider. */
   retryFailed: (identity?: RunIdentity) => Promise<void>;
   /**
@@ -241,6 +254,17 @@ export function useStoryImagePipeline(
     [runner]
   );
 
+  // E/A9a — Se pasa DIRECTO al runner, sin envoltorio async: la atomicidad del
+  // gate idle→running depende de que el caller reciba `accepted` en el mismo
+  // paso síncrono en que la corrida quedó reservada.
+  const tryStart = useCallback(
+    (
+      tasks: Array<PipelineItemTask | LegacyPipelineTask>,
+      identity: RunIdentity
+    ): TryStartResult => runner.tryStart({ tasks, identity }),
+    [runner]
+  );
+
   const retryFailed = useCallback(
     async (identity: RunIdentity = LEGACY_IDENTITY): Promise<void> => {
       if (runner.isBusy()) return;
@@ -306,6 +330,7 @@ export function useStoryImagePipeline(
     totalCount: items.length,
     runAll,
     runItems,
+    tryStart,
     retryFailed,
     retrySaves,
     retryItem,
