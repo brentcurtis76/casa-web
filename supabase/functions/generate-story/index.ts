@@ -25,4 +25,4 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 });
 const authzDeps = createSupabaseAuthzDeps(supabaseAdmin);
 
-serve(createHandler({ anthropicApiKey, googleAiApiKey, authzDeps }));
+serve(createHandler({ anthropicApiKey, googleAiApiKey, authzDeps, supabaseUrl }));

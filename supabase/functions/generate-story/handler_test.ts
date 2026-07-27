@@ -26,6 +26,7 @@ function baseDeps(authz: RequirePermissionDeps): HandlerDeps {
     anthropicApiKey: "test-anthropic-key",
     googleAiApiKey: "test-gemini-key",
     authzDeps: authz,
+    supabaseUrl: "https://proj.supabase.co",
   };
 }
 

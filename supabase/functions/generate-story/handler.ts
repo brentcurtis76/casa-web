@@ -18,6 +18,17 @@ import {
   requireLiturgyWriter,
   type RequirePermissionDeps,
 } from '../_shared/liturgyAuth.ts';
+import {
+  collectStoryImageRefs,
+  DEFAULT_IMAGE_LIMITS,
+  imageErrorResponse,
+  ImageRefError,
+  type ImageLimits,
+  type MaterializedImage,
+  materializeImageRefs,
+  prevalidateImageRefs,
+  readBoundedJson,
+} from '../_shared/imageFetch.ts';
 
 export interface HandlerDeps {
   /** ANTHROPIC_API_KEY. Empty/absent => the handler reports a config error. */
@@ -26,6 +37,10 @@ export interface HandlerDeps {
   googleAiApiKey: string;
   /** Injectable authz backend for the shared fail-closed guard. */
   authzDeps: RequirePermissionDeps;
+  /** SUPABASE_URL — pins the one bucket origin image URLs may come from. */
+  supabaseUrl: string;
+  /** Overridable in tests; production uses `DEFAULT_IMAGE_LIMITS`. */
+  imageLimits?: ImageLimits;
 }
 
 /** Provider credentials threaded to the module-level helpers. */
@@ -194,7 +209,8 @@ Responde en español, en un solo párrafo denso de máximo 200 palabras. Solo in
 async function analyzeImagesForVisualDescription(params: {
   name: string;
   narrativeRole: string;
-  referenceImages: string[];
+  /** Already validated and materialised by FASE F pass 1/pass 2. */
+  referenceImages: MaterializedImage[];
   kind?: 'landmark' | 'location' | 'prop';
   config: ProviderConfig;
 }): Promise<string> {
@@ -213,25 +229,13 @@ async function analyzeImagesForVisualDescription(params: {
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
     parts.push({ text: analysisPrompt });
 
+    // No parsing here any more: pass 1 stripped any data-URL wrapper and the
+    // MIME type comes from the content's magic bytes, not from a client claim.
     for (const img of referenceImages.slice(0, 4)) {
-      let base64Data = img;
-      let mimeType = 'image/jpeg';
-
-      // Handle data URLs
-      if (img.startsWith('data:')) {
-        const match = img.match(/^data:(image\/\w+);base64,(.+)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        } else {
-          continue;
-        }
-      }
-
       parts.push({
         inlineData: {
-          mimeType,
-          data: base64Data,
+          mimeType: img.mimeType,
+          data: img.base64,
         },
       });
     }
@@ -582,6 +586,7 @@ export function createHandler(
     anthropicApiKey: deps.anthropicApiKey,
     googleAiApiKey: deps.googleAiApiKey,
   };
+  const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
 
   return async function handler(req: Request): Promise<Response> {
   // Handle CORS preflight
@@ -596,12 +601,44 @@ export function createHandler(
     return authz.response;
   }
 
+  // FASE F pass 1 + pass 2, before Gemini research/analysis and before
+  // Anthropic. One untrusted image entry aborts the whole request with zero
+  // fetches and zero provider spend (T-F.9).
+  // deno-lint-ignore no-explicit-any
+  let requestData: any;
+  let materialized: Map<string, MaterializedImage>;
+  try {
+    requestData = await readBoundedJson(req, limits);
+
+    const prevalidated = prevalidateImageRefs(collectStoryImageRefs(requestData), {
+      limits,
+      supabaseUrl: deps.supabaseUrl,
+    });
+    materialized = await materializeImageRefs(prevalidated, { limits });
+  } catch (err) {
+    if (err instanceof ImageRefError) {
+      console.warn(
+        `[generate-story] image entry rejected: ${err.code} at ${err.path}`,
+      );
+      return imageErrorResponse(err, corsHeaders);
+    }
+    throw err;
+  }
+
+  /** Materialised images for a `referenceImages` array, in slot order. */
+  const takeImages = (prefix: string, count: number): MaterializedImage[] => {
+    const out: MaterializedImage[] = [];
+    for (let j = 0; j < count; j++) {
+      const img = materialized.get(`${prefix}[${j}]`);
+      if (img) out.push(img);
+    }
+    return out;
+  };
+
   try {
     if (!config.anthropicApiKey) {
       throw new Error('ANTHROPIC_API_KEY no está configurada');
     }
-
-    const requestData = await req.json();
 
     const { context, location, characters, landmarks, props, style, additionalNotes, previewPromptOnly } = requestData;
 
@@ -625,13 +662,16 @@ export function createHandler(
 
     const [locationResearch, landmarkAnalyses, propAnalyses] = await Promise.all([
       researchLocation(location, config),
-      Promise.all(landmarkList.map(async (lm) => ({
+      Promise.all(landmarkList.map(async (lm, i) => ({
         name: lm.name,
         narrativeRole: lm.narrativeRole,
         visualDescription: await analyzeImagesForVisualDescription({
           name: lm.name,
           narrativeRole: lm.narrativeRole,
-          referenceImages: lm.referenceImages || [],
+          referenceImages: takeImages(
+            `landmarks[${i}].referenceImages`,
+            lm.referenceImages?.length ?? 0,
+          ),
           kind: 'landmark',
           config,
         }),
@@ -639,7 +679,7 @@ export function createHandler(
       }))),
       // Each incoming prop must include `id` so the visual description can be merged
       // back to the originating prop without relying on array order or duplicate names.
-      Promise.all(propList.map(async (p) => {
+      Promise.all(propList.map(async (p, i) => {
         const propKind: 'location' | 'prop' = p.kind === 'location' ? 'location' : 'prop';
         return {
           id: p.id,
@@ -649,7 +689,10 @@ export function createHandler(
           visualDescription: await analyzeImagesForVisualDescription({
             name: p.name,
             narrativeRole: p.narrativeRole || '',
-            referenceImages: p.referenceImages || [],
+            referenceImages: takeImages(
+              `props[${i}].referenceImages`,
+              p.referenceImages?.length ?? 0,
+            ),
             kind: propKind,
             config,
           }),
