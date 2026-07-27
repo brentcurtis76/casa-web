@@ -42,6 +42,36 @@ const upsertDeferreds: Array<Deferred<{ error: { message: string } | null }>> = 
 let mockUserId: string | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
+
+  // B1 — El `upsert` real de supabase-js devuelve un BUILDER encadenable
+  // (thenable y con `.select()`), no una promesa. `saveDraftToSupabase` ahora
+  // encadena `.select('updated_at').maybeSingle()` para obtener ATÓMICAMENTE el
+  // instante de la escritura (testigo del compare-and-delete de la
+  // finalización), así que el mock adopta esa forma — es más fiel al borde real
+  // que el shape anterior. Cada escritura devuelve un `updated_at` distinto y
+  // monótono: eso es lo que hace observable el ack obsoleto.
+  let __updatedAtSeq = 0;
+  const __nextUpdatedAt = () => {
+    __updatedAtSeq += 1;
+    return `2026-05-01T00:00:${String(__updatedAtSeq).padStart(2, '0')}.000Z`;
+  };
+  const __upsertBuilder = (result: Promise<{ error: { message: string } | null }>) => {
+    const rowResult = async () => {
+      const r = await result;
+      if (r && r.error) return { data: null, error: r.error };
+      return { data: { updated_at: __nextUpdatedAt() }, error: null };
+    };
+    return {
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        result.then(res as never, rej as never),
+      select: () => ({
+        maybeSingle: rowResult,
+        single: rowResult,
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          rowResult().then(res as never, rej as never),
+      }),
+    };
+  };
   const tableApi = () => ({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
@@ -54,7 +84,8 @@ vi.mock('@/integrations/supabase/client', () => {
         error: null,
       };
     }),
-    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+    upsert: vi.fn().mockImplementation((payload: UpsertPayload) =>
+      __upsertBuilder((async () => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
       if (deferred) {
@@ -63,7 +94,8 @@ vi.mock('@/integrations/supabase/client', () => {
         return result;
       }
       return { error: upsertError };
-    }),
+    })())
+    ),
     delete: vi.fn().mockReturnThis(),
   });
 
@@ -265,7 +297,11 @@ describe('T-A1.2 saveDraftNow (persistence-only primitive)', () => {
     // === Devolución correcta ===
     expect(result).toHaveProperty('snapshot');
     expect(result).toHaveProperty('uploadedUrls');
-    expect(Object.keys(result).sort()).toEqual(['snapshot', 'uploadedUrls']);
+    // B1 — `updatedAt` se suma al contrato: es el instante de ESTA escritura,
+    // devuelto por el RETURNING del upsert, y el testigo del compare-and-delete
+    // de la finalización. La aserción sigue siendo exhaustiva a propósito
+    // (`saveDraftNow` no debe filtrar nada más).
+    expect(Object.keys(result).sort()).toEqual(['snapshot', 'updatedAt', 'uploadedUrls']);
 
     // Snapshot normalizado: patch aplicado, identidad y metadatos inyectados.
     expect(result.snapshot.currentStep).toBe('cover');

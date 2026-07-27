@@ -61,6 +61,36 @@ let mockDraftRow: Record<string, unknown> | null = null;
 let mockRefinedStory: Record<string, unknown> | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
+
+  // B1 — El `upsert` real de supabase-js devuelve un BUILDER encadenable
+  // (thenable y con `.select()`), no una promesa. `saveDraftToSupabase` ahora
+  // encadena `.select('updated_at').maybeSingle()` para obtener ATÓMICAMENTE el
+  // instante de la escritura (testigo del compare-and-delete de la
+  // finalización), así que el mock adopta esa forma — es más fiel al borde real
+  // que el shape anterior. Cada escritura devuelve un `updated_at` distinto y
+  // monótono: eso es lo que hace observable el ack obsoleto.
+  let __updatedAtSeq = 0;
+  const __nextUpdatedAt = () => {
+    __updatedAtSeq += 1;
+    return `2026-05-01T00:00:${String(__updatedAtSeq).padStart(2, '0')}.000Z`;
+  };
+  const __upsertBuilder = (result: Promise<{ error: { message: string } | null }>) => {
+    const rowResult = async () => {
+      const r = await result;
+      if (r && r.error) return { data: null, error: r.error };
+      return { data: { updated_at: __nextUpdatedAt() }, error: null };
+    };
+    return {
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        result.then(res as never, rej as never),
+      select: () => ({
+        maybeSingle: rowResult,
+        single: rowResult,
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          rowResult().then(res as never, rej as never),
+      }),
+    };
+  };
   const makeDeleteChain = (tableName: string) => {
     const filters: Record<string, unknown> = {};
     let recorded = false;
@@ -98,12 +128,14 @@ vi.mock('@/integrations/supabase/client', () => {
       error: null,
     })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+    upsert: vi.fn().mockImplementation((payload: UpsertPayload) =>
+      __upsertBuilder((async () => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
       if (deferred) return deferred.promise;
       return { error: upsertDefaultError };
-    }),
+    })())
+    ),
     delete: vi.fn().mockImplementation(() => makeDeleteChain(tableName)),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -447,12 +479,22 @@ describe('R3 (BASE-RED): regenerar está bloqueado durante el envelope de aproba
 });
 
 // ---------------------------------------------------------------------------
-// R2 (BASE-RED, Finding 2 MED) — la limpieza de huérfanos al montar emitía un
-// DELETE keyed SÓLO por (liturgia_id, user_id), decidido por un valor leído
-// antes (TOCTOU). Debe ser condicional sobre `current_step`.
+// R2 — SUPERSEDED BY B1.
+//
+// Finding 2 asked for the mount-time cleanup DELETE to be conditional
+// (`current_step='complete'`) instead of a blind delete driven by a stale read.
+// That fix shipped in the fix-3 pass and this test proved it.
+//
+// B1 then removed the cleanup entirely: with the eager finalize-delete gone, a
+// 'complete' row is a finalization awaiting the parent's confirmation, not an
+// orphan — and often the only surviving copy of the story. There is no longer
+// any mount-time DELETE to make conditional.
+//
+// The test now pins the surviving guarantee, which is strictly stronger than
+// the conditional delete: mounting over a 'complete' row deletes NOTHING.
 // ---------------------------------------------------------------------------
-describe('R2 (BASE-RED): la limpieza de la fila huérfana es condicional', () => {
-  it('el DELETE de limpieza filtra por current_step=complete, no borra a ciegas', { timeout: 20000 }, async () => {
+describe('R2 (SUPERSEDED BY B1): mounting over a complete row deletes nothing', () => {
+  it('no DELETE is issued at mount for a complete draft row', { timeout: 20000 }, async () => {
     mockDraftRow = {
       liturgia_id: 'lit-f4fix3',
       user_id: 'user-f4fix3',
@@ -475,11 +517,11 @@ describe('R2 (BASE-RED): la limpieza de la fila huérfana es condicional', () =>
       />
     );
 
-    await waitFor(() => expect(deletedDraftRows.length).toBeGreaterThan(0), { timeout: 5000 });
-
-    // El borrado de limpieza debe llevar el filtro de estado: sin él, es un
-    // borrado ciego basado en una lectura ya potencialmente obsoleta.
-    const cleanupDelete = deletedDraftRows[0];
-    expect(cleanupDelete.filters['current_step']).toBe('complete');
+    // Recovery is offered for the 'complete' row (B1), and nothing was deleted.
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Recuperar/i })).not.toBeNull(),
+      { timeout: 5000 },
+    );
+    expect(deletedDraftRows).toEqual([]);
   });
 });

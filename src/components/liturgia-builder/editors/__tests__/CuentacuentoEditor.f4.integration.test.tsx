@@ -87,6 +87,39 @@ let mockDraftRow: Record<string, unknown> | null = null;
 // ---------------------------------------------------------------------------
 
 vi.mock('@/integrations/supabase/client', () => {
+
+  // B1 — El `upsert` real de supabase-js devuelve un BUILDER encadenable
+  // (thenable y con `.select()`), no una promesa. `saveDraftToSupabase` ahora
+  // encadena `.select('updated_at').maybeSingle()` para obtener ATÓMICAMENTE el
+  // instante de la escritura (testigo del compare-and-delete de la
+  // finalización), así que el mock adopta esa forma — es más fiel al borde real
+  // que el shape anterior. Cada escritura devuelve un `updated_at` distinto y
+  // monótono: eso es lo que hace observable el ack obsoleto.
+  let __updatedAtSeq = 0;
+  const __nextUpdatedAt = () => {
+    __updatedAtSeq += 1;
+    return `2026-05-01T00:00:${String(__updatedAtSeq).padStart(2, '0')}.000Z`;
+  };
+  const __upsertBuilder = (result: Promise<{ error: { message: string } | null }>) => {
+    const rowResult = async () => {
+      const r = await result;
+      if (r && r.error) return { data: null, error: r.error };
+      return { data: { updated_at: __nextUpdatedAt() }, error: null };
+    };
+    return {
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        result.then(res as never, rej as never),
+      select: () => ({
+        maybeSingle: rowResult,
+        single: rowResult,
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          rowResult().then(res as never, rej as never),
+      }),
+    };
+  };
+  // B1 — El DELETE real es un builder: encadena `.eq()`, es thenable, y con
+  // `.select()` devuelve las filas borradas (el compare-and-delete de la
+  // finalización cuenta esas filas). El mock adopta esa forma.
   const makeDeleteChain = (tableName: string) => {
     const chain = {
       eq: (col: string, val: unknown) => {
@@ -95,6 +128,18 @@ vi.mock('@/integrations/supabase/client', () => {
         }
         return chain;
       },
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        Promise.resolve({ error: null, data: [{ id: 'deleted-row' }] }).then(
+          res as never,
+          rej as never,
+        ),
+      select: () => ({
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          Promise.resolve({ error: null, data: [{ id: 'deleted-row' }] }).then(
+            res as never,
+            rej as never,
+          ),
+      }),
     };
     return chain;
   };
@@ -107,12 +152,14 @@ vi.mock('@/integrations/supabase/client', () => {
       error: null,
     })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+    upsert: vi.fn().mockImplementation((payload: UpsertPayload) =>
+      __upsertBuilder((async () => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
       if (deferred) return deferred.promise;
       return { error: upsertDefaultError };
-    }),
+    })())
+    ),
     delete: vi.fn().mockImplementation(() => makeDeleteChain(tableName)),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -980,9 +1027,33 @@ describe('Case 9: finalization success → parent + deleteDraft exactly once, af
 
     await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(onStoryCreated.mock.calls).toHaveLength(1);
-    const [finalStory] = onStoryCreated.mock.calls[0] as [Story, unknown];
+    const [finalStory, , confirmFinalization] = onStoryCreated.mock.calls[0] as [
+      Story,
+      unknown,
+      (() => Promise<void>) | undefined,
+    ];
     expect(finalStory.metadata.status).toBe('ready');
-    // Draft deleted exactly once, strictly after the commit (it was 0 above).
+
+    // B1 — SUPERSEDES the eager delete this case used to assert.
+    // Finalize no longer deletes its own draft: the row must survive until the
+    // PARENT confirms, after the liturgy has been saved. Asserting a delete
+    // here would re-pin the exact bug B1 removes (a stale ack could wipe
+    // another story's draft, and an unsaved liturgy would lose the story).
+    expect(deletedDraftRows).toHaveLength(0);
+    // Instead the parent is handed a single-use confirmation closure.
+    expect(typeof confirmFinalization).toBe('function');
+
+    // Running it performs the guarded compare-and-delete: exactly one row.
+    await act(async () => {
+      await confirmFinalization!();
+      await yields(10);
+    });
+    expect(deletedDraftRows).toHaveLength(1);
+    // Second call is a no-op — the witness is consumed.
+    await act(async () => {
+      await confirmFinalization!();
+      await yields(10);
+    });
     expect(deletedDraftRows).toHaveLength(1);
     // Exactly one transition into 'complete', and it is the finalize write.
     expect(countStepTransitions('complete')).toBe(1);
@@ -1107,7 +1178,14 @@ describe('Case 11 (BASE-RED): finalization stale → neither parent nor deleteDr
     expect(finalizeUpserts.length).toBeGreaterThanOrEqual(1);
     const lastFinalize = finalizeUpserts[finalizeUpserts.length - 1];
     expect(parseUpsertRow(lastFinalize.payload).editedTitle).toBe('TITULO EDITADO EN VUELO');
-    expect(deletedDraftRows).toHaveLength(1);
+    // B1 — finalize no longer deletes eagerly; the parent confirms later.
+    expect(deletedDraftRows).toHaveLength(0);
+    const [, , confirmFinalization] = onStoryCreated.mock.calls[0] as [
+      Story,
+      unknown,
+      (() => Promise<void>) | undefined,
+    ];
+    expect(typeof confirmFinalization).toBe('function');
   });
 });
 

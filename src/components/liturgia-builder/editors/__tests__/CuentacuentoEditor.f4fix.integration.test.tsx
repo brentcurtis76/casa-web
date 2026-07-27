@@ -73,6 +73,39 @@ let mockRefinedStory: Record<string, unknown> | null = null;
 // ---------------------------------------------------------------------------
 
 vi.mock('@/integrations/supabase/client', () => {
+
+  // B1 — El `upsert` real de supabase-js devuelve un BUILDER encadenable
+  // (thenable y con `.select()`), no una promesa. `saveDraftToSupabase` ahora
+  // encadena `.select('updated_at').maybeSingle()` para obtener ATÓMICAMENTE el
+  // instante de la escritura (testigo del compare-and-delete de la
+  // finalización), así que el mock adopta esa forma — es más fiel al borde real
+  // que el shape anterior. Cada escritura devuelve un `updated_at` distinto y
+  // monótono: eso es lo que hace observable el ack obsoleto.
+  let __updatedAtSeq = 0;
+  const __nextUpdatedAt = () => {
+    __updatedAtSeq += 1;
+    return `2026-05-01T00:00:${String(__updatedAtSeq).padStart(2, '0')}.000Z`;
+  };
+  const __upsertBuilder = (result: Promise<{ error: { message: string } | null }>) => {
+    const rowResult = async () => {
+      const r = await result;
+      if (r && r.error) return { data: null, error: r.error };
+      return { data: { updated_at: __nextUpdatedAt() }, error: null };
+    };
+    return {
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        result.then(res as never, rej as never),
+      select: () => ({
+        maybeSingle: rowResult,
+        single: rowResult,
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          rowResult().then(res as never, rej as never),
+      }),
+    };
+  };
+  // B1 — El DELETE real es un builder: encadena `.eq()`, es thenable, y con
+  // `.select()` devuelve las filas borradas (el compare-and-delete de la
+  // finalización cuenta esas filas). El mock adopta esa forma.
   const makeDeleteChain = (tableName: string) => {
     const chain = {
       eq: (col: string, val: unknown) => {
@@ -81,6 +114,18 @@ vi.mock('@/integrations/supabase/client', () => {
         }
         return chain;
       },
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        Promise.resolve({ error: null, data: [{ id: 'deleted-row' }] }).then(
+          res as never,
+          rej as never,
+        ),
+      select: () => ({
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          Promise.resolve({ error: null, data: [{ id: 'deleted-row' }] }).then(
+            res as never,
+            rej as never,
+          ),
+      }),
     };
     return chain;
   };
@@ -93,12 +138,14 @@ vi.mock('@/integrations/supabase/client', () => {
       error: null,
     })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+    upsert: vi.fn().mockImplementation((payload: UpsertPayload) =>
+      __upsertBuilder((async () => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
       if (deferred) return deferred.promise;
       return { error: upsertDefaultError };
-    }),
+    })())
+    ),
     delete: vi.fn().mockImplementation(() => makeDeleteChain(tableName)),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -512,12 +559,23 @@ describe('F4 (BASE-RED): option selectors are disabled during the finalize envel
 });
 
 // ---------------------------------------------------------------------------
-// F5/F2 (BASE-RED) — mount-time cleanup of an orphaned current_step='complete'
-// draft row. Recovery ignores 'complete', so a phantom-finalize (or a delete
-// that never landed) leaves it stranded forever. On mount it must be deleted.
+// F5/F2 — SUPERSEDED BY B1.
+//
+// This case originally asserted that a current_step='complete' row is DELETED
+// at mount. That was correct while finalize eagerly deleted its own draft: a
+// 'complete' row could then only be garbage from a delete that never landed.
+//
+// B1 removed the eager delete — the parent confirms the finalization after the
+// liturgy is saved — so a 'complete' row now means "finalized, not yet
+// confirmed", and is frequently the ONLY surviving copy of the story (finalize
+// then reload without saving the liturgy loses the in-memory element). Deleting
+// it at mount would destroy exactly what B1 exists to preserve.
+//
+// The assertion is therefore INVERTED on purpose: the row must survive and be
+// offered for recovery.
 // ---------------------------------------------------------------------------
-describe('F5/F2 (BASE-RED): an orphaned complete draft row is cleaned up on mount', () => {
-  it('a complete draft row found at mount is deleted and not offered for recovery', async () => {
+describe('F5/F2 (SUPERSEDED BY B1): a complete draft row is preserved and offered for recovery', () => {
+  it('a complete draft row found at mount is NOT deleted and IS offered for recovery', async () => {
     mockDraftRow = {
       current_step: 'complete',
       story: {
@@ -546,10 +604,13 @@ describe('F5/F2 (BASE-RED): an orphaned complete draft row is cleaned up on moun
     await waitFor(() => expect(screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeTruthy(), { timeout: 3000 });
     await act(async () => { await yields(10); });
 
-    // The orphan row was deleted, and no recovery prompt was offered.
-    await waitFor(() => expect(deletedDraftRows.length).toBeGreaterThan(0), { timeout: 3000 });
-    expect(screen.queryByRole('button', { name: /Empezar de nuevo/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Recuperar/i })).toBeNull();
+    // B1: the row survives (nothing deletes it) and recovery is offered.
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /Recuperar/i })).not.toBeNull(),
+      { timeout: 3000 },
+    );
+    expect(screen.queryByRole('button', { name: /Empezar de nuevo/i })).not.toBeNull();
+    expect(deletedDraftRows).toEqual([]);
   });
 });
 

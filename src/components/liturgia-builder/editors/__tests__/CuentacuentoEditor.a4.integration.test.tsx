@@ -43,6 +43,36 @@ let mockUserId: string | null = 'user-a4';
 let mockDraftRow: Record<string, unknown> | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
+
+  // B1 — El `upsert` real de supabase-js devuelve un BUILDER encadenable
+  // (thenable y con `.select()`), no una promesa. `saveDraftToSupabase` ahora
+  // encadena `.select('updated_at').maybeSingle()` para obtener ATÓMICAMENTE el
+  // instante de la escritura (testigo del compare-and-delete de la
+  // finalización), así que el mock adopta esa forma — es más fiel al borde real
+  // que el shape anterior. Cada escritura devuelve un `updated_at` distinto y
+  // monótono: eso es lo que hace observable el ack obsoleto.
+  let __updatedAtSeq = 0;
+  const __nextUpdatedAt = () => {
+    __updatedAtSeq += 1;
+    return `2026-05-01T00:00:${String(__updatedAtSeq).padStart(2, '0')}.000Z`;
+  };
+  const __upsertBuilder = (result: Promise<{ error: { message: string } | null }>) => {
+    const rowResult = async () => {
+      const r = await result;
+      if (r && r.error) return { data: null, error: r.error };
+      return { data: { updated_at: __nextUpdatedAt() }, error: null };
+    };
+    return {
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        result.then(res as never, rej as never),
+      select: () => ({
+        maybeSingle: rowResult,
+        single: rowResult,
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          rowResult().then(res as never, rej as never),
+      }),
+    };
+  };
   const makeDeleteChain = (tableName: string) => {
     const filters: Record<string, unknown> = {};
     let recorded = false;
@@ -78,12 +108,14 @@ vi.mock('@/integrations/supabase/client', () => {
       error: null,
     })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    upsert: vi.fn().mockImplementation(async (payload: UpsertPayload) => {
+    upsert: vi.fn().mockImplementation((payload: UpsertPayload) =>
+      __upsertBuilder((async () => {
       upsertCalls.push({ payload });
       const deferred = upsertDeferreds.shift();
       if (deferred) return deferred.promise;
       return { error: null };
-    }),
+    })())
+    ),
     delete: vi.fn().mockImplementation(() => makeDeleteChain(tableName)),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),

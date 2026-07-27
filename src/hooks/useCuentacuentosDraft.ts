@@ -916,6 +916,13 @@ export interface SaveDraftInput {
 
 export interface SaveDraftSuccess {
   uploadedUrls: DraftUploadedUrls;
+  /**
+   * B1 — `updated_at` devuelto ATÓMICAMENTE por el RETURNING del upsert: el
+   * instante exacto de ESTA escritura. Es el testigo del compare-and-delete de
+   * la finalización. `null` cuando el RETURNING no trajo fila (fail-safe: sin
+   * testigo no se borra nada).
+   */
+  updatedAt: string | null;
 }
 
 /**
@@ -1124,8 +1131,15 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
         } as unknown as Record<string, unknown>)
       : null;
 
-    // Guardar en la tabla
-    const { error } = await supabase
+    // Guardar en la tabla.
+    //
+    // B1 — El upsert devuelve `updated_at` ATÓMICAMENTE (`.select(...)` sobre el
+    // RETURNING del propio upsert). Ése es el instante exacto de ESTA escritura:
+    // el trigger `update_cuentacuentos_drafts_updated_at` lo fija en el UPDATE y
+    // el default `now()` en el INSERT. Leerlo con un SELECT posterior NO serviría:
+    // otra pestaña podría escribir en medio y nos llevaríamos SU timestamp, que
+    // es justo la carrera que el compare-and-delete de la finalización evita.
+    const { data: upsertedRow, error } = await supabase
       .from('cuentacuentos_drafts')
       .upsert({
         liturgia_id: liturgyId,
@@ -1141,7 +1155,9 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
         image_paths: mergedPaths,
       } as Record<string, unknown>, {
         onConflict: 'liturgia_id,user_id',
-      });
+      })
+      .select('updated_at')
+      .maybeSingle();
 
     if (error) {
       console.error('[useCuentacuentosDraft] Error saving draft:', error);
@@ -1175,7 +1191,15 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
         : null,
     };
 
-    return { uploadedUrls };
+    // B1 — `updatedAt` puede faltar (mock sin RETURNING, o una policy que no
+    // devuelva la fila). Su AUSENCIA es fail-safe: sin token no hay
+    // compare-and-delete, así que el borrador simplemente queda recuperable.
+    // Nunca convertimos un fallo de lectura del RETURNING en un fallo de la
+    // escritura, que ya ocurrió.
+    const updatedAt =
+      (upsertedRow as { updated_at?: string } | null)?.updated_at ?? null;
+
+    return { uploadedUrls, updatedAt };
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error saving draft:', err);
     throw err;
@@ -1197,7 +1221,12 @@ export async function saveDraftNow(input: {
   liturgyId: string;
   currentDraft: CuentacuentosDraftFull | null;
   patch: DraftPatch;
-}): Promise<{ snapshot: CuentacuentosDraftFull; uploadedUrls: DraftUploadedUrls }> {
+}): Promise<{
+  snapshot: CuentacuentosDraftFull;
+  uploadedUrls: DraftUploadedUrls;
+  /** B1 — instante de esta escritura, del RETURNING del upsert. */
+  updatedAt: string | null;
+}> {
   const baseSnapshot = normalizeSnapshot(input.currentDraft, input.patch, input.liturgyId);
   // A3/S5: recoveryRevision monotónico por intento de persistencia. Se refleja
   // en el snapshot embebido (`editorStateV1`) y en el snapshot devuelto para
@@ -1206,13 +1235,13 @@ export async function saveDraftNow(input: {
     ...baseSnapshot,
     recoveryRevision: (baseSnapshot.recoveryRevision ?? 0) + 1,
   };
-  const { uploadedUrls } = await saveDraftToSupabase({
+  const { uploadedUrls, updatedAt } = await saveDraftToSupabase({
     userId: input.userId,
     liturgyId: input.liturgyId,
     snapshot,
     patch: input.patch,
   });
-  return { snapshot, uploadedUrls };
+  return { snapshot, uploadedUrls, updatedAt };
 }
 
 /**
@@ -1539,6 +1568,12 @@ export interface EnqueueDraftWriteResult {
    * este campo está ausente.
    */
   committed?: CuentacuentosDraftFull;
+  /**
+   * B1 — `updated_at` del RETURNING de ESTE upsert: el testigo que la
+   * finalización usa para su compare-and-delete. `null` si el RETURNING no
+   * trajo fila (sin testigo no se borra nada: fail-safe).
+   */
+  updatedAt?: string | null;
 }
 
 /**
@@ -1799,6 +1834,15 @@ export interface UseCuentacuentosDraftReturn {
   deleteDraft: () => void;
   /** A4/A4a — Borra SOLO la fila del draft. Cero `storage.remove`. */
   deleteDraftRecord: () => Promise<boolean>;
+  /**
+   * B1 — Compare-and-delete de la finalización. Borra la fila SÓLO si sigue
+   * siendo la historia finalizada Y nadie la reescribió desde entonces.
+   * Devuelve las filas borradas (0 = ack obsoleto ⇒ el borrador se conserva).
+   */
+  confirmFinalizationDelete: (input: {
+    storyId: string;
+    expectedUpdatedAt: string;
+  }) => Promise<number>;
   showRecoveryPrompt: boolean;
   acceptRecovery: () => CuentacuentosDraftFull | null;
   declineRecovery: () => void;
@@ -1991,28 +2035,26 @@ export function useCuentacuentosDraft({
       setIsLoading(true);
       try {
         const existingDraft = await loadDraftFromSupabase(userId, liturgyId);
-        if (existingDraft && existingDraft.currentStep === 'complete') {
-          // F2/F5 — Orphan cleanup. Una fila con current_step='complete' significa
-          // que una finalización escribió su step de transición pero su
-          // deleteDraft posterior al commit NUNCA aterrizó (la corrección
-          // phantom-finalize falló, o la pestaña se cerró dentro de su RTT). El
-          // cuento ya está entregado a la liturgia o nunca se finalizó en vivo;
-          // en cualquier caso esta fila es irrecuperable (recovery IGNORA
-          // 'complete') y quedaría varada. La borramos al montar para que no se
-          // acumule. Sin loop de reintentos — un solo intento best-effort.
-          console.warn('[useCuentacuentosDraft] Orphan complete draft row found on mount; cleaning up');
-          // Finding 2 — El DELETE lleva `current_step='complete'` como condición
-          // servidor. La decisión se tomó sobre una lectura previa; si entre esa
-          // lectura y la escritura la fila volvió a un paso vivo (otra pestaña
-          // finalizando, cuya corrección phantom-finalize restaura 'cover'),
-          // este DELETE matchea 0 filas en vez de destruir un borrador en curso.
-          // Finding 7 — Serializado detrás de la cola, igual que `deleteDraft`:
-          // el efecto también corre al cambiar `liturgyId`, cuando la cola puede
-          // no estar quiescente.
-          writeTailRef.current = writeTailRef.current
-            .then(() => deleteDraftFromSupabase(userId, liturgyId, { current_step: 'complete' }))
-            .then(() => {}, () => {});
-        } else if (existingDraft && existingDraft.currentStep !== 'config') {
+        if (existingDraft && existingDraft.currentStep !== 'config') {
+          // B1 — SUPERSEDE el "orphan cleanup" de F2/F5.
+          //
+          // Aquella limpieza borraba al montar toda fila con
+          // current_step='complete', bajo la premisa de que la finalización
+          // SIEMPRE borraba su borrador al commitear, y por tanto una fila
+          // 'complete' sólo podía ser basura de un borrado que no aterrizó.
+          //
+          // Con B1 esa premisa ya no vale: la finalización NO borra nada. El
+          // borrado lo confirma el padre DESPUÉS de guardar la liturgia. Una
+          // fila 'complete' es entonces una finalización PENDIENTE DE
+          // CONFIRMAR, y muy posiblemente la ÚNICA copia del cuento: si el
+          // usuario finaliza y recarga sin guardar la liturgia, el elemento en
+          // memoria se pierde con la página y sólo queda esta fila. Borrarla al
+          // montar destruiría exactamente lo que B1 promete conservar.
+          //
+          // Por eso ahora se OFRECE PARA RECUPERAR igual que cualquier otro
+          // paso. El coste es un prompt redundante en el caso raro de que la
+          // liturgia sí se haya guardado y la confirmación haya fallado; el
+          // usuario lo descarta. Es mucho mejor que perder el cuento.
           setDraft(existingDraft);
           setShowRecoveryPrompt(true);
           console.log(`[useCuentacuentosDraft] Found existing draft at step: ${existingDraft.currentStep}`);
@@ -2130,7 +2172,7 @@ export function useCuentacuentosDraft({
         // saveDraftNow es el único camino de persistencia: normaliza el
         // snapshot y persiste. Nunca toca refs ni React state — esto es
         // responsabilidad de la cola tras chequear identidad.
-        const { snapshot, uploadedUrls } = await saveDraftNow({
+        const { snapshot, uploadedUrls, updatedAt } = await saveDraftNow({
           userId: currentUserId,
           liturgyId: currentLiturgyId,
           currentDraft: draftRef.current,
@@ -2188,7 +2230,7 @@ export function useCuentacuentosDraft({
           // objeto (con URL swaps) asignado a draftRef. El envelope de
           // aprobación consume `committed.story` como fuente de la
           // transición — nunca un closure pre-drain.
-          return { snapshot, uploadedUrls, committed: swapped };
+          return { snapshot, uploadedUrls, committed: swapped, updatedAt };
         }
 
         // Post-start identity mismatch: the DB operation was allowed to
@@ -2653,6 +2695,61 @@ export function useCuentacuentosDraft({
     setShowRecoveryPrompt(false);
   }, [liturgyId, userId, resetDebounce, resetGeneratedRevisions, publishActiveIdentity]);
 
+  // B1 — Compare-and-delete de la finalización.
+  //
+  // Borra la fila del draft SÓLO si sigue siendo EXACTAMENTE la que se
+  // finalizó: misma historia (`story->>'id'`) y mismo instante de escritura
+  // (`updated_at` = el testigo devuelto por el upsert autoritativo). Cero filas
+  // borradas ⇒ ACK OBSOLETO, y no borrar es la respuesta correcta:
+  //
+  //   - la fila es de OTRA historia (se finalizó A, se desmontó, se creó B: la
+  //     tabla tiene UNIQUE(liturgia_id,user_id), así que B ocupa la misma fila);
+  //   - o hubo una edición posterior a la finalización, que movió `updated_at`
+  //     (el borrador es más nuevo que lo que se entregó: hay que re-finalizar).
+  //
+  // En ambos casos el borrador permanece recuperable. Va serializado detrás de
+  // la cola, igual que los demás borrados, para no perder contra un upsert en
+  // vuelo. Devuelve el número de filas borradas (0 ó 1).
+  const confirmFinalizationDelete = useCallback(
+    async ({
+      storyId,
+      expectedUpdatedAt,
+    }: {
+      storyId: string;
+      expectedUpdatedAt: string;
+    }): Promise<number> => {
+      const currentUserId = userIdRef.current;
+      const currentLiturgyId = liturgyIdRef.current;
+      if (!currentUserId || !storyId || !expectedUpdatedAt) return 0;
+
+      const deletion = writeTailRef.current.then(async () => {
+        const { data, error } = await supabase
+          .from('cuentacuentos_drafts')
+          .delete()
+          .eq('liturgia_id', currentLiturgyId)
+          .eq('user_id', currentUserId)
+          .eq('story->>id', storyId)
+          .eq('updated_at', expectedUpdatedAt)
+          .select('id');
+        if (error) {
+          console.error('[useCuentacuentosDraft] confirmFinalizationDelete failed:', error);
+          throw error;
+        }
+        return Array.isArray(data) ? data.length : 0;
+      });
+      writeTailRef.current = deletion.then(() => {}, () => {});
+
+      const deletedCount = await deletion;
+      if (deletedCount === 0) {
+        console.warn(
+          '[useCuentacuentosDraft] Stale finalization ack: the draft row changed or belongs to another story; nothing deleted (draft stays recoverable)',
+        );
+      }
+      return deletedCount;
+    },
+    [],
+  );
+
   // A4 / A4a — Borrado del cuento: SOLO el registro de la base de datos.
   //
   // Invariante 7 del plan: los assets son inmutables e INDELEBLES desde el
@@ -2761,6 +2858,7 @@ export function useCuentacuentosDraft({
     loadDraft: loadDraftAsync,
     deleteDraft,
     deleteDraftRecord,
+    confirmFinalizationDelete,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,

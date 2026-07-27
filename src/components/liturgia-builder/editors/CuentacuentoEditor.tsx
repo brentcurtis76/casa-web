@@ -79,7 +79,17 @@ interface CuentacuentoEditorProps {
   context: LiturgyContext;
   initialStory?: Story;
   initialSlides?: SlideGroup;
-  onStoryCreated: (story: Story, slides: SlideGroup) => void;
+  /**
+   * B1 — El tercer argumento es un cierre de UN SOLO USO que confirma la
+   * finalización (compare-and-delete del borrador). El padre debe guardarlo y
+   * ejecutarlo DESPUÉS de guardar la liturgia; hasta entonces el borrador
+   * permanece recuperable. Se omite en llamadas que no provienen de finalizar.
+   */
+  onStoryCreated: (
+    story: Story,
+    slides: SlideGroup,
+    confirmFinalization?: () => Promise<void>,
+  ) => void;
   onStoryProgress?: (story: Story, slides: SlideGroup | null) => void;
   onStoryDeleted?: () => void;
   onNavigateToFullEditor?: () => void;
@@ -672,6 +682,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     saveDraft,
     deleteDraft,
     deleteDraftRecord,
+    confirmFinalizationDelete,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
@@ -3342,8 +3353,13 @@ Instrucciones críticas:
       nextStep: CreationStep;
       staleMessage: string;
       errorMessage: string;
-      /** Transición local. Recibe la story EXACTA commiteada por la persistencia. */
-      onSuccess: (committedStory: Story) => void;
+      /**
+       * Transición local. Recibe la story EXACTA commiteada por la persistencia
+       * y, en `meta.updatedAt`, el instante de ESA escritura (RETURNING del
+       * upsert). B1 lo usa como testigo del compare-and-delete de la
+       * finalización; `null` ⇒ sin testigo ⇒ no se borra nada.
+       */
+      onSuccess: (committedStory: Story, meta: { updatedAt: string | null }) => void;
     }) => {
       const { deriveNextStory, nextStep, staleMessage, errorMessage, onSuccess } = params;
       // B7 — Latch de re-entrancy SÍNCRONO: un segundo click (o disparo por
@@ -3395,7 +3411,8 @@ Instrucciones críticas:
           // 7) Transicionar SÓLO con el snapshot commiteado por la persistencia.
           onSuccess: (result) => {
             const committedStory = result.stale !== true ? result.committed?.story ?? null : null;
-            if (committedStory) onSuccess(committedStory);
+            const updatedAt = result.stale !== true ? result.updatedAt ?? null : null;
+            if (committedStory) onSuccess(committedStory, { updatedAt });
           },
           onBlocked: () => setError(gateWarning),
           onStale: () => setError(staleMessage),
@@ -3574,21 +3591,53 @@ Instrucciones críticas:
       // F4 — El padre y deleteDraft SÓLO tras un commit vivo, consumiendo la
       // story commiteada. En stale/rechazo/error este callback no corre:
       // cero onStoryCreated, cero deleteDraft, cero transición.
-      onSuccess: (committedStory) => {
+      onSuccess: (committedStory, { updatedAt }) => {
         setStory(committedStory);
         const slides = createPreviewSlideGroup(committedStory);
         setPreviewSlides(slides as unknown as SlideGroup);
-        onStoryCreated(committedStory, slides as unknown as SlideGroup);
+
+        // B1 — NO se borra el borrador acá. Antes, `deleteDraft()` lo borraba
+        // apenas commiteaba la finalización, keyed sólo por (liturgia_id,
+        // user_id). Con UNIQUE(liturgia_id,user_id) esa fila es la MISMA para
+        // cualquier historia de la liturgia, así que un ack tardío de la
+        // historia A podía borrar el borrador de la historia B tras un
+        // remount, y una edición hecha después de finalizar se perdía sin
+        // rastro. Además el borrado ocurría ANTES de que la liturgia estuviera
+        // guardada: si el usuario no guardaba, el cuento finalizado
+        // desaparecía.
+        //
+        // Ahora la finalización se CONFIRMA desde el padre, después de que la
+        // liturgia se guardó, mediante este cierre de UN SOLO USO que ejecuta
+        // el compare-and-delete. Hasta entonces el borrador queda recuperable.
+        const finalizedStoryId = committedStory.id;
+        const usedRef = { used: false };
+        const confirmFinalization = async (): Promise<void> => {
+          // Un segundo llamado es un no-op: el testigo ya se consumió.
+          if (usedRef.used) return;
+          usedRef.used = true;
+          if (!updatedAt) {
+            // Sin testigo no hay borrado seguro posible: dejamos el borrador.
+            console.warn(
+              '[CuentacuentoEditor] Finalization has no updated_at witness; leaving the draft recoverable',
+            );
+            return;
+          }
+          await confirmFinalizationDelete({
+            storyId: finalizedStoryId,
+            expectedUpdatedAt: updatedAt,
+          });
+        };
+
+        onStoryCreated(committedStory, slides as unknown as SlideGroup, confirmFinalization);
         setConfirmed(true);
         setCurrentStep('complete');
-        // A3a/S6: finalize also drops the draft — purga el registry del ciclo
-        // que acabamos de cerrar (mismo lifecycle-boundary que delete/replace).
+        // A3a/S6: purga el registry del ciclo que acabamos de cerrar (mismo
+        // lifecycle-boundary que delete/replace).
         pipeline.invalidateSaveRetries(activeIdentity);
-        deleteDraft();
-        console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
+        console.log('[CuentacuentoEditor] Story finalized. The draft stays recoverable until the liturgy is saved.');
       },
     });
-  }, [story, onStoryCreated, deleteDraft, runAuthoritativeApproval, pipeline, activeIdentity, setStory]);
+  }, [story, onStoryCreated, confirmFinalizationDelete, runAuthoritativeApproval, pipeline, activeIdentity, setStory]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
