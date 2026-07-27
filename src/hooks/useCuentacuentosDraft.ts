@@ -79,6 +79,15 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
   /** Contador que se incrementa en cada persistencia exitosa: sirve como
    * identidad de recuperación (útil para diffs, telemetry, y evitar carreras). */
   recoveryRevision?: number;
+  /**
+   * A6 — Borrador ROTO: la fila está en un paso avanzado (≠ `config`) pero no
+   * tiene historia utilizable (`story` nulo, o sin `story.id`). Es un estado
+   * irrecuperable por el flujo normal: restaurarlo dejaría al editor en
+   * "generando escenas" sin nada que mostrar. Se marca acá para que la UI
+   * ofrezca una salida EXPLÍCITA (reparar o descartar) en vez de reescribir el
+   * borrador en silencio o quedarse en un callejón sin salida.
+   */
+  storyMissing?: boolean;
 }
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
@@ -1483,6 +1492,16 @@ async function loadDraftFromSupabase(
         });
       }
       draft.story = patched;
+    }
+
+    // A6 — Detectar el borrador ROTO: paso avanzado sin historia utilizable.
+    // Sólo se MARCA; no se repara ni se reescribe nada acá. La decisión es del
+    // usuario (reparar o descartar) y se toma en la UI de recuperación.
+    if (draft.currentStep !== 'config' && !draft.story?.id) {
+      draft.storyMissing = true;
+      console.warn(
+        `[useCuentacuentosDraft] Broken draft: step '${draft.currentStep}' has no usable story (story=${draft.story ? 'sin id' : 'null'})`,
+      );
     }
 
     return draft;

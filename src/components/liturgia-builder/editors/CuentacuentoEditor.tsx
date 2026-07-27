@@ -1352,6 +1352,35 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     declineRecovery();
   }, [declineRecovery, pipeline, activeIdentity]);
 
+  // A6 — REPARAR un borrador roto (paso avanzado sin historia utilizable).
+  //
+  // Nunca se reescribe el borrador en silencio: se conserva TODO lo que el
+  // usuario había configurado (`config`, y el `editorStateV1` restaurado por
+  // B5 donde exista) y se lo devuelve al paso `config`, que es el único desde
+  // el que puede volver a generar. La alternativa —restaurar tal cual— dejaría
+  // al editor en "generando escenas" sin nada que mostrar.
+  const handleRepairRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
+    const recoveredDraft = acceptRecovery();
+    if (!recoveredDraft) return;
+
+    // Restaurar SÓLO la configuración persistida; la historia no existe.
+    setLocation(recoveredDraft.config.location);
+    setCustomLocation(recoveredDraft.config.customLocation);
+    setCharacters(recoveredDraft.config.characters);
+    setStyle(recoveredDraft.config.style);
+    setIllustrationStyle(recoveredDraft.config.illustrationStyle);
+    setAdditionalNotes(recoveredDraft.config.additionalNotes);
+
+    setStory(null);
+    setPreviewSlides(null);
+    setConfirmed(false);
+    setCurrentStep('config');
+    currentStepRef.current = 'config';
+    setShowForm(true);
+    setError(null);
+  }, [acceptRecovery, pipeline, activeIdentity, setStory]);
+
   const selectedLocation = location === 'custom' ? customLocation : location;
 
   // Estilos de ilustración con sus prompts (para mostrar en preview)
@@ -6476,7 +6505,83 @@ Instrucciones críticas:
   return (
     <div className="space-y-6">
       {/* Modal de recuperación de borrador - no mostrar si el cuento ya está completo */}
-      {showRecoveryPrompt && draft && !confirmed && (
+      {/* A6 — Borrador ROTO: paso avanzado sin historia utilizable. Se ofrece
+          una salida explícita en vez de restaurar a un callejón sin salida. */}
+      {showRecoveryPrompt && draft && draft.storyMissing && !confirmed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: '#FEE2E2' }}
+              >
+                <AlertCircle size={20} style={{ color: '#DC2626' }} />
+              </div>
+              <div>
+                <h4
+                  className="font-semibold mb-1"
+                  style={{ color: CASA_BRAND.colors.primary.black, fontFamily: CASA_BRAND.fonts.heading }}
+                >
+                  Borrador incompleto
+                </h4>
+                <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                  Se encontró un borrador guardado en el paso
+                  {' '}<strong>{
+                    draft.currentStep === 'story' ? 'revisión del cuento' :
+                    draft.currentStep === 'characters' ? 'generación de personajes' :
+                    draft.currentStep === 'scenes' ? 'generación de escenas' :
+                    draft.currentStep === 'cover' ? 'selección de portada' :
+                    draft.currentStep
+                  }</strong>, pero el cuento en sí no se guardó, así que no se
+                  puede continuar desde ahí.
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="p-3 rounded-lg mb-4"
+              style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight + '30' }}
+            >
+              <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                <strong>Reparar</strong> conserva la configuración que ya habías
+                cargado (lugar, personajes, estilo) y te lleva al inicio para
+                volver a generar el cuento. <strong>Descartar</strong> elimina el
+                borrador y empieza de cero.
+              </p>
+              <p className="text-xs mt-2" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                Guardado: {formatSavedAt(draft.savedAt)}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleDeclineRecovery}
+                className="flex-1 px-4 py-2 rounded-lg border transition-colors"
+                style={{
+                  borderColor: CASA_BRAND.colors.secondary.grayLight,
+                  color: CASA_BRAND.colors.secondary.grayDark,
+                }}
+              >
+                Descartar borrador
+              </button>
+              <button
+                type="button"
+                onClick={handleRepairRecovery}
+                className="flex-1 px-4 py-2 rounded-lg transition-colors font-medium"
+                style={{
+                  backgroundColor: CASA_BRAND.colors.primary.amber,
+                  color: 'white',
+                }}
+              >
+                Reparar borrador
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRecoveryPrompt && draft && !draft.storyMissing && !confirmed && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={handleDeclineRecovery}
