@@ -21,6 +21,7 @@ import {
 import {
   collectStoryImageRefs,
   DEFAULT_IMAGE_LIMITS,
+  describeError,
   imageErrorResponse,
   ImageRefError,
   type ImageLimits,
@@ -28,6 +29,7 @@ import {
   materializeImageRefs,
   prevalidateImageRefs,
   readBoundedJson,
+  type SkippedImage,
 } from '../_shared/imageFetch.ts';
 
 export interface HandlerDeps {
@@ -81,7 +83,7 @@ async function fetchWithRetry(
     } catch (err) {
       lastErr = err;
       if (attempt === 0) {
-        console.warn(`[generate-story] ${label}: error de red/timeout, reintentando:`, err instanceof Error ? err.message : err);
+        console.warn(`[generate-story] ${label}: error de red/timeout, reintentando: ${describeError(err)}`);
         await new Promise((r) => setTimeout(r, 2_000 + Math.random() * 3_000));
         continue;
       }
@@ -113,10 +115,10 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
 
   try {
     const response = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${config.googleAiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.googleAiApiKey },
         body: JSON.stringify({
           contents: [{ parts: [{ text: researchPrompt }] }],
           generationConfig: { maxOutputTokens: 500 },
@@ -136,7 +138,7 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
     console.log(`[generate-story] Location research for "${location}":`, text.slice(0, 200) + '...');
     return text;
   } catch (err) {
-    console.error('[generate-story] Error in location research:', err);
+    console.error(`[generate-story] Error in location research: ${describeError(err)}`);
     return '';
   }
 }
@@ -243,10 +245,10 @@ async function analyzeImagesForVisualDescription(params: {
     console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images for "${name}"`);
 
     const response = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${config.googleAiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.googleAiApiKey },
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: { maxOutputTokens: 400 },
@@ -266,7 +268,7 @@ async function analyzeImagesForVisualDescription(params: {
     console.log(`[generate-story] ${kind} analysis for "${name}":`, text.slice(0, 200) + '...');
     return text;
   } catch (err) {
-    console.error(`[generate-story] Error in ${kind} analysis for "${name}":`, err);
+    console.error(`[generate-story] Error in ${kind} analysis for "${name}": ${describeError(err)}`);
     return '';
   }
 }
@@ -587,6 +589,9 @@ export function createHandler(
     googleAiApiKey: deps.googleAiApiKey,
   };
   const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
+  // Checked once here rather than per-request after the downloads (see the
+  // sibling handler): the key is constant per deployment.
+  const missingApiKey = !deps.anthropicApiKey;
 
   return async function handler(req: Request): Promise<Response> {
   // Handle CORS preflight
@@ -601,44 +606,61 @@ export function createHandler(
     return authz.response;
   }
 
+  if (missingApiKey) {
+    console.error('[generate-story] ANTHROPIC_API_KEY no está configurada');
+    return new Response(
+      JSON.stringify({ success: false, error: 'El servicio de cuentos no está configurado.' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
   // FASE F pass 1 + pass 2, before Gemini research/analysis and before
   // Anthropic. One untrusted image entry aborts the whole request with zero
   // fetches and zero provider spend (T-F.9).
-  // deno-lint-ignore no-explicit-any
-  let requestData: any;
-  let materialized: Map<string, MaterializedImage>;
+  //
+  // The whole block sits INSIDE the try that produces the JSON+CORS error
+  // response, so nothing can escape into `serve`'s CORS-less plain-text 500.
   try {
-    requestData = await readBoundedJson(req, limits);
+    // deno-lint-ignore no-explicit-any
+    let requestData: any;
+    let sourceImages: Map<string, MaterializedImage>;
+    let skipped: SkippedImage[];
+    try {
+      requestData = await readBoundedJson(req, limits);
 
-    const prevalidated = prevalidateImageRefs(collectStoryImageRefs(requestData), {
-      limits,
-      supabaseUrl: deps.supabaseUrl,
-    });
-    materialized = await materializeImageRefs(prevalidated, { limits });
-  } catch (err) {
-    if (err instanceof ImageRefError) {
+      const prevalidated = prevalidateImageRefs(collectStoryImageRefs(requestData), {
+        limits,
+        supabaseUrl: deps.supabaseUrl,
+      });
+      const result = await materializeImageRefs(prevalidated, { limits });
+      sourceImages = result.images;
+      skipped = result.skipped;
+    } catch (err) {
+      if (err instanceof ImageRefError) {
+        console.warn(`[generate-story] request rejected: ${err.code} at ${err.path}`);
+        return imageErrorResponse(err, corsHeaders);
+      }
+      throw err;
+    }
+
+    // An unusable individual photo drops out of the analysis rather than
+    // failing the whole story generation.
+    if (skipped.length > 0) {
       console.warn(
-        `[generate-story] image entry rejected: ${err.code} at ${err.path}`,
+        `[generate-story] ${skipped.length} image(s) skipped: ` +
+          skipped.map((s) => `${s.path}=${s.code}`).join(', '),
       );
-      return imageErrorResponse(err, corsHeaders);
     }
-    throw err;
-  }
 
-  /** Materialised images for a `referenceImages` array, in slot order. */
-  const takeImages = (prefix: string, count: number): MaterializedImage[] => {
-    const out: MaterializedImage[] = [];
-    for (let j = 0; j < count; j++) {
-      const img = materialized.get(`${prefix}[${j}]`);
-      if (img) out.push(img);
-    }
-    return out;
-  };
-
-  try {
-    if (!config.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY no está configurada');
-    }
+    /** Materialised images for a `referenceImages` array, in slot order. */
+    const takeImages = (prefix: string, count: number): MaterializedImage[] => {
+      const out: MaterializedImage[] = [];
+      for (let j = 0; j < count; j++) {
+        const img = sourceImages.get(`${prefix}[${j}]`);
+        if (img) out.push(img);
+      }
+      return out;
+    };
 
     const { context, location, characters, landmarks, props, style, additionalNotes, previewPromptOnly } = requestData;
 

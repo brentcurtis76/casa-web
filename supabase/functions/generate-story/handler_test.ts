@@ -69,7 +69,7 @@ Deno.test(
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
@@ -87,7 +87,12 @@ Deno.test(
       assertEquals(res.headers.get("Content-Type"), "application/json");
       assertEquals(await res.json(), { success: false, code: "UNAUTHORIZED" });
 
-      assertEquals(json.calls, 0, "req.json must not be called");
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
       assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
       assertEquals(calls.length, 0, "authz backend must not be called");
     });
@@ -105,7 +110,7 @@ Deno.test(
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
@@ -123,7 +128,12 @@ Deno.test(
       assertEquals(perm?.kind === "checkPermission" && perm.resource, "liturgy_builder");
       assertEquals(perm?.kind === "checkPermission" && perm.action, "write");
 
-      assertEquals(json.calls, 0, "req.json must not be called");
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
       assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },
@@ -139,7 +149,7 @@ Deno.test(
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
@@ -155,7 +165,12 @@ Deno.test(
         success: false,
         code: "AUTHZ_BACKEND_ERROR",
       });
-      assertEquals(json.calls, 0, "req.json must not be called");
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
       assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },
@@ -171,7 +186,7 @@ Deno.test(
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
@@ -183,7 +198,12 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 503);
-      assertEquals(json.calls, 0, "req.json must not be called");
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
       assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },

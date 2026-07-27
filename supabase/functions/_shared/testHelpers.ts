@@ -7,6 +7,7 @@
  * of duplicating the harness a sixth time.
  */
 
+import { DRAFTS_BUCKET_PATH, encodeBase64 } from "./imageFetch.ts";
 import type {
   CheckPermissionOutcome,
   GetUserOutcome,
@@ -197,19 +198,30 @@ export const WEBP_BYTES = (size = 64) => {
   return bytes;
 };
 
+/**
+ * Formats the upload paths accept (`image/*`) but the provider path does not
+ * sniff. An iPhone photo arrives as HEIC; a desktop drag-drop can be GIF.
+ */
+export const HEIC_BYTES = (size = 64) => {
+  const bytes = withMagic([0x00, 0x00, 0x00, 0x18], size);
+  bytes.set([0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63], 4); // "ftypheic"
+  return bytes;
+};
+export const GIF_BYTES = (size = 64) =>
+  withMagic([0x47, 0x49, 0x46, 0x38, 0x39, 0x61], size); // "GIF89a"
+
 /** An HTML error page — the payload T-F.8 serves as `Content-Type: image/png`. */
 export const HTML_BYTES = () =>
   new TextEncoder().encode("<!doctype html><html><body>404</body></html>");
 
-export function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
+/** Re-exported so fixtures use the same encoder the module ships. */
+export const toBase64 = encodeBase64;
 
 export const PNG_B64 = (size = 64) => toBase64(PNG_BYTES(size));
 export const JPEG_B64 = (size = 64) => toBase64(JPEG_BYTES(size));
 export const WEBP_B64 = (size = 64) => toBase64(WEBP_BYTES(size));
+export const HEIC_B64 = (size = 64) => toBase64(HEIC_BYTES(size));
+export const GIF_B64 = (size = 64) => toBase64(GIF_BYTES(size));
 
 export function dataUrl(mime: string, base64: string): string {
   return `data:${mime};base64,${base64}`;
@@ -243,4 +255,4 @@ export function streamingResponse(
 /** The bucket prefix these functions are pinned to. */
 export const TEST_SUPABASE_URL = "https://proj.supabase.co";
 export const BUCKET_PREFIX =
-  `${TEST_SUPABASE_URL}/storage/v1/object/public/cuentacuentos-drafts`;
+  `${TEST_SUPABASE_URL}${DRAFTS_BUCKET_PATH}`.replace(/\/$/, "");

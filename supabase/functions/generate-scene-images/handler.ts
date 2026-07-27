@@ -24,12 +24,16 @@ import {
   collectSceneImageRefs,
   DEFAULT_IMAGE_LIMITS,
   imageErrorResponse,
+  describeError,
   ImageRefError,
   type ImageLimits,
   type MaterializedImage,
   materializeImageRefs,
   prevalidateImageRefs,
   readBoundedJson,
+  redactUrls,
+  type SkippedImage,
+  UNAVAILABLE_CODES,
 } from '../_shared/imageFetch.ts';
 
 export interface HandlerDeps {
@@ -69,6 +73,7 @@ const MODEL_TIMEOUT_MS: Record<ModelTier, number> = {
  */
 async function fetchGeminiWithRetry(
   apiUrl: string,
+  apiKey: string,
   body: unknown,
   timeoutMs: number
 ): Promise<Response> {
@@ -77,7 +82,7 @@ async function fetchGeminiWithRetry(
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -97,7 +102,7 @@ async function fetchGeminiWithRetry(
     } catch (err) {
       lastErr = err;
       if (attempt === 0) {
-        console.warn(`[generate-scene-images] Error de red/timeout, reintentando:`, err instanceof Error ? err.message : err);
+        console.warn(`[generate-scene-images] Error de red/timeout, reintentando: ${describeError(err)}`);
         await new Promise((r) => setTimeout(r, 2_000 + Math.random() * 3_000));
         continue;
       }
@@ -389,7 +394,10 @@ async function generateImage(
   config: ModelConfig
 ): Promise<string> {
   const model = resolveModel(modelTier, config);
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
+  // The key travels in a header, not the query string: runtime network errors
+  // embed the request URL in their message, so `?key=` put the secret one
+  // console.error away from the logs.
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   try {
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
@@ -536,6 +544,7 @@ ${prompt}`;
 
     const response = await fetchGeminiWithRetry(
       apiUrl,
+      config.apiKey,
       {
         contents: [{
           parts
@@ -596,7 +605,7 @@ ${prompt}`;
     console.log(`[generate-scene-images] No valid image found in response`);
     return '';
   } catch (err) {
-    console.error(`[generate-scene-images] Error in generateImage:`, err);
+    console.error(`[generate-scene-images] Error in generateImage: ${describeError(err)}`);
     throw err;
   }
 }
@@ -615,6 +624,11 @@ export function createHandler(
     proModel: deps.proModel,
   };
   const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
+  // Checked once here, not per-request after the downloads: the key is
+  // constant per deployment, and running pass 1/pass 2 first meant a
+  // misconfigured function burned Storage egress and then reported an
+  // image-level error instead of the real fault.
+  const missingApiKey = !deps.apiKey;
 
   return async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -628,58 +642,67 @@ export function createHandler(
     return authz.response;
   }
 
+  if (missingApiKey) {
+    console.error('[generate-scene-images] GOOGLE_AI_API_KEY no está configurada');
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: 'El servicio de imágenes no está configurado.',
+        images: [],
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
   // FASE F pass 1 + pass 2. Both run before the first Gemini call: a single
   // untrusted image entry anywhere in the request means zero Storage fetches
-  // and zero provider spend (T-F.9). Typed rejections are mapped to a
-  // Response here so they never reach the top-level catch as a 500.
-  // Client JSON. The pre-FASE-F `await req.json()` typed this `any` and the
-  // switch below relies on that; keeping the same shape confines this change
-  // to the image path rather than cascading into every unrelated field.
-  // deno-lint-ignore no-explicit-any
-  let requestData: any;
-  let materialized: Map<string, MaterializedImage>;
+  // and zero provider spend (T-F.9).
+  //
+  // This whole block sits INSIDE the try that produces the JSON+CORS error
+  // response. An earlier shape rethrew non-ImageRefError failures from a catch
+  // that sat outside it, so a client disconnecting mid-upload escaped the
+  // handler entirely and `serve` answered with CORS-less plain text.
   try {
-    requestData = await readBoundedJson(req, limits);
-
-    const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData), {
-      limits,
-      supabaseUrl: deps.supabaseUrl,
-    });
-
+    // Client JSON. The pre-FASE-F `await req.json()` typed this `any` and the
+    // switch below relies on that; keeping the same shape confines this change
+    // to the image path rather than cascading into every unrelated field.
+    // deno-lint-ignore no-explicit-any
+    let requestData: any;
+    let sourceImages: Map<string, MaterializedImage>;
+    let skipped: SkippedImage[];
     try {
-      materialized = await materializeImageRefs(prevalidated, { limits });
+      requestData = await readBoundedJson(req, limits);
+
+      const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData), {
+        limits,
+        supabaseUrl: deps.supabaseUrl,
+      });
+      const result = await materializeImageRefs(prevalidated, { limits });
+      sourceImages = result.images;
+      skipped = result.skipped;
     } catch (err) {
-      // Refine fail-closed: a source that passed pass 1 but could not be
-      // downloaded is "source unavailable", not a generic download error —
-      // the client distinguishes that copy and keeps the selection. Pass-1
-      // rejections keep their own code (a forbidden origin is not an
-      // unavailable source), so only failures from pass 2 are remapped.
-      if (err instanceof ImageRefError && err.path === 'refine.sourceImage') {
-        throw new ImageRefError(
-          'REFINE_SOURCE_UNAVAILABLE',
-          err.path,
-          'La imagen a refinar no está disponible.',
+      if (err instanceof ImageRefError) {
+        console.warn(
+          `[generate-scene-images] request rejected: ${err.code} at ${err.path}`,
         );
+        return imageErrorResponse(err, corsHeaders, { images: [] });
       }
       throw err;
     }
-  } catch (err) {
-    if (err instanceof ImageRefError) {
+
+    // Unusable individual images do not fail the request: the entry is dropped
+    // and generation continues, which is what the pre-FASE-F code did by
+    // returning '' and filtering. Provenance and size failures never reach
+    // here — those threw above.
+    if (skipped.length > 0) {
       console.warn(
-        `[generate-scene-images] image entry rejected: ${err.code} at ${err.path}`,
+        `[generate-scene-images] ${skipped.length} image(s) skipped: ` +
+          skipped.map((s) => `${s.path}=${s.code}`).join(', '),
       );
-      return imageErrorResponse(err, corsHeaders, { images: [] });
     }
-    throw err;
-  }
 
-  /** Base64 for a validated slot, or '' when the field was absent. */
-  const takeImage = (path: string): string => materialized.get(path)?.base64 ?? '';
-
-  try {
-    if (!config.apiKey) {
-      throw new Error('GOOGLE_AI_API_KEY no está configurada');
-    }
+    /** Base64 for a validated slot, or '' when absent or skipped. */
+    const takeImage = (path: string): string => sourceImages.get(path)?.base64 ?? '';
 
     const { type, styleId, count = 2 } = requestData;
     const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
@@ -697,6 +720,20 @@ export function createHandler(
     if (refine) {
       const source = takeImage('refine.sourceImage');
       if (!source) {
+        // Report WHY. A source that was too large to download is a size
+        // problem the user can act on; only a genuinely unproducible object
+        // is "unavailable". Collapsing both into REFINE_SOURCE_UNAVAILABLE
+        // told someone with an oversized cover to check its availability.
+        const reason = skipped.find((s) => s.path === 'refine.sourceImage');
+        if (reason && !UNAVAILABLE_CODES.has(reason.code)) {
+          const sizeErr = new ImageRefError(
+            reason.code,
+            'refine.sourceImage',
+            'La imagen a refinar supera el tamaño permitido.',
+          );
+          console.warn(`[generate-scene-images] refine source rejected: ${reason.code}`);
+          return imageErrorResponse(sizeErr, corsHeaders, { images: [] });
+        }
         const err = new ImageRefError(
           'REFINE_SOURCE_UNAVAILABLE',
           'refine.sourceImage',
@@ -718,7 +755,7 @@ export function createHandler(
       const { sceneReferenceMode = 'style' } = requestData;
       // Counts only: URLs, query strings, and base64 prefixes are never logged.
       console.log(
-        `[generate-scene-images] REQUEST CHECK - mode=${sceneReferenceMode}, images validated=${materialized.size}`,
+        `[generate-scene-images] REQUEST CHECK - mode=${sceneReferenceMode}, images validated=${sourceImages.size}`,
       );
     }
 
@@ -1218,7 +1255,10 @@ Instrucciones críticas:
     }
 
     if (refine) {
-      prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', refine.feedback)}`;
+      // Replacement FUNCTION, not string: `$&`, `$'` and `` $` `` in user
+      // feedback are otherwise interpreted as substitution patterns and
+      // silently garble the refine instruction.
+      prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', () => refine.feedback)}`;
     }
 
     console.log(`[generate-scene-images] Prompt (${type}):`, prompt.slice(0, 300) + '...');
@@ -1238,7 +1278,9 @@ Instrucciones críticas:
       if (result.status === 'fulfilled' && isValidImageBase64(result.value)) {
         images.push(result.value);
       } else if (result.status === 'rejected') {
-        console.error(`[generate-scene-images] Variation ${i} failed:`, result.reason?.message || result.reason);
+        // Redacted for the log; the client-facing `errors` array keeps the
+        // original message, which never leaves the JSON response body.
+        console.error(`[generate-scene-images] Variation ${i} failed: ${describeError(result.reason)}`);
         errors.push(result.reason?.message || String(result.reason));
       } else {
         console.log(`[generate-scene-images] Variation ${i} returned empty image`);
@@ -1247,7 +1289,9 @@ Instrucciones críticas:
 
     console.log(`[generate-scene-images] ${images.length}/${count} imágenes válidas generadas`);
     if (errors.length > 0) {
-      console.log(`[generate-scene-images] Errors: ${errors.join(' | ')}`);
+      // Redacted: provider errors quote the request URL. The unredacted text
+      // still goes to the client in the JSON body, which is not a log sink.
+      console.log(`[generate-scene-images] Errors: ${errors.map(redactUrls).join(' | ')}`);
     }
 
     if (images.length === 0 && errors.length > 0) {
