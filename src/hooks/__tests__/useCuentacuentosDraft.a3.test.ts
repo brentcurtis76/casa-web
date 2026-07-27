@@ -1781,3 +1781,60 @@ describe('A3a/S3 post-start identity change returns explicit stale after DB sett
     expect(onCommit).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// B1/F3 — `persistedUpdatedAt` es el ÚNICO testigo válido del
+// compare-and-delete, y debe SOBREVIVIR a los commits.
+//
+// `savedAt` no sirve: `normalizeSnapshot` lo re-estampa con el reloj del
+// CLIENTE en cada persistencia, así que basta una escritura entre el montaje y
+// el clic de "Recuperar" para que el testigo deje de coincidir con la fila —
+// y la confirmación quedaría condenada a borrar 0 filas para siempre.
+// `persistedUpdatedAt` lo escribe SÓLO `loadDraftFromSupabase`.
+// ---------------------------------------------------------------------------
+describe('B1/F3 — el testigo de la finalización sobrevive a un commit', () => {
+  it('un commit re-estampa savedAt con el reloj del cliente pero NO toca persistedUpdatedAt', async () => {
+    const dbUpdatedAt = '2026-05-01T00:00:42.000Z';
+    loadedDraftRow = {
+      liturgia_id: 'lit-1',
+      user_id: 'u1',
+      current_step: 'complete',
+      config: {
+        location: 'Jerusalén', customLocation: '', characters: '',
+        style: 'reflexivo', illustrationStyle: 'ghibli', additionalNotes: '',
+      },
+      story: {
+        id: 'story-witness',
+        title: 'Finalizado',
+        characters: [],
+        scenes: [],
+        props: [],
+        metadata: { createdAt: '', updatedAt: '', status: 'ready' },
+      },
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: dbUpdatedAt,
+    };
+
+    const result = await mountReadyHook();
+    await waitFor(() => expect(result.current.draft).not.toBeNull());
+
+    // Al cargar, ambos campos valen el `updated_at` de la fila.
+    expect(result.current.draft?.persistedUpdatedAt).toBe(dbUpdatedAt);
+    expect(result.current.draft?.savedAt).toBe(dbUpdatedAt);
+
+    // Una escritura que COMMITEA (identidad intacta) re-estampa el snapshot.
+    await act(async () => {
+      await result.current.enqueueDraftWrite({ currentStep: 'complete' });
+      await flushMicrotasks();
+    });
+
+    // `savedAt` ya no es el valor de la base — es el reloj del cliente.
+    expect(result.current.draft?.savedAt).not.toBe(dbUpdatedAt);
+    // …pero el testigo del compare-and-delete SIGUE siendo el de la fila.
+    expect(result.current.draft?.persistedUpdatedAt).toBe(dbUpdatedAt);
+  });
+});

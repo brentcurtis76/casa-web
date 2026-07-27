@@ -125,7 +125,11 @@ vi.mock('@/integrations/supabase/client', () => {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockImplementation(async () => ({
-      data: tableName === 'cuentacuentos_drafts' ? mockDraftRow : null,
+      // La lectura la gobierna la fila SIMULADA: si el compare-and-delete la
+      // borró, un remonte no la ve. Sin esto, "el prompt no vuelve" sólo
+      // probaría la contabilidad del propio test.
+      data:
+        tableName === 'cuentacuentos_drafts' && simRow !== null ? mockDraftRow : null,
       error: null,
     })),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
@@ -424,5 +428,84 @@ describe('B1(d) — el cierre sobrevive al desmontaje del editor', () => {
     expect(ack.filters['story->>id']).toBe('story-b1d');
     expect(ack.deleted).toBe(1);
     expect(simRow).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B1(f) — El SÍNTOMA visible del finding 1: tras confirmar, el prompt de
+// recuperación NO vuelve.
+//
+// B1(e) llega hasta `simRow === null`, que es el efecto en la base. Esto cierra
+// el bucle en la UI: se recupera una finalización pendiente, se confirma (lo que
+// el padre hace al guardar la liturgia), se desmonta y se vuelve a montar — y
+// el usuario ya no ve nada que recuperar. Ése era exactamente el limbo: prompt
+// en cada montaje, con "Empezar de nuevo" (que descarta) como única salida.
+// ---------------------------------------------------------------------------
+describe('B1(f) — tras confirmar, el prompt de recuperación no vuelve', () => {
+  it('recuperar → confirmar → remontar ⇒ sin prompt', async () => {
+    const dbUpdatedAt = '2026-05-01T00:00:42.000Z';
+    mockDraftRow = {
+      liturgia_id: 'lit-b1',
+      user_id: 'user-b1',
+      current_step: 'complete',
+      config: {
+        location: 'Jerusalén', customLocation: '', characters: 'María',
+        style: 'reflexivo', illustrationStyle: 'ghibli', additionalNotes: '',
+      },
+      story: {
+        id: 'story-loop',
+        title: 'Cuento finalizado',
+        summary: 'Resumen',
+        characters: [],
+        scenes: [],
+        props: [],
+        metadata: { createdAt: '', updatedAt: '', status: 'ready' },
+      },
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: dbUpdatedAt,
+    };
+    simRow = {
+      liturgia_id: 'lit-b1',
+      user_id: 'user-b1',
+      story_id: 'story-loop',
+      updated_at: dbUpdatedAt,
+    };
+
+    const onStoryCreated = vi.fn();
+    const first = render(
+      <CuentacuentoEditor context={baseContext} onStoryCreated={onStoryCreated} />
+    );
+
+    // 1) El prompt aparece (la fila 'complete' es recuperable bajo B1).
+    const recover = await screen.findByRole('button', { name: /Recuperar borrador/i }, { timeout: 5000 });
+    await act(async () => {
+      fireEvent.click(recover);
+      await yields(20);
+    });
+
+    // 2) El padre guarda la liturgia y confirma.
+    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const [, , confirmFinalization] = onStoryCreated.mock.calls[0] as [
+      Story,
+      unknown,
+      (() => Promise<void>) | undefined,
+    ];
+    await act(async () => { await confirmFinalization!(); await yields(10); });
+    expect(simRow).toBeNull();
+
+    // 3) Remonte limpio: la fila ya no existe, así que no hay nada que ofrecer.
+    first.unmount();
+    await act(async () => { await yields(5); });
+
+    render(<CuentacuentoEditor context={baseContext} onStoryCreated={vi.fn()} />);
+    await act(async () => { await yields(30); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); await yields(20); });
+
+    expect(screen.queryByRole('button', { name: /Recuperar borrador/i })).toBeNull();
+    expect(screen.queryByText(/Borrador encontrado/i)).toBeNull();
   });
 });
