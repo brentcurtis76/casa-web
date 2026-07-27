@@ -337,6 +337,78 @@ describe('B1(b) — una edición posterior a la finalización invalida el ack', 
   });
 });
 
+describe('B1(e) — recuperar una finalización pendiente la vuelve confirmable', () => {
+  it('un borrador `complete` recuperado entrega un cierre que SÍ borra la fila', async () => {
+    // Escenario: el usuario finalizó, cerró la pestaña sin guardar la liturgia,
+    // y vuelve. La fila 'complete' se ofrece para recuperar (B1). Sin el
+    // handshake re-armado, recuperar dejaba el borrador en un limbo permanente:
+    // el prompt reaparecía en cada montaje porque nadie tenía con qué
+    // confirmarlo.
+    mockDraftRow = {
+      liturgia_id: 'lit-b1',
+      user_id: 'user-b1',
+      current_step: 'complete',
+      config: {
+        location: 'Jerusalén', customLocation: '', characters: 'María',
+        style: 'reflexivo', illustrationStyle: 'ghibli', additionalNotes: '',
+      },
+      story: {
+        id: 'story-recovered',
+        title: 'Cuento finalizado',
+        summary: 'Resumen',
+        characters: [],
+        scenes: [],
+        props: [],
+        metadata: { createdAt: '', updatedAt: '', status: 'ready' },
+      },
+      selected_character_sheets: {},
+      selected_scene_images: {},
+      selected_cover: null,
+      selected_end: null,
+      image_paths: {},
+      updated_at: '2026-05-01T00:00:42.000Z',
+    };
+    // La fila simulada refleja lo que hay en la BD al recuperar.
+    simRow = {
+      liturgia_id: 'lit-b1',
+      user_id: 'user-b1',
+      story_id: 'story-recovered',
+      updated_at: '2026-05-01T00:00:42.000Z',
+    };
+
+    const onStoryCreated = vi.fn();
+    render(<CuentacuentoEditor context={baseContext} onStoryCreated={onStoryCreated} />);
+
+    const recover = await screen.findByRole('button', { name: /Recuperar borrador/i }, { timeout: 5000 });
+    await act(async () => {
+      fireEvent.click(recover);
+      await yields(20);
+    });
+
+    // El padre recibe la historia finalizada Y un cierre de confirmación.
+    await waitFor(() => expect(onStoryCreated).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const [recoveredStory, , confirmFinalization] = onStoryCreated.mock.calls[0] as [
+      Story,
+      unknown,
+      (() => Promise<void>) | undefined,
+    ];
+    expect(recoveredStory.id).toBe('story-recovered');
+    expect(typeof confirmFinalization).toBe('function');
+
+    // Recuperar por sí solo no borra nada.
+    expect(deleteAttempts).toEqual([]);
+
+    // Al guardar la liturgia, el cierre confirma y la fila SE VA: el prompt no
+    // puede volver a aparecer.
+    await act(async () => { await confirmFinalization!(); await yields(10); });
+    const ack = deleteAttempts[deleteAttempts.length - 1];
+    expect(ack.filters['story->>id']).toBe('story-recovered');
+    expect(ack.filters['updated_at']).toBe('2026-05-01T00:00:42.000Z');
+    expect(ack.deleted).toBe(1);
+    expect(simRow).toBeNull();
+  });
+});
+
 describe('B1(d) — el cierre sobrevive al desmontaje del editor', () => {
   it('desmontar el editor y confirmar después sigue borrando la fila correcta', async () => {
     const { view, confirmFinalization } = await finalizeStory('story-b1d');

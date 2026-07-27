@@ -1858,6 +1858,8 @@ export interface UseCuentacuentosDraftReturn {
    * siendo la historia finalizada Y nadie la reescribió desde entonces.
    * Devuelve las filas borradas (0 = ack obsoleto ⇒ el borrador se conserva).
    */
+  /** B1/Finding-3 — claves presentes en el patch pendiente del debounce. */
+  getPendingDraftPatchKeys: () => string[];
   confirmFinalizationDelete: (input: {
     storyId: string;
     expectedUpdatedAt: string;
@@ -2670,6 +2672,17 @@ export function useCuentacuentosDraft({
     return contentRevisionRef.current;
   }, []);
 
+  /**
+   * Claves que hay ahora mismo en el patch pendiente del debounce (vacío si no
+   * hay ninguno). Permite a un caller decidir si necesita RE-ESTAMPAR una clave
+   * concreta —p.ej. `story`— en vez de mandarla siempre: mandarla de más
+   * provoca una re-persistencia completa e innecesaria del cuento.
+   */
+  const getPendingDraftPatchKeys = useCallback((): string[] => {
+    const pending = pendingDataRef.current;
+    return pending ? Object.keys(pending.patch) : [];
+  }, []);
+
   const getContentRevisionRef = useRef<() => number>(() => contentRevisionRef.current);
   const getContentRevision = getContentRevisionRef.current;
 
@@ -2742,14 +2755,23 @@ export function useCuentacuentosDraft({
       if (!currentUserId || !storyId || !expectedUpdatedAt) return 0;
 
       const deletion = writeTailRef.current.then(async () => {
-        const { data, error } = await supabase
+        // Los filtros se aplican en bucle, no encadenados: una cadena de 4
+        // `.eq()` + `.select()` dispara `TS2589` (instanciación de tipos
+        // excesivamente profunda) en los tipos generados de supabase-js. Mismo
+        // patrón que `deleteDraftFromSupabase`.
+        let query = supabase
           .from('cuentacuentos_drafts')
           .delete()
-          .eq('liturgia_id', currentLiturgyId)
-          .eq('user_id', currentUserId)
-          .eq('story->>id', storyId)
-          .eq('updated_at', expectedUpdatedAt)
-          .select('id');
+          .eq('liturgia_id', currentLiturgyId);
+        const filters: Record<string, string> = {
+          user_id: currentUserId,
+          'story->>id': storyId,
+          updated_at: expectedUpdatedAt,
+        };
+        for (const [column, value] of Object.entries(filters)) {
+          query = query.eq(column, value);
+        }
+        const { data, error } = await query.select('id');
         if (error) {
           console.error('[useCuentacuentosDraft] confirmFinalizationDelete failed:', error);
           throw error;
@@ -2886,6 +2908,7 @@ export function useCuentacuentosDraft({
     bumpDraftStoryRevision,
     bumpContentRevision,
     getContentRevision,
+    getPendingDraftPatchKeys,
     enqueueGeneratedSnapshot,
   };
 }

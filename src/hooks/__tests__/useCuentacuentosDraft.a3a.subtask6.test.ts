@@ -14,7 +14,7 @@
  *       aprobación mapea esto a `stale` y NO invoca `onSuccess`.
  *
  *   (c) Cada categoría de lifecycle publica `activeIdentity` reactiva: bump,
- *       setActive, load, delete, acceptRecovery, declineRecovery, deleteStoryImages.
+ *       setActive, load, delete, acceptRecovery, declineRecovery, deleteDraftRecord (A4 sustituyó a deleteStoryImages).
  *       Consumidores del pipeline que scopean `saveFailedCount(activeIdentity)`
  *       ven el conteo del NUEVO ciclo tras cada transición.
  *

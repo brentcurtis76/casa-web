@@ -9,7 +9,9 @@
  *   T-E.2 — recuperar un borrador un paso más adelante ⇒ 0 generaciones.
  *   T-E.3 — `handleEditStory` (volver a editar) ⇒ 0 generaciones.
  *   T-E.4 — aprobación OK ⇒ dispara; aprobación FALLIDA ⇒ 0 generaciones.
- *   T-E.6 — la intención no sobrevive a un cambio de época (lifecycle).
+ *   T-E.6 — la intención se consume una sola vez (no se re-dispara sola).
+ *            NOTA: el descarte por CAMBIO DE ÉPOCA no se prueba acá — lo cubre
+ *            el test puro de `shouldAutoKick`. Este caso sólo mide el consumo.
  *
  * Editor REAL + hooks REALES; sólo bordes externos mockeados. La señal medida
  * es `functions.invoke` — las llamadas de generación REALES al borde.
@@ -324,8 +326,8 @@ describe('T-E.4 — sólo una aprobación PERSISTIDA arma el auto-arranque', () 
   });
 });
 
-describe('T-E.6 — la intención no sobrevive a un cambio de lifecycle', () => {
-  it('regenerar tras aprobar no arrastra el auto-arranque de la época anterior', async () => {
+describe('T-E.6 — la intención se consume UNA sola vez', () => {
+  it('tras un auto-arranque aceptado el intent no vuelve a dispararse solo', async () => {
     render(
       <CuentacuentoEditor
         context={baseContext}
@@ -342,7 +344,7 @@ describe('T-E.6 — la intención no sobrevive a un cambio de lifecycle', () => 
     });
     await waitFor(() => expect(generationInvokes().length).toBeGreaterThan(0), { timeout: 5000 });
 
-    // El auto-arranque de esta época ya se consumió: no se re-dispara solo.
+    // El intent de esta aprobación ya se consumió: no se re-dispara solo.
     const afterKick = generationInvokes().length;
     await act(async () => { await new Promise((r) => setTimeout(r, 400)); await yields(30); });
     expect(generationInvokes().length).toBe(afterKick);

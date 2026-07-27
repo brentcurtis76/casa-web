@@ -685,6 +685,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     deleteDraft,
     deleteDraftRecord,
     confirmFinalizationDelete,
+    getPendingDraftPatchKeys,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
@@ -1125,7 +1126,11 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   ]);
 
   // Función para restaurar desde un draft
-  const restoreFromDraft = useCallback((draftData: CuentacuentosDraftFull) => {
+  const restoreFromDraft = useCallback((draftData: CuentacuentosDraftFull): Story | null => {
+    // Devuelve la story RECONSTRUIDA (con las URLs de imagen rehidratadas) para
+    // que el caller no tenga que rehacer ese trabajo — lo necesita la
+    // recuperación de un borrador ya finalizado (B1).
+    let restoredForCaller: Story | null = null;
     // A3/S5: silenciar el auto-persist effect durante el batch de restore —
     // los sucesivos setState no deben re-persistir lo que acabamos de leer.
     skipNextAutoPersistRef.current = true;
@@ -1177,6 +1182,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
           : draftData.story.endImageUrl,
       };
       setStory(restoredStory);
+      restoredForCaller = restoredStory;
 
       // Restaurar storyProps desde el story del draft para que las llamadas a
       // generate-scene-images incluyan los props correctos al regenerar imágenes.
@@ -1273,6 +1279,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setShowForm(false);
 
     console.log(`[CuentacuentoEditor] Restored from draft, step: ${draftData.currentStep}`);
+    return restoredForCaller;
   }, [setStory]);
 
   // Efecto para auto-recuperar imágenes de escenas del draft cuando faltan en initialStory
@@ -1343,10 +1350,43 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const handleAcceptRecovery = useCallback(() => {
     pipeline.invalidateSaveRetries(activeIdentity);
     const recoveredDraft = acceptRecovery();
-    if (recoveredDraft) {
-      restoreFromDraft(recoveredDraft);
+    if (!recoveredDraft) return;
+    const restoredStory = restoreFromDraft(recoveredDraft);
+
+    // B1 — Una fila `complete` recuperada es una finalización que NUNCA fue
+    // confirmada por el padre (se finalizó y se cerró la pestaña sin guardar la
+    // liturgia). Sin esto el borrador quedaba en un limbo permanente: el usuario
+    // recuperaba, guardaba la liturgia, y el prompt de recuperación volvía a
+    // aparecer en cada montaje porque nadie tenía un cierre con el que
+    // confirmarlo — y la única salida visible ("Empezar de nuevo") descarta.
+    //
+    // Rearmamos el handshake desde la propia fila: `savedAt` ES el `updated_at`
+    // persistido (ver loadDraftFromSupabase), así que sirve de testigo. Si el
+    // usuario edita después de recuperar, `updated_at` se mueve y el
+    // compare-and-delete no borra nada — que es la semántica correcta: un
+    // borrador más nuevo que lo entregado exige re-finalizar.
+    if (recoveredDraft.currentStep === 'complete' && restoredStory?.id && recoveredDraft.savedAt) {
+      const storyId = restoredStory.id;
+      const expectedUpdatedAt = recoveredDraft.savedAt;
+      const usedRef = { used: false };
+      const confirmFinalization = async (): Promise<void> => {
+        if (usedRef.used) return;
+        usedRef.used = true;
+        await confirmFinalizationDelete({ storyId, expectedUpdatedAt });
+      };
+      const slides = createPreviewSlideGroup(restoredStory);
+      setPreviewSlides(slides as unknown as SlideGroup);
+      setConfirmed(true);
+      onStoryCreated(restoredStory, slides as unknown as SlideGroup, confirmFinalization);
     }
-  }, [acceptRecovery, restoreFromDraft, pipeline, activeIdentity]);
+  }, [
+    acceptRecovery,
+    restoreFromDraft,
+    pipeline,
+    activeIdentity,
+    confirmFinalizationDelete,
+    onStoryCreated,
+  ]);
 
   // Manejar rechazo de recuperación (equivalente lifecycle a delete).
   const handleDeclineRecovery = useCallback(() => {
@@ -2005,7 +2045,15 @@ Instrucciones críticas:
     // clave stale quede sobrescrita por la vigente en el propio merge.
     // Ojo: este `saveDraft` NO reemplaza el `enqueueDraftWrite` de abajo, que es
     // el que sube los base64 nuevos y aplica el URL swap en `onCommit`.
-    saveDraft(nextStory ? { currentStep, story: nextStory } : { currentStep });
+    //
+    // Finding 3 (re-revisión de b5c01e1) — mandar `story` SIEMPRE dejaba en el
+    // buffer una story PRE-swap de URLs: 2 s después el debounce re-subía los
+    // mismos base64 y re-persistía el cuento entero en cada mutación de prop.
+    // Sólo hace falta re-estampar cuando hay realmente una `story` obsoleta
+    // pendiente (el caso del blur de descripción); si no la hay, basta con
+    // `currentStep` y la escritura directa de abajo es la única.
+    const pendingHasStory = getPendingDraftPatchKeys().includes('story');
+    saveDraft(pendingHasStory && nextStory ? { currentStep, story: nextStory } : { currentStep });
 
     try {
       await enqueueDraftWrite(
@@ -2025,7 +2073,7 @@ Instrucciones críticas:
       console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
     }
     return nextProps;
-  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision, saveDraft, currentStep]);
+  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision, saveDraft, currentStep, getPendingDraftPatchKeys]);
 
   // Builder: prop sheet (candidatas efímeras — apply retorna APPLY_EPHEMERAL,
   // no se persisten). Delega en `makePropSheetTask`.
@@ -2477,62 +2525,30 @@ Instrucciones críticas:
     return tasks;
   }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, pipeline]);
 
+
+
+
+  // Lotes manuales (botones "Generar…" del banner). Comparten los MISMOS
+  // colectores que el auto-arranque, para que el botón y el auto-kick no puedan
+  // discrepar sobre qué falta por generar — antes eran dos copias del mismo
+  // predicado, libres de divergir. A diferencia del auto-kick, estos usan
+  // `runItems` (el usuario pidió explícitamente arrancar) y devuelven `false`
+  // si el runner está ocupado.
   const runCharacterSheetBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
-
-    const pendingChars = story.characters.filter(
-      c => !(characterSheetOptionsRef.current[c.id]?.length) && (editingCharacterPrompt[c.id] ?? c.visualDescription)?.trim()
-    );
-
-    // Lugares/objetos sin referencia visual alguna: sin fotos del usuario,
-    // sin hoja generada pendiente de elegir → generarles candidatas.
-    const activeProps = (story.props && story.props.length > 0) ? story.props : storyProps;
-    const pendingProps = activeProps.filter(
-      p => p.visualDescription?.trim()
-        && (p.referenceImages?.length ?? 0) === 0
-        && !(propSheetOptionsRef.current[p.id]?.length)
-    );
-
-    if (pendingChars.length === 0 && pendingProps.length === 0) return true;
-
-    const identity = buildRunIdentity();
-    const tasks = [
-      ...pendingChars.map((c) => buildCharacterSheetTask(c, editingCharacterPromptRef.current[c.id])),
-      ...pendingProps.map((p) => buildPropSheetTask(p)),
-    ];
-    void pipeline.runItems(tasks, identity);
+    const tasks = collectCharacterSheetTasks();
+    if (tasks.length === 0) return true;
+    void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, storyProps, pipeline, buildCharacterSheetTask, buildPropSheetTask, buildRunIdentity, editingCharacterPrompt]);
+  }, [story, pipeline, collectCharacterSheetTasks, buildRunIdentity]);
 
   const runSceneBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
-    const pendingScenes = story.scenes.filter(s => !(sceneImageOptionsRef.current[s.number]?.length));
-    if (pendingScenes.length === 0) return true;
-    const identity = buildRunIdentity();
-    const tasks = pendingScenes.map((s) =>
-      buildSceneTask(s, editingScenePromptRef.current[s.number])
-    );
-    void pipeline.runItems(tasks, identity);
-    return true;
-  }, [story, pipeline, buildSceneTask, buildRunIdentity]);
-
-  const runCoverEndBatch = useCallback((): boolean => {
-    if (!story) return false;
-    // Gate por el propio runner: si el ítem ya está corriendo o guardando,
-    // no lo re-encolamos. No hay banderas paralelas para limpiar en `finally`.
-    const busy = (id: string) => {
-      const s = pipeline.statusOf(id);
-      return s === 'running' || s === 'persisting';
-    };
-    const tasks: Array<PipelineItemTask<ProviderResult>> = [];
-    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask());
-    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask());
+    const tasks = collectSceneTasks();
     if (tasks.length === 0) return true;
-    // Portada y fin en un solo runItems para que el runner los corra en paralelo
-    // sin cancelarse mutuamente (cada llamada a runItems invalida la anterior).
     void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, buildRunIdentity, pipeline]);
+  }, [story, pipeline, collectSceneTasks, buildRunIdentity]);
 
   // ===========================================================================
   // E / A9a — Auto-arranque por INTENCIÓN EXPLÍCITA + aceptación atómica.
@@ -3549,10 +3565,12 @@ Instrucciones críticas:
           const recoverStory = storyRef.current;
           const recoverStep = currentStepRef.current;
           // F5 — No tragar el fallo en silencio. Si esta corrección falla (o la
-          // pestaña se cierra dentro de su RTT), la fila queda varada en 'complete'
-          // (recovery la ignora). El backstop es el scan de mount que limpia filas
-          // 'complete' huérfanas (ver checkForDraft en useCuentacuentosDraft). Aquí
-          // sólo registramos — sin loop de reintentos.
+          // pestaña se cierra dentro de su RTT), la fila queda en 'complete'.
+          // NOTA (B1): el backstop que este comentario prometía —el scan de mount
+          // que borraba filas 'complete' huérfanas— YA NO EXISTE; bajo B1 una fila
+          // 'complete' es una finalización pendiente de confirmar y se OFRECE PARA
+          // RECUPERAR (ver checkForDraft). Esa recuperación es ahora el camino de
+          // salida. Aquí sólo registramos — sin loop de reintentos.
           void enqueueDraftWrite(() => buildAuthoritativeDraftPatch(recoverStory, recoverStep)).catch(
             (err) => {
               console.error(
@@ -5560,11 +5578,21 @@ Instrucciones críticas:
     // overlay y respeta cualquier story más nueva que haya commiteado un
     // continuation de promesa (aprobación o refine). Hoy no hay un caller
     // no-discreto que gane la carrera, pero la forma defensiva es gratis.
-    setStory(prev => (prev ? {
-      ...prev,
-      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
-      metadata: { ...prev.metadata, updatedAt: nextStory.metadata.updatedAt },
-    } : prev));
+    // Finding 4 — capturamos el resultado del updater y persistimos ESE objeto.
+    // Antes el updater era funcional pero `saveDraft` mandaba la foto del
+    // render: si la carrera que el updater protege llegara a ocurrir, React
+    // tendría la story nueva y la BD la vieja — y al recargar gana la BD.
+    let persisted: Story | null = null;
+    setStory(prev => {
+      if (!prev) return prev;
+      const merged: Story = {
+        ...prev,
+        ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+        metadata: { ...prev.metadata, updatedAt: nextStory.metadata.updatedAt },
+      };
+      persisted = merged;
+      return merged;
+    });
     // F1 — Persistir vía `saveDraft` (debounce). Dos motivos:
     //   1) El overlay ahora se GUARDA: antes vivía sólo en React state (no había
     //      ni saveDraft ni enqueueDraftWrite) y se perdía al recargar.
@@ -5574,7 +5602,7 @@ Instrucciones críticas:
     //      excluye contentRevision), que RE-ESTAMPA el patch pendiente bajo la
     //      identidad fresca en vez de dejarlo huérfano — mismo patrón que los
     //      toggles de `sceneReferenceModes` y `handleUpdatePropDescription`.
-    saveDraft({ story: nextStory });
+    saveDraft({ story: persisted ?? nextStory });
   };
 
   const renderTextOverlayControls = (
@@ -6715,6 +6743,7 @@ Instrucciones críticas:
                   draft.currentStep === 'characters' ? 'Generando personajes' :
                   draft.currentStep === 'scenes' ? 'Generando escenas' :
                   draft.currentStep === 'cover' ? 'Seleccionando portada' :
+                  draft.currentStep === 'complete' ? 'Cuento finalizado (pendiente de guardar la liturgia)' :
                   draft.currentStep
                 }</p>
                 {draft.story?.scenes && (
