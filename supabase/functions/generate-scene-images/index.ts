@@ -28,4 +28,4 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 });
 const authzDeps = createSupabaseAuthzDeps(supabaseAdmin);
 
-serve(createHandler({ apiKey, flashModel, proModel, authzDeps }));
+serve(createHandler({ apiKey, flashModel, proModel, authzDeps, supabaseUrl }));

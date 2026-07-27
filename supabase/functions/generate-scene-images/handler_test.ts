@@ -27,6 +27,7 @@ function baseDeps(authz: RequirePermissionDeps): HandlerDeps {
     flashModel: "test-flash-model",
     proModel: "test-pro-model",
     authzDeps: authz,
+    supabaseUrl: "https://proj.supabase.co",
   };
 }
 

@@ -170,3 +170,77 @@ export async function withCapturedLogs<T>(
     console.info = original.info;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Image fixtures (FASE F)
+// ---------------------------------------------------------------------------
+
+/**
+ * Synthetic images. `sniffImageMime` only reads the leading magic bytes, so a
+ * short buffer with the right header is a faithful fixture and keeps the suite
+ * fast — no multi-megabyte allocations to exercise a size cap.
+ */
+function withMagic(magic: number[], size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  bytes.set(magic, 0);
+  for (let i = magic.length; i < size; i++) bytes[i] = i % 251;
+  return bytes;
+}
+
+export const PNG_BYTES = (size = 64) =>
+  withMagic([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], size);
+export const JPEG_BYTES = (size = 64) => withMagic([0xff, 0xd8, 0xff, 0xe0], size);
+
+export const WEBP_BYTES = (size = 64) => {
+  const bytes = withMagic([0x52, 0x49, 0x46, 0x46], size); // "RIFF"
+  bytes.set([0x57, 0x45, 0x42, 0x50], 8); // "WEBP"
+  return bytes;
+};
+
+/** An HTML error page — the payload T-F.8 serves as `Content-Type: image/png`. */
+export const HTML_BYTES = () =>
+  new TextEncoder().encode("<!doctype html><html><body>404</body></html>");
+
+export function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+export const PNG_B64 = (size = 64) => toBase64(PNG_BYTES(size));
+export const JPEG_B64 = (size = 64) => toBase64(JPEG_BYTES(size));
+export const WEBP_B64 = (size = 64) => toBase64(WEBP_BYTES(size));
+
+export function dataUrl(mime: string, base64: string): string {
+  return `data:${mime};base64,${base64}`;
+}
+
+/** A response whose body is delivered in chunks, so cut-off can be observed. */
+export function streamingResponse(
+  bytes: Uint8Array,
+  init: ResponseInit & { chunkSize?: number; onPull?: (index: number) => void } = {},
+): Response {
+  const chunkSize = init.chunkSize ?? 16;
+  let offset = 0;
+  let index = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.length) {
+        controller.close();
+        return;
+      }
+      init.onPull?.(index++);
+      controller.enqueue(bytes.subarray(offset, offset + chunkSize));
+      offset += chunkSize;
+    },
+  });
+  return new Response(stream, {
+    status: init.status ?? 200,
+    headers: init.headers ?? { "Content-Type": "image/png" },
+  });
+}
+
+/** The bucket prefix these functions are pinned to. */
+export const TEST_SUPABASE_URL = "https://proj.supabase.co";
+export const BUCKET_PREFIX =
+  `${TEST_SUPABASE_URL}/storage/v1/object/public/cuentacuentos-drafts`;

@@ -20,6 +20,17 @@ import {
   requireLiturgyWriter,
   type RequirePermissionDeps,
 } from '../_shared/liturgyAuth.ts';
+import {
+  collectSceneImageRefs,
+  DEFAULT_IMAGE_LIMITS,
+  imageErrorResponse,
+  ImageRefError,
+  type ImageLimits,
+  type MaterializedImage,
+  materializeImageRefs,
+  prevalidateImageRefs,
+  readBoundedJson,
+} from '../_shared/imageFetch.ts';
 
 export interface HandlerDeps {
   /** GOOGLE_AI_API_KEY. Empty/absent => the handler reports a config error. */
@@ -30,6 +41,10 @@ export interface HandlerDeps {
   proModel: string;
   /** Injectable authz backend for the shared fail-closed guard. */
   authzDeps: RequirePermissionDeps;
+  /** SUPABASE_URL — pins the one bucket origin image URLs may come from. */
+  supabaseUrl: string;
+  /** Overridable in tests; production uses `DEFAULT_IMAGE_LIMITS`. */
+  imageLimits?: ImageLimits;
 }
 
 type ModelTier = 'flash' | 'pro';
@@ -48,11 +63,6 @@ const MODEL_TIMEOUT_MS: Record<ModelTier, number> = {
   flash: 60_000,
   pro: 150_000,
 };
-
-// ~6MB binarios ≈ 8M caracteres base64 por imagen de referencia
-const MAX_REF_IMAGE_B64_CHARS = 8_000_000;
-// Límite total del body de la petición
-const MAX_REQUEST_BYTES = 15_000_000;
 
 /**
  * Un intento de reintento en 429/5xx/timeout con backoff corto (respeta Retry-After).
@@ -369,107 +379,6 @@ function isValidImageBase64(base64: string): boolean {
   return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/') || base64.startsWith('UklGR');
 }
 
-function isUrl(str: string): boolean {
-  return str?.startsWith('http://') || str?.startsWith('https://');
-}
-
-async function downloadImageToBase64(url: string): Promise<string> {
-  console.log(`[generate-scene-images] downloadImageToBase64 START - URL: ${url.slice(0, 150)}`);
-
-  try {
-    const fetchUrl = url;
-    console.log(`[generate-scene-images] Fetching from: ${fetchUrl}`);
-
-    const response = await fetch(fetchUrl, {
-      headers: {
-        'Accept': 'image/*',
-      },
-    });
-
-    console.log(`[generate-scene-images] Fetch response: status=${response.status}, ok=${response.ok}, type=${response.headers.get('content-type')}`);
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Could not read error body');
-      console.error(`[generate-scene-images] Failed to download image: ${response.status} ${response.statusText}`, errorText.slice(0, 200));
-      return '';
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('image')) {
-      console.error(`[generate-scene-images] Response is not an image: ${contentType}`);
-      return '';
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    console.log(`[generate-scene-images] Downloaded ${arrayBuffer.byteLength} bytes`);
-
-    if (arrayBuffer.byteLength === 0) {
-      console.error(`[generate-scene-images] Downloaded image is empty`);
-      return '';
-    }
-
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    // Conversión por bloques: la concatenación byte a byte quema el presupuesto
-    // de CPU del edge function con imágenes de varios MB
-    const CHUNK = 0x8000;
-    const pieces: string[] = [];
-    for (let i = 0; i < uint8Array.length; i += CHUNK) {
-      pieces.push(String.fromCharCode(...uint8Array.subarray(i, i + CHUNK)));
-    }
-    const base64 = btoa(pieces.join(''));
-
-    console.log(`[generate-scene-images] Converted to base64: length=${base64.length}, prefix=${base64.slice(0, 30)}`);
-
-    if (isValidImageBase64(base64)) {
-      console.log(`[generate-scene-images] downloadImageToBase64 SUCCESS - valid base64 image`);
-      return base64;
-    } else {
-      console.error(`[generate-scene-images] Downloaded image is not valid PNG/JPEG - prefix: ${base64.slice(0, 50)}`);
-      return '';
-    }
-  } catch (err) {
-    console.error(`[generate-scene-images] Error downloading image:`, err);
-    return '';
-  }
-}
-
-async function processReferenceImage(imageData: string): Promise<string> {
-  if (!imageData) {
-    console.log(`[generate-scene-images] processReferenceImage: no imageData provided`);
-    return '';
-  }
-
-  if (!isUrl(imageData) && imageData.length > MAX_REF_IMAGE_B64_CHARS) {
-    throw new Error('Imagen de referencia demasiado grande (máx 6MB). Reduce la resolución de la foto.');
-  }
-
-  console.log(`[generate-scene-images] processReferenceImage: input type=${isUrl(imageData) ? 'URL' : 'base64'}, length=${imageData.length}, prefix=${imageData.slice(0, 60)}`);
-
-  if (isUrl(imageData)) {
-    const result = await downloadImageToBase64(imageData);
-    console.log(`[generate-scene-images] processReferenceImage: URL download result length=${result.length}, valid=${isValidImageBase64(result)}`);
-    return result;
-  } else if (isValidImageBase64(imageData)) {
-    console.log(`[generate-scene-images] processReferenceImage: already valid base64`);
-    return imageData;
-  } else if (imageData.startsWith('data:')) {
-    const parts = imageData.split(',');
-    if (parts.length > 1) {
-      const base64Part = parts[1];
-      if (isValidImageBase64(base64Part)) {
-        console.log(`[generate-scene-images] processReferenceImage: extracted base64 from data URL`);
-        return base64Part;
-      }
-    }
-    console.log(`[generate-scene-images] processReferenceImage: could not extract valid base64 from data URL`);
-    return '';
-  }
-
-  console.log(`[generate-scene-images] processReferenceImage: invalid format, not URL or base64`);
-  return '';
-}
-
 async function generateImage(
   prompt: string,
   variation: number = 0,
@@ -558,9 +467,9 @@ Study each reference carefully before generating. All subjects in your output MU
 
       for (let i = 0; i < referenceImages.length && i < 14; i++) {
         const imgData = referenceImages[i];
-        const imgPrefix = imgData?.slice(0, 30) || 'empty';
         const isSceneRef = isStyleReferenceDesc(characterDescriptions[i]);
-        console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, prefix="${imgPrefix}", isSceneRef=${isSceneRef}`);
+        // Size and role only — never a base64 prefix (invariant 11).
+        console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, isSceneRef=${isSceneRef}`);
 
         if (isValidImageBase64(imgData)) {
           const mimeType = imgData.startsWith('/9j/') ? 'image/jpeg' : imgData.startsWith('UklGR') ? 'image/webp' : 'image/png';
@@ -649,7 +558,8 @@ ${prompt}`;
 
     const data = await response.json();
 
-    console.log(`[generate-scene-images] Full API response:`, JSON.stringify(data, null, 2).slice(0, 3000));
+    // The raw response embeds inlineData base64; log its shape, not its bytes.
+    console.log(`[generate-scene-images] API response keys:`, Object.keys(data).join(', '));
 
     if (data.error) {
       console.error(`[generate-scene-images] API returned error:`, JSON.stringify(data.error));
@@ -666,7 +576,7 @@ ${prompt}`;
       for (const part of data.candidates[0].content.parts) {
         if (part.inlineData?.data) {
           const base64 = part.inlineData.data;
-          console.log(`[generate-scene-images] Found inlineData, length: ${base64.length}, starts with: ${base64.slice(0, 20)}`);
+          console.log(`[generate-scene-images] Found inlineData, length: ${base64.length}`);
           if (isValidImageBase64(base64)) {
             return base64;
           } else {
@@ -679,7 +589,7 @@ ${prompt}`;
     } else {
       console.log(`[generate-scene-images] No candidates or parts found. Data keys:`, Object.keys(data));
       if (data.candidates) {
-        console.log(`[generate-scene-images] Candidates:`, JSON.stringify(data.candidates, null, 2).slice(0, 1000));
+        console.log(`[generate-scene-images] Candidate count:`, data.candidates.length);
       }
     }
 
@@ -704,6 +614,7 @@ export function createHandler(
     flashModel: deps.flashModel,
     proModel: deps.proModel,
   };
+  const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
 
   return async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -717,27 +628,59 @@ export function createHandler(
     return authz.response;
   }
 
+  // FASE F pass 1 + pass 2. Both run before the first Gemini call: a single
+  // untrusted image entry anywhere in the request means zero Storage fetches
+  // and zero provider spend (T-F.9). Typed rejections are mapped to a
+  // Response here so they never reach the top-level catch as a 500.
+  // Client JSON. The pre-FASE-F `await req.json()` typed this `any` and the
+  // switch below relies on that; keeping the same shape confines this change
+  // to the image path rather than cascading into every unrelated field.
+  // deno-lint-ignore no-explicit-any
+  let requestData: any;
+  let materialized: Map<string, MaterializedImage>;
+  try {
+    requestData = await readBoundedJson(req, limits);
+
+    const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData), {
+      limits,
+      supabaseUrl: deps.supabaseUrl,
+    });
+
+    try {
+      materialized = await materializeImageRefs(prevalidated, { limits });
+    } catch (err) {
+      // Refine fail-closed: a source that passed pass 1 but could not be
+      // downloaded is "source unavailable", not a generic download error —
+      // the client distinguishes that copy and keeps the selection. Pass-1
+      // rejections keep their own code (a forbidden origin is not an
+      // unavailable source), so only failures from pass 2 are remapped.
+      if (err instanceof ImageRefError && err.path === 'refine.sourceImage') {
+        throw new ImageRefError(
+          'REFINE_SOURCE_UNAVAILABLE',
+          err.path,
+          'La imagen a refinar no está disponible.',
+        );
+      }
+      throw err;
+    }
+  } catch (err) {
+    if (err instanceof ImageRefError) {
+      console.warn(
+        `[generate-scene-images] image entry rejected: ${err.code} at ${err.path}`,
+      );
+      return imageErrorResponse(err, corsHeaders, { images: [] });
+    }
+    throw err;
+  }
+
+  /** Base64 for a validated slot, or '' when the field was absent. */
+  const takeImage = (path: string): string => materialized.get(path)?.base64 ?? '';
+
   try {
     if (!config.apiKey) {
       throw new Error('GOOGLE_AI_API_KEY no está configurada');
     }
 
-    const contentLength = Number(req.headers.get('content-length'));
-    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Petición demasiado grande (máx 15MB). Reduce el tamaño de las imágenes de referencia.',
-          images: [],
-        }),
-        {
-          status: 413,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const requestData = await req.json();
     const { type, styleId, count = 2 } = requestData;
     const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
     const refine: Refine | undefined =
@@ -747,17 +690,22 @@ export function createHandler(
         ? { sourceImage: requestData.refine.sourceImage, feedback: requestData.refine.feedback }
         : undefined;
 
-    // El editor intercambia base64→URL tras cada guardado, así que la imagen a
-    // refinar suele llegar como URL pública. Sin esta descarga, generateImage
-    // la descartaría en silencio y el "refinamiento" regeneraría desde cero.
-    if (refine && !isValidImageBase64(refine.sourceImage)) {
-      const processedSource = await processReferenceImage(refine.sourceImage);
-      if (processedSource) {
-        refine.sourceImage = processedSource;
-        console.log(`[generate-scene-images] refine.sourceImage convertido a base64 (${processedSource.length} chars)`);
-      } else {
-        console.warn('[generate-scene-images] refine.sourceImage no procesable — se refinará sin imagen fuente');
+    // Refine fail-closed (invariant 11): the editor swaps base64→URL after every
+    // save, so the image to refine usually arrives as a bucket URL. If it cannot
+    // be materialised we refuse the request instead of silently regenerating
+    // from scratch — the client preserves the selection and can say so.
+    if (refine) {
+      const source = takeImage('refine.sourceImage');
+      if (!source) {
+        const err = new ImageRefError(
+          'REFINE_SOURCE_UNAVAILABLE',
+          'refine.sourceImage',
+          'La imagen a refinar no está disponible.',
+        );
+        console.warn('[generate-scene-images] refine source unavailable — refusing');
+        return imageErrorResponse(err, corsHeaders, { images: [] });
       }
+      refine.sourceImage = source;
     }
 
     // Refine requests always produce exactly one image; slot 0 of inlineData is the source.
@@ -767,16 +715,11 @@ export function createHandler(
     console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
 
     if (type === 'scene') {
-      const { sceneReferenceImage, sceneReferenceMode = 'style', characters } = requestData;
-      console.log(`[generate-scene-images] scene reference mode: ${sceneReferenceMode}`);
-      console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
-      if (sceneReferenceImage) {
-        console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage length: ${sceneReferenceImage.length}`);
-        console.log(`[generate-scene-images] REQUEST CHECK - sceneReferenceImage prefix: ${sceneReferenceImage.slice(0, 50)}`);
-        console.log(`[generate-scene-images] REQUEST CHECK - isURL: ${sceneReferenceImage.startsWith('http')}`);
-      }
-      console.log(`[generate-scene-images] REQUEST CHECK - characters count: ${characters?.length || 0}`);
-      console.log(`[generate-scene-images] REQUEST CHECK - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
+      const { sceneReferenceMode = 'style' } = requestData;
+      // Counts only: URLs, query strings, and base64 prefixes are never logged.
+      console.log(
+        `[generate-scene-images] REQUEST CHECK - mode=${sceneReferenceMode}, images validated=${materialized.size}`,
+      );
     }
 
     let prompt: string;
@@ -800,30 +743,17 @@ export function createHandler(
         console.log(`[generate-scene-images] Props for this scene: ${propsInScene.map(p => p.name).join(', ') || 'none'}`);
         console.log(`[generate-scene-images] Landmark visible in scene: ${scene.landmarkVisible || false}`);
 
-        const charactersWithImages = charactersInScene.filter(c => c.referenceImage);
-        console.log(`[generate-scene-images] Characters with reference images: ${charactersWithImages.map(c => `${c.name} (${isUrl(c.referenceImage!) ? 'URL' : 'base64'})`).join(', ') || 'none'}`);
+        // Index-preserving: the slot path is how a character maps to the image
+        // pass 1 validated and pass 2 materialised.
+        const charactersWithImages = charactersInScene
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
+        console.log(`[generate-scene-images] Characters with reference images: ${charactersWithImages.length}`);
 
-        console.log(`[generate-scene-images] Characters with reference images to process:`);
-        charactersWithImages.forEach((c, i) => {
-          console.log(`  ${i + 1}. ${c.name}: type=${isUrl(c.referenceImage!) ? 'URL' : 'base64'}, length=${c.referenceImage!.length}, prefix=${c.referenceImage!.slice(0, 80)}`);
-        });
-
-        const processedResults = await Promise.all(
-          charactersWithImages.map(async (c) => {
-            console.log(`[generate-scene-images] Processing reference for ${c.name}...`);
-            const image = await processReferenceImage(c.referenceImage!);
-            console.log(`[generate-scene-images] Processed ${c.name}: result length=${image.length}, valid=${isValidImageBase64(image)}`);
-            return {
-              image,
-              description: `${c.name}: ${c.visualDescription}`,
-            };
-          })
-        );
-
-        console.log(`[generate-scene-images] Processing complete. Results:`);
-        processedResults.forEach((r, i) => {
-          console.log(`  ${i + 1}. ${r.description.slice(0, 50)}: image length=${r.image.length}, valid=${isValidImageBase64(r.image)}`);
-        });
+        const processedResults = charactersWithImages.map(({ c, i }) => ({
+          image: takeImage(`characters[${i}].referenceImage`),
+          description: `${c.name}: ${c.visualDescription}`,
+        }));
 
         const validResults = processedResults.filter(r => r.image !== '');
         referenceImages = validResults.map(r => r.image);
@@ -837,12 +767,12 @@ export function createHandler(
 
         // Process landmark reference images if landmark is visible in this scene
         if (scene.landmarkVisible && landmarksInScene.length > 0) {
-          for (const lm of landmarksInScene) {
+          for (const [lmIndex, lm] of landmarksInScene.entries()) {
             if (lm.referenceImages && lm.referenceImages.length > 0) {
               console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for "${lm.name}"`);
               // Cap at 2 reference images per landmark
-              for (const refImg of lm.referenceImages.slice(0, 2)) {
-                const processedLandmarkRef = await processReferenceImage(refImg);
+              for (let j = 0; j < Math.min(lm.referenceImages.length, 2); j++) {
+                const processedLandmarkRef = takeImage(`landmarks[${lmIndex}].referenceImages[${j}]`);
                 if (processedLandmarkRef) {
                   landmarkRefImages.push(processedLandmarkRef);
                   landmarkRefDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
@@ -857,12 +787,12 @@ export function createHandler(
         const propRefImages: string[] = [];
         const propRefDescriptions: string[] = [];
         if (propsInScene.length > 0) {
-          for (const pr of propsInScene) {
+          for (const [prIndex, pr] of propsInScene.entries()) {
             if (pr.referenceImages && pr.referenceImages.length > 0) {
               console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for "${pr.name}"`);
               // Cap at 2 reference images per prop
-              for (const refImg of pr.referenceImages.slice(0, 2)) {
-                const processedPropRef = await processReferenceImage(refImg);
+              for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
+                const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
                 if (processedPropRef) {
                   propRefImages.push(processedPropRef);
                   propRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
@@ -970,8 +900,7 @@ export function createHandler(
         characterDescriptions.push(...landmarkRefDescriptions, ...propRefDescriptions);
 
         if (sceneReferenceImage && !droppedSceneRef) {
-          console.log(`[generate-scene-images] Scene reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
-          const processedSceneRef = await processReferenceImage(sceneReferenceImage);
+          const processedSceneRef = takeImage('sceneReferenceImage');
           if (processedSceneRef) {
             const sceneRefInstruction = sceneReferenceMode === 'pov'
               ? 'SAME-LOCATION REFERENCE — This image shows the exact setting for this scene. Render the SAME location, same buildings, same props, same lighting atmosphere, but from a DIFFERENT camera angle / point of view that matches the new scene description. Preserve spatial relationships, scale, and environment details. Do NOT change the location or its distinctive features.'
@@ -1009,8 +938,8 @@ export function createHandler(
 
         // Fotos reales opcionales del usuario como referencia adicional
         if (Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
-          for (const refImg of prop.referenceImages.slice(0, 2)) {
-            const processed = await processReferenceImage(refImg);
+          for (let j = 0; j < Math.min(prop.referenceImages.length, 2); j++) {
+            const processed = takeImage(`prop.referenceImages[${j}]`);
             if (processed) {
               referenceImages.push(processed);
               characterDescriptions.push(`PROP REFERENCE - ${prop.name}: ${prop.visualDescription}. Render this ${propKind === 'location' ? 'place' : 'object'} EXACTLY as shown in this photo.`);
@@ -1029,10 +958,9 @@ export function createHandler(
 
         const propsInCover: Prop[] = props || [];
 
-        console.log(`[generate-scene-images] COVER - characters count: ${characters?.length || 0}`);
-        console.log(`[generate-scene-images] COVER - characters with refs: ${characters?.filter((c: any) => c.referenceImage)?.length || 0}`);
-        console.log(`[generate-scene-images] COVER - props count: ${propsInCover.length}`);
-        console.log(`[generate-scene-images] COVER - sceneReferenceImage exists: ${!!sceneReferenceImage}`);
+        console.log(
+          `[generate-scene-images] COVER - characters=${characters?.length || 0}, props=${propsInCover.length}, styleRef=${!!sceneReferenceImage}`,
+        );
 
         const propPromptLines = buildPropReferenceLines(propsInCover);
 
@@ -1059,31 +987,16 @@ Instrucciones críticas:
         }
 
         const charactersInCover: Character[] = characters || [];
-        const charactersWithImages = charactersInCover.filter(c => c.referenceImage);
+        const charactersWithImages = charactersInCover
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
 
-        console.log(`[generate-scene-images] Cover characters with reference images: ${charactersWithImages.map(c => `${c.name} (${isUrl(c.referenceImage!) ? 'URL' : 'base64'})`).join(', ') || 'none'}`);
+        console.log(`[generate-scene-images] Cover characters with reference images: ${charactersWithImages.length}`);
 
-        console.log(`[generate-scene-images] Cover characters with reference images to process:`);
-        charactersWithImages.forEach((c, i) => {
-          console.log(`  ${i + 1}. ${c.name}: type=${isUrl(c.referenceImage!) ? 'URL' : 'base64'}, length=${c.referenceImage!.length}, prefix=${c.referenceImage!.slice(0, 80)}`);
-        });
-
-        const processedResults = await Promise.all(
-          charactersWithImages.map(async (c) => {
-            console.log(`[generate-scene-images] Processing cover reference for ${c.name}...`);
-            const image = await processReferenceImage(c.referenceImage!);
-            console.log(`[generate-scene-images] Processed cover ${c.name}: result length=${image.length}, valid=${isValidImageBase64(image)}`);
-            return {
-              image,
-              description: `${c.name}: ${c.visualDescription}`,
-            };
-          })
-        );
-
-        console.log(`[generate-scene-images] Cover processing complete. Results:`);
-        processedResults.forEach((r, i) => {
-          console.log(`  ${i + 1}. ${r.description.slice(0, 50)}: image length=${r.image.length}, valid=${isValidImageBase64(r.image)}`);
-        });
+        const processedResults = charactersWithImages.map(({ c, i }) => ({
+          image: takeImage(`characters[${i}].referenceImage`),
+          description: `${c.name}: ${c.visualDescription}`,
+        }));
 
         const validResults = processedResults.filter(r => r.image !== '');
         referenceImages = validResults.map(r => r.image);
@@ -1095,11 +1008,11 @@ Instrucciones críticas:
         const coverPropRefImages: string[] = [];
         const coverPropRefDescriptions: string[] = [];
         if (propsInCover.length > 0) {
-          for (const pr of propsInCover) {
+          for (const [prIndex, pr] of propsInCover.entries()) {
             if (pr.referenceImages && pr.referenceImages.length > 0) {
               console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for "${pr.name}"`);
-              for (const refImg of pr.referenceImages.slice(0, 2)) {
-                const processedPropRef = await processReferenceImage(refImg);
+              for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
+                const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
                 if (processedPropRef) {
                   coverPropRefImages.push(processedPropRef);
                   coverPropRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
@@ -1187,8 +1100,7 @@ Instrucciones críticas:
         characterDescriptions.push(...coverPropRefDescriptions);
 
         if (sceneReferenceImage && !coverDroppedStyleRef) {
-          console.log(`[generate-scene-images] Cover style reference image received! Type: ${isUrl(sceneReferenceImage) ? 'URL' : 'base64'}, Length: ${sceneReferenceImage.length}, Prefix: ${sceneReferenceImage.slice(0, 30)}`);
-          const processedSceneRef = await processReferenceImage(sceneReferenceImage);
+          const processedSceneRef = takeImage('sceneReferenceImage');
           if (processedSceneRef) {
             referenceImages.unshift(processedSceneRef);
             characterDescriptions.unshift('COVER STYLE REFERENCE - Use this image as visual style reference for colors, lighting, composition, and atmosphere');
@@ -1206,7 +1118,9 @@ Instrucciones críticas:
         const { referenceImage: endReferenceImage, customPrompt: endCustomPrompt, characters: endCharacters } = requestData;
 
         const charactersInEnd: Character[] = endCharacters || [];
-        const charactersWithImages = charactersInEnd.filter(c => c.referenceImage);
+        const charactersWithImages = charactersInEnd
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
 
         console.log(`[generate-scene-images] END - characters count: ${charactersInEnd.length}`);
         console.log(`[generate-scene-images] END - characters with refs: ${charactersWithImages.length}`);
@@ -1241,15 +1155,10 @@ Instrucciones críticas:
 
         // Process character reference images for the end (mirrors the scene case pattern)
         if (charactersWithImages.length > 0) {
-          const processedResults = await Promise.all(
-            charactersWithImages.map(async (c) => {
-              const image = await processReferenceImage(c.referenceImage!);
-              return {
-                image,
-                description: `${c.name}: ${c.visualDescription}`,
-              };
-            })
-          );
+          const processedResults = charactersWithImages.map(({ c, i }) => ({
+            image: takeImage(`characters[${i}].referenceImage`),
+            description: `${c.name}: ${c.visualDescription}`,
+          }));
 
           const validResults = processedResults.filter(r => r.image !== '');
           let endCharRefImages = validResults.map(r => r.image);
@@ -1293,8 +1202,7 @@ Instrucciones críticas:
               `[generate-scene-images] Dropping end style reference image to stay under ${endNonSourceBudget + (refine ? 1 : 0)}-image cap (refine=${!!refine})`
             );
           } else {
-            console.log(`[generate-scene-images] End reference image type: ${isUrl(endReferenceImage) ? 'URL' : 'base64'}`);
-            const processedImage = await processReferenceImage(endReferenceImage);
+            const processedImage = takeImage('referenceImage');
             if (processedImage) {
               referenceImages.push(processedImage);
               characterDescriptions.push('END STYLE REFERENCE - Use this image as visual style reference for the final image');
@@ -1315,10 +1223,6 @@ Instrucciones críticas:
 
     console.log(`[generate-scene-images] Prompt (${type}):`, prompt.slice(0, 300) + '...');
     console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`);
-    console.log(`[generate-scene-images] FINAL STATE - Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
-    referenceImages.forEach((img, idx) => {
-      console.log(`[generate-scene-images] FINAL ref image ${idx}: length=${img?.length || 0}, isValid=${isValidImageBase64(img)}, prefix=${img?.slice(0, 20) || 'empty'}`);
-    });
 
     const promises = [];
     for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
