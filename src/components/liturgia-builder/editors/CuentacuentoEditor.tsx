@@ -313,7 +313,7 @@ const ImageSelector: React.FC<{
           <button
             type="button"
             onClick={onSave}
-            disabled={isSaving}
+            disabled={isSaving || disabled}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
             style={{
               backgroundColor: CASA_BRAND.colors.primary.amber,
@@ -351,7 +351,14 @@ const ImageSelector: React.FC<{
         <button
           type="button"
           onClick={onRegenerate}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border"
+          // Finding 3 — Regenerar durante el envelope reemplaza
+          // `coverOptionsRef`/`endOptionsRef` EN VIVO, y `deriveNextStory` las
+          // lee dentro del tail de la cola: se publicaría una imagen que el
+          // usuario nunca eligió (o ninguna, si el índice queda fuera de rango).
+          // Deshabilitar el thumbnail sin deshabilitar esto dejaba la puerta de
+          // al lado abierta.
+          disabled={disabled}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: CASA_BRAND.colors.primary.white,
             borderColor: CASA_BRAND.colors.secondary.grayLight,
@@ -1750,6 +1757,17 @@ Instrucciones críticas:
       // transicionar con la story pre-refine y revertirlo con setStory(committed).
       bumpContentRevision();
       setStory(refinedStory);
+      // Finding 4 (re-revisión de c4f3b6b) — dos cosas en una línea:
+      //   1) El bump de arriba invalida, vía el CAS de queue-start, cualquier
+      //      patch de buffer pendiente en el debounce (p.ej. una edición de
+      //      texto de escena hecha mientras el refine viajaba). Pasar por
+      //      `saveDraft` dispara el merge D14 y lo RE-ESTAMPA bajo la identidad
+      //      fresca en vez de dejarlo caer con cero I/O — el mismo patrón que
+      //      F1 exige para todo bump de contenido.
+      //   2) El refinamiento ahora SE PERSISTE. Antes vivía sólo en estado React
+      //      hasta que una aprobación autoritativa posterior lo arrastrara; una
+      //      recarga en el medio lo perdía.
+      saveDraft({ story: refinedStory });
       setStoryFeedback('');
       setShowFeedbackPanel(false);
 
@@ -1763,7 +1781,7 @@ Instrucciones críticas:
     } finally {
       setIsRefining(false);
     }
-  }, [story, storyFeedback, refinementType, context, setStory, bumpContentRevision]);
+  }, [story, storyFeedback, refinementType, context, setStory, bumpContentRevision, saveDraft]);
 
   // Eliminar cuento completamente (historia + imágenes + draft)
   const handleDeleteStory = useCallback(async () => {
@@ -1912,15 +1930,6 @@ Instrucciones críticas:
     // D13 — Mutación editor-visible sobre `story.props`: bumpea contentRevision
     // para que una aprobación/finalización en vuelo la detecte y quede stale.
     bumpContentRevision();
-    // F1 — El bump de arriba invalidaría cualquier patch de buffer editor
-    // pendiente en el debounce (queue-start CAS incluye contentRevision), y este
-    // sitio persiste con `enqueueDraftWrite` directo (no pasa por el merge del
-    // debounce). Disparamos un `saveDraft` mínimo — sólo `currentStep`, sin
-    // base64 de props — para que el merge D14 RE-ESTAMPE el patch pendiente bajo
-    // la identidad fresca (mismo lifecycle) en vez de dejarlo huérfano. La
-    // escritura de props sigue siendo la de `enqueueDraftWrite` de abajo (con su
-    // URL swap en onCommit); esto sólo preserva los buffers ya encolados.
-    saveDraft({ currentStep });
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -1931,6 +1940,25 @@ Instrucciones críticas:
       };
       setStory(nextStory);
     }
+
+    // F1 — El bump de arriba invalidaría cualquier patch de buffer editor
+    // pendiente en el debounce (queue-start CAS incluye contentRevision), y este
+    // sitio persiste con `enqueueDraftWrite` directo (no pasa por el merge del
+    // debounce). Disparamos un `saveDraft` para que el merge D14 RE-ESTAMPE el
+    // patch pendiente bajo la identidad fresca (mismo lifecycle) en vez de
+    // dejarlo huérfano.
+    //
+    // Finding 1 (re-revisión de c4f3b6b) — el re-estampado DEBE llevar la story
+    // que este handler acaba de producir. El merge D14 es `{...prev, ...data}`
+    // llaveado por {epoch,storyId,revision} SIN contentRevision, así que un
+    // `{story: S1}` pendiente (p.ej. del blur de descripción de otro prop)
+    // sobrevivía al merge y se re-estampaba bajo la identidad NUEVA: 2 s después
+    // el debounce persistía S1 — DESPUÉS del `enqueueDraftWrite({story: S2})` de
+    // abajo — resucitando el prop borrado. Mandar `story: nextStory` hace que la
+    // clave stale quede sobrescrita por la vigente en el propio merge.
+    // Ojo: este `saveDraft` NO reemplaza el `enqueueDraftWrite` de abajo, que es
+    // el que sube los base64 nuevos y aplica el URL swap en `onCommit`.
+    saveDraft(nextStory ? { currentStep, story: nextStory } : { currentStep });
 
     try {
       await enqueueDraftWrite(
@@ -2260,6 +2288,11 @@ Instrucciones críticas:
   // Generar portada
   const handleGenerateCover = useCallback(async (customPrompt?: string) => {
     if (!story) return;
+    // Finding 3 — Guarda imperativa: el `disabled` del botón es feedback
+    // visual, no una garantía. `deriveNextStory` lee `coverOptionsRef` VIVA
+    // dentro del tail, así que una regeneración iniciada durante el envelope
+    // publicaría una portada distinta de la mostrada.
+    if (isApprovingRef.current) return;
     setError(null);
     try {
       const task = buildCoverTask(customPrompt);
@@ -2341,6 +2374,8 @@ Instrucciones críticas:
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
     if (!story) return;
+    // Finding 3 — misma guarda imperativa que `handleGenerateCover`.
+    if (isApprovingRef.current) return;
     setError(null);
     try {
       const task = buildEndTask(customPrompt);
@@ -3029,6 +3064,9 @@ Instrucciones críticas:
   // Guardar portada seleccionada a Supabase
   const handleSaveCover = useCallback(async () => {
     if (selectedCover === null || !coverOptions[selectedCover]) return;
+    // Finding 3 — no escribir la selección mientras el envelope autoritativo
+    // está en vuelo: sería una escritura fuera del CAS de la transición.
+    if (isApprovingRef.current) return;
 
     setSavingCover(true);
     setSavedCoverMessage(null);
@@ -3092,6 +3130,8 @@ Instrucciones críticas:
   // Guardar imagen final seleccionada a Supabase
   const handleSaveEnd = useCallback(async () => {
     if (selectedEnd === null || !endOptions[selectedEnd]) return;
+    // Finding 3 — misma guarda que `handleSaveCover`.
+    if (isApprovingRef.current) return;
 
     setSavingEnd(true);
     setSavedEndMessage(null);
@@ -4110,7 +4150,15 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleApproveStory()}
             disabled={isApproving || pipeline.isRunning || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
-            title={!canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount }) ? 'Hay imágenes sin guardar; reintenta antes de aprobar' : undefined}
+            // Finding 5 — El gate `pipeline.isRunning` (F2) no tenía explicación:
+            // el usuario veía el botón gris sin saber por qué. Nombrar la causa.
+            title={
+              pipeline.isRunning
+                ? 'Espera a que termine la generación en curso'
+                : !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                  ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                  : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -5332,7 +5380,16 @@ Instrucciones críticas:
     // que una aprobación/finalización en vuelo la detecte (CAS post-persistencia)
     // y quede stale en vez de que `setStory(committedStory)` la revierta.
     bumpContentRevision();
-    setStory(nextStory);
+    // Finding 6 — Volver al updater FUNCIONAL. `setStory(nextStory)` pisaba el
+    // objeto story COMPLETO con una foto del render; el updater sólo toca el
+    // overlay y respeta cualquier story más nueva que haya commiteado un
+    // continuation de promesa (aprobación o refine). Hoy no hay un caller
+    // no-discreto que gane la carrera, pero la forma defensiva es gratis.
+    setStory(prev => (prev ? {
+      ...prev,
+      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+      metadata: { ...prev.metadata, updatedAt: nextStory.metadata.updatedAt },
+    } : prev));
     // F1 — Persistir vía `saveDraft` (debounce). Dos motivos:
     //   1) El overlay ahora se GUARDA: antes vivía sólo en React state (no había
     //      ni saveDraft ni enqueueDraftWrite) y se perdía al recargar.
@@ -6254,10 +6311,17 @@ Instrucciones críticas:
               selectedEnd === null ||
               !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
             }
+            // Finding 5 — Explicitar cada causa del gate. Sin esto, con una
+            // generación en curso el botón quedaba gris y mudo (y este paso no
+            // expone un botón de cancelar el pipeline).
             title={
-              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
-                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
-                : undefined
+              pipeline.isRunning
+                ? 'Espera a que termine la generación en curso'
+                : selectedCover === null || selectedEnd === null
+                  ? 'Selecciona portada y fin antes de finalizar'
+                  : !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                    ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                    : undefined
             }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}

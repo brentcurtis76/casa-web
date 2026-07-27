@@ -1476,16 +1476,30 @@ async function loadDraftFromSupabase(
  */
 async function deleteDraftFromSupabase(
   userId: string,
-  liturgyId: string
+  liturgyId: string,
+  /**
+   * Finding 2 (re-revisión de c4f3b6b) — filtros de igualdad ADICIONALES que
+   * viajan con el DELETE. Sirven para que un borrado cuya premisa salió de una
+   * lectura previa (p.ej. "esta fila estaba en `complete`") se evalúe en el
+   * servidor al momento de escribir, y no sobre un valor ya potencialmente
+   * obsoleto. Sin esto el borrado es incondicional: entre la lectura y el
+   * DELETE la fila pudo volver a un paso VIVO (la corrección phantom-finalize
+   * la restaura) y se destruiría un borrador en curso.
+   */
+  where?: Record<string, string>,
 ): Promise<boolean> {
   try {
     // Solo eliminar registro de la tabla - NO eliminar imágenes del storage
     // Las imágenes se mantienen porque la liturgia guardada las referencia
-    const { error } = await supabase
+    let query = supabase
       .from('cuentacuentos_drafts')
       .delete()
       .eq('liturgia_id', liturgyId)
       .eq('user_id', userId);
+    for (const [column, value] of Object.entries(where ?? {})) {
+      query = query.eq(column, value);
+    }
+    const { error } = await query;
 
     if (error) {
       console.error('[useCuentacuentosDraft] Error deleting draft:', error);
@@ -1988,7 +2002,17 @@ export function useCuentacuentosDraft({
           // 'complete') y quedaría varada. La borramos al montar para que no se
           // acumule. Sin loop de reintentos — un solo intento best-effort.
           console.warn('[useCuentacuentosDraft] Orphan complete draft row found on mount; cleaning up');
-          void deleteDraftFromSupabase(userId, liturgyId);
+          // Finding 2 — El DELETE lleva `current_step='complete'` como condición
+          // servidor. La decisión se tomó sobre una lectura previa; si entre esa
+          // lectura y la escritura la fila volvió a un paso vivo (otra pestaña
+          // finalizando, cuya corrección phantom-finalize restaura 'cover'),
+          // este DELETE matchea 0 filas en vez de destruir un borrador en curso.
+          // Finding 7 — Serializado detrás de la cola, igual que `deleteDraft`:
+          // el efecto también corre al cambiar `liturgyId`, cuando la cola puede
+          // no estar quiescente.
+          writeTailRef.current = writeTailRef.current
+            .then(() => deleteDraftFromSupabase(userId, liturgyId, { current_step: 'complete' }))
+            .then(() => {}, () => {});
         } else if (existingDraft && existingDraft.currentStep !== 'config') {
           setDraft(existingDraft);
           setShowRecoveryPrompt(true);
