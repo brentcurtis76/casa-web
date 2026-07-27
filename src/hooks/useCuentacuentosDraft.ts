@@ -1048,25 +1048,20 @@ async function saveDraftToSupabase(input: SaveDraftInput): Promise<SaveDraftSucc
         }
       }
 
+      // A4/A4a (invariante 7) — ANTES: estos paths se borraban de Storage con
+      // `storage.remove`. Eso violaba la invariante por un camino más caliente
+      // que el borrado del cuento: quitar un prop hacía que el guardado
+      // SIGUIENTE destruyera bytes que una liturgia YA GUARDADA puede estar
+      // referenciando (la liturgia serializa URLs públicas de props).
+      //
+      // Ahora sólo se descarta la CONTABILIDAD (las keys ya se borraron de
+      // `mergedPaths.propImagePaths` arriba): el draft deja de referenciar esos
+      // archivos y no los re-sube. Los bytes quedan para el GC consciente de
+      // referencias (ticket aparte), único componente autorizado a borrarlos.
       if (orphanedPropStoragePaths.length > 0) {
-        try {
-          const { error: removeError } = await supabase.storage
-            .from(BUCKET_NAME)
-            .remove(orphanedPropStoragePaths);
-          if (removeError) {
-            console.warn(
-              `[useCuentacuentosDraft] Best-effort orphan prop storage delete failed (${orphanedPropStoragePaths.length} files):`,
-              removeError
-            );
-          } else {
-            orphanedPropStoragePaths.forEach((p) => verifiedPaths.delete(p));
-            console.log(
-              `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
-            );
-          }
-        } catch (err) {
-          console.warn('[useCuentacuentosDraft] Best-effort orphan prop storage delete threw:', err);
-        }
+        console.log(
+          `[useCuentacuentosDraft] Dropped ${orphanedPropStoragePaths.length} orphaned prop path(s) from the draft; Storage bytes preserved for reference-aware GC`
+        );
       }
     }
 
@@ -1472,7 +1467,10 @@ async function loadDraftFromSupabase(
  * Elimina un borrador de Supabase
  * IMPORTANTE: NO elimina las imágenes del storage porque pueden estar siendo
  * referenciadas por la liturgia guardada. Solo elimina el registro del draft.
- * Para eliminar las imágenes, usar deleteStoryImages() explícitamente.
+ * A4/A4a: NINGUNA acción del editor borra bytes de Storage — ni siquiera la
+ * eliminación del cuento. El borrado de assets es un GC aparte consciente de
+ * referencias (ticket separado), porque una liturgia guardada puede
+ * referenciarlos.
  */
 async function deleteDraftFromSupabase(
   userId: string,
@@ -1799,7 +1797,8 @@ export interface UseCuentacuentosDraftReturn {
   flushPendingDraftWrites: () => Promise<void>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
-  deleteStoryImages: () => Promise<boolean>;
+  /** A4/A4a — Borra SOLO la fila del draft. Cero `storage.remove`. */
+  deleteDraftRecord: () => Promise<boolean>;
   showRecoveryPrompt: boolean;
   acceptRecovery: () => CuentacuentosDraftFull | null;
   declineRecovery: () => void;
@@ -2654,87 +2653,67 @@ export function useCuentacuentosDraft({
     setShowRecoveryPrompt(false);
   }, [liturgyId, userId, resetDebounce, resetGeneratedRevisions, publishActiveIdentity]);
 
-  // Eliminar todas las imágenes del cuento (Storage + DB draft)
-  // Esto se usa cuando el usuario quiere eliminar completamente una historia
-  const deleteStoryImages = useCallback(async (): Promise<boolean> => {
+  // A4 / A4a — Borrado del cuento: SOLO el registro de la base de datos.
+  //
+  // Invariante 7 del plan: los assets son inmutables e INDELEBLES desde el
+  // editor. NINGUNA acción del editor —incluida la eliminación— puede borrar
+  // bytes de Storage: una liturgia ya guardada puede referenciarlos, y el
+  // borrado real es un GC aparte, consciente de referencias (ticket separado).
+  // Por eso esta función NO llama nunca a `storage.remove`; sustituye a la
+  // antigua `deleteStoryImages`, que sí lo hacía.
+  //
+  // Secuencia de lifecycle destructivo (en este orden):
+  //   1) cancelar timers SIN persistir (`resetDebounce` descarta el patch
+  //      pendiente en vez de encolarlo — a diferencia de
+  //      `flushPendingDraftWrites`);
+  //   2) invalidar identidad (epoch/story/revision) de forma SÍNCRONA, para
+  //      que cualquier escritura ya encolada que aún no arrancó falle su CAS
+  //      de queue-start y no resucite la fila;
+  //   3) drenar la cola y recién entonces borrar (serializado detrás de
+  //      `writeTailRef`, igual que `deleteDraft`), de modo que un upsert en
+  //      vuelo no re-cree la fila DESPUÉS del DELETE;
+  //   4) limpiar el estado local SÓLO si el borrado tuvo éxito.
+  const deleteDraftRecord = useCallback(async (): Promise<boolean> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
 
     if (!currentUserId) {
-      console.warn('[useCuentacuentosDraft] deleteStoryImages: No userId available');
+      console.warn('[useCuentacuentosDraft] deleteDraftRecord: No userId available');
       return false;
     }
 
+    // (1) + (2) — síncronos, antes de cualquier await.
+    epochRef.current += 1;
+    activeStoryIdRef.current = null;
+    revisionRef.current = 0;
+    contentRevisionRef.current = 0;
+    resetDebounce();
+    resetGeneratedRevisions();
+    publishActiveIdentity();
+
+    // (3) — el DELETE sale del tail de la cola: corre después del último
+    // upsert encolado, así que siempre gana.
+    const deletion = writeTailRef.current.then(() =>
+      deleteDraftFromSupabase(currentUserId, currentLiturgyId),
+    );
+    writeTailRef.current = deletion.then(() => {}, () => {});
+
+    let ok = false;
     try {
-      console.log(`[useCuentacuentosDraft] Deleting all story images for liturgy: ${currentLiturgyId}`);
+      ok = await deletion;
+    } catch (err) {
+      console.error('[useCuentacuentosDraft] deleteDraftRecord failed:', err);
+      return false;
+    }
 
-      // 1. Eliminar todas las imágenes del Storage
-      const { data: folders } = await supabase.storage
-        .from(BUCKET_NAME)
-        .list(`${currentUserId}/${currentLiturgyId}`);
-
-      if (folders && folders.length > 0) {
-        const allPaths: string[] = [];
-
-        for (const folder of folders) {
-          const { data: files } = await supabase.storage
-            .from(BUCKET_NAME)
-            .list(`${currentUserId}/${currentLiturgyId}/${folder.name}`);
-
-          if (files) {
-            for (const file of files) {
-              allPaths.push(`${currentUserId}/${currentLiturgyId}/${folder.name}/${file.name}`);
-            }
-          }
-        }
-
-        if (allPaths.length > 0) {
-          console.log(`[useCuentacuentosDraft] Deleting ${allPaths.length} files from Storage`);
-          const { error: deleteError } = await supabase.storage
-            .from(BUCKET_NAME)
-            .remove(allPaths);
-
-          if (deleteError) {
-            console.error('[useCuentacuentosDraft] Error deleting files:', deleteError);
-          } else {
-            // Invalidar el cache de existencia: estos paths ya no existen
-            allPaths.forEach((p) => verifiedPaths.delete(p));
-          }
-        }
-      }
-
-      // 2. Eliminar el registro del draft de la base de datos
-      const { error: dbError } = await supabase
-        .from('cuentacuentos_drafts')
-        .delete()
-        .eq('liturgia_id', currentLiturgyId)
-        .eq('user_id', currentUserId);
-
-      if (dbError) {
-        console.error('[useCuentacuentosDraft] Error deleting draft record:', dbError);
-        return false;
-      }
-
-      // 3. Invalidar identidad + limpiar estado local. Toda escritura en
-      // vuelo (por ejemplo del pipeline de generación) debe caer del lado
-      // de "persistió pero no commiteó" para no resucitar el cuento borrado.
-      epochRef.current += 1;
-      activeStoryIdRef.current = null;
-      revisionRef.current = 0;
-      contentRevisionRef.current = 0;
-      resetDebounce();
-      resetGeneratedRevisions();
-      publishActiveIdentity();
+    // (4) — limpiar estado local sólo si la fila se borró de verdad.
+    if (ok) {
       setDraft(null);
       setLastSavedAt(null);
       setShowRecoveryPrompt(false);
-
-      console.log(`[useCuentacuentosDraft] Successfully deleted all story images for liturgy: ${currentLiturgyId}`);
-      return true;
-    } catch (err) {
-      console.error('[useCuentacuentosDraft] Error deleting story images:', err);
-      return false;
+      console.log(`[useCuentacuentosDraft] Draft record deleted for liturgy ${currentLiturgyId} (Storage untouched)`);
     }
+    return ok;
   }, [resetDebounce, resetGeneratedRevisions, publishActiveIdentity]);
 
   // Aceptar recuperación. El story cargado pasa a ser el activo — cualquier
@@ -2781,7 +2760,7 @@ export function useCuentacuentosDraft({
     flushPendingDraftWrites,
     loadDraft: loadDraftAsync,
     deleteDraft,
-    deleteStoryImages,
+    deleteDraftRecord,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,

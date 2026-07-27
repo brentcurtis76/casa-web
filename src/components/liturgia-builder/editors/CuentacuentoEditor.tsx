@@ -671,7 +671,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     isSaving,
     saveDraft,
     deleteDraft,
-    deleteStoryImages,
+    deleteDraftRecord,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
@@ -1783,7 +1783,10 @@ Instrucciones críticas:
     }
   }, [story, storyFeedback, refinementType, context, setStory, bumpContentRevision, saveDraft]);
 
-  // Eliminar cuento completamente (historia + imágenes + draft)
+  // Eliminar cuento: limpia el estado local y BORRA SOLO LA FILA del draft.
+  // A4/A4a — invariante 7: ninguna acción del editor borra bytes de Storage.
+  // Las imágenes quedan: una liturgia ya guardada puede referenciarlas, y su
+  // recolección es un GC aparte consciente de referencias.
   const handleDeleteStory = useCallback(async () => {
     setIsDeleting(true);
     setError(null);
@@ -1801,13 +1804,15 @@ Instrucciones críticas:
     bumpDraftEpoch();
 
     try {
-      console.log('[CuentacuentoEditor] Deleting story and all associated images...');
+      console.log('[CuentacuentoEditor] Deleting story draft record (Storage preserved)...');
 
-      // 1. Eliminar imágenes del Storage y el draft
-      const success = await deleteStoryImages();
+      // 1. Borrar SOLO la fila del draft (cero storage.remove). El borrado va
+      //    serializado detrás de la cola de escrituras, así que un upsert en
+      //    vuelo no puede re-crear la fila después.
+      const success = await deleteDraftRecord();
 
       if (!success) {
-        throw new Error('No se pudieron eliminar las imágenes del cuento');
+        throw new Error('No se pudo eliminar el borrador del cuento');
       }
 
       // 2. Limpiar todo el estado local
@@ -1846,7 +1851,7 @@ Instrucciones críticas:
       setIsDeleting(false);
       setShowDeleteDialog(false);
     }
-  }, [deleteStoryImages, onStoryDeleted, cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity, setStory]);
+  }, [deleteDraftRecord, onStoryDeleted, cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity, setStory]);
 
   // ===== Builders de tareas del pipeline A2 =====
   // Cada builder devuelve un PipelineItemTask con tres fases:
@@ -6630,12 +6635,19 @@ Instrucciones críticas:
                       color: CASA_BRAND.colors.secondary.grayMedium,
                     }}
                   >
-                    Esta acción eliminará permanentemente:
+                    {/* A4/A4a — El copy decía que se borraban "todas las
+                        imágenes generadas". Ya no es cierto (ni debe serlo):
+                        el editor nunca borra bytes de Storage, porque una
+                        liturgia guardada puede referenciarlos. */}
+                    Esta acción eliminará:
                     <ul className="list-disc list-inside mt-2 space-y-1">
                       <li>La historia "{story?.title || initialStory?.title || 'Sin título'}"</li>
-                      <li>Todas las imágenes generadas (personajes, escenas, portada)</li>
                       <li>El borrador guardado en Supabase</li>
                     </ul>
+                    <p className="mt-3" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Las imágenes ya generadas se conservan: una liturgia guardada
+                      puede estar usándolas.
+                    </p>
                     <p className="mt-3 font-medium" style={{ color: '#DC2626' }}>
                       Esta acción no se puede deshacer.
                     </p>

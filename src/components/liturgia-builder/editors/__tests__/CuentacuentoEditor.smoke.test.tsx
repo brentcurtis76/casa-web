@@ -32,7 +32,7 @@ vi.mock('@/hooks/useCuentacuentosDraft', () => ({
     enqueueDraftWrite: vi.fn(),
     loadDraft: vi.fn().mockResolvedValue(null),
     deleteDraft: vi.fn().mockResolvedValue(undefined),
-    deleteStoryImages: vi.fn().mockResolvedValue(undefined),
+    deleteDraftRecord: vi.fn().mockResolvedValue(true),
     showRecoveryPrompt: false,
     acceptRecovery: vi.fn(),
     declineRecovery: vi.fn(),
