@@ -589,3 +589,71 @@ describe('R6 (INVARIANTE) — montar con una historia ya finalizada no borra el 
     expect(deletedDraftRows).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// R7 — `updateTextOverlay` PERSISTE el overlay y no pisa el resto de la story.
+//
+// Esta función ha estado mal TRES veces: (a) en fix-2 pasó de updater funcional
+// a pisar el objeto story entero con una foto del render; (b) el arreglo del
+// Finding 4 capturaba el resultado desde dentro del updater, lo que sólo
+// funciona si React lo evalúa de forma ANSIOSA — con otro setState encolado en
+// el mismo batch quedaba inerte y el fallback restauraba en silencio el
+// comportamiento viejo; (c) ahora fusiona sobre `storyRef.current`.
+//
+// Ninguna de las dos primeras fue detectada por la suite, porque no había NADA
+// que cubriera esta función. Este test cierra ese agujero.
+//
+// ALCANCE HONESTO: cubre las dos propiedades observables —el overlay se
+// persiste, y el resto de la story sobrevive— que son exactamente los dos modos
+// en que falló históricamente. NO discrimina el caso ansioso-vs-diferido de
+// React: para forzar el updater diferido haría falta encolar otro setState en
+// el mismo batch desde fuera del componente, lo que no es alcanzable
+// honestamente sin mockear el sujeto.
+// ---------------------------------------------------------------------------
+describe('R7 — el overlay de texto se persiste sin pisar el resto de la story', () => {
+  it('cambiar la posición del overlay de portada llega a la fila y conserva la story', { timeout: 20000 }, async () => {
+    render(
+      <CuentacuentoEditor
+        context={baseContext}
+        initialStory={makeScenesPendingStory('story-r7')}
+        onStoryCreated={vi.fn()}
+      />
+    );
+
+    const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
+    await act(async () => {
+      fireEvent.click(approveScenes);
+      await yields(25);
+    });
+    await screen.findByRole('button', { name: /Finalizar cuento/i });
+    await act(async () => { await yields(10); });
+    upsertCalls.length = 0;
+
+    // Cambiar la posición del overlay de portada a "Arriba" desde la UI real.
+    const topPills = screen.getAllByRole('button', { name: /^Arriba$/i });
+    expect(topPills.length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.click(topPills[0]);
+      await yields(10);
+    });
+
+    // Vencer el debounce de 2 s.
+    await act(async () => { await new Promise((r) => setTimeout(r, 2400)); await yields(30); });
+
+    const withOverlay = upsertCalls.filter((c) => {
+      const story = storyOf(c.payload);
+      const overlay = story?.['coverTextOverlay'] as { position?: string } | undefined;
+      return overlay?.position === 'top';
+    });
+    // (a) El overlay SE PERSISTE — antes de F1 vivía sólo en estado React.
+    expect(withOverlay.length).toBeGreaterThan(0);
+
+    // (b) La story persistida sigue completa: el overlay no la pisó con una
+    //     foto parcial del render (el modo de fallo de fix-2).
+    const persistedStory = storyOf(withOverlay[withOverlay.length - 1].payload)!;
+    expect(persistedStory['id']).toBe('story-r7');
+    expect(persistedStory['title']).toBe('Cuento a finalizar');
+    expect(Array.isArray(persistedStory['scenes'])).toBe(true);
+    expect((persistedStory['scenes'] as unknown[]).length).toBeGreaterThan(0);
+  });
+});
