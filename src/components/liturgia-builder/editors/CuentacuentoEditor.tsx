@@ -53,6 +53,8 @@ import type {
   OverlaySize,
   SuggestedStoryProp,
 } from '@/types/shared/story';
+import { shouldAutoKick, type AutoKickIntent } from '@/lib/cuentacuentos/autoKick';
+import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
 import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
@@ -2434,6 +2436,47 @@ Instrucciones críticas:
   // Solo genera lo FALTANTE: al retomar un borrador, lo ya generado se salta.
   // Devuelven true si el lote quedó corriendo (o no había nada pendiente);
   // false si el pipeline estaba ocupado y no se pudo arrancar.
+  /**
+   * E/A9a — Lista de tareas pendientes del paso `characters`. Separada de la
+   * ejecución para que el auto-arranque pueda pasarla por `tryStart` (que
+   * RECHAZA si el runner está ocupado) en vez de por `runItems` (que desplaza
+   * la corrida en vuelo). `[]` significa "no hay nada que generar".
+   */
+  const collectCharacterSheetTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
+    const pendingChars = story.characters.filter(
+      c => !(characterSheetOptionsRef.current[c.id]?.length) && (editingCharacterPrompt[c.id] ?? c.visualDescription)?.trim()
+    );
+    const activeProps = (story.props && story.props.length > 0) ? story.props : storyProps;
+    const pendingProps = activeProps.filter(
+      p => p.visualDescription?.trim()
+        && (p.referenceImages?.length ?? 0) === 0
+        && !(propSheetOptionsRef.current[p.id]?.length)
+    );
+    return [
+      ...pendingChars.map((c) => buildCharacterSheetTask(c, editingCharacterPromptRef.current[c.id])),
+      ...pendingProps.map((p) => buildPropSheetTask(p)),
+    ];
+  }, [story, storyProps, buildCharacterSheetTask, buildPropSheetTask, editingCharacterPrompt]);
+
+  const collectSceneTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
+    const pendingScenes = story.scenes.filter(s => !(sceneImageOptionsRef.current[s.number]?.length));
+    return pendingScenes.map((s) => buildSceneTask(s, editingScenePromptRef.current[s.number]));
+  }, [story, buildSceneTask]);
+
+  const collectCoverEndTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
+    const busy = (id: string) => {
+      const st = pipeline.statusOf(id);
+      return st === 'running' || st === 'persisting';
+    };
+    const tasks: Array<PipelineItemTask<ProviderResult>> = [];
+    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask());
+    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask());
+    return tasks;
+  }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, pipeline]);
+
   const runCharacterSheetBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
 
@@ -2491,41 +2534,80 @@ Instrucciones críticas:
     return true;
   }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, buildRunIdentity, pipeline]);
 
-  // Auto-arranque SOLO en transiciones de avance del flujo (las aprobaciones):
-  // story→characters, characters→scenes, scenes→cover. Nunca al montar, al
-  // recuperar un borrador, al volver atrás ni al editar un cuento existente —
-  // esas rutas muestran el botón "Generar…" en el banner en su lugar.
-  // El gate por paso solo se marca si el lote realmente arrancó, para no
-  // perder el auto-arranque cuando otro lote seguía corriendo.
-  const prevStepRef = useRef<CreationStep | null>(null);
-  const autoKickedRef = useRef<Record<string, boolean>>({});
+  // ===========================================================================
+  // E / A9a — Auto-arranque por INTENCIÓN EXPLÍCITA + aceptación atómica.
+  //
+  // Lo que había antes: un efecto INFERÍA el arranque de una transición de
+  // pasos (`prevStep→currentStep` dentro de una lista de avances válidos), con
+  // un gate `autoKicked` llaveado por `${story.id}:${currentStep}`. A9a prohíbe
+  // exactamente eso, por dos motivos:
+  //   - el MISMO par de pasos lo producen caminos que NO deben generar nada
+  //     (restaurar un borrador una posición más adelante, `handleEditStory`,
+  //     volver atrás y avanzar de nuevo): la señal no distingue intención de
+  //     coincidencia;
+  //   - se armaba con el cambio de paso, no con la persistencia de la
+  //     aprobación, así que un rerender podía perder o duplicar el disparo.
+  //
+  // Ahora: SÓLO la aprobación —dentro de su `onSuccess`, es decir después de
+  // que el commit autoritativo persistió— arma `pendingAutoKickRef = {step,
+  // epoch}`. Este efecto lo consume, y el runner decide con `tryStart` si la
+  // corrida realmente arrancó:
+  //   - `accepted:true`  ⇒ el intent se consume (una sola vez);
+  //   - `accepted:false` (runner ocupado) ⇒ el intent se CONSERVA y se
+  //     reintenta cuando el pipeline queda idle (de ahí `pipeline.isRunning`
+  //     en las dependencias);
+  //   - paso/época desalineados ⇒ el intent se descarta SIN disparar.
+  // La consumición ocurre en el mismo paso síncrono que la reserva del runner,
+  // así que un rerender no puede colar un segundo disparo.
+  // ===========================================================================
+  const pendingAutoKickRef = useRef<AutoKickIntent | null>(null);
+
   useEffect(() => {
-    const prevStep = prevStepRef.current;
-    prevStepRef.current = currentStep;
-    if (prevStep === null || prevStep === currentStep) return; // montaje o sin transición
+    const decision = shouldAutoKick(pendingAutoKickRef.current, {
+      step: currentStep as EditorCreationStep,
+      epoch: activeIdentity.epoch,
+    });
+    if (decision === 'none') return;
+    if (decision === 'clear') {
+      pendingAutoKickRef.current = null;
+      return;
+    }
     if (!story) return;
 
-    const isForwardTransition =
-      (prevStep === 'story' && currentStep === 'characters') ||
-      (prevStep === 'characters' && currentStep === 'scenes') ||
-      (prevStep === 'scenes' && currentStep === 'cover');
-    if (!isForwardTransition) return;
+    const tasks =
+      currentStep === 'characters' ? collectCharacterSheetTasks()
+      : currentStep === 'scenes' ? collectSceneTasks()
+      : currentStep === 'cover' ? collectCoverEndTasks()
+      : null;
 
-    const kickKey = `${story.id}:${currentStep}`;
-    if (autoKickedRef.current[kickKey]) return;
+    // Paso sin lote asociado (p.ej. `complete`): la intención no aplica.
+    if (tasks === null) {
+      pendingAutoKickRef.current = null;
+      return;
+    }
+    // No hay nada que generar: la intención está SATISFECHA, no pendiente.
+    if (tasks.length === 0) {
+      pendingAutoKickRef.current = null;
+      return;
+    }
 
-    let started = false;
-    if (currentStep === 'characters') {
-      started = runCharacterSheetBatch();
-    } else if (currentStep === 'scenes') {
-      started = runSceneBatch();
-    } else if (currentStep === 'cover') {
-      started = runCoverEndBatch();
+    const { accepted } = pipeline.tryStart(tasks, buildRunIdentity());
+    // Consumir SÓLO si el runner confirmó el arranque. Si estaba ocupado, el
+    // intent sobrevive y este efecto vuelve a correr al cambiar `isRunning`.
+    if (accepted) {
+      pendingAutoKickRef.current = null;
     }
-    if (started) {
-      autoKickedRef.current[kickKey] = true;
-    }
-  }, [currentStep, story, runCharacterSheetBatch, runSceneBatch, runCoverEndBatch]);
+  }, [
+    currentStep,
+    story,
+    activeIdentity.epoch,
+    pipeline,
+    pipeline.isRunning,
+    collectCharacterSheetTasks,
+    collectSceneTasks,
+    collectCoverEndTasks,
+    buildRunIdentity,
+  ]);
 
   // ===== Phase 7: refine handlers (character, scene, cover, end) =====
   // Each refine builds a PipelineItemTask with the SAME itemId as its generate
@@ -3441,7 +3523,15 @@ Instrucciones críticas:
           onSuccess: (result) => {
             const committedStory = result.stale !== true ? result.committed?.story ?? null : null;
             const updatedAt = result.stale !== true ? result.updatedAt ?? null : null;
-            if (committedStory) onSuccess(committedStory, { updatedAt });
+            if (!committedStory) return;
+            onSuccess(committedStory, { updatedAt });
+            // E/A9a — ÚNICO sitio que arma la intención de auto-arranque, y sólo
+            // tras un commit VIVO (esta rama ya lo garantiza). Nunca desde un
+            // efecto de cambio de paso, nunca al restaurar, nunca en
+            // `handleEditStory`. Los pasos sin lote (`complete`) no arman nada.
+            if (nextStep === 'characters' || nextStep === 'scenes' || nextStep === 'cover') {
+              pendingAutoKickRef.current = { step: nextStep, epoch: activeIdentity.epoch };
+            }
           },
           onBlocked: () => setError(gateWarning),
           onStale: () => setError(staleMessage),
@@ -3485,6 +3575,8 @@ Instrucciones críticas:
       buildAuthoritativeDraftPatch,
       enqueueDraftWrite,
       enqueueAuthoritativeWrite,
+      // E/A9a — la época viva se estampa en la intención de auto-arranque.
+      activeIdentity,
     ],
   );
 

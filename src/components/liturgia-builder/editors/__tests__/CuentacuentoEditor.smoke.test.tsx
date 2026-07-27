@@ -29,6 +29,15 @@ vi.mock('@/hooks/useCuentacuentosDraft', () => ({
     isSaving: false,
     saveDraft: vi.fn(),
     getDraftIdentity: () => ({ storyId: null, epoch: 0 }),
+    getDraftWriteIdentity: () => ({ storyId: null, epoch: 0, revision: 0, contentRevision: 0 }),
+    // E/A9a — la época viva se estampa en la intención de auto-arranque, que se
+    // evalúa en un efecto de render: el mock debe traerla.
+    activeIdentity: { storyId: null, epoch: 0 },
+    flushPendingDraftWrites: vi.fn().mockResolvedValue(undefined),
+    enqueueAuthoritativeWrite: vi.fn(),
+    bumpContentRevision: vi.fn(() => 1),
+    getContentRevision: () => 0,
+    confirmFinalizationDelete: vi.fn().mockResolvedValue(1),
     enqueueDraftWrite: vi.fn(),
     loadDraft: vi.fn().mockResolvedValue(null),
     deleteDraft: vi.fn().mockResolvedValue(undefined),
