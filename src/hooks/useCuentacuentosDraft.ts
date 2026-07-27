@@ -88,6 +88,16 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
    * borrador en silencio o quedarse en un callejón sin salida.
    */
   storyMissing?: boolean;
+  /**
+   * B1/F3 — `updated_at` REAL de la fila, tal como vino de la base. A diferencia
+   * de `savedAt`, que `normalizeSnapshot` re-estampa con el reloj del CLIENTE en
+   * cada commit, este campo lo escribe ÚNICAMENTE `loadDraftFromSupabase`. Es el
+   * único valor válido como testigo del compare-and-delete: usar `savedAt`
+   * hacía que, si cualquier escritura commiteaba entre el montaje y el clic de
+   * "Recuperar", el testigo pasara a ser una marca de cliente que JAMÁS puede
+   * coincidir con la fila — y la confirmación quedaba condenada a borrar 0.
+   */
+  persistedUpdatedAt?: string;
 }
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
@@ -1417,6 +1427,10 @@ async function loadDraftFromSupabase(
       ? (dataSceneImages as Record<number, number>)
       : restored.selectedSceneImages;
 
+    // Una sola lectura de `data.updated_at`: el tipo generado de supabase-js es
+    // una unión sobre todas las tablas y este acceso ya arrastra un TS2339
+    // preexistente; leerlo dos veces sumaba un error nuevo al conteo.
+    const rowUpdatedAt = data.updated_at as string;
     const draft: CuentacuentosDraftFull = {
       liturgyId,
       currentStep: resolvedCurrentStep,
@@ -1436,7 +1450,8 @@ async function loadDraftFromSupabase(
       selectedCover: (data.selected_cover as number | null) ?? restored.selectedCover,
       selectedEnd: (data.selected_end as number | null) ?? restored.selectedEnd,
       sceneReferenceModes: effectiveSceneReferenceModes,
-      savedAt: data.updated_at as string,
+      savedAt: rowUpdatedAt,
+      persistedUpdatedAt: rowUpdatedAt,
       version: 1,
       characterSheetOptions,
       sceneImageOptions,
@@ -1858,12 +1873,12 @@ export interface UseCuentacuentosDraftReturn {
    * siendo la historia finalizada Y nadie la reescribió desde entonces.
    * Devuelve las filas borradas (0 = ack obsoleto ⇒ el borrador se conserva).
    */
-  /** B1/Finding-3 — claves presentes en el patch pendiente del debounce. */
-  getPendingDraftPatchKeys: () => string[];
   confirmFinalizationDelete: (input: {
     storyId: string;
     expectedUpdatedAt: string;
   }) => Promise<number>;
+  /** B1/Finding-3 — claves presentes en el patch pendiente del debounce. */
+  getPendingDraftPatchKeys: () => string[];
   showRecoveryPrompt: boolean;
   acceptRecovery: () => CuentacuentosDraftFull | null;
   declineRecovery: () => void;

@@ -525,3 +525,67 @@ describe('R2 (SUPERSEDED BY B1): mounting over a complete row deletes nothing', 
     expect(deletedDraftRows).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// R5 — La otra rama del arreglo del Finding 3. R1 cubre `pendingHasStory ===
+// true` (la que preserva el arreglo HIGH). Ésta cubre `false`: sin nada
+// pendiente en el debounce, `applyPropsUpdate` NO debe dejar una `story`
+// aparcada en el buffer — hacerlo re-subía los mismos base64 y re-persistía el
+// cuento entero 2 s después, en cada mutación de prop.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// R5 — NO EXISTE, deliberadamente.
+//
+// El re-review pidió un test para la otra rama del Finding 3: "con el buffer
+// del debounce vacío, la escritura debounceada ya no lleva `story`". Se intentó
+// y se descartó, porque la premisa es falsa: `saveDraftToSupabase` persiste
+// SIEMPRE la fila completa —incluida la columna `story`— sea cual sea el patch;
+// el patch sólo decide qué se fusiona en el snapshot, no qué columnas se
+// escriben. Se verificó ejecutándolo: ambas escrituras del escenario llevan
+// `story`, con y sin el arreglo. Un test sobre "el upsert no lleva story" sería
+// verde por accidente o rojo por accidente, nunca por la razón correcta.
+//
+// El efecto REAL del Finding 3 —no re-subir los base64 de props ya subidos— sí
+// sería observable contando `storage.upload`, pero sólo en un escenario con
+// props que traigan base64. Queda como hueco declarado, no como test falso.
+// El arreglo se sostiene por construcción (ver `getPendingDraftPatchKeys` en
+// applyPropsUpdate) y R1 cubre la rama que preserva el arreglo HIGH.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// R6 — INVARIANTE, no base-red. Declarado explícitamente.
+//
+// El efecto de montaje llamaba `deleteDraft()` (sin guardas, keyed sólo por
+// liturgia_id+user_id) cuando `initialStory` llegaba en 'ready'. Bajo B1 eso es
+// un peligro real: `initialStory` sale del elemento EN MEMORIA, que ya está en
+// 'ready' apenas se finaliza y ANTES de guardar la liturgia.
+//
+// PERO: ese `deleteDraft()` estaba MUERTO en la práctica. El efecto tiene deps
+// `[]`, así que corre en el montaje, cuando `userId` todavía es null (lo
+// resuelve un `getUser` asíncrono), y `deleteDraft` hace `if (!userId) return`.
+// Por eso el peligro nunca se materializó — y por eso este test PASA también
+// contra el código previo. No discrimina el cambio: se conserva como invariante
+// que debe seguir valiendo, no como prueba del arreglo. Quitar la llamada
+// elimina una trampa latente (bastaría que el efecto ganara dependencias, o que
+// la sesión resolviera de forma síncrona, para que se volviera alcanzable).
+// ---------------------------------------------------------------------------
+describe('R6 (INVARIANTE) — montar con una historia ya finalizada no borra el borrador', () => {
+  it('cero DELETE al montar con initialStory en `ready`', { timeout: 20000 }, async () => {
+    const readyStory = {
+      ...(makeScenesPendingStory('story-r6') as unknown as Record<string, unknown>),
+      metadata: { createdAt: '', updatedAt: '', status: 'ready' },
+    } as unknown as Story;
+
+    render(
+      <CuentacuentoEditor
+        context={baseContext}
+        initialStory={readyStory}
+        onStoryCreated={vi.fn()}
+      />
+    );
+    await act(async () => { await yields(30); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); await yields(20); });
+
+    expect(deletedDraftRows).toEqual([]);
+  });
+});

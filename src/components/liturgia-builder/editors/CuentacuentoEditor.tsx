@@ -1004,8 +1004,18 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     // Si el cuento ya está completo Y tiene todas las imágenes, eliminar cualquier borrador viejo
     // NO borrar el draft si faltan imágenes - las necesitamos recuperar del draft
     if (initialStory.metadata.status === 'ready' && !hasMissingSceneImages) {
-      deleteDraft();
-      console.log('[CuentacuentoEditor] Deleted old draft - story is complete with all images');
+      // B1 — ANTES esto llamaba `deleteDraft()`, un borrado sin guardas keyed
+      // sólo por (liturgia_id, user_id). Bajo B1 eso es inseguro por dos vías:
+      //   1) `initialStory` sale del elemento EN MEMORIA, que ya está en
+      //      'ready' apenas se finaliza y ANTES de que la liturgia se guarde —
+      //      así que un remonte en esa ventana destruía la única copia
+      //      superviviente del cuento;
+      //   2) la fila es compartida por toda la liturgia (UNIQUE), de modo que
+      //      podía borrar el borrador de OTRA historia.
+      // El único borrador autorizado bajo B1 es el compare-and-delete
+      // confirmado por el padre tras guardar la liturgia. Una fila sobrante es
+      // inofensiva: se ofrece para recuperar y el usuario la descarta.
+      console.log('[CuentacuentoEditor] Story is complete; leaving the draft for the confirmed compare-and-delete');
     } else if (hasMissingSceneImages) {
       console.log('[CuentacuentoEditor] Keeping draft - story is missing scene images, will try to recover from draft');
     }
@@ -1360,14 +1370,24 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     // aparecer en cada montaje porque nadie tenía un cierre con el que
     // confirmarlo — y la única salida visible ("Empezar de nuevo") descarta.
     //
-    // Rearmamos el handshake desde la propia fila: `savedAt` ES el `updated_at`
-    // persistido (ver loadDraftFromSupabase), así que sirve de testigo. Si el
+    // Rearmamos el handshake desde la propia fila, usando `persistedUpdatedAt`
+    // (el `updated_at` REAL de la base, escrito sólo por el load). Si el
     // usuario edita después de recuperar, `updated_at` se mueve y el
     // compare-and-delete no borra nada — que es la semántica correcta: un
     // borrador más nuevo que lo entregado exige re-finalizar.
-    if (recoveredDraft.currentStep === 'complete' && restoredStory?.id && recoveredDraft.savedAt) {
+    if (
+      recoveredDraft.currentStep === 'complete' &&
+      restoredStory?.id &&
+      recoveredDraft.persistedUpdatedAt
+    ) {
       const storyId = restoredStory.id;
-      const expectedUpdatedAt = recoveredDraft.savedAt;
+      // F3 — SOLO el `updated_at` que vino de la base sirve de testigo.
+      // `savedAt` lo re-estampa `normalizeSnapshot` con el reloj del cliente en
+      // cada commit, así que una escritura entre el montaje y este clic lo
+      // convertía en un valor que nunca puede coincidir con la fila: la
+      // confirmación quedaba condenada a borrar 0 y el prompt volvía para
+      // siempre — exactamente el limbo que el finding 1 vino a cerrar.
+      const expectedUpdatedAt = recoveredDraft.persistedUpdatedAt;
       const usedRef = { used: false };
       const confirmFinalization = async (): Promise<void> => {
         if (usedRef.used) return;
@@ -5578,21 +5598,27 @@ Instrucciones críticas:
     // overlay y respeta cualquier story más nueva que haya commiteado un
     // continuation de promesa (aprobación o refine). Hoy no hay un caller
     // no-discreto que gane la carrera, pero la forma defensiva es gratis.
-    // Finding 4 — capturamos el resultado del updater y persistimos ESE objeto.
-    // Antes el updater era funcional pero `saveDraft` mandaba la foto del
-    // render: si la carrera que el updater protege llegara a ocurrir, React
-    // tendría la story nueva y la BD la vieja — y al recargar gana la BD.
-    let persisted: Story | null = null;
-    setStory(prev => {
-      if (!prev) return prev;
-      const merged: Story = {
-        ...prev,
-        ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
-        metadata: { ...prev.metadata, updatedAt: nextStory.metadata.updatedAt },
-      };
-      persisted = merged;
-      return merged;
-    });
+    // Finding 4 + F1 — Fusionamos sobre la story VIVA (`storyRef.current`), no
+    // sobre la foto del render, y persistimos EXACTAMENTE el objeto que
+    // seteamos.
+    //
+    // El intento anterior capturaba el resultado desde dentro de un updater
+    // funcional (`setStory(prev => { persisted = merged; ... })`). Eso sólo
+    // funciona cuando React evalúa el updater de forma ANSIOSA, cosa que hace
+    // únicamente si la fiber no tiene lanes pendientes; con cualquier otro
+    // setState encolado en el mismo batch, el updater se difiere a la fase de
+    // render, `persisted` seguía en null y el `?? nextStory` restauraba en
+    // silencio justo el comportamiento que el arreglo debía eliminar.
+    // `storyRef` se sincroniza con cada commit, así que leerlo acá da la story
+    // más nueva sin depender de la heurística de React.
+    const liveStory = storyRef.current ?? story;
+    if (!liveStory) return;
+    const merged: Story = {
+      ...liveStory,
+      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+      metadata: { ...liveStory.metadata, updatedAt: nextStory.metadata.updatedAt },
+    };
+    setStory(merged);
     // F1 — Persistir vía `saveDraft` (debounce). Dos motivos:
     //   1) El overlay ahora se GUARDA: antes vivía sólo en React state (no había
     //      ni saveDraft ni enqueueDraftWrite) y se perdía al recargar.
@@ -5602,7 +5628,7 @@ Instrucciones críticas:
     //      excluye contentRevision), que RE-ESTAMPA el patch pendiente bajo la
     //      identidad fresca en vez de dejarlo huérfano — mismo patrón que los
     //      toggles de `sceneReferenceModes` y `handleUpdatePropDescription`.
-    saveDraft({ story: persisted ?? nextStory });
+    saveDraft({ story: merged });
   };
 
   const renderTextOverlayControls = (
