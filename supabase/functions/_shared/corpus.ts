@@ -84,6 +84,17 @@ function magic(bytes: number[], size: number): string {
 
 const PNG = (size = 64) => magic([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], size);
 const JPEG = (size = 64) => magic([0xff, 0xd8, 0xff, 0xe0], size);
+
+/**
+ * Prop and landmark photos arrive as DATA URLs, not raw base64.
+ * `PropInput.tsx:58` and `LandmarkInput.tsx:65` both use `readAsDataURL` and
+ * never strip the prefix — unlike the character-sheet path, which does.
+ *
+ * The corpus originally sent raw base64 here, which is not what the app sends.
+ * It passed, but it was testing a shape the editor never produces.
+ */
+const DATA_PNG = (size = 64) => `data:image/png;base64,${PNG(size)}`;
+const DATA_JPEG = (size = 64) => `data:image/jpeg;base64,${JPEG(size)}`;
 /** An iPhone photo. The upload paths gate on `image/*` only, so it gets through. */
 const HEIC = (size = 64) => {
   const out = new Uint8Array(size);
@@ -203,7 +214,7 @@ export const CORPUS: CorpusCase[] = [
       sceneReferenceImage: `${BUCKET}/ref.png`,
       sceneReferenceMode: "style",
       props: [
-        { id: "p1", name: "Farol", visualDescription: "farol de bronce", referenceImages: [PNG(), PNG()] },
+        { id: "p1", name: "Farol", visualDescription: "farol de bronce", referenceImages: [DATA_PNG(), DATA_JPEG()] },
         { id: "p2", name: "Bote", visualDescription: "bote azul", referenceImages: [`${BUCKET}/bote.png`] },
       ],
       count: 4,
@@ -222,7 +233,7 @@ export const CORPUS: CorpusCase[] = [
       landmarks: [{
         name: "Faro",
         visualDescription: "faro rojo y blanco",
-        referenceImages: [PNG(), PNG(), PNG(), PNG()],
+        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
       }],
       count: 4,
     },
@@ -258,7 +269,7 @@ export const CORPUS: CorpusCase[] = [
         id: `p${i}`,
         name: `Objeto ${i}`,
         visualDescription: "objeto",
-        referenceImages: [PNG(), PNG(), PNG(), PNG()],
+        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
       })),
       count: 4,
     },
@@ -319,7 +330,7 @@ export const CORPUS: CorpusCase[] = [
         name: "Faro",
         visualDescription: "faro rojo",
         // Over the 6 MB per-image cap, at an index the handler never reads.
-        referenceImages: [PNG(), PNG(), PNG(6_200_000)],
+        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(6_200_000)],
       }],
       count: 4,
     },
@@ -408,7 +419,7 @@ export const CORPUS: CorpusCase[] = [
       style: "reflexivo",
       additionalNotes: "",
       props: [
-        { id: "p1", kind: "prop", name: "Farol", narrativeRole: "guía", referenceImages: [PNG(), JPEG()], role: "primary" },
+        { id: "p1", kind: "prop", name: "Farol", narrativeRole: "guía", referenceImages: [DATA_PNG(), DATA_JPEG()], role: "primary" },
         { id: "p2", kind: "location", name: "Muelle", narrativeRole: "escenario", referenceImages: [`${BUCKET}/muelle.png`], role: "secondary" },
       ],
     },
@@ -434,9 +445,33 @@ export const CORPUS: CorpusCase[] = [
         kind: "prop",
         name: `Objeto ${i}`,
         narrativeRole: "apoyo",
-        referenceImages: [PNG(), PNG(), PNG(), PNG(), PNG()],
+        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
         role: "secondary",
       })),
+    },
+  },
+
+  {
+    name: "story-builder-with-reference-photo",
+    fn: "story",
+    origin: "PropInput.tsx — the only way a reference photo reaches the STORY builder",
+    // The story builder receives reference images through props alone; the
+    // editor's request body sends no landmarks. Four photos is the UI's own
+    // per-prop maximum (PropInput.tsx:24 maxImages = 4).
+    payload: {
+      context: { title: "Adviento", summary: "Esperanza", readings: [] },
+      location: "Valparaíso",
+      characters: ["Ana"],
+      style: "reflexivo",
+      additionalNotes: "",
+      props: [{
+        id: "p1",
+        kind: "location",
+        name: "Faro de Punta Ángeles",
+        narrativeRole: "el faro que guía a Ana",
+        referenceImages: [DATA_PNG(), DATA_JPEG(), DATA_PNG(), DATA_JPEG()],
+        role: "primary",
+      }],
     },
   },
 

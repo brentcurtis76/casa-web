@@ -145,6 +145,12 @@
     "providerImages": 24,
     "providerCalls": 8
   },
+  "story-builder-with-reference-photo": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 4,
+    "providerCalls": 3
+  },
   "REJECT-foreign-origin": {
     "status": 200,
     "fetched": [
