@@ -58,6 +58,7 @@ import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
 import { readReferenceImageBase64 } from '@/lib/cuentacuentos/downscaleImage';
+import { buildInvokeError, describeSkippedImage, parseSkippedImages, InvokeError, type SkippedImage } from '@/lib/cuentacuentos/imageFeedback';
 import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
@@ -150,18 +151,21 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * status code"; el status y el detalle real viven en error.context (Response).
  * Sin esto, la detección de rate-limit del pipeline y los mensajes al usuario
  * solo verían el texto genérico.
+ *
+ * Además del texto, el cuerpo tipado trae `code`, `field` y `skippedImages`;
+ * buildInvokeError los deja accesibles para que la UI pueda ramificar en vez
+ * de mostrar el mensaje crudo.
  */
 async function extractInvokeError(fnError: unknown): Promise<Error> {
   const ctx = (fnError as { context?: Response })?.context;
   if (ctx && typeof ctx.status === 'number' && typeof ctx.clone === 'function') {
-    let detail = '';
+    let body: unknown = null;
     try {
-      const body = await ctx.clone().json();
-      if (body && typeof body.error === 'string') detail = body.error;
+      body = await ctx.clone().json();
     } catch {
       // cuerpo no-JSON o ya consumido: nos quedamos solo con el status
     }
-    return new Error(`Error ${ctx.status}${detail ? `: ${detail}` : ''}`);
+    return buildInvokeError(ctx.status, body);
   }
   return fnError instanceof Error ? fnError : new Error(String(fnError));
 }
@@ -592,6 +596,10 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // Estado de generación del cuento (texto con IA — no imágenes).
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Referencias que el backend descartó. No es un estado de error: la
+  // generación salió bien, pero una foto que faltó es indistinguible de una
+  // que sí se usó si no lo decimos.
+  const [skippedImages, setSkippedImages] = useState<SkippedImage[]>([]);
   // El estado por-ítem de generación/persistencia de imágenes se lee
   // directamente del runner (`pipeline.statusOf`); no hay máquinas paralelas.
 
@@ -1678,6 +1686,10 @@ Instrucciones críticas:
         throw new Error(data?.error || 'Error al generar el cuento');
       }
 
+      // El cuento se generó; si alguna referencia quedó fuera, se avisa aparte
+      // y sin bloquear.
+      setSkippedImages(parseSkippedImages(data.skippedImages));
+
       const hasStructuredData = Array.isArray(data.scenes) && data.scenes.length > 0;
 
       const newStory: Story = {
@@ -1776,6 +1788,9 @@ Instrucciones críticas:
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
+      // El contrato manda skippedImages también en las respuestas de error:
+      // saber qué referencia quedó fuera suele explicar el fallo.
+      setSkippedImages(err instanceof InvokeError ? err.skippedImages : []);
     } finally {
       setIsGenerating(false);
     }
@@ -4081,6 +4096,37 @@ Instrucciones críticas:
         >
           <AlertCircle size={16} />
           {error}
+        </div>
+      )}
+
+      {/* Referencias que el backend descartó. Informativo, no bloqueante: la
+          generación siguió adelante sin ellas. */}
+      {skippedImages.length > 0 && (
+        <div
+          className="p-3 rounded-lg flex items-start gap-2"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="flex-1">
+            <div style={{ fontWeight: 600 }}>
+              {skippedImages.length === 1
+                ? 'Una foto de referencia no se usó'
+                : `${skippedImages.length} fotos de referencia no se usaron`}
+            </div>
+            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
+              {skippedImages.map((s) => (
+                <li key={`${s.field}:${s.code}`}>{describeSkippedImage(s)}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSkippedImages([])}
+            aria-label="Ocultar aviso"
+            style={{ color: '#92400E', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
