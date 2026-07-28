@@ -475,6 +475,50 @@ export const CORPUS: CorpusCase[] = [
     },
   },
 
+  {
+    name: "story-builder-at-the-UI-size-limit",
+    fn: "story",
+    origin: "PropInput.tsx:11 MAX_IMAGE_BYTES = 5MB, :24 maxImages = 4",
+    // The most the UI will let you attach to ONE prop: four photos of 5 MB.
+    // If the edge function refuses this, the app is offering something it
+    // cannot deliver — which is the kind of mismatch worth knowing about
+    // before it reaches a user, not after.
+    payload: {
+      context: { title: "Adviento", summary: "Esperanza", readings: [] },
+      location: "Valparaíso",
+      characters: ["Ana"],
+      style: "reflexivo",
+      additionalNotes: "",
+      props: [{
+        id: "p1",
+        kind: "location",
+        name: "Faro",
+        narrativeRole: "guía",
+        referenceImages: [
+          DATA_PNG(5_000_000),
+          DATA_PNG(5_000_000),
+          DATA_PNG(5_000_000),
+          DATA_PNG(5_000_000),
+        ],
+        role: "primary",
+      }],
+    },
+    intentional: {
+      status: 413,
+      code: "BODY_TOO_LARGE",
+      why:
+        "NOT a clean win — this records a UI/backend mismatch that predates " +
+        "FASE F and needs a frontend fix. PropInput offers 4 photos x 5 MB on " +
+        "one prop = 20 MB of image data, which is ~27 MB once base64-encoded " +
+        "into JSON. cc-cleanup accepted it, spent the CPU assembling it, and " +
+        "then handed the provider more than a single request can carry. " +
+        "Rejecting up front with a clear message is better, but the real fix " +
+        "is for the editor to stop offering a combination that cannot work: " +
+        "downscaling on upload would make this disappear entirely. Tracked in " +
+        "FASE_F_WRITEUP.md as a pre-deploy item.",
+    },
+  },
+
   // -------------------------------------------------------------------------
   // Deliberate divergences. These are the point of FASE F: cc-cleanup served
   // them, and it should not have.

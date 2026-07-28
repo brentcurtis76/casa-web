@@ -151,6 +151,12 @@
     "providerImages": 4,
     "providerCalls": 3
   },
+  "story-builder-at-the-UI-size-limit": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 4,
+    "providerCalls": 3
+  },
   "REJECT-foreign-origin": {
     "status": 200,
     "fetched": [

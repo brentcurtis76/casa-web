@@ -82,6 +82,11 @@ for (const entry of CORPUS) {
         [],
         "a rejected payload must not have been fetched at all",
       );
+      assertEquals(
+        head.providerCalls,
+        0,
+        "a rejected payload must not have reached a paid provider",
+      );
       return;
     }
 
