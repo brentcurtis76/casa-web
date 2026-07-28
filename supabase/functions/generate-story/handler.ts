@@ -651,11 +651,24 @@ export function createHandler(
           skipped.map((s) => `${s.path}=${s.code}`).join(', '),
       );
     }
+    // Reported to the client, not just the log: a photo silently missing from
+    // the analysis is indistinguishable from one that was used.
+    const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
-    /** Materialised images for a `referenceImages` array, in slot order. */
-    const takeImages = (prefix: string, count: number): MaterializedImage[] => {
+    /**
+     * Materialised images for a `referenceImages` array, in slot order.
+     *
+     * Bounded by what pass 1 could possibly have produced, NOT by a length
+     * taken from the request: `referenceImages` is client JSON, so
+     * `{"length": 1e9}` drove this loop a billion times. The base code was
+     * accidentally safe here because it called `.slice()`, which a non-array
+     * does not have.
+     */
+    const takeImages = (prefix: string, raw: unknown): MaterializedImage[] => {
+      const available = Array.isArray(raw) ? raw.length : 0;
+      const bound = Math.min(available, limits.maxImagesPerField);
       const out: MaterializedImage[] = [];
-      for (let j = 0; j < count; j++) {
+      for (let j = 0; j < bound; j++) {
         const img = sourceImages.get(`${prefix}[${j}]`);
         if (img) out.push(img);
       }
@@ -692,7 +705,7 @@ export function createHandler(
           narrativeRole: lm.narrativeRole,
           referenceImages: takeImages(
             `landmarks[${i}].referenceImages`,
-            lm.referenceImages?.length ?? 0,
+            lm.referenceImages,
           ),
           kind: 'landmark',
           config,
@@ -713,7 +726,7 @@ export function createHandler(
             narrativeRole: p.narrativeRole || '',
             referenceImages: takeImages(
               `props[${i}].referenceImages`,
-              p.referenceImages?.length ?? 0,
+              p.referenceImages,
             ),
             kind: propKind,
             config,
@@ -738,6 +751,7 @@ export function createHandler(
       return new Response(
         JSON.stringify({
           success: true,
+          skippedImages,
           promptPreview: {
             systemPrompt: SYSTEM_PROMPT,
             userPrompt: userPrompt,
@@ -881,6 +895,7 @@ export function createHandler(
     return new Response(
       JSON.stringify({
         success: true,
+        skippedImages,
         // Nuevo formato estructurado
         title: story.title,
         summary: story.summary,
@@ -912,7 +927,7 @@ export function createHandler(
     );
 
   } catch (error: unknown) {
-    console.error('[generate-story] Error:', error);
+    console.error(`[generate-story] Error: ${describeError(error)}`);
 
     return new Response(
       JSON.stringify({

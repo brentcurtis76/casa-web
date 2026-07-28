@@ -31,6 +31,7 @@ import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
 import {
   DEFAULT_IMAGE_LIMITS,
   type ImageLimits,
+  redirectErrorFixture,
 } from "../_shared/imageFetch.ts";
 import {
   AUTH_HEADER,
@@ -56,6 +57,7 @@ const TEST_LIMITS: ImageLimits = {
   maxTotalImageBytes: 5_000,
   maxImagesPerField: 4,
   maxImagesPerRequest: 24,
+  maxImageSlots: 64,
   fetchTimeoutMs: 20_000,
   fetchConcurrency: 4,
 };
@@ -170,6 +172,7 @@ Deno.test("T-F.0 production limits are the shipped values and are mutually reach
     maxTotalImageBytes: 14_000_000,
     maxImagesPerField: 4,
     maxImagesPerRequest: 64,
+    maxImageSlots: 512,
     fetchTimeoutMs: 20_000,
     fetchConcurrency: 4,
   });
@@ -479,9 +482,23 @@ Deno.test("T-F.5 a redirecting bucket URL is refused and the image is dropped", 
     assertStrictEquals(spy.calls[0].init?.redirect, "error");
     // ...and the redirected object never reached the provider.
     assertEquals(providerImages(spy.providerCalls[0]?.init).length, 0);
+    // ...and it is reported as a REDIRECT, not as a generic download failure.
+    // Status alone cannot show this: both codes are skippable, so a matcher
+    // that never fires still yields a 200 with the image dropped.
+    const body = await readJson(res);
+    const skipped = body.skippedImages as Array<{ field: string; code: string }>;
+    assertStrictEquals(
+      skipped?.find((s) => s.field === "characters[0].referenceImage")?.code,
+      "REDIRECT_REFUSED",
+      "a refused redirect must be classified as one",
+    );
   }, (url) => {
     if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
-    return Promise.reject(new TypeError("redirect not allowed"));
+    // The VERBATIM message Deno raises, exported from the module so the stub
+    // cannot drift from the runtime. The previous version invented
+    // "redirect not allowed" — a string Deno never emits — which is why a
+    // matcher that missed every real refused redirect passed this test.
+    return Promise.reject(redirectErrorFixture());
   });
 });
 
@@ -999,4 +1016,245 @@ Deno.test("T-F.13b the provider key is sent as a header, never in the URL", asyn
     const headers = new Headers(call.init?.headers);
     assertStrictEquals(headers.get("x-goog-api-key"), "test-gemini-key");
   }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// ---------------------------------------------------------------------------
+// R-* — review round 2. Base-red against 5e60e1c.
+// ---------------------------------------------------------------------------
+
+// R1 (round-2 dominant root cause). Pass 1 applied FATAL size checks to entries
+// the handler never reads. A landmark whose first two photos are the only ones
+// used could be killed by a 7 MB photo sitting at index 2 — a slot the old
+// `slice(0, 2)` never looked at.
+Deno.test("R1 an oversized photo in a slot the handler never reads is not fatal", async () => {
+  await withFetchSpy(async (spy) => {
+    const oversized = "A".repeat(TEST_LIMITS.maxImageBytes * 4);
+    const res = await createHandler(deps())(
+      post(scenePayload({
+        landmarks: [{
+          name: "Faro",
+          visualDescription: "faro rojo",
+          // Indices 0-1 are consumed; the oversized entry sits at index 2.
+          referenceImages: [PNG_B64(), PNG_B64(), oversized],
+        }],
+        scene: { text: "t", visualDescription: "v", landmarkVisible: true },
+      })),
+    );
+    assertStrictEquals(res.status, 200, "an unused slot must not fail the request");
+    assertEquals(providerImages(spy.providerCalls[0]?.init).length, 2);
+  }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// R1b — the aggregate budget was charged for unconsumed inline entries too, so
+// photos nothing reads could 413 a request whose real images fit easily.
+Deno.test("R1b unread inline photos are not charged to the aggregate budget", async () => {
+  await withFetchSpy(async (spy) => {
+    const big = PNG_B64(TEST_LIMITS.maxImageBytes - 100);
+    // Two landmarks x (2 consumed + 2 unread). The four unread entries total
+    // ~7.6 KB against a 5 KB budget; the four consumed ones total ~256 B.
+    const landmark = (name: string) => ({
+      name,
+      visualDescription: "referencia",
+      referenceImages: [PNG_B64(), PNG_B64(), big, big],
+    });
+    const res = await createHandler(deps())(
+      post(scenePayload({
+        landmarks: [landmark("Faro"), landmark("Muelle")],
+        scene: { text: "t", visualDescription: "v", landmarkVisible: true },
+      })),
+    );
+    assertStrictEquals(res.status, 200, "unread bytes must not exhaust the budget");
+    assertEquals(providerImages(spy.providerCalls[0]?.init).length, 4);
+  }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// R1c — the request ceiling counted RAW slots, so a long-lived draft that had
+// accumulated prop photos (the editor appends with no per-photo delete) was
+// rejected even though the handler would have sliced almost all of them off.
+Deno.test("R1c the request ceiling counts images actually used, not raw slots", async () => {
+  await withFetchSpy(async (spy) => {
+    // 10 props x 4 photos = 40 raw slots, well past maxImagesPerRequest (24),
+    // but only the first 2 of each are consumed (20) — and the handler's own
+    // trim then takes it to 12. Counting raw slots rejected this outright.
+    const props = Array.from({ length: 10 }, (_, i) => ({
+      name: `P${i}`,
+      visualDescription: "objeto",
+      referenceImages: [PNG_B64(), PNG_B64(), PNG_B64(), PNG_B64()],
+    }));
+    const res = await createHandler(deps())(post(scenePayload({ props })));
+    assertStrictEquals(res.status, 200, "surplus the handler slices off must not reject");
+    assert(
+      providerImages(spy.providerCalls[0]?.init).length <= 12,
+      "the handler's own 12-reference trim still applies",
+    );
+  }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// R2 — entries past the per-field cap were dropped BEFORE validation, so a
+// forbidden URL parked at index 5 of a landmark was never even looked at.
+// Provenance became position-dependent, which is exactly what T-F.9 forbids.
+Deno.test("R2 a forbidden URL past the per-field cap is still caught", async () => {
+  const body = await expectRejection(
+    scenePayload({
+      landmarks: [{
+        name: "Faro",
+        referenceImages: [
+          PNG_B64(),
+          PNG_B64(),
+          PNG_B64(),
+          PNG_B64(),
+          // Index 4: past maxImagesPerField (4). Previously dropped unchecked.
+          "https://evil.example.com/hidden.png",
+        ],
+      }],
+    }),
+    { status: 422, code: "FORBIDDEN_ORIGIN" },
+  );
+  assertStrictEquals(body.field, "landmarks[0].referenceImages[4]");
+});
+
+// R4 — a download that completed but failed the magic-byte sniff refunded its
+// whole reservation, so a run of unsniffable objects could pull several times
+// the aggregate budget off the wire. Same class as the D6b cut-off bug.
+Deno.test("R4 bytes spent on an unsniffable download are charged to the budget", async () => {
+  let wireBytes = 0;
+  await withFetchSpy(async () => {
+    // Eight objects, each just under the per-image cap, all HTML. If their
+    // bytes are refunded, all eight download; if charged, the budget stops it.
+    const characters = Array.from(
+      { length: 8 },
+      (_, i) => charWith(`${BUCKET_PREFIX}/junk${i}.png`, `C${i}`),
+    );
+    const res = await createHandler(deps())(post(scenePayload({ characters })));
+    assertStrictEquals(res.status, 200);
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
+    const junk = new TextEncoder().encode("<html>".repeat(300));
+    return Promise.resolve(
+      streamingResponse(junk, {
+        chunkSize: 128,
+        onPull: () => {
+          wireBytes += 128;
+        },
+      }),
+    );
+  });
+
+  assert(
+    wireBytes <= TEST_LIMITS.maxTotalImageBytes + 8 * 128,
+    `unsniffable downloads pulled ${wireBytes} B against a ${TEST_LIMITS.maxTotalImageBytes} B budget`,
+  );
+});
+
+// R5 — the starvation wait only triggered at EXACTLY zero remaining. A 1-byte
+// sliver passed `reserved > 0`, so the download was capped at one byte and cut
+// off, reporting a budget failure for an image that would have fitted the
+// moment a peer refunded.
+Deno.test("R5 a sliver of remaining budget does not cut off an image that fits", async () => {
+  await withFetchSpy(async (spy) => {
+    // Three 1500 B downloads against a 5000 B budget with a 2000 B per-image
+    // cap. The first two reserve 2000 each, leaving a 1000 B sliver: enough to
+    // pass "reserved > 0" and cut the third off at 1000 B, even though once
+    // the peers refund their unused 500 each there is room for it.
+    const res = await createHandler(deps())(
+      post(scenePayload({
+        characters: [
+          charWith(`${BUCKET_PREFIX}/a.png`, "Ana"),
+          charWith(`${BUCKET_PREFIX}/b.png`, "Beto"),
+          charWith(`${BUCKET_PREFIX}/c.png`, "Caro"),
+        ],
+      })),
+    );
+    assertStrictEquals(res.status, 200);
+    assertEquals(
+      providerImages(spy.providerCalls[0]?.init).length,
+      3,
+      "a download that fits once peers refund must not be cut off by a sliver",
+    );
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
+    return Promise.resolve(streamingResponse(PNG_BYTES(1_500), { chunkSize: 128 }));
+  });
+});
+
+// R6 — a refine whose sourceImage is not a string fell through with
+// `refine === undefined`, turning the request into a full regeneration and
+// silently discarding the image the user asked to refine.
+Deno.test("R6 a refine with a non-string source fails closed", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(scenePayload({ refine: { sourceImage: 12345, feedback: "más luz" } })),
+    );
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 422);
+    assertStrictEquals(body.code, "REFINE_SOURCE_UNAVAILABLE");
+    assertEquals(
+      spy.providerCalls.length,
+      0,
+      "must not regenerate from scratch behind the user's back",
+    );
+  });
+});
+
+// R7 — drafts written before 2026-01-11 stored signed characterSheetUrls.
+// Treating that URL SHAPE as forbidden made one stale sheet a fatal 422 for
+// every later generation on the story. The token is expired, so the object
+// 404s and the entry is skipped — degrade, not brick.
+Deno.test("R7 a legacy signed bucket URL degrades instead of bricking the story", async () => {
+  await withFetchSpy(async (spy) => {
+    const signed =
+      `${TEST_SUPABASE_URL}/storage/v1/object/sign/cuentacuentos-drafts/old.png?token=expired`;
+    const res = await createHandler(deps())(
+      post(scenePayload({
+        characters: [charWith(signed, "Ana"), charWith(PNG_B64(), "Beto")],
+      })),
+    );
+    assertStrictEquals(res.status, 200, "a stale signed URL must not fail generation");
+    assertEquals(
+      providerImages(spy.providerCalls[0]?.init).length,
+      1,
+      "the good reference is still used",
+    );
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
+    return Promise.resolve(new Response("expired", { status: 400 }));
+  });
+});
+
+// R8 — dropped entries were only ever console.warn'd, so no client could tell
+// a silently-missing reference from one that was used.
+Deno.test("R8 dropped entries are reported to the client, not just logged", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(scenePayload({
+        characters: [charWith(HEIC_B64(), "Ana"), charWith(PNG_B64(), "Beto")],
+      })),
+    );
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 200);
+    const skipped = body.skippedImages as Array<{ field: string; code: string }>;
+    assert(Array.isArray(skipped), "response must carry skippedImages");
+    const heic = skipped.find((s) => s.field === "characters[0].referenceImage");
+    assert(heic, `the dropped HEIC must be reported, got ${JSON.stringify(skipped)}`);
+    assertStrictEquals(heic.code, "NOT_IMAGE");
+    assertEquals(providerImages(spy.providerCalls[0]?.init).length, 1);
+  }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// R9 — an unsupported refine source was reported as REFINE_SOURCE_UNAVAILABLE,
+// sending the user to check whether an image they were looking at still
+// existed. The format is the actionable fact.
+Deno.test("R9 an unsupported refine source reports the format, not availability", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(
+      post(scenePayload({ refine: { sourceImage: HEIC_B64(), feedback: "más luz" } })),
+    );
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 422);
+    assertStrictEquals(body.code, "NOT_IMAGE");
+    assertStrictEquals(body.field, "refine.sourceImage");
+  });
 });

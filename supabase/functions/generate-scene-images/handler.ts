@@ -700,18 +700,39 @@ export function createHandler(
           skipped.map((s) => `${s.path}=${s.code}`).join(', '),
       );
     }
+    // Reported to the client, not just the log: a reference silently missing
+    // from the generation is indistinguishable from one that was used.
+    const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
     /** Base64 for a validated slot, or '' when absent or skipped. */
     const takeImage = (path: string): string => sourceImages.get(path)?.base64 ?? '';
 
     const { type, styleId, count = 2 } = requestData;
     const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
+    const rawRefine = requestData.refine;
+    const refineRequested = !!rawRefine && typeof rawRefine === 'object' &&
+      typeof rawRefine.feedback === 'string';
     const refine: Refine | undefined =
-      requestData.refine && typeof requestData.refine === 'object'
-        && typeof requestData.refine.sourceImage === 'string'
-        && typeof requestData.refine.feedback === 'string'
-        ? { sourceImage: requestData.refine.sourceImage, feedback: requestData.refine.feedback }
+      refineRequested && typeof rawRefine.sourceImage === 'string'
+        ? { sourceImage: rawRefine.sourceImage, feedback: rawRefine.feedback }
         : undefined;
+
+    // Fail closed on a refine whose source is not even a string. Falling
+    // through with `refine === undefined` turned the request into a full
+    // regeneration from scratch — silently discarding the image the user
+    // asked to refine, which is the exact failure invariant 11 forbids.
+    if (refineRequested && !refine) {
+      console.warn('[generate-scene-images] refine source is not a string — refusing');
+      return imageErrorResponse(
+        new ImageRefError(
+          'REFINE_SOURCE_UNAVAILABLE',
+          'refine.sourceImage',
+          'La imagen a refinar no está disponible.',
+        ),
+        corsHeaders,
+        { images: [], skippedImages },
+      );
+    }
 
     // Refine fail-closed (invariant 11): the editor swaps base64→URL after every
     // save, so the image to refine usually arrives as a bucket URL. If it cannot
@@ -726,13 +747,15 @@ export function createHandler(
         // told someone with an oversized cover to check its availability.
         const reason = skipped.find((s) => s.path === 'refine.sourceImage');
         if (reason && !UNAVAILABLE_CODES.has(reason.code)) {
-          const sizeErr = new ImageRefError(
+          const precise = new ImageRefError(
             reason.code,
             'refine.sourceImage',
-            'La imagen a refinar supera el tamaño permitido.',
+            reason.code === 'NOT_IMAGE'
+              ? 'El formato de la imagen a refinar no es compatible (usa PNG, JPEG o WebP).'
+              : 'La imagen a refinar supera el tamaño permitido.',
           );
           console.warn(`[generate-scene-images] refine source rejected: ${reason.code}`);
-          return imageErrorResponse(sizeErr, corsHeaders, { images: [] });
+          return imageErrorResponse(precise, corsHeaders, { images: [], skippedImages });
         }
         const err = new ImageRefError(
           'REFINE_SOURCE_UNAVAILABLE',
@@ -740,7 +763,7 @@ export function createHandler(
           'La imagen a refinar no está disponible.',
         );
         console.warn('[generate-scene-images] refine source unavailable — refusing');
-        return imageErrorResponse(err, corsHeaders, { images: [] });
+        return imageErrorResponse(err, corsHeaders, { images: [], skippedImages });
       }
       refine.sourceImage = source;
     }
@@ -1303,6 +1326,7 @@ Instrucciones críticas:
           error: errors[0],
           errors,
           images: [],
+          skippedImages,
           referenceImagesCount: referenceImages.length,
         }),
         {
@@ -1316,6 +1340,7 @@ Instrucciones críticas:
       JSON.stringify({
         success: images.length > 0,
         images,
+        skippedImages,
         validCount: images.length,
         requestedCount: count,
         model: resolveModel(modelTier, config),
@@ -1335,7 +1360,7 @@ Instrucciones críticas:
     );
 
   } catch (error: unknown) {
-    console.error('[generate-scene-images] Error:', error);
+    console.error(`[generate-scene-images] Error: ${describeError(error)}`);
 
     return new Response(
       JSON.stringify({

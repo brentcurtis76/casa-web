@@ -41,6 +41,7 @@ const TEST_LIMITS: ImageLimits = {
   maxTotalImageBytes: 5_000,
   maxImagesPerField: 4,
   maxImagesPerRequest: 24,
+  maxImageSlots: 64,
   fetchTimeoutMs: 20_000,
   fetchConcurrency: 4,
 };
@@ -559,4 +560,105 @@ Deno.test("T-F.13b-story the provider key is sent as a header, never in the URL"
       );
     }
   }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// ---------------------------------------------------------------------------
+// R-* — review round 2. Base-red against 5e60e1c.
+// ---------------------------------------------------------------------------
+
+// R3 — `takeImages` was driven by `referenceImages.length` taken straight from
+// client JSON. `{"length": 5000000}` is not an array, so the collector emitted
+// no slots and pass 1 saw nothing to reject — but the handler still spun the
+// loop five million times per entity. The base code was accidentally safe:
+// it called `.slice()`, which a non-array does not have.
+//
+// Bounded either way: at 5e60e1c this takes seconds, here it is immediate.
+Deno.test("R3 a client-controlled length cannot drive an unbounded loop", async () => {
+  await withFetchSpy(async () => {
+    const started = Date.now();
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        landmarks: [{
+          name: "Faro",
+          narrativeRole: "guía",
+          referenceImages: { length: 5_000_000 },
+        }],
+        props: [{ id: "p1", name: "Farol", referenceImages: { length: 5_000_000 } }],
+      })),
+    );
+    const elapsed = Date.now() - started;
+
+    assertStrictEquals(res.status, 200);
+    assert(
+      elapsed < 1_000,
+      `handler spent ${elapsed}ms on a fabricated length — the loop is unbounded`,
+    );
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R1-story — the aggregate budget was charged for `characters[].referenceImage`,
+// which this function never analyses. A story whose characters carry large
+// photos 413'd even though not one of those bytes would be sent anywhere.
+Deno.test("R1-story character photos this function never analyses are not charged", async () => {
+  await withFetchSpy(async (spy) => {
+    const big = PNG_B64(TEST_LIMITS.maxImageBytes - 100);
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        // Five big character photos: far over the aggregate, none analysed.
+        characters: Array.from({ length: 5 }, (_, i) => ({
+          name: `C${i}`,
+          referenceImage: big,
+        })),
+        landmarks: [{ name: "Faro", narrativeRole: "guía", referenceImages: [PNG_B64()] }],
+      })),
+    );
+    assertStrictEquals(res.status, 200, "unanalysed character photos must not exhaust the budget");
+    assertEquals(providerImages(spy.providerCalls).length, 1, "only the landmark photo is analysed");
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R8-story — dropped photos are reported to the client, not only logged.
+Deno.test("R8-story dropped photos are reported in the response", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        props: [{ id: "p1", name: "Farol", referenceImages: [HEIC_B64(), PNG_B64()] }],
+      })),
+    );
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 200);
+    const skipped = body.skippedImages as Array<{ field: string; code: string }>;
+    assert(Array.isArray(skipped), "response must carry skippedImages");
+    const heic = skipped.find((s) => s.field === "props[0].referenceImages[0]");
+    assert(heic, `the dropped HEIC must be reported, got ${JSON.stringify(skipped)}`);
+    assertStrictEquals(heic.code, "NOT_IMAGE");
+    assertEquals(providerImages(spy.providerCalls).length, 1);
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R10-story — the outer catch logged the raw thrown error. The Anthropic call
+// is the path where that error carries the request URL in its message.
+Deno.test("R10-story the outer catch redacts URLs from what it logs", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(
+        post(storyPayload({ previewPromptOnly: false })),
+      );
+      assertStrictEquals(res.status, 500);
+      await res.body?.cancel();
+    }, (url) => {
+      if (url.includes("api.anthropic.com")) {
+        // How a runtime reports a failed request: the URL is in the message.
+        return Promise.reject(
+          new TypeError(`error sending request for url (${url}): dns error`),
+        );
+      }
+      return Promise.resolve(geminiTextResponse());
+    });
+
+    const joined = lines.join("\n");
+    assert(!joined.includes("https://"), "outer catch leaked a URL");
+    assert(!joined.includes("api.anthropic.com"), "outer catch leaked the provider host");
+  });
 });

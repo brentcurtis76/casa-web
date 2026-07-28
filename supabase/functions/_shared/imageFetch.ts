@@ -72,13 +72,23 @@ export interface ImageLimits {
    */
   maxImagesPerField: number;
   /**
-   * Absolute ceiling on image entries in one request. This is a denial-of-
+   * Ceiling on the images a request will actually MATERIALISE. A denial-of-
    * service guard, deliberately far above anything the editor produces — the
    * semantic 12-reference cap is enforced by the handlers' own trim logic,
    * which knows the priority order (style ref, then props, then landmarks,
    * then characters) that this module does not. Over => 422.
+   *
+   * Counted over consumed entries only. Counting raw slots rejected requests
+   * whose surplus the handlers would have sliced off untouched — a draft that
+   * accumulated prop photos over months has plenty of entries nothing reads.
    */
   maxImagesPerRequest: number;
+  /**
+   * Hard bound on how many entries pass 1 will walk at all, consumed or not.
+   * Pass-1 work per entry is small but not free (a URL parse), so this keeps
+   * a pathological payload from turning the body cap into CPU. Over => 422.
+   */
+  maxImageSlots: number;
   /** Pass-2 fetch timeout. */
   fetchTimeoutMs: number;
   /** Concurrent pass-2 downloads. */
@@ -106,12 +116,28 @@ export const DEFAULT_IMAGE_LIMITS: ImageLimits = {
   maxTotalImageBytes: 14_000_000,
   maxImagesPerField: 4,
   maxImagesPerRequest: 64,
+  maxImageSlots: 512,
   fetchTimeoutMs: 20_000,
   fetchConcurrency: 4,
 };
 
 /** The one bucket these functions are allowed to read from. */
 export const DRAFTS_BUCKET_PATH = "/storage/v1/object/public/cuentacuentos-drafts/";
+
+/**
+ * Storage path prefixes accepted on the pinned origin. Both address the SAME
+ * bucket — origin and bucket stay pinned either way.
+ *
+ * `object/sign/` is here because drafts written before 2026-01-11 stored
+ * signed `characterSheetUrl`s. Those tokens are long expired, so the object
+ * 404s and the entry is skipped — but treating the URL shape itself as
+ * forbidden made one stale character sheet a fatal 422 for every later
+ * generation on that story, with no way for the user to clear it.
+ */
+const ACCEPTED_BUCKET_PATHS = [
+  DRAFTS_BUCKET_PATH,
+  "/storage/v1/object/sign/cuentacuentos-drafts/",
+];
 
 export type ImageRefFailureCode =
   // 413 — size
@@ -131,7 +157,9 @@ export type ImageRefFailureCode =
   | "FETCH_FAILED"
   | "FETCH_TIMEOUT"
   | "REDIRECT_REFUSED"
-  | "REFINE_SOURCE_UNAVAILABLE";
+  | "REFINE_SOURCE_UNAVAILABLE"
+  /** Dropped because the handler had no slot for it, not because it was bad. */
+  | "NOT_USED";
 
 const STATUS_BY_CODE: Record<ImageRefFailureCode, number> = {
   BODY_TOO_LARGE: 413,
@@ -150,6 +178,7 @@ const STATUS_BY_CODE: Record<ImageRefFailureCode, number> = {
   FETCH_TIMEOUT: 422,
   REDIRECT_REFUSED: 422,
   REFINE_SOURCE_UNAVAILABLE: 422,
+  NOT_USED: 422,
 };
 
 /**
@@ -162,13 +191,19 @@ const PASS1_SKIPPABLE: ReadonlySet<ImageRefFailureCode> = new Set<ImageRefFailur
   "INVALID_IMAGE_REF",
 ]);
 
-/** Pass-2 codes that mean "the object could not be produced", not "too big". */
+/**
+ * Codes meaning "the object could not be produced". Only these are worth
+ * restating as REFINE_SOURCE_UNAVAILABLE.
+ *
+ * `NOT_IMAGE` and `INVALID_IMAGE_REF` are deliberately NOT here: they say
+ * something specific and actionable about the payload ("that HEIC is not a
+ * format we can use"), and folding them into "unavailable" sent the user off
+ * to check whether their image still existed.
+ */
 export const UNAVAILABLE_CODES: ReadonlySet<ImageRefFailureCode> = new Set<ImageRefFailureCode>([
   "FETCH_FAILED",
   "FETCH_TIMEOUT",
   "REDIRECT_REFUSED",
-  "NOT_IMAGE",
-  "INVALID_IMAGE_REF",
 ]);
 
 /**
@@ -516,11 +551,31 @@ function validateBucketUrl(
   if (/%2f|%5c/i.test(url.pathname)) {
     throw new ImageRefError("FORBIDDEN_BUCKET", path, "La ruta de la imagen no es válida.");
   }
-  if (!url.pathname.startsWith(DRAFTS_BUCKET_PATH)) {
+  if (!ACCEPTED_BUCKET_PATHS.some((prefix) => url.pathname.startsWith(prefix))) {
     throw new ImageRefError("FORBIDDEN_BUCKET", path, "La imagen no está en el bucket permitido.");
   }
 
   return { kind: "url", path, consumed, url };
+}
+
+/**
+ * Provenance checks alone, for an entry the handler will not consume.
+ *
+ * A URL still has to clear every origin/bucket/scheme test — a forbidden URL
+ * must be caught wherever it hides, including in a slot nothing reads. Inline
+ * data does not: it is never fetched, never sent to a provider, and never
+ * held, so its size and its format are simply not this request's problem. The
+ * body cap already bounds it.
+ */
+function validateProvenanceOnly(
+  input: unknown,
+  path: string,
+  opts: ValidateOptions,
+): void {
+  if (typeof input !== "string" || input.length === 0) return;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(input) && !/^data:/i.test(input)) {
+    validateBucketUrl(input, path, opts, false);
+  }
 }
 
 function validateInline(
@@ -616,11 +671,13 @@ export function prevalidateImageRefs(
   slots: ImageRefSlot[],
   opts: ValidateOptions,
 ): PrevalidateResult {
-  if (slots.length > opts.limits.maxImagesPerRequest) {
+  // Bounds pass-1 work itself. Distinct from `maxImagesPerRequest`, which
+  // bounds what gets materialised.
+  if (slots.length > opts.limits.maxImageSlots) {
     throw new ImageRefError(
       "TOO_MANY_IMAGES",
       "request",
-      `La petición lleva ${slots.length} imágenes; el máximo es ${opts.limits.maxImagesPerRequest}.`,
+      `La petición lleva ${slots.length} referencias de imagen; el máximo es ${opts.limits.maxImageSlots}.`,
     );
   }
 
@@ -628,14 +685,45 @@ export function prevalidateImageRefs(
   const skipped: SkippedImage[] = [];
   const perField = new Map<string, number>();
   let inlineBytes = 0;
+  let consumedCount = 0;
 
   for (const slot of slots) {
-    // Per-field entries beyond the cap are dropped, matching the slicing the
-    // handlers already did, rather than failing the request.
     const field = fieldInstanceOf(slot.path);
     const seen = (perField.get(field) ?? 0) + 1;
     perField.set(field, seen);
-    if (seen > opts.limits.maxImagesPerField) continue;
+    const overField = seen > opts.limits.maxImagesPerField;
+
+    // An entry is "in play" only if the handler will read it AND it fits the
+    // per-field allowance. Everything else gets provenance checks and nothing
+    // more.
+    //
+    // Applying the size caps, the aggregate budget, or the request ceiling to
+    // entries nothing reads is what rejected requests cc-cleanup served: a
+    // 7 MB photo sitting at index 2 of a landmark whose first two are the only
+    // ones used, or a story request carrying character photos this function
+    // never analyses. Those bytes are never fetched, never sent, never held.
+    if (!slot.consumed || overField) {
+      try {
+        validateProvenanceOnly(slot.value, slot.path, opts);
+      } catch (err) {
+        if (err instanceof ImageRefError && PASS1_SKIPPABLE.has(err.code)) {
+          skipped.push({ path: slot.path, code: err.code });
+          continue;
+        }
+        throw err;
+      }
+      skipped.push({ path: slot.path, code: "NOT_USED" });
+      continue;
+    }
+
+    consumedCount++;
+    if (consumedCount > opts.limits.maxImagesPerRequest) {
+      throw new ImageRefError(
+        "TOO_MANY_IMAGES",
+        "request",
+        `La petición usa más de ${opts.limits.maxImagesPerRequest} imágenes.`,
+      );
+    }
 
     let ref: ValidatedImageRef;
     try {
@@ -651,7 +739,9 @@ export function prevalidateImageRefs(
     if (ref.kind === "inline") {
       inlineBytes += ref.byteLength;
       // A8a: the aggregate is enforced during pass 1, so an over-budget set of
-      // inline images is a 413 BEFORE the first URL fetch (T-F.14).
+      // inline images is a 413 BEFORE the first URL fetch (T-F.14). Only
+      // consumed entries reach here, so the budget reflects bytes the request
+      // will actually hold.
       if (inlineBytes > opts.limits.maxTotalImageBytes) {
         throw new ImageRefError(
           "IMAGE_BUDGET_EXCEEDED",
@@ -737,10 +827,14 @@ export async function fetchImageSafely(
 
   const mimeType = sniffImageMime(bytes);
   if (!mimeType) {
+    // The download completed; the bytes were spent even though they produced
+    // nothing usable. Refunding them let a run of unsniffable objects pull far
+    // more than the aggregate budget off the wire.
     throw new ImageRefError(
       "NOT_IMAGE",
       ref.path,
       "El contenido descargado no es una imagen PNG, JPEG o WebP.",
+      bytes.byteLength,
     );
   }
 
@@ -772,10 +866,21 @@ async function readCapped(
       try {
         chunk = await reader.read();
       } catch (err) {
+        // `total` is charged either way: those bytes crossed the wire.
         if (isAbortError(err)) {
-          throw new ImageRefError("FETCH_TIMEOUT", path, "La descarga de la imagen expiró.");
+          throw new ImageRefError(
+            "FETCH_TIMEOUT",
+            path,
+            "La descarga de la imagen expiró.",
+            total,
+          );
         }
-        throw new ImageRefError("FETCH_FAILED", path, "La descarga de la imagen se interrumpió.");
+        throw new ImageRefError(
+          "FETCH_FAILED",
+          path,
+          "La descarga de la imagen se interrumpió.",
+          total,
+        );
       }
       if (chunk.done) break;
       const value = chunk.value;
@@ -818,15 +923,37 @@ function isAbortError(err: unknown): boolean {
 }
 
 /**
- * Deno reports a refused redirect as a TypeError. Matching the word "redirect"
- * anywhere in the message also matched ordinary network errors on any object
- * whose own URL contains it, so the test is anchored to the phrasings a
- * runtime actually uses for a refused redirect.
+ * Deno reports a refused redirect as a TypeError. The phrasing below was
+ * CAPTURED FROM THE RUNTIME, not guessed — Deno 2.7.11 throws exactly:
+ *
+ *   TypeError: Fetch failed: Encountered redirect while redirect mode is set
+ *   to 'error'
+ *
+ * An earlier version of this function matched a set of plausible-sounding
+ * phrasings that the runtime never emits, so every real refused redirect was
+ * classified FETCH_FAILED. It went unnoticed because the test stub fabricated
+ * a message built to satisfy the regex. `redirectErrorFixture()` now exports
+ * the real string so the suite cannot drift from the runtime again.
+ *
+ * The alternatives are kept for other runtimes/versions; the anchors avoid
+ * matching an ordinary network error on an object whose own path contains
+ * "redirect".
  */
 function isRedirectError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  return /redirect (?:not allowed|count exceeded|is not allowed)|not allowed to follow|unexpected redirect/i
+  return /encountered redirect|redirect mode is set|redirect (?:not allowed|count exceeded|is not allowed)|not allowed to follow|unexpected redirect/i
     .test(err.message);
+}
+
+/**
+ * The verbatim message Deno raises for a refused redirect, captured by running
+ * `fetch(..., { redirect: 'error' })` against a 302 on Deno 2.7.11. Tests must
+ * use this rather than inventing a message that happens to match the matcher.
+ */
+export function redirectErrorFixture(): TypeError {
+  return new TypeError(
+    "Fetch failed: Encountered redirect while redirect mode is set to 'error'",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -894,7 +1021,13 @@ export async function materializeImageRefs(
       // "the budget is spent" and "the budget is spoken for" — treating the
       // second as the first starved later downloads and silently dropped
       // images that fitted comfortably.
-      while (reserved <= 0 && inFlight.size > 0) {
+      //
+      // Waiting for a FULL reservation, not merely a non-zero one: a 1-byte
+      // sliver is enough to pass `reserved > 0` and then cuts the download off
+      // at one byte, reporting a budget failure for an image that would have
+      // fitted once a peer refunded. Once nothing is in flight, whatever
+      // remains is genuinely all there is, and a cut-off there is honest.
+      while (reserved < opts.limits.maxImageBytes && inFlight.size > 0) {
         // Rejections are handled by the worker that owns them; swallow here
         // so racing on a peer cannot surface an unhandled rejection.
         await Promise.race([...inFlight].map((p) => p.catch(() => undefined)));

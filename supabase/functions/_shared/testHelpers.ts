@@ -142,6 +142,27 @@ export function spyRequest(
   return { req, json, text };
 }
 
+/**
+ * Renders one console argument the way a real log sink would.
+ *
+ * `JSON.stringify(new TypeError(...))` is `{}` — an Error's message and stack
+ * are non-enumerable. Capturing errors that way meant a handler could
+ * `console.error('...', err)` a message full of URLs and credentials and the
+ * log-hygiene assertions would see an empty object. Deno's console prints the
+ * name, the message and the stack, so that is what gets captured.
+ */
+function renderLogArg(arg: unknown): string {
+  if (typeof arg === "string") return arg;
+  if (arg instanceof Error) {
+    return `${arg.name}: ${arg.message}\n${arg.stack ?? ""}`;
+  }
+  try {
+    return JSON.stringify(arg) ?? String(arg);
+  } catch {
+    return String(arg);
+  }
+}
+
 /** Captures console output for log-hygiene assertions (T-F.13). */
 export async function withCapturedLogs<T>(
   fn: (lines: string[]) => Promise<T>,
@@ -154,9 +175,7 @@ export async function withCapturedLogs<T>(
     info: console.info,
   };
   const record = (...args: unknown[]) => {
-    lines.push(
-      args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" "),
-    );
+    lines.push(args.map(renderLogArg).join(" "));
   };
   console.log = record;
   console.warn = record;
