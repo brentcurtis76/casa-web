@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTargetSize, downscaleImage } from '../downscaleImage';
+import { computeTargetSize, downscaleImage, readReferenceImageBase64 } from '../downscaleImage';
 
 describe('computeTargetSize', () => {
   it('does not upscale an image already under the cap', () => {
@@ -98,5 +98,35 @@ describe('downscaleImage — degradación cuando no se puede decodificar', () =>
     const started = Date.now();
     await downscaleImage(makeFile(), { decodeTimeoutMs: 50 });
     expect(Date.now() - started).toBeLessThan(3000);
+  });
+});
+
+/**
+ * Los tres sitios de subida del editor guardan base64 PELADO, no un data URL:
+ * hacían `reader.result.split(',')[1]` cada uno por su cuenta. Esa forma es
+ * fácil de romper en silencio — guardar el data URL entero produce una imagen
+ * corrupta sin error visible — así que vive en un solo lugar y se prueba acá.
+ */
+describe('readReferenceImageBase64', () => {
+  const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+  const makeFile = () => new File([JPEG_BYTES], 'foto.jpg', { type: 'image/jpeg' });
+
+  it('devuelve base64 pelado, sin el prefijo data:', async () => {
+    const out = await readReferenceImageBase64(makeFile(), { decodeTimeoutMs: 50 });
+    expect(out.startsWith('data:')).toBe(false);
+    expect(out).not.toContain(',');
+  });
+
+  it('devuelve exactamente el segmento base64 del data URL', async () => {
+    const file = makeFile();
+    const dataUrl = await downscaleImage(file, { decodeTimeoutMs: 50 });
+    const out = await readReferenceImageBase64(file, { decodeTimeoutMs: 50 });
+    expect(out).toBe(dataUrl.split(',')[1]);
+  });
+
+  it('produce base64 decodificable a los bytes originales cuando no hubo reescalado', async () => {
+    const out = await readReferenceImageBase64(makeFile(), { decodeTimeoutMs: 50 });
+    const decoded = Uint8Array.from(atob(out), (c) => c.charCodeAt(0));
+    expect(Array.from(decoded)).toEqual(Array.from(JPEG_BYTES));
   });
 });

@@ -57,6 +57,7 @@ import { shouldAutoKick, type AutoKickIntent } from '@/lib/cuentacuentos/autoKic
 import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
+import { readReferenceImageBase64 } from '@/lib/cuentacuentos/downscaleImage';
 import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
@@ -5070,25 +5071,25 @@ Instrucciones críticas:
                               const input = document.createElement('input');
                               input.type = 'file';
                               input.accept = 'image/*';
-                              input.onchange = (e) => {
+                              input.onchange = async (e) => {
                                 const file = (e.target as HTMLInputElement).files?.[0];
                                 if (!file) return;
                                 if (file.size > 5 * 1024 * 1024) {
                                   alert('La imagen es muy grande. Máximo 5MB');
                                   return;
                                 }
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  const result = reader.result as string;
-                                  const base64 = result.split(',')[1];
-                                  // F6 — FileReader.onload commitea en DefaultLane
-                                  // (no-discreto): el bump del auto-persist quedaría
-                                  // diferido y el CAS de una aprobación en vuelo podría
-                                  // perder esta edición. Bumpeamos síncronamente acá.
+                                try {
+                                  const base64 = await readReferenceImageBase64(file);
+                                  // F6 — este commit cae en DefaultLane (no-discreto):
+                                  // el bump del auto-persist quedaría diferido y el CAS
+                                  // de una aprobación en vuelo podría perder esta
+                                  // edición. Bumpeamos pegado al set, en el mismo tick.
                                   bumpContentRevision();
                                   setSceneReferenceImages(prev => ({ ...prev, [scene.number]: base64 }));
-                                };
-                                reader.readAsDataURL(file);
+                                } catch {
+                                  // El archivo no se pudo leer. No tocamos el estado,
+                                  // igual que antes cuando FileReader fallaba.
+                                }
                               };
                               input.click();
                             }}
@@ -5933,23 +5934,22 @@ Instrucciones críticas:
                           const input = document.createElement('input');
                           input.type = 'file';
                           input.accept = 'image/*';
-                          input.onchange = (e) => {
+                          input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
                             if (file.size > 5 * 1024 * 1024) {
                               alert('La imagen es muy grande. Máximo 5MB');
                               return;
                             }
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                              const result = reader.result as string;
-                              const base64 = result.split(',')[1];
-                              // F6 — commit no-discreto (DefaultLane): bump síncrono
-                              // para que una aprobación en vuelo no pierda la edición.
+                            try {
+                              const base64 = await readReferenceImageBase64(file);
+                              // F6 — commit no-discreto (DefaultLane): bump pegado al
+                              // set para que una aprobación en vuelo no pierda la edición.
                               bumpContentRevision();
                               setCoverReferenceImage(base64);
-                            };
-                            reader.readAsDataURL(file);
+                            } catch {
+                              // El archivo no se pudo leer; no tocamos el estado.
+                            }
                           };
                           input.click();
                         }}
@@ -6275,23 +6275,22 @@ Instrucciones críticas:
                           const input = document.createElement('input');
                           input.type = 'file';
                           input.accept = 'image/*';
-                          input.onchange = (e) => {
+                          input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
                             if (file.size > 5 * 1024 * 1024) {
                               alert('La imagen es muy grande. Máximo 5MB');
                               return;
                             }
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                              const result = reader.result as string;
-                              const base64 = result.split(',')[1];
-                              // F6 — commit no-discreto (DefaultLane): bump síncrono
-                              // para que una aprobación en vuelo no pierda la edición.
+                            try {
+                              const base64 = await readReferenceImageBase64(file);
+                              // F6 — commit no-discreto (DefaultLane): bump pegado al
+                              // set para que una aprobación en vuelo no pierda la edición.
                               bumpContentRevision();
                               setEndReferenceImage(base64);
-                            };
-                            reader.readAsDataURL(file);
+                            } catch {
+                              // El archivo no se pudo leer; no tocamos el estado.
+                            }
                           };
                           input.click();
                         }}

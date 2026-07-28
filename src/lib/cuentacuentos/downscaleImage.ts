@@ -168,3 +168,21 @@ export async function downscaleImage(file: File, options: DownscaleOptions = {})
     return originalDataUrl;
   }
 }
+
+/**
+ * Lo que consumen los sitios de subida del editor: reduce y devuelve base64
+ * PELADO, sin el prefijo `data:...;base64,`.
+ *
+ * Ojo con la forma: estas referencias se guardan sin prefijo, y guardar el
+ * data URL entero por error produce una imagen corrupta sin ningún error
+ * visible. Por eso el recorte vive acá y no repetido en cada call site.
+ */
+export async function readReferenceImageBase64(
+  file: File,
+  options: DownscaleOptions = {},
+): Promise<string> {
+  const dataUrl = await downscaleImage(file, options);
+  const base64 = dataUrl.split(',')[1];
+  if (!base64) throw new Error('No se pudo convertir la imagen a base64.');
+  return base64;
+}
