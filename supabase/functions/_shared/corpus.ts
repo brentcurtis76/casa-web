@@ -86,12 +86,18 @@ const PNG = (size = 64) => magic([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
 const JPEG = (size = 64) => magic([0xff, 0xd8, 0xff, 0xe0], size);
 
 /**
- * Prop and landmark photos arrive as DATA URLs, not raw base64.
- * `PropInput.tsx:58` and `LandmarkInput.tsx:65` both use `readAsDataURL` and
- * never strip the prefix — unlike the character-sheet path, which does.
+ * Kept for the defensive case only — see `scene-with-data-url-reference`.
  *
- * The corpus originally sent raw base64 here, which is not what the app sends.
- * It passed, but it was testing a shape the editor never produces.
+ * CORRECTION: an earlier version of this file used these for prop and landmark
+ * photos, on the strength of `PropInput.tsx` / `LandmarkInput.tsx` using
+ * `readAsDataURL` without stripping the prefix. Those files are DEAD CODE:
+ * `cc-cleanup` deleted the whole standalone flow in `c3bdbbd` ("eliminar flujo
+ * standalone muerto"). They survive only on `main`, which is why grepping the
+ * working tree found them.
+ *
+ * The live editor is `CuentacuentoEditor.tsx`, and all three of its upload
+ * sites do `result.split(',')[1]` — i.e. RAW BASE64. That is what the corpus
+ * must send.
  */
 const DATA_PNG = (size = 64) => `data:image/png;base64,${PNG(size)}`;
 const DATA_JPEG = (size = 64) => `data:image/jpeg;base64,${JPEG(size)}`;
@@ -214,7 +220,7 @@ export const CORPUS: CorpusCase[] = [
       sceneReferenceImage: `${BUCKET}/ref.png`,
       sceneReferenceMode: "style",
       props: [
-        { id: "p1", name: "Farol", visualDescription: "farol de bronce", referenceImages: [DATA_PNG(), DATA_JPEG()] },
+        { id: "p1", name: "Farol", visualDescription: "farol de bronce", referenceImages: [PNG(), JPEG()] },
         { id: "p2", name: "Bote", visualDescription: "bote azul", referenceImages: [`${BUCKET}/bote.png`] },
       ],
       count: 4,
@@ -233,7 +239,7 @@ export const CORPUS: CorpusCase[] = [
       landmarks: [{
         name: "Faro",
         visualDescription: "faro rojo y blanco",
-        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
+        referenceImages: [PNG(), PNG(), PNG(), PNG()],
       }],
       count: 4,
     },
@@ -258,7 +264,7 @@ export const CORPUS: CorpusCase[] = [
   {
     name: "draft-with-many-prop-photos",
     fn: "scene-images",
-    origin: "handleUploadPropPhoto appends with no count limit and no delete",
+    origin: "CuentacuentoEditor.tsx handleUploadPropPhoto — appends, no count limit",
     payload: {
       type: "scene",
       styleId: "storybook",
@@ -269,7 +275,7 @@ export const CORPUS: CorpusCase[] = [
         id: `p${i}`,
         name: `Objeto ${i}`,
         visualDescription: "objeto",
-        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
+        referenceImages: [PNG(), PNG(), PNG(), PNG()],
       })),
       count: 4,
     },
@@ -290,7 +296,7 @@ export const CORPUS: CorpusCase[] = [
   {
     name: "draft-with-heic-photo",
     fn: "scene-images",
-    origin: "ImageUploadButton.tsx:23 gates on image/* only — iPhone photos arrive as HEIC",
+    origin: "CuentacuentoEditor.tsx upload sites set NO accept filter at all — any file type gets in",
     payload: {
       type: "scene",
       styleId: "storybook",
@@ -330,7 +336,7 @@ export const CORPUS: CorpusCase[] = [
         name: "Faro",
         visualDescription: "faro rojo",
         // Over the 6 MB per-image cap, at an index the handler never reads.
-        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(6_200_000)],
+        referenceImages: [PNG(), PNG(), PNG(6_200_000)],
       }],
       count: 4,
     },
@@ -445,7 +451,7 @@ export const CORPUS: CorpusCase[] = [
         kind: "prop",
         name: `Objeto ${i}`,
         narrativeRole: "apoyo",
-        referenceImages: [DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG(), DATA_PNG()],
+        referenceImages: [PNG(), PNG(), PNG(), PNG(), PNG()],
         role: "secondary",
       })),
     },
@@ -454,10 +460,11 @@ export const CORPUS: CorpusCase[] = [
   {
     name: "story-builder-with-reference-photo",
     fn: "story",
-    origin: "PropInput.tsx — the only way a reference photo reaches the STORY builder",
+    origin: "CuentacuentoEditor.tsx handleUploadPropPhoto — the only way a reference photo reaches the STORY builder",
     // The story builder receives reference images through props alone; the
-    // editor's request body sends no landmarks. Four photos is the UI's own
-    // per-prop maximum (PropInput.tsx:24 maxImages = 4).
+    // editor's request body sends no landmarks. Four photos is arbitrary —
+    // the live editor enforces NO per-prop count cap at all
+    // (`handleUploadPropPhoto` just appends), so this is a modest example.
     payload: {
       context: { title: "Adviento", summary: "Esperanza", readings: [] },
       location: "Valparaíso",
@@ -469,7 +476,7 @@ export const CORPUS: CorpusCase[] = [
         kind: "location",
         name: "Faro de Punta Ángeles",
         narrativeRole: "el faro que guía a Ana",
-        referenceImages: [DATA_PNG(), DATA_JPEG(), DATA_PNG(), DATA_JPEG()],
+        referenceImages: [PNG(), JPEG(), PNG(), JPEG()],
         role: "primary",
       }],
     },
@@ -478,8 +485,9 @@ export const CORPUS: CorpusCase[] = [
   {
     name: "story-builder-at-the-UI-size-limit",
     fn: "story",
-    origin: "PropInput.tsx:11 MAX_IMAGE_BYTES = 5MB, :24 maxImages = 4",
-    // The most the UI will let you attach to ONE prop: four photos of 5 MB.
+    origin: "CuentacuentoEditor.tsx upload sites — 5MB per file, no count cap",
+    // Four photos at the live 5 MB per-file cap. The editor sets no count
+    // limit, so this is reachable and then some.
     // If the edge function refuses this, the app is offering something it
     // cannot deliver — which is the kind of mismatch worth knowing about
     // before it reaches a user, not after.
@@ -495,10 +503,10 @@ export const CORPUS: CorpusCase[] = [
         name: "Faro",
         narrativeRole: "guía",
         referenceImages: [
-          DATA_PNG(5_000_000),
-          DATA_PNG(5_000_000),
-          DATA_PNG(5_000_000),
-          DATA_PNG(5_000_000),
+          PNG(5_000_000),
+          PNG(5_000_000),
+          PNG(5_000_000),
+          PNG(5_000_000),
         ],
         role: "primary",
       }],
