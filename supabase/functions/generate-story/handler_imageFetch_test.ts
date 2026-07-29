@@ -17,7 +17,11 @@
 import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 
 import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
-import { DEFAULT_IMAGE_LIMITS, type ImageLimits } from "../_shared/imageFetch.ts";
+import {
+  collectStoryImageRefs,
+  DEFAULT_IMAGE_LIMITS,
+  type ImageLimits,
+} from "../_shared/imageFetch.ts";
 import {
   AUTH_HEADER,
   BUCKET_PREFIX,
@@ -661,4 +665,61 @@ Deno.test("R10-story the outer catch redacts URLs from what it logs", async () =
     assert(!joined.includes("https://"), "outer catch leaked a URL");
     assert(!joined.includes("api.anthropic.com"), "outer catch leaked the provider host");
   });
+});
+
+// ---------------------------------------------------------------------------
+// PF [B1] — the consumption plan, story side
+//
+// generate-story has no request `type`: one code path analyses landmark and
+// prop photos, and nothing reads `characters[].referenceImage`. The audit that
+// found the scene collector type-blind found this side already correct, so
+// these are coverage + wiring cases, not defect cases — pinned by mutation per
+// D7 rather than claimed base-red.
+// ---------------------------------------------------------------------------
+
+/** Path -> field shape. Local by design; see the scene suite for why. */
+function fieldShapeOf(path: string): string {
+  return path.replace(/\[\d+\]/g, "[]").replace(/\[\]$/, "");
+}
+
+function consumedFields(payload: Record<string, unknown>): string[] {
+  return [
+    ...new Set(
+      collectStoryImageRefs(payload).filter((s) => s.consumed).map((s) => fieldShapeOf(s.path)),
+    ),
+  ].sort();
+}
+
+function collectedFields(payload: Record<string, unknown>): string[] {
+  return [...new Set(collectStoryImageRefs(payload).map((s) => fieldShapeOf(s.path)))].sort();
+}
+
+function everyStoryField() {
+  return storyPayload({
+    landmarks: [{ name: "Faro", referenceImages: [PNG_B64()] }],
+    props: [{ id: "p1", name: "Farol", referenceImages: [PNG_B64()] }],
+    characters: [{ name: "Ana", referenceImage: PNG_B64() }],
+  });
+}
+
+// MUTATION PROOF (D7), recorded in the report: adding
+// `{ field: "characters[].referenceImage" }` to `STORY_READ_RULES` in
+// `_shared/imageFetch.ts` fails this AND `R1-story` — the two halves of the
+// same claim, collector and handler path.
+Deno.test("PLAN-story analysis reads landmark and prop photos, never character photos", () => {
+  assertEquals(consumedFields(everyStoryField()), [
+    "landmarks[].referenceImages",
+    "props[].referenceImages",
+  ]);
+});
+
+// The boundary, story side: not consuming character photos must not mean not
+// CHECKING them. T-F.9b-story asserts the rejection; this asserts the
+// collection that makes the rejection possible.
+Deno.test("PLAN-story-2 character photos are still collected, just never consumed", () => {
+  assertEquals(collectedFields(everyStoryField()), [
+    "characters[].referenceImage",
+    "landmarks[].referenceImages",
+    "props[].referenceImages",
+  ]);
 });

@@ -23,6 +23,7 @@ import {
   DEFAULT_IMAGE_LIMITS,
   describeError,
   imageErrorResponse,
+  imageFieldOf,
   ImageRefError,
   type ImageLimits,
   type MaterializedImage,
@@ -30,6 +31,7 @@ import {
   prevalidateImageRefs,
   readBoundedJson,
   type SkippedImage,
+  storyImageReadSet,
 } from '../_shared/imageFetch.ts';
 
 export interface HandlerDeps {
@@ -655,6 +657,10 @@ export function createHandler(
     // the analysis is indistinguishable from one that was used.
     const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
+    // The SAME consumption plan pass 1 used, so `takeImages` cannot read a
+    // field the collector never marked consumed. One edit moves both.
+    const reads = storyImageReadSet(requestData);
+
     /**
      * Materialised images for a `referenceImages` array, in slot order.
      *
@@ -665,6 +671,14 @@ export function createHandler(
      * does not have.
      */
     const takeImages = (prefix: string, raw: unknown): MaterializedImage[] => {
+      const field = imageFieldOf(prefix);
+      if (!reads.has(field)) {
+        // Same fail-closed rule as the scene handler: a field this function
+        // does not declare as analysed is not fetched, so it must not be
+        // readable here either. Shape only — no values in the log.
+        console.warn('[generate-story] field not in the consumption plan; ignored', { field });
+        return [];
+      }
       const available = Array.isArray(raw) ? raw.length : 0;
       const bound = Math.min(available, limits.maxImagesPerField);
       const out: MaterializedImage[] = [];

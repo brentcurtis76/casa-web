@@ -25,13 +25,16 @@ import {
   DEFAULT_IMAGE_LIMITS,
   imageErrorResponse,
   describeError,
+  imageFieldOf,
   ImageRefError,
   type ImageLimits,
+  isRefineRequested,
   type MaterializedImage,
   materializeImageRefs,
   prevalidateImageRefs,
   readBoundedJson,
   redactUrls,
+  sceneImageReadSet,
   type SkippedImage,
   UNAVAILABLE_CODES,
 } from '../_shared/imageFetch.ts';
@@ -704,14 +707,34 @@ export function createHandler(
     // from the generation is indistinguishable from one that was used.
     const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
-    /** Base64 for a validated slot, or '' when absent or skipped. */
-    const takeImage = (path: string): string => sourceImages.get(path)?.base64 ?? '';
+    // The SAME consumption plan pass 1 used. Reading through it is what keeps
+    // the collector's `consumed` flag from being parallel bookkeeping: a field
+    // this request type does not read is not collected as consumed, not
+    // fetched, not charged — and not readable here either. Severing one entry
+    // of the plan therefore breaks the collector and this branch together,
+    // which is the only way "these two agree" is a testable claim.
+    const reads = sceneImageReadSet(requestData);
+
+    /** Base64 for a validated slot, or '' when absent, skipped, or unread. */
+    const takeImage = (path: string): string => {
+      const field = imageFieldOf(path);
+      if (!reads.has(field)) {
+        // Fail closed and say so in shape terms. Reaching this means a branch
+        // reads a field the plan does not list — a drift the plan exists to
+        // make loud rather than silently expensive.
+        console.warn(
+          `[generate-scene-images] field not in the consumption plan for this request; ignored`,
+          { field, type: typeof requestData?.type === 'string' ? requestData.type : 'unknown' },
+        );
+        return '';
+      }
+      return sourceImages.get(path)?.base64 ?? '';
+    };
 
     const { type, styleId, count = 2 } = requestData;
     const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
     const rawRefine = requestData.refine;
-    const refineRequested = !!rawRefine && typeof rawRefine === 'object' &&
-      typeof rawRefine.feedback === 'string';
+    const refineRequested = isRefineRequested(requestData);
     const refine: Refine | undefined =
       refineRequested && typeof rawRefine.sourceImage === 'string'
         ? { sourceImage: rawRefine.sourceImage, feedback: rawRefine.feedback }

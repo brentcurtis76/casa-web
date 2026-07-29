@@ -1089,15 +1089,21 @@ function asArray(value: unknown): unknown[] {
  * Pushes a present (non-empty) entry. Absent fields are not errors; a present
  * but non-string field IS collected, so pass 1 sees it rather than the old
  * code silently ignoring it.
+ *
+ * `consumed` is derived here and nowhere else: the entry's field shape has to
+ * be in `reads`, the request's read set. `withinIndex` lets an array field say
+ * "this index is past what the handler slices" without opening a second way to
+ * decide consumption.
  */
 function push(
   slots: ImageRefSlot[],
+  reads: ReadonlySet<string>,
   path: string,
   value: unknown,
-  consumed = true,
+  withinIndex = true,
 ): void {
   if (value === undefined || value === null || value === "") return;
-  slots.push({ path, value, consumed });
+  slots.push({ path, value, consumed: withinIndex && reads.has(imageFieldOf(path)) });
 }
 
 /**
@@ -1108,12 +1114,13 @@ function push(
  */
 function pushArray(
   slots: ImageRefSlot[],
+  reads: ReadonlySet<string>,
   prefix: string,
   value: unknown,
   consumedCount: number,
 ): void {
   asArray(value).forEach((img, j) => {
-    push(slots, `${prefix}[${j}]`, img, j < consumedCount);
+    push(slots, reads, `${prefix}[${j}]`, img, j < consumedCount);
   });
 }
 
@@ -1122,53 +1129,199 @@ const SCENE_REFS_CONSUMED = 2;
 /** How many entries `generate-story` sends for analysis. */
 const STORY_REFS_CONSUMED = 4;
 
+// ---------------------------------------------------------------------------
+// The consumption plan — ONE source for "will the handler read this entry?"
+// ---------------------------------------------------------------------------
+
 /**
- * Every image entry `generate-scene-images` can be asked to materialise, for
- * every request `type`. Walking all of them unconditionally is the point: a
- * forbidden entry anywhere aborts the whole request before pass 2 (T-F.9).
+ * A field *shape*: the path an entry occupies with its array indices removed.
+ * `landmarks[3].referenceImages[1]` and `landmarks[0].referenceImages[0]` are
+ * both `landmarks[].referenceImages`.
+ */
+export function imageFieldOf(path: string): string {
+  return path.replace(/\[\d+\]/g, "[]").replace(/\[\]$/, "");
+}
+
+/** Field shapes `generate-scene-images` can be handed an image in. */
+export type SceneImageField =
+  | "refine.sourceImage"
+  | "sceneReferenceImage"
+  | "referenceImage"
+  | "characters[].referenceImage"
+  | "landmarks[].referenceImages"
+  | "props[].referenceImages"
+  | "prop.referenceImages"
+  | "character.referenceImage";
+
+/** Field shapes `generate-story` can be handed an image in. */
+export type StoryImageField =
+  | "landmarks[].referenceImages"
+  | "props[].referenceImages"
+  | "characters[].referenceImage";
+
+/** The request types `generate-scene-images` dispatches on. */
+export type SceneRequestType = "scene" | "character" | "prop" | "cover" | "end";
+
+interface ReadRule<F extends string> {
+  field: F;
+  /** Extra condition the handler branch itself applies before reading. */
+  when?: (payload: Record<string, unknown>) => boolean;
+}
+
+/**
+ * What each `generate-scene-images` request type's handler branch ACTUALLY
+ * reads, transcribed from the `switch (type)` in
+ * `generate-scene-images/handler.ts`:
+ *
+ *   * `scene`   — characters (`:814`), landmarks (`:835`, only inside
+ *                 `if (scene.landmarkVisible …)` at `:829`), props (`:855`),
+ *                 `sceneReferenceImage` (`:963`).
+ *   * `cover`   — characters (`:1057`), props (`:1075`),
+ *                 `sceneReferenceImage` (`:1163`). Covers have no landmarks.
+ *   * `end`     — characters (`:1219`), top-level `referenceImage` (`:1265`).
+ *   * `prop`    — `prop.referenceImages` (`:1002`) and nothing else.
+ *   * `character` — NOTHING. The branch builds a prompt from the character's
+ *                 text description; `character.referenceImage` is never read
+ *                 by any branch, which is why it appears in no read set.
+ *
+ * This is the single source. `collectSceneImageRefs` decides `consumed` from
+ * it and the handler's `takeImage` resolves through it, so an edit here moves
+ * both — there is no second list to keep in step. Severing one entry fails a
+ * collector test AND that type's handler-path test; that is the wiring proof.
+ *
+ * It exists because marking every recognised field consumed regardless of
+ * `type` made pass 2 download objects the branch never reads and made pass 1
+ * fatally charge inline entries it never holds: a `type:"prop"` request with
+ * an oversized photo parked in `characters[0]` answered 413 where cc-cleanup
+ * answered 200.
+ */
+const SCENE_READ_RULES: Record<SceneRequestType, readonly ReadRule<SceneImageField>[]> = {
+  scene: [
+    { field: "characters[].referenceImage" },
+    {
+      field: "landmarks[].referenceImages",
+      when: (p) => !!asRecord(p.scene)?.landmarkVisible,
+    },
+    { field: "props[].referenceImages" },
+    { field: "sceneReferenceImage" },
+  ],
+  character: [],
+  prop: [
+    { field: "prop.referenceImages" },
+  ],
+  cover: [
+    { field: "characters[].referenceImage" },
+    { field: "props[].referenceImages" },
+    { field: "sceneReferenceImage" },
+  ],
+  end: [
+    { field: "characters[].referenceImage" },
+    { field: "referenceImage" },
+  ],
+};
+
+/**
+ * What `generate-story` reads. It has no request type: one code path analyses
+ * landmark and prop photos (`generate-story/handler.ts:706` and `:727`) and
+ * nothing reads `characters[].referenceImage` — the story function does not
+ * analyse character photos, so that field is validated and never consumed.
+ */
+const STORY_READ_RULES: readonly ReadRule<StoryImageField>[] = [
+  { field: "landmarks[].referenceImages" },
+  { field: "props[].referenceImages" },
+];
+
+/**
+ * Whether the handler will take the refine path. Exported because the scene
+ * handler must decide it the same way the collector does — the refine source
+ * is resolved before the type switch, for EVERY type, so it is not part of any
+ * type's rule list.
+ *
+ * Deliberately the handler's own historical test, `typeof rawRefine ===
+ * 'object'` and all: a refine without a string `feedback` never activates, so
+ * an image parked under `refine.sourceImage` in that case is read by nothing.
+ */
+export function isRefineRequested(payload: unknown): boolean {
+  const data = asRecord(payload);
+  if (!data) return false;
+  const raw = data.refine;
+  return !!raw && typeof raw === "object" &&
+    typeof (raw as Record<string, unknown>).feedback === "string";
+}
+
+/** The field shapes this `generate-scene-images` request will actually read. */
+export function sceneImageReadSet(payload: unknown): ReadonlySet<string> {
+  const data = asRecord(payload) ?? {};
+  const type = typeof data.type === "string" ? data.type : "";
+  const rules = SCENE_READ_RULES[type as SceneRequestType] ?? [];
+  const set = new Set<string>();
+  for (const rule of rules) {
+    if (!rule.when || rule.when(data)) set.add(rule.field);
+  }
+  if (isRefineRequested(data)) set.add("refine.sourceImage");
+  return set;
+}
+
+/** The field shapes this `generate-story` request will actually read. */
+export function storyImageReadSet(payload: unknown): ReadonlySet<string> {
+  const data = asRecord(payload) ?? {};
+  const set = new Set<string>();
+  for (const rule of STORY_READ_RULES) {
+    if (!rule.when || rule.when(data)) set.add(rule.field);
+  }
+  return set;
+}
+
+/**
+ * Every image entry `generate-scene-images` can be handed, for every request
+ * `type`. Walking all of them regardless of type is the point: a forbidden
+ * entry anywhere aborts the whole request before pass 2 (T-F.9), including one
+ * parked in a field this type ignores (T-F.9c). What the read set decides is
+ * only whether an entry is CHARGED and FETCHED.
  */
 export function collectSceneImageRefs(payload: unknown): ImageRefSlot[] {
   const data = asRecord(payload);
   if (!data) return [];
+  const reads = sceneImageReadSet(data);
   const slots: ImageRefSlot[] = [];
 
   const refine = asRecord(data.refine);
-  if (refine) push(slots, "refine.sourceImage", refine.sourceImage);
+  if (refine) push(slots, reads, "refine.sourceImage", refine.sourceImage);
 
-  push(slots, "sceneReferenceImage", data.sceneReferenceImage);
-  push(slots, "referenceImage", data.referenceImage);
+  push(slots, reads, "sceneReferenceImage", data.sceneReferenceImage);
+  push(slots, reads, "referenceImage", data.referenceImage);
 
   asArray(data.characters).forEach((raw, i) => {
     const c = asRecord(raw);
-    if (c) push(slots, `characters[${i}].referenceImage`, c.referenceImage);
+    if (c) push(slots, reads, `characters[${i}].referenceImage`, c.referenceImage);
   });
 
   asArray(data.landmarks).forEach((raw, i) => {
     const lm = asRecord(raw);
     if (!lm) return;
-    pushArray(slots, `landmarks[${i}].referenceImages`, lm.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, `landmarks[${i}].referenceImages`, lm.referenceImages, SCENE_REFS_CONSUMED);
   });
 
   asArray(data.props).forEach((raw, i) => {
     const p = asRecord(raw);
     if (!p) return;
-    pushArray(slots, `props[${i}].referenceImages`, p.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, `props[${i}].referenceImages`, p.referenceImages, SCENE_REFS_CONSUMED);
   });
 
   // `type: 'prop'` sends a single prop object rather than an array.
   const prop = asRecord(data.prop);
   if (prop) {
-    pushArray(slots, "prop.referenceImages", prop.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, "prop.referenceImages", prop.referenceImages, SCENE_REFS_CONSUMED);
   }
 
   const character = asRecord(data.character);
-  if (character) push(slots, "character.referenceImage", character.referenceImage);
+  if (character) push(slots, reads, "character.referenceImage", character.referenceImage);
 
   return slots;
 }
 
 /**
- * Every image entry `generate-story` can be asked to analyse.
+ * Every image entry `generate-story` can be handed.
  *
  * `characters[].referenceImage` is validated but never consumed: the story
  * function does not analyse character photos, and a forbidden URL parked there
@@ -1177,23 +1330,24 @@ export function collectSceneImageRefs(payload: unknown): ImageRefSlot[] {
 export function collectStoryImageRefs(payload: unknown): ImageRefSlot[] {
   const data = asRecord(payload);
   if (!data) return [];
+  const reads = storyImageReadSet(data);
   const slots: ImageRefSlot[] = [];
 
   asArray(data.landmarks).forEach((raw, i) => {
     const lm = asRecord(raw);
     if (!lm) return;
-    pushArray(slots, `landmarks[${i}].referenceImages`, lm.referenceImages, STORY_REFS_CONSUMED);
+    pushArray(slots, reads, `landmarks[${i}].referenceImages`, lm.referenceImages, STORY_REFS_CONSUMED);
   });
 
   asArray(data.props).forEach((raw, i) => {
     const p = asRecord(raw);
     if (!p) return;
-    pushArray(slots, `props[${i}].referenceImages`, p.referenceImages, STORY_REFS_CONSUMED);
+    pushArray(slots, reads, `props[${i}].referenceImages`, p.referenceImages, STORY_REFS_CONSUMED);
   });
 
   asArray(data.characters).forEach((raw, i) => {
     const c = asRecord(raw);
-    if (c) push(slots, `characters[${i}].referenceImage`, c.referenceImage, false);
+    if (c) push(slots, reads, `characters[${i}].referenceImage`, c.referenceImage);
   });
 
   return slots;

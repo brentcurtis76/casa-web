@@ -29,6 +29,7 @@ import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 
 import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
 import {
+  collectSceneImageRefs,
   DEFAULT_IMAGE_LIMITS,
   type ImageLimits,
   redirectErrorFixture,
@@ -1256,5 +1257,246 @@ Deno.test("R9 an unsupported refine source reports the format, not availability"
     assertStrictEquals(res.status, 422);
     assertStrictEquals(body.code, "NOT_IMAGE");
     assertStrictEquals(body.field, "refine.sourceImage");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PF [B1] — the consumption plan
+//
+// `consumed` used to be request-type-blind: the collector marked every
+// recognised field consumed no matter which branch the `switch (type)` would
+// take, so pass 2 downloaded objects the branch never reads and pass 1 fatally
+// charged inline entries it never holds. The plan in `imageFetch.ts` is now the
+// single source both the collector and the handler's `takeImage` read through.
+//
+// PLAN-* cases are collector-level; PATH-* drive the production handler. The
+// pairs matter: a wiring claim is only proven by a mutation that severs it and
+// breaks BOTH halves (D7).
+// ---------------------------------------------------------------------------
+
+/**
+ * Path -> field shape. Written out here rather than imported from the subject:
+ * a test that computes its expectations with the module's own normalizer
+ * cannot catch that normalizer being wrong, and keeping it local is also what
+ * lets these cases run against 7d32182, where it does not exist.
+ */
+function fieldShapeOf(path: string): string {
+  return path.replace(/\[\d+\]/g, "[]").replace(/\[\]$/, "");
+}
+
+/** Consumed field shapes for a payload, as the collector decides them. */
+function consumedFields(payload: Record<string, unknown>): string[] {
+  return [
+    ...new Set(
+      collectSceneImageRefs(payload)
+        .filter((s) => s.consumed)
+        .map((s) => fieldShapeOf(s.path)),
+    ),
+  ].sort();
+}
+
+/** Every field shape collected, consumed or not. */
+function collectedFields(payload: Record<string, unknown>): string[] {
+  return [...new Set(collectSceneImageRefs(payload).map((s) => fieldShapeOf(s.path)))].sort();
+}
+
+/** One image in every field shape the scene function recognises. */
+function everyField(extra: Record<string, unknown> = {}) {
+  return {
+    styleId: "storybook",
+    scene: { text: "t", visualDescription: "v" },
+    location: { name: "Valparaíso", description: "puerto" },
+    sceneReferenceImage: PNG_B64(),
+    referenceImage: PNG_B64(),
+    characters: [charWith(PNG_B64())],
+    landmarks: [{ name: "Faro", referenceImages: [PNG_B64()] }],
+    props: [{ name: "Farol", referenceImages: [PNG_B64()] }],
+    prop: { name: "Farol", kind: "prop", visualDescription: "d", referenceImages: [PNG_B64()] },
+    character: { name: "Ana", visualDescription: "d", referenceImage: PNG_B64() },
+    count: 1,
+    ...extra,
+  };
+}
+
+// BASE-RED @ 7d32182: every row failed. The collector marked all eight field
+// shapes consumed for all five types — e.g. for `type:"prop"` it reported
+// [character.referenceImage, characters[].referenceImage,
+// landmarks[].referenceImages, prop.referenceImages, props[].referenceImages,
+// referenceImage, sceneReferenceImage] where the prop branch reads one field.
+Deno.test("PLAN-1 each request type consumes exactly what its handler branch reads", () => {
+  const expected: Array<[string, Record<string, unknown>, string[]]> = [
+    ["scene (landmark not visible)", everyField({ type: "scene" }), [
+      "characters[].referenceImage",
+      "props[].referenceImages",
+      "sceneReferenceImage",
+    ]],
+    [
+      "scene (landmarkVisible)",
+      everyField({ type: "scene", scene: { text: "t", visualDescription: "v", landmarkVisible: true } }),
+      [
+        "characters[].referenceImage",
+        "landmarks[].referenceImages",
+        "props[].referenceImages",
+        "sceneReferenceImage",
+      ],
+    ],
+    ["cover", everyField({ type: "cover" }), [
+      "characters[].referenceImage",
+      "props[].referenceImages",
+      "sceneReferenceImage",
+    ]],
+    ["end", everyField({ type: "end" }), [
+      "characters[].referenceImage",
+      "referenceImage",
+    ]],
+    ["prop", everyField({ type: "prop" }), ["prop.referenceImages"]],
+    ["character (reads no image at all)", everyField({ type: "character" }), []],
+    ["an unknown type reads nothing", everyField({ type: "not-a-type" }), []],
+  ];
+
+  for (const [label, payload, fields] of expected) {
+    assertEquals(consumedFields(payload), fields, label);
+  }
+});
+
+// The invariant boundary. Narrowing consumption must NOT narrow provenance:
+// every entry is still collected and still validated, whatever its type reads.
+// Not base-red — at 7d32182 everything was consumed, so everything was
+// collected too. MUTATION PROOF instead (D7): making `collectSceneImageRefs`
+// skip fields outside the read set — the tempting form of the [B1] fix — makes
+// this fail with 8 collected shapes expected, 1 received.
+Deno.test("PLAN-2 every field is still COLLECTED whatever the type reads", () => {
+  const all = [
+    "character.referenceImage",
+    "characters[].referenceImage",
+    "landmarks[].referenceImages",
+    "prop.referenceImages",
+    "props[].referenceImages",
+    "referenceImage",
+    "sceneReferenceImage",
+  ];
+  for (const type of ["scene", "character", "prop", "cover", "end", "not-a-type"]) {
+    assertEquals(collectedFields(everyField({ type })), all, `type=${type}`);
+  }
+});
+
+// The refine source is resolved BEFORE the type switch, for every type, so it
+// belongs to no type's rule list — but only when the refine actually
+// activates. A `refine` without a string `feedback` never takes that path, so
+// nothing reads its source.
+Deno.test("PLAN-3 refine.sourceImage is consumed for any type, and only when refine activates", () => {
+  for (const type of ["scene", "character", "prop", "cover", "end"]) {
+    assertEquals(
+      consumedFields({ type, refine: { sourceImage: PNG_B64(), feedback: "más luz" } }),
+      ["refine.sourceImage"],
+      `type=${type} with an active refine`,
+    );
+    assertEquals(
+      consumedFields({ type, refine: { sourceImage: PNG_B64() } }),
+      [],
+      `type=${type} with no feedback — the handler never reads the source`,
+    );
+  }
+});
+
+// BASE-RED @ 7d32182: "an unread field must not be fetched" — 1 fetch, 0
+// expected. This is the corpus case `prop-with-irrelevant-scene-ref` at the
+// handler level, with the egress made explicit.
+Deno.test("PATH-1 type:prop does not download a bucket URL parked in an unread field", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(post({
+      type: "prop",
+      styleId: "storybook",
+      prop: { name: "Farol", kind: "prop", visualDescription: "farol de bronce" },
+      sceneReferenceImage: `${BUCKET_PREFIX}/irrelevante.png`,
+      count: 1,
+    }));
+    const body = await readJson(res);
+
+    const downloaded = spy.calls.filter((c) => !c.url.includes("generativelanguage"));
+    assertEquals(downloaded.length, 0, "an unread field must not be fetched");
+    assertStrictEquals(res.status, 200, `body=${JSON.stringify(body).slice(0, 200)}`);
+    assertStrictEquals(body.referenceImagesCount, 0);
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
+    return Promise.resolve(streamingResponse(PNG_BYTES(48)));
+  });
+});
+
+// BASE-RED @ 7d32182: "an unread inline entry must not be charged" — status
+// 413 (IMAGE_TOO_LARGE), 200 expected. The corpus case
+// `prop-with-oversized-irrelevant-character-image` at the handler level.
+Deno.test("PATH-2 type:prop is not charged for an oversized photo in an unread field", async () => {
+  await withFetchSpy(async () => {
+    const oversized = "A".repeat(TEST_LIMITS.maxImageBytes * 4);
+    const res = await createHandler(deps())(post({
+      type: "prop",
+      styleId: "storybook",
+      prop: { name: "Farol", kind: "prop", visualDescription: "farol de bronce" },
+      characters: [charWith(oversized)],
+      count: 1,
+    }));
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 200, "an unread inline entry must not be charged");
+    assertStrictEquals(body.referenceImagesCount, 0);
+  }, () => Promise.resolve(geminiImageResponse()));
+});
+
+// A3 — THE BOUNDARY. Narrowing what is CHARGED and FETCHED must not narrow
+// what is CHECKED: a forbidden origin parked in a field this type ignores
+// still fails the whole request, with zero fetches (the T-F.9 property, on the
+// request-type dimension).
+//
+// Not base-red — at 7d32182 the entry was consumed, so it was validated for a
+// different reason. MUTATION PROOF (D7): making `collectSceneImageRefs` collect
+// only fields in the read set makes this fail with status 200 / expected 422.
+Deno.test("PATH-3 a forbidden URL in a field this type ignores still aborts the request", async () => {
+  const body = await expectRejection({
+    type: "prop",
+    styleId: "storybook",
+    prop: { name: "Farol", kind: "prop", visualDescription: "farol de bronce" },
+    characters: [charWith("https://evil.example.com/x.png")],
+    count: 1,
+  }, { status: 422, code: "FORBIDDEN_ORIGIN" });
+  assertStrictEquals(body.field, "characters[0].referenceImage");
+});
+
+// A2 — THE WIRING PROOF. `SCENE_READ_RULES.cover` lists `sceneReferenceImage`;
+// this pair is what fails if that entry is severed. Collector half.
+//
+// MUTATION (recorded in the report): delete `{ field: "sceneReferenceImage" }`
+// from the `cover` rules in `_shared/imageFetch.ts`.
+Deno.test("WIRE-collector cover consumes sceneReferenceImage", () => {
+  assert(
+    consumedFields(everyField({ type: "cover" })).includes("sceneReferenceImage"),
+    "cover must consume sceneReferenceImage",
+  );
+});
+
+// A2 — the handler half of the same claim, through the production path: the
+// cover branch takes the style reference and hands it to the provider.
+Deno.test("WIRE-path cover downloads sceneReferenceImage and sends it to the provider", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(post({
+      type: "cover",
+      styleId: "storybook",
+      title: "El faro de Ana",
+      protagonist: { visualDescription: "niña de 8 años" },
+      location: { name: "Valparaíso", description: "puerto" },
+      characters: [],
+      sceneReferenceImage: `${BUCKET_PREFIX}/cover-ref.png`,
+      count: 1,
+    }));
+    const body = await readJson(res);
+
+    const downloaded = spy.calls.filter((c) => !c.url.includes("generativelanguage"));
+    assertEquals(downloaded.length, 1, "the cover style reference must be downloaded");
+    assertStrictEquals(res.status, 200);
+    assertStrictEquals(body.referenceImagesCount, 1);
+    assertEquals(providerImages(spy.providerCalls[0]?.init).length, 1);
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
+    return Promise.resolve(streamingResponse(PNG_BYTES(48)));
   });
 });
