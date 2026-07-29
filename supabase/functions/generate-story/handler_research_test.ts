@@ -13,12 +13,16 @@
 //      Spanish `warnings` entry while the story still gets written (PC3-PC5).
 //
 // BASE-RED @ c496490: the whole file. `researchModel` is not a member of
-// `HandlerDeps` there, so it fails to type-check; with that one line removed it
-// compiles and 24 of 26 cases fail on assertions (the model, the knobs and
-// every warning). Both runs are recorded verbatim in the phase report.
+// `HandlerDeps` there, so it fails to type-check (TS2353 x2); with the injected
+// field removed it compiles, and 25 of 29 cases fail on assertions — the model,
+// the knobs, and every warning. Both runs are recorded verbatim in the phase
+// report.
 //
-// D7 mutation proofs for the claims no assertion can make base-red — the
-// entrypoint wiring — are recorded in the report next to PC1b.
+// The 4 cases that pass at base assert the ABSENCE of a warning or the reuse of
+// successful text, which the old code satisfies by having no warnings at all.
+// Per D7's codified exception they are pinned by recorded mutation instead:
+// PC3a, PC4f, PC5e and PC6g each have a named mutation in the phase report.
+// The entrypoint wiring (PC1b) is pinned the same way — see the report.
 
 import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 
@@ -663,6 +667,8 @@ Deno.test("PC6f warning messages never interpolate request text", async () => {
 Deno.test("PC6g warning messages are Spanish and mention the degradation", async () => {
   const r = await run({ gemini: () => new Response("x", { status: 404 }) });
 
+  // Without this the loop below asserts nothing when there are no warnings.
+  assertStrictEquals(warningsOf(r.body).length, 2, "both research calls must have warned");
   for (const w of warningsOf(r.body)) {
     assertStrictEquals(typeof w.message, "string");
     assert(
