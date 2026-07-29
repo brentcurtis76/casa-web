@@ -25,6 +25,7 @@ function baseDeps(authz: RequirePermissionDeps): HandlerDeps {
   return {
     anthropicApiKey: "test-anthropic-key",
     googleAiApiKey: "test-gemini-key",
+    researchModel: "test-research-model",
     authzDeps: authz,
     supabaseUrl: "https://proj.supabase.co",
   };

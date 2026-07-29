@@ -54,6 +54,7 @@ function deps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
   return {
     anthropicApiKey: "test-anthropic-key",
     googleAiApiKey: "test-gemini-key",
+    researchModel: "test-research-model",
     authzDeps: makeAuthzDeps().deps,
     supabaseUrl: TEST_SUPABASE_URL,
     imageLimits: TEST_LIMITS,
@@ -87,9 +88,25 @@ async function readJson(res: Response): Promise<Record<string, unknown>> {
   return await res.json() as Record<string, unknown>;
 }
 
+/**
+ * A SUCCESSFUL Gemini research answer.
+ *
+ * `finishReason` was added in PC and is not decoration: the API always reports
+ * why a candidate stopped (its absence on `MAX_TOKENS` was filed as a provider
+ * bug, not a normal shape), and PC's result contract makes `STOP` the condition
+ * for using the text at all. Without it this stub described a response the
+ * provider does not produce, and every case below would have silently exercised
+ * the degraded path — including the log-hygiene cases whose whole subject is
+ * the provider's returned text.
+ *
+ * The missing-`finishReason` shape is not lost: it is asserted deliberately in
+ * `handler_research_test.ts` (PC3), where it belongs.
+ */
 function geminiTextResponse(): Response {
   return new Response(
-    JSON.stringify({ candidates: [{ content: { parts: [{ text: "descripción" }] } }] }),
+    JSON.stringify({
+      candidates: [{ finishReason: "STOP", content: { parts: [{ text: "descripción" }] } }],
+    }),
     { status: 200 },
   );
 }
@@ -783,11 +800,17 @@ Deno.test("T-F.13d-story location, prop names and provider text are logged as sh
     }, (url) => {
       if (url.includes("generativelanguage")) {
         // The provider quotes the request back — the analysis/research text
-        // channel.
+        // channel. `finishReason: STOP` for the same reason as
+        // `geminiTextResponse`: without it PC discards the text as a degraded
+        // answer, and this case would assert hygiene on a channel that never
+        // carried anything.
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              candidates: [{ content: { parts: [{ text: `visual: ${PLANTED_URL}` }] } }],
+              candidates: [{
+                finishReason: "STOP",
+                content: { parts: [{ text: `visual: ${PLANTED_URL}` }] },
+              }],
             }),
             { status: 200 },
           ),

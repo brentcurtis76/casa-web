@@ -33,8 +33,13 @@ function handlerFor(fn: string) {
   const authzDeps = makeAuthzDeps().deps;
   return fn === "story"
     ? createStoryHandler({
+      // PC: the story handler no longer owns its research model. Injected here
+      // for compilation only — the stub answers any Gemini URL, so every
+      // captured outcome (status/code/fetched/providerImages/providerCalls) is
+      // unchanged and no expectation moved.
       anthropicApiKey: "test-anthropic-key",
       googleAiApiKey: "test-gemini-key",
+      researchModel: "test-research-model",
       authzDeps,
       supabaseUrl: "https://proj.supabase.co",
     })
