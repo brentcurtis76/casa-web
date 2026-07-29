@@ -39,8 +39,16 @@ import {
 export interface HandlerDeps {
   /** ANTHROPIC_API_KEY. Empty/absent => the handler reports a config error. */
   anthropicApiKey: string;
-  /** GOOGLE_AI_API_KEY. Empty/absent => research and image analysis are skipped. */
+  /** GOOGLE_AI_API_KEY. Empty/absent => research and image analysis fail soft. */
   googleAiApiKey: string;
+  /**
+   * Gemini model for BOTH research calls (location research and reference-photo
+   * analysis). Required, with no fallback here on purpose: `index.ts` owns the
+   * `GEMINI_RESEARCH_MODEL` read and its default (D2), so a deployment that
+   * forgets to wire it fails to type-check rather than silently pinning a model
+   * this file used to hardcode.
+   */
+  researchModel: string;
   /** Injectable authz backend for the shared fail-closed guard. */
   authzDeps: RequirePermissionDeps;
   /** SUPABASE_URL — pins the one bucket origin image URLs may come from. */
@@ -49,14 +57,120 @@ export interface HandlerDeps {
   imageLimits?: ImageLimits;
 }
 
-/** Provider credentials threaded to the module-level helpers. */
+/** Provider credentials + model config threaded to the module-level helpers. */
 interface ProviderConfig {
   anthropicApiKey: string;
   googleAiApiKey: string;
+  researchModel: string;
 }
 
 const MODEL = 'claude-opus-4-5-20251101';
-const GEMINI_MODEL = 'gemini-2.0-flash';
+
+/**
+ * Research knobs, pinned by PLAN Phase PC. Both research calls send the same
+ * pair: enough budget for a ~300-word Spanish answer, and the cheapest thinking
+ * tier the model offers.
+ */
+const RESEARCH_THINKING_LEVEL = 'LOW';
+const RESEARCH_MAX_OUTPUT_TOKENS = 1024;
+
+/**
+ * Why research failed. Closed set: these codes reach the client inside
+ * `warnings`, so a new one is a contract change, not an implementation detail.
+ */
+export type ResearchFailureCode =
+  | 'NO_API_KEY'
+  | 'MODEL_NOT_FOUND'
+  | 'PROVIDER_HTTP_ERROR'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'EMPTY_RESPONSE'
+  | 'OUTPUT_TRUNCATED'
+  | 'OUTPUT_BLOCKED';
+
+/**
+ * The outcome of one research call.
+ *
+ * Replaces the old `Promise<string>` where `''` meant "no key", "no photos",
+ * "provider 500", "blocked" and "the model genuinely said nothing" all at once
+ * — indistinguishable to the caller and invisible to the user.
+ *
+ * `text` exists ONLY on `ok`: a truncated or blocked answer contributes
+ * nothing, rather than half a description that reads like a whole one.
+ */
+export type ResearchResult =
+  | { status: 'ok'; text: string; finishReason: 'STOP' }
+  | { status: 'skipped'; code: 'NO_IMAGES' }
+  | {
+    status: 'failed';
+    code: ResearchFailureCode;
+    httpStatus?: number;
+    finishReason?: string;
+  };
+
+/** Which research call degraded. One value per call site, not per entity kind. */
+export type WarningSource = 'location' | 'landmark' | 'prop';
+
+/** Additive, user-facing degradation report (D8: Spanish). */
+export interface ResponseWarning {
+  source: WarningSource;
+  code: ResearchFailureCode;
+  message: string;
+  httpStatus?: number;
+  finishReason?: string;
+}
+
+const WARNING_REASONS: Record<ResearchFailureCode, string> = {
+  NO_API_KEY: 'Falta la configuración del servicio de investigación visual',
+  MODEL_NOT_FOUND: 'El modelo de investigación visual no está disponible',
+  PROVIDER_HTTP_ERROR: 'El servicio de investigación visual respondió con un error',
+  PROVIDER_UNAVAILABLE: 'El servicio de investigación visual no respondió',
+  EMPTY_RESPONSE: 'El servicio de investigación visual no devolvió texto',
+  OUTPUT_TRUNCATED: 'La investigación visual quedó cortada por el límite de tokens',
+  OUTPUT_BLOCKED: 'El servicio de investigación visual no completó la respuesta',
+};
+
+const WARNING_SOURCES: Record<WarningSource, string> = {
+  location: 'la investigación del lugar',
+  landmark: 'el análisis de las fotos del lugar destacado',
+  prop: 'el análisis de las fotos de un elemento recurrente',
+};
+
+/**
+ * Builds the user-facing message from the code and the call site ONLY.
+ *
+ * Never from provider output and never from request text: the message is
+ * returned to the client and summarised in logs, so interpolating either would
+ * reopen the channels PF [B3] closed.
+ */
+function warningMessage(source: WarningSource, code: ResearchFailureCode): string {
+  return `${WARNING_REASONS[code]} en ${WARNING_SOURCES[source]}. ` +
+    'El cuento se generó sin esa información.';
+}
+
+function toWarning(source: WarningSource, result: ResearchResult): ResponseWarning | undefined {
+  if (result.status !== 'failed') return undefined;
+  return {
+    source,
+    code: result.code,
+    message: warningMessage(source, result.code),
+    ...(result.httpStatus !== undefined ? { httpStatus: result.httpStatus } : {}),
+    ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
+  };
+}
+
+/**
+ * `finishReason` is provider-controlled text that this handler both logs and
+ * echoes to the client, so it is classified by SHAPE before either: the real
+ * field is an upper-snake-case enum (`STOP`, `MAX_TOKENS`, `SAFETY`, …), and
+ * anything else — a URL, a token, a sentence — collapses to `DESCONOCIDO`.
+ *
+ * Shape rather than an enumerated allowlist so a new provider reason still
+ * reports itself instead of being flattened, per PF's log-hygiene invariant.
+ */
+function safeFinishReason(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  return /^[A-Z_]{1,40}$/.test(raw) ? raw : 'DESCONOCIDO';
+}
 
 /**
  * Un intento de reintento en 429/5xx/timeout con backoff corto (respeta Retry-After).
@@ -97,12 +211,117 @@ async function fetchWithRetry(
 }
 
 /**
+ * Extrae el texto de una respuesta de Gemini.
+ *
+ * Concatena las partes de texto y descarta las partes de "pensamiento" (que el
+ * modelo sólo devuelve con `includeThoughts`) y las que no traen texto — leer
+ * `parts[0].text` a ciegas convertía una respuesta válida cuya primera parte no
+ * es texto en un `EMPTY_RESPONSE`.
+ */
+function extractResearchText(data: unknown): string {
+  const parts = (data as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: unknown; thought?: unknown }> } }>;
+  } | null)?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .filter((p) => p?.thought !== true)
+    .map((p) => (typeof p?.text === 'string' ? p.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * Hace UNA llamada de investigación a Gemini y la clasifica.
+ *
+ * Único punto donde se decide `ok` / `failed`, para que la investigación de
+ * ubicación y el análisis de fotos no puedan divergir en su taxonomía.
+ *
+ * Precedencia (PLAN [PC3]): primero `finishReason`, después el texto. Un
+ * `MAX_TOKENS` con texto parcial es `OUTPUT_TRUNCATED` y NO aporta ese texto —
+ * media descripción se lee igual que una completa y contamina la ilustración.
+ */
+async function callGeminiResearch(params: {
+  config: ProviderConfig;
+  body: Record<string, unknown>;
+  timeoutMs: number;
+  /** Shape-only label; it reaches the retry warnings. */
+  label: string;
+}): Promise<ResearchResult> {
+  const { config, body, timeoutMs, label } = params;
+
+  let response: Response;
+  try {
+    response = await fetchWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${config.researchModel}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.googleAiApiKey },
+        body: JSON.stringify(body),
+      },
+      timeoutMs,
+      label,
+    );
+  } catch (err) {
+    // fetchWithRetry only throws once BOTH attempts failed at the transport
+    // level (network error or the 30s/45s timeout) — nothing was answered.
+    console.error(`[generate-story] ${label}: sin respuesta del proveedor: ${describeError(err)}`);
+    return { status: 'failed', code: 'PROVIDER_UNAVAILABLE' };
+  }
+
+  if (!response.ok) {
+    // Shape only: the status is a number, the body is never quoted.
+    const httpStatus = Number(response.status);
+    await response.body?.cancel();
+    const code: ResearchFailureCode = httpStatus === 404 ? 'MODEL_NOT_FOUND' : 'PROVIDER_HTTP_ERROR';
+    console.error(`[generate-story] ${label}: ${code} (HTTP ${httpStatus})`);
+    return { status: 'failed', code, httpStatus };
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch (err) {
+    // A 200 whose body is not JSON yields no text and no finish reason: there
+    // is nothing to use and nothing more precise to report.
+    console.error(`[generate-story] ${label}: respuesta ilegible: ${describeError(err)}`);
+    return { status: 'failed', code: 'EMPTY_RESPONSE' };
+  }
+
+  const finishReason = safeFinishReason(
+    (data as { candidates?: Array<{ finishReason?: unknown }> } | null)?.candidates?.[0]
+      ?.finishReason,
+  );
+  const text = extractResearchText(data);
+
+  if (finishReason === 'MAX_TOKENS') {
+    console.warn(`[generate-story] ${label}: OUTPUT_TRUNCATED (${charCount(text)} descartados)`);
+    return { status: 'failed', code: 'OUTPUT_TRUNCATED', finishReason };
+  }
+  if (finishReason !== 'STOP') {
+    console.warn(
+      `[generate-story] ${label}: OUTPUT_BLOCKED (finishReason ${finishReason ?? 'ausente'})`,
+    );
+    return { status: 'failed', code: 'OUTPUT_BLOCKED', ...(finishReason ? { finishReason } : {}) };
+  }
+  if (!text) {
+    console.warn(`[generate-story] ${label}: EMPTY_RESPONSE`);
+    return { status: 'failed', code: 'EMPTY_RESPONSE', finishReason };
+  }
+
+  console.log(`[generate-story] ${label}: ok ${charCount(text)}`);
+  return { status: 'ok', text, finishReason: 'STOP' };
+}
+
+/**
  * Investiga información visual sobre una ubicación en Chile usando Gemini
  */
-async function researchLocation(location: string, config: ProviderConfig): Promise<string> {
+async function researchLocation(
+  location: string,
+  config: ProviderConfig,
+): Promise<ResearchResult> {
   if (!config.googleAiApiKey) {
     console.log('[generate-story] No GOOGLE_AI_API_KEY, skipping location research');
-    return '';
+    return { status: 'failed', code: 'NO_API_KEY' };
   }
 
   const researchPrompt = `Necesito información visual detallada sobre "${location}" en Chile para crear ilustraciones de un cuento infantil.
@@ -117,34 +336,18 @@ Por favor proporciona:
 
 Responde en español, de forma concisa pero detallada (máximo 300 palabras). Solo información visual útil para ilustraciones.`;
 
-  try {
-    const response = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.googleAiApiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: researchPrompt }] }],
-          generationConfig: { maxOutputTokens: 500 },
-        }),
+  return await callGeminiResearch({
+    config,
+    body: {
+      contents: [{ parts: [{ text: researchPrompt }] }],
+      generationConfig: {
+        maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS,
+        thinkingConfig: { thinkingLevel: RESEARCH_THINKING_LEVEL },
       },
-      30_000,
-      'investigación de ubicación'
-    );
-
-    if (!response.ok) {
-      console.error(`[generate-story] Error researching location: ${response.status}`);
-      return '';
-    }
-
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[generate-story] Location research: ${charCount(text)}`);
-    return text;
-  } catch (err) {
-    console.error(`[generate-story] Error in location research: ${describeError(err)}`);
-    return '';
-  }
+    },
+    timeoutMs: 30_000,
+    label: 'investigación de ubicación',
+  });
 }
 
 /**
@@ -219,18 +422,27 @@ async function analyzeImagesForVisualDescription(params: {
   referenceImages: MaterializedImage[];
   kind?: 'landmark' | 'location' | 'prop';
   config: ProviderConfig;
-}): Promise<string> {
+}): Promise<ResearchResult> {
   const { name, narrativeRole, referenceImages, config } = params;
   const kind = params.kind ?? 'landmark';
 
-  if (!params.config.googleAiApiKey || !Array.isArray(referenceImages) || referenceImages.length === 0) {
-    console.log(`[generate-story] No API key or no ${kind} images (${charCount(name)}), skipping analysis`);
-    return '';
+  // Order matters. "No photos" is checked FIRST because it is not a
+  // degradation: there was never an analysis to run, so it must not raise a
+  // warning. A missing key on an entity the user gave no photos for would
+  // otherwise manufacture a failure report, and the location research already
+  // surfaces NO_API_KEY once for the whole request.
+  if (!Array.isArray(referenceImages) || referenceImages.length === 0) {
+    console.log(`[generate-story] No ${kind} images (${charCount(name)}), skipping analysis`);
+    return { status: 'skipped', code: 'NO_IMAGES' };
+  }
+  if (!config.googleAiApiKey) {
+    console.log(`[generate-story] No API key for ${kind} analysis (${charCount(name)})`);
+    return { status: 'failed', code: 'NO_API_KEY' };
   }
 
   const analysisPrompt = buildVisualAnalysisPrompt(name, narrativeRole, kind);
 
-  try {
+  {
     // Build multimodal request with images
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
     parts.push({ text: analysisPrompt });
@@ -248,34 +460,20 @@ async function analyzeImagesForVisualDescription(params: {
 
     console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images (${charCount(name)})`);
 
-    const response = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.googleAiApiKey },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { maxOutputTokens: 400 },
-        }),
+    return await callGeminiResearch({
+      config,
+      body: {
+        contents: [{ parts }],
+        generationConfig: {
+          maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS,
+          thinkingConfig: { thinkingLevel: RESEARCH_THINKING_LEVEL },
+        },
       },
-      45_000,
+      timeoutMs: 45_000,
       // Shape only: this label reaches the retry warnings, and `name` is
       // client text — the retry path was the last channel carrying it raw.
-      `análisis visual (${kind}, ${charCount(name)})`
-    );
-
-    if (!response.ok) {
-      console.error(`[generate-story] Error analyzing ${kind} (${charCount(name)}): ${response.status}`);
-      return '';
-    }
-
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[generate-story] ${kind} analysis (${charCount(name)}): ${charCount(text)}`);
-    return text;
-  } catch (err) {
-    console.error(`[generate-story] Error in ${kind} analysis (${charCount(name)}): ${describeError(err)}`);
-    return '';
+      label: `análisis visual (${kind}, ${charCount(name)})`,
+    });
   }
 }
 
@@ -593,6 +791,7 @@ export function createHandler(
   const config: ProviderConfig = {
     anthropicApiKey: deps.anthropicApiKey,
     googleAiApiKey: deps.googleAiApiKey,
+    researchModel: deps.researchModel,
   };
   const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
   // Checked once here rather than per-request after the downloads (see the
@@ -634,6 +833,12 @@ export function createHandler(
   // said "Error de Claude API: 400". PFE consumes this field, so the catch
   // adds it and changes nothing else.
   let skippedImages: Array<{ field: string; code: string }> = [];
+
+  // Same reason as `skippedImages`, one stage later: research degradation is
+  // recorded before Claude is called, and the envelope that reports it may be
+  // the outer catch's. Declared here so a provider failure AFTER research
+  // cannot silently swallow the fact that the story was written blind.
+  const warnings: ResponseWarning[] = [];
 
   try {
     // deno-lint-ignore no-explicit-any
@@ -715,7 +920,8 @@ export function createHandler(
     console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
     // Investigación de ubicación + análisis de fotos de landmarks/props en paralelo:
-    // son llamadas independientes a Gemini y ninguna lanza excepciones (devuelven '' en error).
+    // son llamadas independientes a Gemini y ninguna lanza excepciones (devuelven
+    // un resultado discriminado, nunca un throw).
     const landmarkList: Array<{ name: string; narrativeRole: string; referenceImages?: string[]; role?: string }> =
       Array.isArray(landmarks) ? landmarks : [];
     const propList: Array<{ id: string; name: string; kind?: string; narrativeRole?: string; referenceImages?: string[]; role?: string }> =
@@ -723,12 +929,12 @@ export function createHandler(
 
     console.log(`[generate-story] Investigando ubicación (${charCount(location)}) y analizando ${landmarkList.length} landmarks + ${propList.length} props en paralelo...`);
 
-    const [locationResearch, landmarkAnalyses, propAnalyses] = await Promise.all([
+    const [locationResult, landmarkResults, propResults] = await Promise.all([
       researchLocation(location, config),
       Promise.all(landmarkList.map(async (lm, i) => ({
         name: lm.name,
         narrativeRole: lm.narrativeRole,
-        visualDescription: await analyzeImagesForVisualDescription({
+        research: await analyzeImagesForVisualDescription({
           name: lm.name,
           narrativeRole: lm.narrativeRole,
           referenceImages: takeImages(
@@ -749,7 +955,7 @@ export function createHandler(
           name: p.name,
           kind: propKind,
           narrativeRole: p.narrativeRole || '',
-          visualDescription: await analyzeImagesForVisualDescription({
+          research: await analyzeImagesForVisualDescription({
             name: p.name,
             narrativeRole: p.narrativeRole || '',
             referenceImages: takeImages(
@@ -763,6 +969,48 @@ export function createHandler(
         };
       })),
     ]);
+
+    // Failed research becomes a warning; failed OR skipped research contributes
+    // empty text, so the story is still written — just without that detail.
+    // Order is call order: location, landmarks, props.
+    for (
+      const [source, results] of [
+        ['location', [locationResult]],
+        ['landmark', landmarkResults.map((l) => l.research)],
+        ['prop', propResults.map((p) => p.research)],
+      ] as Array<[WarningSource, ResearchResult[]]>
+    ) {
+      for (const result of results) {
+        const warning = toWarning(source, result);
+        if (warning) warnings.push(warning);
+      }
+    }
+
+    const locationResearch = locationResult.status === 'ok' ? locationResult.text : '';
+    const landmarkAnalyses = landmarkResults.map(({ research, ...rest }) => ({
+      ...rest,
+      visualDescription: research.status === 'ok' ? research.text : '',
+    }));
+    const propAnalyses = propResults.map(({ research, ...rest }) => ({
+      ...rest,
+      visualDescription: research.status === 'ok' ? research.text : '',
+    }));
+
+    // Shape and count only: `source` and `code` are this module's own closed
+    // enums, never provider or client text.
+    console.log(
+      `[generate-story] Investigación: ${
+        [locationResult, ...landmarkResults.map((l) => l.research), ...propResults.map((p) => p.research)]
+          .filter((r) => r.status === 'ok').length
+      } ok, ${warnings.length} con advertencia`,
+    );
+    if (warnings.length > 0) {
+      console.warn(
+        `[generate-story] investigación degradada: ${
+          warnings.map((w) => `${w.source}=${w.code}`).join(', ')
+        }`,
+      );
+    }
 
     // Si solo quieren ver el prompt, devolverlo sin generar
     if (previewPromptOnly) {
@@ -780,6 +1028,9 @@ export function createHandler(
         JSON.stringify({
           success: true,
           skippedImages,
+          // Additive, and omitted when empty: a request whose research all
+          // succeeded produces the body it produced before.
+          ...(warnings.length > 0 ? { warnings } : {}),
           promptPreview: {
             systemPrompt: SYSTEM_PROMPT,
             userPrompt: userPrompt,
@@ -924,6 +1175,8 @@ export function createHandler(
       JSON.stringify({
         success: true,
         skippedImages,
+        // Additive, and omitted when empty (see the preview envelope).
+        ...(warnings.length > 0 ? { warnings } : {}),
         // Nuevo formato estructurado
         title: story.title,
         summary: story.summary,
@@ -969,6 +1222,9 @@ export function createHandler(
         // happened before the image phase produces a body byte-identical to
         // the previous one. Existing fields, codes and semantics unchanged.
         ...(skippedImages.length > 0 ? { skippedImages } : {}),
+        // Same rule for research degradation: a failure that escalated AFTER
+        // research still reports that the story was written without it.
+        ...(warnings.length > 0 ? { warnings } : {}),
       }),
       {
         status: 500,
