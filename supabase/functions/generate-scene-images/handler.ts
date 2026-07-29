@@ -732,6 +732,16 @@ export function createHandler(
     const safeType = (value: unknown): string =>
       isSceneRequestType(value) ? value : 'desconocido';
 
+    /**
+     * The scene-reference mode for logs: the enum value, or `desconocido`.
+     * The field's domain is `'style' | 'pov'` (the only value the consumer
+     * at the scene-ref instruction checks is `'pov'`; everything else is
+     * treated as style — logging keeps that tolerance, it just stops
+     * quoting the raw value).
+     */
+    const safeMode = (value: unknown): string =>
+      value === 'style' || value === 'pov' ? value : 'desconocido';
+
     /** Base64 for a validated slot, or '' when absent, skipped, or unread. */
     const takeImage = (path: string): string => {
       const field = imageFieldOf(path);
@@ -812,13 +822,16 @@ export function createHandler(
     const effectiveCount = refine ? 1 : count;
 
     console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-    console.log(`[generate-scene-images] Type: ${safeType(type)}, Style: ${charCount(styleId)}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
+    // `Number(...)`: the coerced numeric the variation loop actually uses,
+    // never the raw request scalar. `modelTier` is already the narrowed
+    // `'pro' | 'flash'` local, not `requestData.modelTier`.
+    console.log(`[generate-scene-images] Type: ${safeType(type)}, Style: ${charCount(styleId)}, Count: ${Number(count)}, refine=${!!refine}, effectiveCount=${Number(effectiveCount)}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
 
     if (type === 'scene') {
       const { sceneReferenceMode = 'style' } = requestData;
       // Counts only: URLs, query strings, and base64 prefixes are never logged.
       console.log(
-        `[generate-scene-images] REQUEST CHECK - mode=${sceneReferenceMode}, images validated=${sourceImages.size}`,
+        `[generate-scene-images] REQUEST CHECK - mode=${safeMode(sceneReferenceMode)}, images validated=${sourceImages.size}`,
       );
     }
 
@@ -841,7 +854,7 @@ export function createHandler(
         console.log(`[generate-scene-images] Characters for this scene (from frontend): ${listShape(charactersInScene.map(c => c.name))}`);
         console.log(`[generate-scene-images] Landmarks for this scene: ${listShape(landmarksInScene.map(l => l.name))}`);
         console.log(`[generate-scene-images] Props for this scene: ${listShape(propsInScene.map(p => p.name))}`);
-        console.log(`[generate-scene-images] Landmark visible in scene: ${scene.landmarkVisible || false}`);
+        console.log(`[generate-scene-images] Landmark visible in scene: ${Boolean(scene.landmarkVisible)}`);
 
         // Index-preserving: the slot path is how a character maps to the image
         // pass 1 validated and pass 2 materialised.
@@ -931,7 +944,7 @@ export function createHandler(
             droppedSceneRef = true;
             overflow -= 1;
             console.warn(
-              `[generate-scene-images] Refine/cap pressure: dropping scene-style reference image (mode=${sceneReferenceMode}) to keep refine source in slot 0`
+              `[generate-scene-images] Refine/cap pressure: dropping scene-style reference image (mode=${safeMode(sceneReferenceMode)}) to keep refine source in slot 0`
             );
           }
 
@@ -1007,7 +1020,7 @@ export function createHandler(
               : 'SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere';
             referenceImages.unshift(processedSceneRef);
             characterDescriptions.unshift(sceneRefInstruction);
-            console.log(`[generate-scene-images] Scene reference image added successfully (mode: ${sceneReferenceMode})! Total refs now: ${referenceImages.length}`);
+            console.log(`[generate-scene-images] Scene reference image added successfully (mode: ${safeMode(sceneReferenceMode)})! Total refs now: ${referenceImages.length}`);
           } else {
             console.log(`[generate-scene-images] Scene reference image processing FAILED`);
           }
@@ -1325,7 +1338,7 @@ Instrucciones críticas:
     }
 
     console.log(`[generate-scene-images] Prompt (${safeType(type)}): ${charCount(prompt)}`);
-    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`);
+    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${Number(effectiveCount)})`);
 
     const promises = [];
     for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
@@ -1350,7 +1363,7 @@ Instrucciones críticas:
       }
     });
 
-    console.log(`[generate-scene-images] ${images.length}/${count} imágenes válidas generadas`);
+    console.log(`[generate-scene-images] ${images.length}/${Number(count)} imágenes válidas generadas`);
     if (errors.length > 0) {
       // Redacted: provider errors quote the request URL. The unredacted text
       // still goes to the client in the JSON body, which is not a log sink.

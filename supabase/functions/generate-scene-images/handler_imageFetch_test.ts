@@ -1846,6 +1846,128 @@ Deno.test("T-F.13f the variation error summary is a shape, not the provider text
 });
 
 // ---------------------------------------------------------------------------
+// PF [B3-R] — the request SCALARS are a user-text channel too
+//
+// T-F.13c/d plant the secret in fields that read as prose — narrative, names,
+// descriptions, feedback — and the [B3] rewrite shaped exactly those. It left
+// the fields whose NAME implies a small closed value: a mode, a flag, a count,
+// a tier. Nothing validates them before they are interpolated, so a request
+// that is otherwise perfectly ordinary can put a signed URL in `mode=` and get
+// an HTTP 200 back. "It is called a boolean" is not a type check.
+//
+// Each scalar gets its own capture: a combined payload would let one shaped
+// field mask another still-raw one, and the base-red record has to say per
+// scalar whether it leaked.
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ 0066c0f: "log leaked the signed token" — the line was
+// `[generate-scene-images] REQUEST CHECK -
+// mode=https://secret.example/photo.png?token=SIGNEDTOKEN123, images validated=1`.
+Deno.test("T-F.13g sceneReferenceMode never reaches the log", async () => {
+  // Both mode sites on the happy path: the REQUEST CHECK line and the
+  // "scene reference image added" line, which needs the image to survive.
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        sceneReferenceImage: PNG_B64(),
+        sceneReferenceMode: PLANTED_URL,
+      })));
+      assertStrictEquals(res.status, 200);
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+
+  // The third site is the cap-pressure warning, which only fires when the
+  // scene reference is the image being dropped: 12 character refs + the scene
+  // ref is one over HARD_CAP, and the scene ref is trimmed first.
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        characters: Array.from({ length: 12 }, (_, i) => charWith(PNG_B64(), `P${i}`)),
+        sceneReferenceImage: PNG_B64(),
+        sceneReferenceMode: PLANTED_URL,
+      })));
+      assertStrictEquals(res.status, 200);
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(
+      lines.some((l) => l.includes("cap pressure")),
+      "the cap-pressure warning must actually have fired",
+    );
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// BASE-RED @ 0066c0f: "log leaked the signed token" — the line was
+// `[generate-scene-images] Landmark visible in scene:
+// https://secret.example/photo.png?token=SIGNEDTOKEN123`. `|| false` only
+// replaces a FALSY value, so every truthy string passes through verbatim.
+Deno.test("T-F.13g scene.landmarkVisible never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        scene: {
+          text: "Ana camina por el puerto.",
+          visualDescription: "puerto",
+          landmarkVisible: PLANTED_URL,
+        },
+      })));
+      assertStrictEquals(res.status, 200);
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// BASE-RED @ 0066c0f: "log leaked the signed token" — `count` reached the log
+// three times on one request: `Count: <URL>`, `effectiveCount=<URL>` (which is
+// `count` itself outside refine mode), and `0/<URL> imágenes válidas`.
+Deno.test("T-F.13g count never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        count: PLANTED_URL,
+      })));
+      // Semantics unchanged and deliberately un-touched by this round: a
+      // non-numeric count makes the variation loop run zero times, and the
+      // handler still answers 200 with an empty image list.
+      assertStrictEquals(res.status, 200);
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// NOT base-red — `modelTier` is narrowed to the `'pro' | 'flash'` union at the
+// top of the handler, so the log site already sees a server-side value, and
+// `resolveModel` only ever returns configured model names. Planted anyway, so
+// that a future refactor which logs `requestData.modelTier` directly, or widens
+// the tier, fails here instead of in production. MUTATION PROOF (D7), recorded
+// in the report: logging `requestData.modelTier` at that site turns this red.
+Deno.test("T-F.13g modelTier never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        modelTier: PLANTED_URL,
+      })));
+      assertStrictEquals(res.status, 200);
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // PF [B4] — scene-side symmetry
 //
 // The review asked whether the scene error envelope had the same hole. It did:
