@@ -17,7 +17,10 @@ import {
   type RequirePermissionDeps,
 } from "../_shared/liturgyAuth.ts";
 
-const MODEL = "claude-sonnet-4-20250514";
+// claude-sonnet-5 replaces claude-sonnet-4-20250514, whose published
+// retirement date (2026-06-15) has passed; retired model IDs 404.
+// Use the bare alias — never a date-suffixed variant.
+const MODEL = "claude-sonnet-5";
 
 // Límite de tamaño: 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -110,7 +113,12 @@ export function createHandler(
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 8192,
+          // Sonnet 5 thinks by default when `thinking` is omitted, and
+          // max_tokens caps thinking + response together. This is mechanical
+          // extraction, so thinking is off and the ceiling is raised to fit a
+          // full transcript under Sonnet 5's more token-hungry tokenizer.
+          thinking: { type: "disabled" },
+          max_tokens: 16000,
           system: SYSTEM_PROMPT,
           messages: [
             {
