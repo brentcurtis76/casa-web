@@ -442,39 +442,37 @@ async function analyzeImagesForVisualDescription(params: {
 
   const analysisPrompt = buildVisualAnalysisPrompt(name, narrativeRole, kind);
 
-  {
-    // Build multimodal request with images
-    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
-    parts.push({ text: analysisPrompt });
+  // Build multimodal request with images
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+  parts.push({ text: analysisPrompt });
 
-    // No parsing here any more: pass 1 stripped any data-URL wrapper and the
-    // MIME type comes from the content's magic bytes, not from a client claim.
-    for (const img of referenceImages.slice(0, 4)) {
-      parts.push({
-        inlineData: {
-          mimeType: img.mimeType,
-          data: img.base64,
-        },
-      });
-    }
-
-    console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images (${charCount(name)})`);
-
-    return await callGeminiResearch({
-      config,
-      body: {
-        contents: [{ parts }],
-        generationConfig: {
-          maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS,
-          thinkingConfig: { thinkingLevel: RESEARCH_THINKING_LEVEL },
-        },
+  // No parsing here any more: pass 1 stripped any data-URL wrapper and the
+  // MIME type comes from the content's magic bytes, not from a client claim.
+  for (const img of referenceImages.slice(0, 4)) {
+    parts.push({
+      inlineData: {
+        mimeType: img.mimeType,
+        data: img.base64,
       },
-      timeoutMs: 45_000,
-      // Shape only: this label reaches the retry warnings, and `name` is
-      // client text — the retry path was the last channel carrying it raw.
-      label: `análisis visual (${kind}, ${charCount(name)})`,
     });
   }
+
+  console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images (${charCount(name)})`);
+
+  return await callGeminiResearch({
+    config,
+    body: {
+      contents: [{ parts }],
+      generationConfig: {
+        maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS,
+        thinkingConfig: { thinkingLevel: RESEARCH_THINKING_LEVEL },
+      },
+    },
+    timeoutMs: 45_000,
+    // Shape only: this label reaches the retry warnings, and `name` is
+    // client text — the retry path was the last channel carrying it raw.
+    label: `análisis visual (${kind}, ${charCount(name)})`,
+  });
 }
 
 // Nombres prohibidos - niños de la comunidad CASA
