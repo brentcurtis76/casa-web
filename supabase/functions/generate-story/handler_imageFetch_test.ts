@@ -723,3 +723,134 @@ Deno.test("PLAN-story-2 character photos are still collected, just never consume
     "props[].referenceImages",
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// PF [B3] — the text channels, story side
+//
+// T-F.13-story covered the image and provider-URL paths. `context.title`, the
+// location, prop names, the provider's research/analysis text, the Anthropic
+// error body and the raw fallback text were all logged verbatim.
+// ---------------------------------------------------------------------------
+
+const PLANTED_URL = "https://secret.example/photo.png?token=SIGNEDTOKEN123";
+
+function assertNoPlantedSecret(lines: string[]) {
+  const joined = lines.join("\n");
+  assert(!joined.includes("SIGNEDTOKEN123"), "log leaked the signed token");
+  assert(!joined.includes(PLANTED_URL), "log leaked the planted URL");
+  assert(!joined.includes("secret.example"), "log leaked the planted host");
+  assert(!joined.includes("https://"), "log leaked a URL");
+  assert(!joined.includes("?token="), "log leaked a query string");
+}
+
+// BASE-RED @ 7d32182: "log leaked the signed token" — the line was
+// `[generate-story] Generando cuento para:
+// "https://secret.example/photo.png?token=SIGNEDTOKEN123"`.
+Deno.test("T-F.13c-story a URL planted in context.title never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(storyPayload({
+        context: { title: PLANTED_URL, summary: "Esperanza", readings: [] },
+      })));
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiTextResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The other text channels of this handler: location (logged twice and used as
+// a retry label), prop names (analysis logs + retry label), and the provider's
+// own research/analysis text.
+Deno.test("T-F.13d-story location, prop names and provider text are logged as shapes", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(storyPayload({
+        // The default payload stops at `previewPromptOnly`; the Anthropic leg
+        // has to run for the story-generation logs to exist at all.
+        previewPromptOnly: false,
+        location: PLANTED_URL,
+        props: [{
+          id: "p1",
+          kind: "prop",
+          name: PLANTED_URL,
+          narrativeRole: PLANTED_URL,
+          referenceImages: [PNG_B64()],
+        }],
+      })));
+      await res.body?.cancel();
+    }, (url) => {
+      if (url.includes("generativelanguage")) {
+        // The provider quotes the request back — the analysis/research text
+        // channel.
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              candidates: [{ content: { parts: [{ text: `visual: ${PLANTED_URL}` }] } }],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                title: "El faro",
+                summary: "s",
+                characters: [{ name: "Ana", description: "d", visualDescription: "v" }],
+                scenes: [{ number: 1, text: "t", visualDescription: "v" }],
+                spiritualConnection: "c",
+              }),
+            }],
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The Anthropic error body and the raw-text fallback path — `Error de API:`
+// logged the body, and `No se encontró JSON en:` logged 500 characters of it.
+Deno.test("T-F.13e-story the Anthropic error body and fallback text are shapes", async () => {
+  for (
+    const [label, anthropic] of [
+      ["error body", new Response(`rejected: ${PLANTED_URL}`, { status: 400 })],
+      [
+        "unparseable fallback text",
+        new Response(
+          JSON.stringify({ content: [{ type: "text", text: `sorry — ${PLANTED_URL}` }] }),
+          { status: 200 },
+        ),
+      ],
+    ] as Array<[string, Response]>
+  ) {
+    await withCapturedLogs(async (lines) => {
+      await withFetchSpy(async () => {
+        const res = await createHandler(deps())(
+          // `previewPromptOnly` (the default) returns before Anthropic is
+          // called at all — without this the case asserts on logs that were
+          // never written.
+          post(storyPayload({ previewPromptOnly: false })),
+        );
+        await res.body?.cancel();
+      }, (url) =>
+        Promise.resolve(
+          url.includes("generativelanguage") ? geminiTextResponse() : anthropic.clone(),
+        ));
+
+      assert(
+        lines.some((l) => l.includes("[generate-story]") && !l.includes("Investigando")),
+        `${label}: the Anthropic leg must have run and logged`,
+      );
+      assertNoPlantedSecret(lines);
+    });
+  }
+});

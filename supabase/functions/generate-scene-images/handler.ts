@@ -21,6 +21,8 @@ import {
   type RequirePermissionDeps,
 } from '../_shared/liturgyAuth.ts';
 import {
+  bodyShape,
+  charCount,
   collectSceneImageRefs,
   DEFAULT_IMAGE_LIMITS,
   imageErrorResponse,
@@ -29,11 +31,11 @@ import {
   ImageRefError,
   type ImageLimits,
   isRefineRequested,
+  listShape,
   type MaterializedImage,
   materializeImageRefs,
   prevalidateImageRefs,
   readBoundedJson,
-  redactUrls,
   sceneImageReadSet,
   type SkippedImage,
   UNAVAILABLE_CODES,
@@ -564,7 +566,7 @@ ${prompt}`;
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[generate-scene-images] API Error (${response.status}):`, errorText);
+      console.error(`[generate-scene-images] API Error (${response.status}): ${bodyShape(errorText)}`);
       throw new Error(`Gemini API error: ${response.status} - ${errorText.slice(0, 200)}`);
     }
 
@@ -574,12 +576,12 @@ ${prompt}`;
     console.log(`[generate-scene-images] API response keys:`, Object.keys(data).join(', '));
 
     if (data.error) {
-      console.error(`[generate-scene-images] API returned error:`, JSON.stringify(data.error));
+      console.error(`[generate-scene-images] API returned error: ${bodyShape(JSON.stringify(data.error))}`);
       throw new Error(`Gemini error: ${data.error.message || JSON.stringify(data.error)}`);
     }
 
     if (data.promptFeedback?.blockReason) {
-      console.error(`[generate-scene-images] Content blocked:`, data.promptFeedback.blockReason);
+      console.error(`[generate-scene-images] Content blocked: ${charCount(data.promptFeedback.blockReason)}`);
       throw new Error(`Content blocked by Gemini: ${data.promptFeedback.blockReason}`);
     }
 
@@ -595,7 +597,7 @@ ${prompt}`;
             console.log(`[generate-scene-images] Invalid base64 format`);
           }
         } else if (part.text) {
-          console.log(`[generate-scene-images] Found text part: ${part.text.slice(0, 200)}`);
+          console.log(`[generate-scene-images] Found text part: ${charCount(part.text)}`);
         }
       }
     } else {
@@ -798,7 +800,7 @@ export function createHandler(
     const effectiveCount = refine ? 1 : count;
 
     console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-    console.log(`[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
+    console.log(`[generate-scene-images] Type: ${charCount(type)}, Style: ${charCount(styleId)}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
 
     if (type === 'scene') {
       const { sceneReferenceMode = 'style' } = requestData;
@@ -823,10 +825,10 @@ export function createHandler(
         const landmarksInScene: Landmark[] = landmarks || [];
         const propsInScene: Prop[] = props || [];
 
-        console.log(`[generate-scene-images] Scene text: "${scene.text.slice(0, 100)}..."`);
-        console.log(`[generate-scene-images] Characters for this scene (from frontend): ${charactersInScene.map(c => c.name).join(', ') || 'none'}`);
-        console.log(`[generate-scene-images] Landmarks for this scene: ${landmarksInScene.map(l => l.name).join(', ') || 'none'}`);
-        console.log(`[generate-scene-images] Props for this scene: ${propsInScene.map(p => p.name).join(', ') || 'none'}`);
+        console.log(`[generate-scene-images] Scene text: ${charCount(scene.text)}`);
+        console.log(`[generate-scene-images] Characters for this scene (from frontend): ${listShape(charactersInScene.map(c => c.name))}`);
+        console.log(`[generate-scene-images] Landmarks for this scene: ${listShape(landmarksInScene.map(l => l.name))}`);
+        console.log(`[generate-scene-images] Props for this scene: ${listShape(propsInScene.map(p => p.name))}`);
         console.log(`[generate-scene-images] Landmark visible in scene: ${scene.landmarkVisible || false}`);
 
         // Index-preserving: the slot path is how a character maps to the image
@@ -846,7 +848,7 @@ export function createHandler(
         characterDescriptions = validResults.map(r => r.description);
 
         console.log(`[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
-        console.log(`[generate-scene-images] Character descriptions: ${characterDescriptions.join(' | ') || 'none'}`);
+        console.log(`[generate-scene-images] Character descriptions: ${listShape(characterDescriptions)}`);
 
         const landmarkRefImages: string[] = [];
         const landmarkRefDescriptions: string[] = [];
@@ -855,14 +857,14 @@ export function createHandler(
         if (scene.landmarkVisible && landmarksInScene.length > 0) {
           for (const [lmIndex, lm] of landmarksInScene.entries()) {
             if (lm.referenceImages && lm.referenceImages.length > 0) {
-              console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for "${lm.name}"`);
+              console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for landmark ${lmIndex} (${charCount(lm.name)})`);
               // Cap at 2 reference images per landmark
               for (let j = 0; j < Math.min(lm.referenceImages.length, 2); j++) {
                 const processedLandmarkRef = takeImage(`landmarks[${lmIndex}].referenceImages[${j}]`);
                 if (processedLandmarkRef) {
                   landmarkRefImages.push(processedLandmarkRef);
                   landmarkRefDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
-                  console.log(`[generate-scene-images] Landmark ref image for "${lm.name}" added.`);
+                  console.log(`[generate-scene-images] Landmark ref image for landmark ${lmIndex} added.`);
                 }
               }
             }
@@ -875,14 +877,14 @@ export function createHandler(
         if (propsInScene.length > 0) {
           for (const [prIndex, pr] of propsInScene.entries()) {
             if (pr.referenceImages && pr.referenceImages.length > 0) {
-              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for "${pr.name}"`);
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for prop ${prIndex} (${charCount(pr.name)})`);
               // Cap at 2 reference images per prop
               for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
                 const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
                 if (processedPropRef) {
                   propRefImages.push(processedPropRef);
                   propRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
-                  console.log(`[generate-scene-images] Prop ref image for "${pr.name}" added.`);
+                  console.log(`[generate-scene-images] Prop ref image for prop ${prIndex} added.`);
                 }
               }
             }
@@ -949,17 +951,17 @@ export function createHandler(
 
           if (droppedPropNames.length > 0) {
             console.warn(
-              `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedPropNames.join(', ')}`
+              `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedPropNames)}`
             );
           }
           if (droppedLandmarkNames.length > 0) {
             console.warn(
-              `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${droppedLandmarkNames.join(', ')}`
+              `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedLandmarkNames)}`
             );
           }
           if (droppedCharacterNames.length > 0) {
             console.warn(
-              `[generate-scene-images] Trimmed character reference image(s) (refine mode) to stay under ${MAX_PROCESSED}-image cap: ${droppedCharacterNames.join(', ')}`
+              `[generate-scene-images] Trimmed character reference image(s) (refine mode) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedCharacterNames)}`
             );
           }
 
@@ -1096,13 +1098,13 @@ Instrucciones críticas:
         if (propsInCover.length > 0) {
           for (const [prIndex, pr] of propsInCover.entries()) {
             if (pr.referenceImages && pr.referenceImages.length > 0) {
-              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for "${pr.name}"`);
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for prop ${prIndex} (${charCount(pr.name)})`);
               for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
                 const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
                 if (processedPropRef) {
                   coverPropRefImages.push(processedPropRef);
                   coverPropRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
-                  console.log(`[generate-scene-images] Cover prop ref image for "${pr.name}" added.`);
+                  console.log(`[generate-scene-images] Cover prop ref image for prop ${prIndex} added.`);
                 }
               }
             }
@@ -1155,12 +1157,12 @@ Instrucciones críticas:
 
           if (coverDroppedPropNames.length > 0) {
             console.warn(
-              `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${coverDroppedPropNames.join(', ')}`
+              `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${listShape(coverDroppedPropNames)}`
             );
           }
           if (coverDroppedCharacterNames.length > 0) {
             console.warn(
-              `[generate-scene-images] Trimmed cover character reference image(s) (refine mode) to stay under ${COVER_MAX_PROCESSED}-image cap: ${coverDroppedCharacterNames.join(', ')}`
+              `[generate-scene-images] Trimmed cover character reference image(s) (refine mode) to stay under ${COVER_MAX_PROCESSED}-image cap: ${listShape(coverDroppedCharacterNames)}`
             );
           }
 
@@ -1264,7 +1266,7 @@ Instrucciones críticas:
             endCharRefImages = endCharRefImages.slice(0, END_MAX_PROCESSED);
             endCharRefDescriptions = endCharRefDescriptions.slice(0, END_MAX_PROCESSED);
             console.warn(
-              `[generate-scene-images] Trimmed end character reference image(s) to stay under ${END_MAX_PROCESSED}-image cap: ${droppedNames.join(', ')}`,
+              `[generate-scene-images] Trimmed end character reference image(s) to stay under ${END_MAX_PROCESSED}-image cap: ${listShape(droppedNames)}`,
               {
                 initialTotal,
                 finalCount: endCharRefImages.length,
@@ -1310,7 +1312,7 @@ Instrucciones críticas:
       prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', () => refine.feedback)}`;
     }
 
-    console.log(`[generate-scene-images] Prompt (${type}):`, prompt.slice(0, 300) + '...');
+    console.log(`[generate-scene-images] Prompt (${type}): ${charCount(prompt)}`);
     console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`);
 
     const promises = [];
@@ -1340,7 +1342,7 @@ Instrucciones críticas:
     if (errors.length > 0) {
       // Redacted: provider errors quote the request URL. The unredacted text
       // still goes to the client in the JSON body, which is not a log sink.
-      console.log(`[generate-scene-images] Errors: ${errors.map(redactUrls).join(' | ')}`);
+      console.log(`[generate-scene-images] Errors: ${listShape(errors)}`);
     }
 
     if (images.length === 0 && errors.length > 0) {

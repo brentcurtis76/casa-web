@@ -1691,3 +1691,139 @@ Deno.test("BOUND-2 the consumed-image ceiling accepts exactly-at and rejects one
     assertStrictEquals(body.code, "TOO_MANY_IMAGES");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PF [B3] — the log-hygiene invariant covers the TEXT channels too
+//
+// T-F.13 pinned the image and error paths. It missed the ones that carry
+// ordinary user text: the prompt (which embeds `visualDescription`, names and
+// refine feedback), the request-shape lines, the trim warnings that name what
+// they dropped, and the provider's own text and error bodies. A signed-token
+// URL pasted into `prop.visualDescription` reached the log verbatim through
+// `Prompt (prop): ${prompt.slice(0, 300)}`.
+//
+// These lines pre-date FASE F, so this is deliberately CHANGED carried
+// behaviour — on the log channel only. The corpus compares status, code,
+// fetched objects and provider counts; it does not compare logs.
+// ---------------------------------------------------------------------------
+
+const PLANTED_URL = "https://secret.example/photo.png?token=SIGNEDTOKEN123";
+
+/** Asserts a captured log has no trace of the planted secret. */
+function assertNoPlantedSecret(lines: string[]) {
+  const joined = lines.join("\n");
+  assert(!joined.includes("SIGNEDTOKEN123"), "log leaked the signed token");
+  assert(!joined.includes(PLANTED_URL), "log leaked the planted URL");
+  assert(!joined.includes("secret.example"), "log leaked the planted host");
+  assert(!joined.includes("https://"), "log leaked a URL");
+  assert(!joined.includes("?token="), "log leaked a query string");
+}
+
+// BASE-RED @ 7d32182: "log leaked the signed token" — the line was
+// `[generate-scene-images] Prompt (prop): ... Object:
+// https://secret.example/photo.png?token=SIGNEDTOKEN123 ...`.
+Deno.test("T-F.13c a URL planted in prop.visualDescription never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post({
+        type: "prop",
+        styleId: "storybook",
+        prop: { name: "Farol", kind: "prop", visualDescription: PLANTED_URL },
+        count: 1,
+      }));
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The same secret through the other user-text channels of the scene branch:
+// scene narrative, character names and descriptions, refine feedback — all of
+// which reach the prompt, the request-shape lines and the trim warnings.
+Deno.test("T-F.13d user text in scene/character/refine fields never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload({
+        scene: { text: PLANTED_URL, visualDescription: PLANTED_URL },
+        location: { name: PLANTED_URL, description: PLANTED_URL },
+        characters: [{
+          name: PLANTED_URL,
+          visualDescription: PLANTED_URL,
+          referenceImage: PNG_B64(),
+        }],
+        props: [{ name: PLANTED_URL, visualDescription: PLANTED_URL, referenceImages: [PNG_B64()] }],
+        refine: { sourceImage: PNG_B64(), feedback: PLANTED_URL },
+      })));
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The provider channels: an error body and a text part. Both were logged
+// verbatim (`API Error (400):`, errorText / `Found text part: …`), and a
+// provider quotes the offending request back at you.
+Deno.test("T-F.13e provider error bodies and text parts are logged as shapes", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload()));
+      await res.body?.cancel();
+    }, () =>
+      Promise.resolve(
+        new Response(`rejected: prompt contained ${PLANTED_URL}`, { status: 400 }),
+      ));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload()));
+      await res.body?.cancel();
+    }, () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: `no image: ${PLANTED_URL}` }] } }],
+          }),
+          { status: 200 },
+        ),
+      ));
+
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The error-summary paths: a rejected variation is summarised into the
+// `errors` array and logged. Those messages carry the provider body.
+//
+// NOT base-red — at 7d32182 this one line already went through `redactUrls`,
+// which happened to catch a URL-shaped secret (it would not have caught a bare
+// token). What this case really pins is the BOUNDARY the [B3] rewrite must not
+// cross: logs become shapes, the JSON body does NOT. MUTATION PROOF (D7),
+// recorded in the report: replacing `error: errors[0]` with
+// `error: describeError(...)` in the all-variations-failed response makes the
+// "response body must keep the provider message" assertion fail.
+Deno.test("T-F.13f the variation error summary is a shape, not the provider text", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(scenePayload()));
+      const body = await readJson(res);
+      // The client still gets the text — a JSON body is not a log sink.
+      // Asserted on `error` specifically: `errors` also carries it, so a
+      // whole-body match would survive `error` being stripped.
+      assert(
+        String(body.error).includes("SIGNEDTOKEN123"),
+        `the response body must keep the provider message (error=${String(body.error)})`,
+      );
+    }, () =>
+      Promise.reject(new TypeError(`network failure reaching ${PLANTED_URL}`)));
+
+    assertNoPlantedSecret(lines);
+  });
+});

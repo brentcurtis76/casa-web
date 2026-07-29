@@ -19,6 +19,8 @@ import {
   type RequirePermissionDeps,
 } from '../_shared/liturgyAuth.ts';
 import {
+  bodyShape,
+  charCount,
   collectStoryImageRefs,
   DEFAULT_IMAGE_LIMITS,
   describeError,
@@ -131,13 +133,13 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
     );
 
     if (!response.ok) {
-      console.error('[generate-story] Error researching location:', response.status);
+      console.error(`[generate-story] Error researching location: ${response.status}`);
       return '';
     }
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[generate-story] Location research for "${location}":`, text.slice(0, 200) + '...');
+    console.log(`[generate-story] Location research: ${charCount(text)}`);
     return text;
   } catch (err) {
     console.error(`[generate-story] Error in location research: ${describeError(err)}`);
@@ -222,7 +224,7 @@ async function analyzeImagesForVisualDescription(params: {
   const kind = params.kind ?? 'landmark';
 
   if (!params.config.googleAiApiKey || !Array.isArray(referenceImages) || referenceImages.length === 0) {
-    console.log(`[generate-story] No API key or no ${kind} images for "${name}", skipping analysis`);
+    console.log(`[generate-story] No API key or no ${kind} images (${charCount(name)}), skipping analysis`);
     return '';
   }
 
@@ -244,7 +246,7 @@ async function analyzeImagesForVisualDescription(params: {
       });
     }
 
-    console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images for "${name}"`);
+    console.log(`[generate-story] Analyzing ${referenceImages.length} ${kind} images (${charCount(name)})`);
 
     const response = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
@@ -257,20 +259,22 @@ async function analyzeImagesForVisualDescription(params: {
         }),
       },
       45_000,
-      `análisis visual de "${name}"`
+      // Shape only: this label reaches the retry warnings, and `name` is
+      // client text — the retry path was the last channel carrying it raw.
+      `análisis visual (${kind}, ${charCount(name)})`
     );
 
     if (!response.ok) {
-      console.error(`[generate-story] Error analyzing ${kind} "${name}":`, response.status);
+      console.error(`[generate-story] Error analyzing ${kind} (${charCount(name)}): ${response.status}`);
       return '';
     }
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[generate-story] ${kind} analysis for "${name}":`, text.slice(0, 200) + '...');
+    console.log(`[generate-story] ${kind} analysis (${charCount(name)}): ${charCount(text)}`);
     return text;
   } catch (err) {
-    console.error(`[generate-story] Error in ${kind} analysis for "${name}": ${describeError(err)}`);
+    console.error(`[generate-story] Error in ${kind} analysis (${charCount(name)}): ${describeError(err)}`);
     return '';
   }
 }
@@ -696,8 +700,8 @@ export function createHandler(
       throw new Error('Se requiere contexto de la liturgia y ubicación');
     }
 
-    console.log(`[generate-story] Generando cuento para: "${context.title}"`);
-    console.log(`[generate-story] Ubicación: ${location}, Estilo: ${style}`);
+    console.log(`[generate-story] Generando cuento; título ${charCount(context?.title)}`);
+    console.log(`[generate-story] Ubicación ${charCount(location)}, Estilo ${charCount(style)}`);
     console.log(`[generate-story] Landmarks: ${landmarks?.length || 0}, Props: ${props?.length || 0}`);
     console.log(`[generate-story] Texto de reflexión: ${context.reflexionText ? `${context.reflexionText.length} caracteres` : 'No disponible'}`);
 
@@ -708,7 +712,7 @@ export function createHandler(
     const propList: Array<{ id: string; name: string; kind?: string; narrativeRole?: string; referenceImages?: string[]; role?: string }> =
       Array.isArray(props) ? props : [];
 
-    console.log(`[generate-story] Investigando ubicación "${location}" y analizando ${landmarkList.length} landmarks + ${propList.length} props en paralelo...`);
+    console.log(`[generate-story] Investigando ubicación (${charCount(location)}) y analizando ${landmarkList.length} landmarks + ${propList.length} props en paralelo...`);
 
     const [locationResearch, landmarkAnalyses, propAnalyses] = await Promise.all([
       researchLocation(location, config),
@@ -826,7 +830,7 @@ export function createHandler(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[generate-story] Error de API:', response.status, errorText);
+      console.error(`[generate-story] Error de API: ${response.status} ${bodyShape(errorText)}`);
       throw new Error(`Error de Claude API: ${response.status}`);
     }
 
@@ -864,7 +868,7 @@ export function createHandler(
       // Fallback: extraer JSON del texto (respuestas sin bloque tool_use)
       const textBlock = contentBlocks.find((b) => b.type === 'text' && typeof b.text === 'string');
       if (!textBlock?.text) {
-        console.error('[generate-story] Sin tool_use ni texto. stop_reason:', data.stop_reason);
+        console.error(`[generate-story] Sin tool_use ni texto. stop_reason: ${charCount(data.stop_reason)}`);
         throw new Error('La API no retornó contenido');
       }
 
@@ -876,7 +880,7 @@ export function createHandler(
         .trim();
 
       if (!jsonText) {
-        console.error('[generate-story] No se encontró JSON en:', rawText.slice(0, 500));
+        console.error(`[generate-story] No se encontró JSON en la respuesta: ${charCount(rawText)}`);
         throw new Error('No se encontró JSON válido en la respuesta');
       }
 
@@ -885,11 +889,11 @@ export function createHandler(
 
     // Validar estructura
     if (!validateStory(story)) {
-      console.error('[generate-story] Estructura inválida:', JSON.stringify(story).slice(0, 500));
+      console.error(`[generate-story] Estructura inválida: ${bodyShape(JSON.stringify(story))}`);
       throw new Error('La respuesta no tiene la estructura esperada');
     }
 
-    console.log('[generate-story] Cuento generado exitosamente:', story.title);
+    console.log(`[generate-story] Cuento generado exitosamente; título ${charCount(story.title)}`);
     console.log(`[generate-story] Escenas: ${story.scenes?.length || 0}, Personajes: ${story.characters?.length || 0}, Props sugeridos: ${story.props?.length || 0}`);
 
     // Props sugeridos por el modelo (lugares/objetos recurrentes inventados por

@@ -1379,18 +1379,71 @@ export function collectStoryImageRefs(
 }
 
 /**
- * Strips URLs out of arbitrary text before it is logged. Runtime network
- * errors embed the request URL in their message, which is how a provider key
- * carried as a query parameter ends up in the logs.
+ * A log-safe one-line description of an unknown thrown value.
+ *
+ * Shape, not content. Redacting URLs out of an error message was not enough:
+ * these handlers construct messages that embed request text
+ * (`Tipo no válido: ${type}`) and provider bodies (`Gemini API error: 400 -
+ * <body>`), and a signed URL planted in an ordinary text field then reaches
+ * the log through the message rather than through a URL pattern. The error's
+ * NAME is a type and stays; its message becomes a length.
+ *
+ * The message is still available to the client in the JSON response body,
+ * which is not a log sink.
  */
-export function redactUrls(text: string): string {
-  return text.replace(/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s)'"]+/g, "[url redactada]");
+export function describeError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}(chars=${err.message.length})`;
+  if (err === null) return "null";
+  if (err === undefined) return "undefined";
+  return `${typeof err}(chars=${String(err).length})`;
 }
 
-/** A log-safe one-line description of an unknown thrown value. */
-export function describeError(err: unknown): string {
-  if (err instanceof Error) return `${err.name}: ${redactUrls(err.message)}`;
-  return redactUrls(String(err));
+// ---------------------------------------------------------------------------
+// Log shapes — the only way user or provider text reaches a log
+// ---------------------------------------------------------------------------
+
+/**
+ * `chars=N` for a string, the type name otherwise. For any value that carries
+ * text a user or a provider controls: prompts, titles, locations, names,
+ * feedback, provider bodies.
+ *
+ * Ops keeps what it can act on — did the prompt get built, how big is it, is
+ * the field present — without the log becoming a copy of the request. A URL
+ * with a signed token pasted into `prop.visualDescription` reaches the prompt
+ * and reached the log; a length cannot carry it.
+ */
+export function charCount(value: unknown): string {
+  if (typeof value === "string") return `chars=${value.length}`;
+  if (value === null) return "type=null";
+  if (value === undefined) return "type=absent";
+  return `type=${typeof value}`;
+}
+
+/** `n=N` for an array-like, `n=0` otherwise. Counts, never the items. */
+export function itemCount(value: unknown): string {
+  return `n=${Array.isArray(value) ? value.length : 0}`;
+}
+
+/**
+ * `n=N chars=M` for a list of strings: how many and how much, no content.
+ * For name lists and description lists, where the count alone loses the
+ * "something is enormous" signal that made these lines worth logging.
+ */
+export function listShape(value: unknown): string {
+  const arr = Array.isArray(value) ? value : [];
+  let chars = 0;
+  for (const v of arr) if (typeof v === "string") chars += v.length;
+  return `n=${arr.length} chars=${chars}`;
+}
+
+/**
+ * A log-safe summary of a provider response body: how big and what shape, not
+ * what it said. Provider errors quote the offending request back, which is how
+ * user text and credentials get into a log through a channel nobody thinks of
+ * as a user-text channel.
+ */
+export function bodyShape(text: unknown): string {
+  return typeof text === "string" ? `bytes=${text.length}` : `type=${typeof text}`;
 }
 
 /** Maps a typed rejection onto the JSON error contract both handlers use. */
