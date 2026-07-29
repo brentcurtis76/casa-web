@@ -109,6 +109,21 @@ function withLatency<T>(value: T, ms: number = RPC_MS): Promise<T> {
  */
 const latency = { roles: RPC_MS, permissions: RPC_MS };
 
+/** RBAC simulado por usuario, para poder cruzar respuestas de dos identidades. */
+type RbacFixture = {
+  roles: string[];
+  permissions: { resource: string; action: string }[];
+  rolesLatency?: number;
+  permissionsLatency?: number;
+};
+
+const rbacByUser: Record<string, RbacFixture> = {};
+
+const liturgistFixture = (): RbacFixture => ({
+  roles: ['liturgist'],
+  permissions: [{ resource: 'liturgy_builder', action: 'write' }],
+});
+
 /** Deja correr el setTimeout(…, 0) de AuthContext sin resolver aún la RPC. */
 async function flushMicroTick() {
   await act(async () => {
@@ -185,18 +200,23 @@ beforeEach(() => {
   getSession.mockResolvedValue({ data: { session: makeSession(USER_ID) } });
   latency.roles = RPC_MS;
   latency.permissions = RPC_MS;
-  rolesRpc.mockImplementation(() =>
-    withLatency({ data: ['liturgist'], error: null }, latency.roles)
-  );
-  permissionsRpc.mockImplementation(() =>
-    withLatency(
-      {
-        data: [{ resource: 'liturgy_builder', action: 'write' }],
-        error: null,
-      },
-      latency.permissions
-    )
-  );
+  rbacByUser[USER_ID] = liturgistFixture();
+  rbacByUser[OTHER_USER_ID] = liturgistFixture();
+
+  rolesRpc.mockImplementation((args: { p_user_id: string }) => {
+    const fixture = rbacByUser[args.p_user_id] ?? liturgistFixture();
+    return withLatency(
+      { data: fixture.roles, error: null },
+      fixture.rolesLatency ?? latency.roles
+    );
+  });
+  permissionsRpc.mockImplementation((args: { p_user_id: string }) => {
+    const fixture = rbacByUser[args.p_user_id] ?? liturgistFixture();
+    return withLatency(
+      { data: fixture.permissions, error: null },
+      fixture.permissionsLatency ?? latency.permissions
+    );
+  });
   profileSingle.mockImplementation(() =>
     withLatency({
       data: { id: USER_ID, full_name: 'Liturgista', avatar_url: null },
@@ -322,6 +342,103 @@ describe('AuthContext — re-notificación SIGNED_IN al volver a la pestaña', (
 
     await waitFor(() => {
       expect(screen.getByText('Abrir constructor')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * SEGURIDAD: el RBAC debe estar tan atado a la identidad como el veredicto.
+   *
+   * Si la carga de A sigue en vuelo cuando se pasa a B, la respuesta rezagada
+   * de A no puede escribir sus roles en el estado global: ProtectedRoute los
+   * evaluaría con `user` = B y registraría el resultado como veredicto de B.
+   * Con A administrador, B heredaría esa autorización de cliente.
+   */
+  it('descarta el RBAC rezagado del usuario anterior', async () => {
+    // A es admin y responde tarde; B no es admin y responde rápido.
+    rbacByUser[USER_ID] = {
+      roles: ['general_admin'],
+      permissions: [{ resource: 'liturgy_builder', action: 'write' }],
+      rolesLatency: 80,
+      permissionsLatency: 80,
+    };
+    rbacByUser[OTHER_USER_ID] = {
+      roles: [],
+      permissions: [],
+      rolesLatency: 5,
+      permissionsLatency: 5,
+    };
+
+    const Probe: React.FC = () => {
+      const { roles, isAdmin } = useAuth();
+      return (
+        <>
+          <span data-testid="is-admin">{isAdmin ? 'yes' : 'no'}</span>
+          <span data-testid="roles">[{roles.join(',')}]</span>
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // Con la carga de A todavía en vuelo, la sesión pasa a B.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    await act(async () => {
+      captured.cb?.('SIGNED_IN', makeSession(OTHER_USER_ID));
+    });
+
+    // Llega primero B (5ms) y mucho después la respuesta rezagada de A (80ms).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(screen.getByTestId('is-admin')).toHaveTextContent('no');
+    expect(screen.getByTestId('roles')).toHaveTextContent('[]');
+  });
+
+  /**
+   * El perfil se pedía sin comprobar su resultado, y la identidad se marcaba
+   * como cargada sólo con el RBAC. Si el perfil fallaba pero el RBAC no, toda
+   * notificación posterior se saltaba las tres peticiones y el perfil quedaba
+   * nulo hasta recargar.
+   */
+  it('reintenta el perfil si su carga inicial falló', async () => {
+    profileSingle.mockImplementationOnce(() =>
+      withLatency({ data: null, error: { message: 'network error' } })
+    );
+
+    const Probe: React.FC = () => {
+      const { profile } = useAuth();
+      return <span data-testid="profile">{profile?.full_name ?? 'sin-perfil'}</span>;
+    };
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await flushRpc();
+    expect(screen.getByTestId('profile')).toHaveTextContent('sin-perfil');
+
+    // Volver a la pestaña debe reintentar el perfil que faltó.
+    await act(async () => {
+      captured.cb?.('SIGNED_IN', makeSession(USER_ID));
+    });
+    await flushMicroTick();
+    await flushRpc();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile')).toHaveTextContent('Liturgista');
     });
   });
 

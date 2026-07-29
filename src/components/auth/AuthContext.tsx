@@ -38,18 +38,56 @@ type AuthContextType = {
   refreshRoles: () => Promise<void>;
 };
 
+/** Perfil junto al usuario al que pertenece. */
+type ProfileSnapshot = { userId: string; profile: UserProfile };
+
+/** RBAC junto al usuario al que pertenece: se comprometen de forma atómica. */
+type RbacSnapshot = {
+  userId: string;
+  roles: RoleName[];
+  permissions: UserPermission[];
+};
+
+// Referencias estables para no re-renderizar consumidores sin necesidad.
+const EMPTY_ROLES: RoleName[] = [];
+const EMPTY_PERMISSIONS: UserPermission[] = [];
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  // RBAC state
-  const [roles, setRoles] = useState<RoleName[]>([]);
-  const [rolesLoading, setRolesLoading] = useState(true);
-  const [permissions, setPermissions] = useState<UserPermission[]>([]);
-  const [permissionsLoading, setPermissionsLoading] = useState(true);
+
+  // Perfil y RBAC se guardan JUNTO al usuario dueño de esos datos.
+  //
+  // Guardarlos sueltos en estado global permitía que una respuesta rezagada de
+  // la identidad anterior los sobrescribiera después de cambiar de usuario:
+  // ProtectedRoute los evaluaba con el `user` nuevo y registraba el resultado
+  // como veredicto suyo, de modo que un usuario podía heredar por un momento
+  // la autorización de cliente del anterior. Atarlos a su dueño hace que ese
+  // dato simplemente no aplique a nadie más.
+  const [profileState, setProfileState] = useState<ProfileSnapshot | null>(null);
+  const [rbac, setRbac] = useState<RbacSnapshot | null>(null);
+  const [rbacLoading, setRbacLoading] = useState(true);
+
+  const currentUserId = user?.id ?? null;
+
+  // Sólo se exponen los datos que pertenecen al usuario actual.
+  const rbacIsCurrent = rbac !== null && rbac.userId === currentUserId;
+  const roles = rbacIsCurrent ? rbac.roles : EMPTY_ROLES;
+  const permissions = rbacIsCurrent ? rbac.permissions : EMPTY_PERMISSIONS;
+  const profile =
+    profileState !== null && profileState.userId === currentUserId
+      ? profileState.profile
+      : null;
+
+  // Con sesión iniciada pero sin RBAC propio todavía, se informa "cargando":
+  // nadie debe decidir autorización con datos de otra identidad ni con los
+  // vacíos de partida.
+  const rbacPending = currentUserId !== null && (rbacLoading || !rbacIsCurrent);
+  const rolesLoading = rbacPending;
+  const permissionsLoading = rbacPending;
 
   // Derived admin check
   const isAdmin = roles.includes(ROLE_NAMES.GENERAL_ADMIN);
@@ -71,8 +109,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Generación de identidad. Se incrementa cada vez que cambia el usuario
+   * (login, cambio de cuenta, cierre de sesión). Toda petición en vuelo captura
+   * la generación con la que salió y descarta su resultado si ya no coincide:
+   * pertenece a una identidad que ya no está en pantalla. Limpiar los
+   * marcadores no bastaba, porque no cancela lo que ya está en la red.
+   */
+  const generationRef = useRef(0);
+  const lastIdentityRef = useRef<string | null>(null);
+
+  // Marcadores por dato: "cargado con éxito" e "en vuelo" se siguen aparte para
+  // que el fallo de uno no cachee al otro como resuelto.
+  const loadedRbacUserIdRef = useRef<string | null>(null);
+  const loadingRbacUserIdRef = useRef<string | null>(null);
+  const loadedProfileUserIdRef = useRef<string | null>(null);
+  const loadingProfileUserIdRef = useRef<string | null>(null);
+
+  /** Invalida lo que esté en vuelo cuando cambia la identidad. */
+  const syncIdentity = useCallback((userId: string | null) => {
+    if (lastIdentityRef.current === userId) return;
+    lastIdentityRef.current = userId;
+    generationRef.current += 1;
+    loadedRbacUserIdRef.current = null;
+    loadingRbacUserIdRef.current = null;
+    loadedProfileUserIdRef.current = null;
+    loadingProfileUserIdRef.current = null;
+    setRbacLoading(userId !== null);
+  }, []);
+
   // Fetch user profile
-  async function fetchUserProfile(userId: string) {
+  const loadProfileOnce = useCallback(async (userId: string) => {
+    if (loadedProfileUserIdRef.current === userId) return;
+    if (loadingProfileUserIdRef.current === userId) return;
+    loadingProfileUserIdRef.current = userId;
+    const generation = generationRef.current;
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -80,75 +152,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single();
 
+      // La identidad cambió mientras esto viajaba: el dato ya no aplica.
+      if (generation !== generationRef.current) return;
+
       if (error) {
         console.error('Error fetching user profile:', error);
+        loadedProfileUserIdRef.current = null;
         return;
       }
 
-      setProfile(data);
+      setProfileState({ userId, profile: data });
+      loadedProfileUserIdRef.current = userId;
     } catch (error) {
       console.error('Error in fetchUserProfile:', error);
-    }
-  }
-
-  // Fetch user roles via RPC
-  // Devuelve true sólo si el RBAC se pudo leer; el llamador lo necesita para
-  // no cachear como "cargado" un usuario cuya carga falló.
-  const fetchUserRoles = useCallback(async (userId: string): Promise<boolean> => {
-    try {
-      setRolesLoading(true);
-      const { data, error } = await supabase.rpc('get_user_roles', {
-        p_user_id: userId,
-      });
-
-      if (error) {
-        console.error('Error fetching user roles:', error);
-        setRoles([]);
-        return false;
+      if (generation === generationRef.current) {
+        loadedProfileUserIdRef.current = null;
       }
-
-      // data is TEXT[] from the RPC function
-      setRoles((data as RoleName[]) || []);
-      return true;
-    } catch (error) {
-      console.error('Error in fetchUserRoles:', error);
-      setRoles([]);
-      return false;
     } finally {
-      setRolesLoading(false);
+      if (loadingProfileUserIdRef.current === userId) {
+        loadingProfileUserIdRef.current = null;
+      }
     }
   }, []);
 
-  // Fetch user permissions via RPC
-  const fetchUserPermissions = useCallback(async (userId: string): Promise<boolean> => {
-    try {
-      setPermissionsLoading(true);
-      const { data, error } = await supabase.rpc('get_user_permissions', {
-        p_user_id: userId,
-      });
+  /**
+   * Carga roles y permisos y los compromete en un solo estado junto a su dueño.
+   *
+   * Si falla se compromete un RBAC vacío para ese usuario: la autorización se
+   * resuelve como denegada (fallar cerrado) en vez de quedarse colgada, pero NO
+   * se marca como cargado, así que la próxima notificación reintenta.
+   */
+  const loadRbacOnce = useCallback(async (userId: string) => {
+    if (loadedRbacUserIdRef.current === userId) return;
+    if (loadingRbacUserIdRef.current === userId) return;
+    loadingRbacUserIdRef.current = userId;
+    const generation = generationRef.current;
+    setRbacLoading(true);
 
-      if (error) {
-        console.error('Error fetching user permissions:', error);
-        setPermissions([]);
-        return false;
+    try {
+      const [rolesRes, permissionsRes] = await Promise.all([
+        supabase.rpc('get_user_roles', { p_user_id: userId }),
+        supabase.rpc('get_user_permissions', { p_user_id: userId }),
+      ]);
+
+      // La identidad cambió mientras esto viajaba: el dato ya no aplica.
+      if (generation !== generationRef.current) return;
+
+      if (rolesRes.error || permissionsRes.error) {
+        console.error(
+          'Error fetching RBAC:',
+          rolesRes.error ?? permissionsRes.error
+        );
+        setRbac({ userId, roles: [], permissions: [] });
+        loadedRbacUserIdRef.current = null;
+        return;
       }
 
-      // data is TABLE(resource TEXT, action TEXT) from the RPC function
-      setPermissions((data as UserPermission[]) || []);
-      return true;
+      // data: TEXT[] y TABLE(resource TEXT, action TEXT) de las RPC.
+      setRbac({
+        userId,
+        roles: (rolesRes.data as RoleName[]) || [],
+        permissions: (permissionsRes.data as UserPermission[]) || [],
+      });
+      loadedRbacUserIdRef.current = userId;
     } catch (error) {
-      console.error('Error in fetchUserPermissions:', error);
-      setPermissions([]);
-      return false;
+      console.error('Error in loadRbac:', error);
+      if (generation === generationRef.current) {
+        setRbac({ userId, roles: [], permissions: [] });
+        loadedRbacUserIdRef.current = null;
+      }
     } finally {
-      setPermissionsLoading(false);
+      if (loadingRbacUserIdRef.current === userId) {
+        loadingRbacUserIdRef.current = null;
+      }
+      if (generation === generationRef.current) {
+        setRbacLoading(false);
+      }
     }
   }, []);
-
-  // Id del usuario cuyo RBAC se cargó CON ÉXITO, para no repetir el trabajo.
-  const loadedUserIdRef = useRef<string | null>(null);
-  // Id del usuario cuya carga está en vuelo, para no lanzarla por duplicado.
-  const loadingUserIdRef = useRef<string | null>(null);
 
   /**
    * Carga perfil, roles y permisos SÓLO si la identidad del usuario cambió.
@@ -161,51 +242,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * ProtectedRoute desmontaría su subárbol, haciendo que el usuario perdiera
    * el constructor de liturgias al volver de otra pestaña o aplicación.
    *
-   * La identidad se marca como cargada SÓLO si el RBAC llegó completo. Marcarla
-   * antes cachearía un fallo transitorio de red: el usuario se quedaría con
-   * roles vacíos y toda notificación posterior se saltaría la recarga,
-   * dejándolo bloqueado hasta recargar la página entera (`refreshRoles` no
-   * tiene llamadores en producción). Si falla, la próxima notificación
-   * — por ejemplo al volver a la pestaña — reintenta.
+   * Cada dato se marca como cargado SÓLO si su petición tuvo éxito, y perfil y
+   * RBAC se siguen por separado. Marcarlos antes cachearía un fallo transitorio
+   * de red: el usuario se quedaría sin ese dato y toda notificación posterior
+   * se saltaría la recarga, dejándolo así hasta recargar la página entera
+   * (`refreshRoles` no tiene llamadores en producción). Si algo falla, la
+   * próxima notificación — por ejemplo al volver a la pestaña — lo reintenta,
+   * y sólo eso.
    */
   const loadUserDataOnce = useCallback(
-    async (userId: string) => {
-      if (loadedUserIdRef.current === userId) return;
-      if (loadingUserIdRef.current === userId) return;
-      loadingUserIdRef.current = userId;
-
-      try {
-        fetchUserProfile(userId);
-        const [rolesOk, permissionsOk] = await Promise.all([
-          fetchUserRoles(userId),
-          fetchUserPermissions(userId),
-        ]);
-        loadedUserIdRef.current = rolesOk && permissionsOk ? userId : null;
-      } finally {
-        if (loadingUserIdRef.current === userId) {
-          loadingUserIdRef.current = null;
-        }
-      }
+    (userId: string) => {
+      void loadProfileOnce(userId);
+      void loadRbacOnce(userId);
     },
-    [fetchUserRoles, fetchUserPermissions]
+    [loadProfileOnce, loadRbacOnce]
   );
 
   // Add refreshProfile function to fetch the latest profile data
   const refreshProfile = async () => {
-    if (user) {
-      await fetchUserProfile(user.id);
-    }
+    if (!user) return;
+    // Recarga forzada: se limpian los marcadores para saltarse el "once".
+    loadedProfileUserIdRef.current = null;
+    loadingProfileUserIdRef.current = null;
+    await loadProfileOnce(user.id);
   };
 
   // Refresh roles and permissions on demand
   const refreshRoles = useCallback(async () => {
-    if (user) {
-      await Promise.all([
-        fetchUserRoles(user.id),
-        fetchUserPermissions(user.id),
-      ]);
-    }
-  }, [user, fetchUserRoles, fetchUserPermissions]);
+    if (!user) return;
+    // Recarga forzada: se limpian los marcadores para saltarse el "once".
+    loadedRbacUserIdRef.current = null;
+    loadingRbacUserIdRef.current = null;
+    await loadRbacOnce(user.id);
+  }, [user, loadRbacOnce]);
 
   // Check if user has a specific role (local check)
   const hasRole = useCallback(
@@ -256,45 +325,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        const nextUser = session?.user ?? null;
         setSession(session);
-        setUser(session?.user ?? null);
+        setUser(nextUser);
+        // Antes de lanzar nada: invalida lo que quede en vuelo de la identidad
+        // anterior. Es un no-op cuando el usuario no cambió, que es el caso de
+        // la re-notificación al volver a la pestaña.
+        syncIdentity(nextUser?.id ?? null);
 
-        if (session?.user) {
-          const userId = session.user.id;
+        if (nextUser) {
+          const userId = nextUser.id;
           setTimeout(() => {
             loadUserDataOnce(userId);
           }, 0);
         } else {
-          loadedUserIdRef.current = null;
-          loadingUserIdRef.current = null;
-          setProfile(null);
-          setRoles([]);
-          setPermissions([]);
-          setRolesLoading(false);
-          setPermissionsLoading(false);
+          setProfileState(null);
+          setRbac(null);
+          setRbacLoading(false);
         }
       }
     );
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      const nextUser = session?.user ?? null;
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser(nextUser);
+      syncIdentity(nextUser?.id ?? null);
 
-      if (session?.user) {
-        loadUserDataOnce(session.user.id);
+      if (nextUser) {
+        loadUserDataOnce(nextUser.id);
       } else {
-        loadedUserIdRef.current = null;
-        loadingUserIdRef.current = null;
-        setRolesLoading(false);
-        setPermissionsLoading(false);
+        setProfileState(null);
+        setRbac(null);
+        setRbacLoading(false);
       }
     }).finally(() => {
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, [loadUserDataOnce]);
+  }, [loadUserDataOnce, syncIdentity]);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -338,15 +409,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-      loadedUserIdRef.current = null;
-      loadingUserIdRef.current = null;
+      // Invalida lo que siga en vuelo: al cerrar sesión, una respuesta
+      // rezagada no puede repoblar el RBAC de quien acaba de salir.
+      syncIdentity(null);
       setUser(null);
-      setProfile(null);
+      setProfileState(null);
       setSession(null);
-      setRoles([]);
-      setPermissions([]);
-      setRolesLoading(false);
-      setPermissionsLoading(false);
+      setRbac(null);
+      setRbacLoading(false);
     } catch (error) {
       console.error('Logout error:', error);
     }
