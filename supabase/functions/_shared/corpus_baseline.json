@@ -107,6 +107,24 @@
     "providerImages": 4,
     "providerCalls": 4
   },
+  "prop-with-irrelevant-scene-ref": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 1
+  },
+  "prop-with-oversized-irrelevant-character-image": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 1
+  },
+  "draft-near-the-slot-ceiling": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 48,
+    "providerCalls": 4
+  },
   "refine-scene-from-bucket": {
     "status": 200,
     "fetched": [
