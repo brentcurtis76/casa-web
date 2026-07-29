@@ -667,6 +667,13 @@ export function createHandler(
   // response. An earlier shape rethrew non-ImageRefError failures from a catch
   // that sat outside it, so a client disconnecting mid-upload escaped the
   // handler entirely and `serve` answered with CORS-less plain text.
+  //
+  // `skippedImages` is declared OUTSIDE that try for the same reason the story
+  // handler does it: drops are recorded during the image phase and reported by
+  // a response written much later, so an escalating failure in between used to
+  // discard the report. The scene envelope had the identical hole.
+  let skippedImages: Array<{ field: string; code: string }> = [];
+
   try {
     // Client JSON. The pre-FASE-F `await req.json()` typed this `any` and the
     // switch below relies on that; keeping the same shape confines this change
@@ -710,7 +717,7 @@ export function createHandler(
     }
     // Reported to the client, not just the log: a reference silently missing
     // from the generation is indistinguishable from one that was used.
-    const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
+    skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
     // The SAME consumption plan pass 1 used. Reading through it is what keeps
     // the collector's `consumed` flag from being parallel bookkeeping: a field
@@ -1395,6 +1402,9 @@ Instrucciones críticas:
         success: false,
         error: error instanceof Error ? error.message : 'Error generando imágenes',
         images: [],
+        // Additive, and only when there is something to report — see the story
+        // handler. Existing fields, codes and semantics unchanged.
+        ...(skippedImages.length > 0 ? { skippedImages } : {}),
       }),
       {
         status: 500,

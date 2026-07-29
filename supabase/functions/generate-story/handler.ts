@@ -626,6 +626,15 @@ export function createHandler(
   //
   // The whole block sits INSIDE the try that produces the JSON+CORS error
   // response, so nothing can escape into `serve`'s CORS-less plain-text 500.
+  //
+  // Declared OUTSIDE that try: drops are recorded during the image phase, but
+  // the response that reports them is written much later. When a provider
+  // failure escalated to the outer catch, the report was simply lost — a photo
+  // the user had uploaded had been dropped, and the only response they got
+  // said "Error de Claude API: 400". PFE consumes this field, so the catch
+  // adds it and changes nothing else.
+  let skippedImages: Array<{ field: string; code: string }> = [];
+
   try {
     // deno-lint-ignore no-explicit-any
     let requestData: any;
@@ -660,7 +669,7 @@ export function createHandler(
     }
     // Reported to the client, not just the log: a photo silently missing from
     // the analysis is indistinguishable from one that was used.
-    const skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
+    skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
     // The SAME consumption plan pass 1 used, so `takeImages` cannot read a
     // field the collector never marked consumed. One edit moves both.
@@ -956,6 +965,10 @@ export function createHandler(
         // and the fallback (instead of a TypeError) for null/undefined.
         error: (error as { message?: string } | null | undefined)?.message ||
           'Error generando cuento',
+        // Additive, and only when there is something to report: a failure that
+        // happened before the image phase produces a body byte-identical to
+        // the previous one. Existing fields, codes and semantics unchanged.
+        ...(skippedImages.length > 0 ? { skippedImages } : {}),
       }),
       {
         status: 500,

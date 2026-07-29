@@ -854,3 +854,61 @@ Deno.test("T-F.13e-story the Anthropic error body and fallback text are shapes",
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// PF [B4] — a drop report survives a later failure
+//
+// `skippedImages` was built inside the try, so the outer catch could not see
+// it. A HEIC prop photo was dropped, the request carried on, Anthropic
+// answered 400, and the client received `{success, error}` — no trace that a
+// photo the user had uploaded was never analysed. PFE consumes this field.
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ 7d32182: "the 500 must still report the drop" — the body was
+// `{"success":false,"error":"Error de Claude API: 400"}`, keys
+// ["success","error"].
+Deno.test("R11-story a drop recorded before a provider failure survives into the 500", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post(storyPayload({
+      previewPromptOnly: false,
+      props: [{
+        id: "p1",
+        kind: "prop",
+        name: "Farol",
+        narrativeRole: "guía",
+        // An iPhone photo: sniffed, unsupported, dropped — not fatal.
+        referenceImages: [HEIC_B64()],
+      }],
+    })));
+    const body = await res.json() as Record<string, unknown>;
+
+    assertStrictEquals(res.status, 500);
+    assertStrictEquals(body.success, false);
+    // Unchanged: the existing fields keep their values and their meaning.
+    assertStrictEquals(body.error, "Error de Claude API: 400");
+    assertEquals(
+      body.skippedImages,
+      [{ field: "props[0].referenceImages[0]", code: "NOT_IMAGE" }],
+      "the 500 must still report the drop",
+    );
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    return Promise.resolve(new Response("provider rejected", { status: 400 }));
+  });
+});
+
+// The additive half of the same claim: a failure with NO drops must produce
+// exactly the body it produced before. Adding a field unconditionally would
+// have been a contract change for every existing error path.
+Deno.test("R11b-story an error with no drops is byte-identical to before", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post(storyPayload({ previewPromptOnly: false })));
+    const body = await res.json() as Record<string, unknown>;
+
+    assertStrictEquals(res.status, 500);
+    assertEquals(Object.keys(body).sort(), ["error", "success"]);
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    return Promise.resolve(new Response("provider rejected", { status: 400 }));
+  });
+});

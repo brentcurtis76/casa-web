@@ -1827,3 +1827,55 @@ Deno.test("T-F.13f the variation error summary is a shape, not the provider text
     assertNoPlantedSecret(lines);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PF [B4] — scene-side symmetry
+//
+// The review asked whether the scene error envelope had the same hole. It did:
+// `skippedImages` was built inside the try, and the outer catch returned
+// `{success, error, images}`. The all-variations-failed branch (which is the
+// common provider-failure path here) always carried it; the outer catch is
+// reached by a throw from the type switch, and that path dropped it.
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ 7d32182: "the 500 must still report the drop" —
+// `body.skippedImages` was `undefined`; the body was
+// `{"success":false,"error":"Se requiere scene y location para generar
+// escena","images":[]}`.
+Deno.test("R11 a drop recorded before a thrown failure survives into the scene 500", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post({
+      type: "scene",
+      styleId: "storybook",
+      scene: { text: "t", visualDescription: "v" },
+      // `location` missing: the scene branch throws into the outer catch —
+      // AFTER the image phase has already dropped the HEIC photo below, which
+      // this type does consume.
+      characters: [charWith(HEIC_B64())],
+      count: 1,
+    }));
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 500);
+    assertStrictEquals(body.success, false);
+    // Unchanged: the existing fields keep their values and their meaning.
+    assertStrictEquals(body.error, "Se requiere scene y location para generar escena");
+    assertEquals(body.images, []);
+    assertEquals(
+      body.skippedImages,
+      [{ field: "characters[0].referenceImage", code: "NOT_IMAGE" }],
+      "the 500 must still report the drop",
+    );
+  });
+});
+
+// Same additive guarantee as the story side.
+Deno.test("R11b a scene error with no drops is byte-identical to before", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post({ type: "nope", styleId: "storybook", count: 1 }));
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 500);
+    assertEquals(Object.keys(body).sort(), ["error", "images", "success"]);
+  });
+});
