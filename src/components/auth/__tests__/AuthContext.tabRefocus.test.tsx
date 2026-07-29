@@ -97,9 +97,17 @@ const RPC_MS = 20;
  * spinner. Con mocks instantáneos React agrupa true/false en el mismo commit
  * y la ventana nunca llega al DOM, ocultando el bug.
  */
-function withLatency<T>(value: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), RPC_MS));
+function withLatency<T>(value: T, ms: number = RPC_MS): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
+
+/**
+ * Latencia por RPC. Dos llamadas de red independientes prácticamente nunca
+ * vuelven a la vez, así que poder desbalancearlas es lo REALISTA: el orden en
+ * que se resuelven cambia cuál es la última actualización de estado, y con
+ * ello si React llega a renderizar de nuevo.
+ */
+const latency = { roles: RPC_MS, permissions: RPC_MS };
 
 /** Deja correr el setTimeout(…, 0) de AuthContext sin resolver aún la RPC. */
 async function flushMicroTick() {
@@ -175,12 +183,19 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   getSession.mockResolvedValue({ data: { session: makeSession(USER_ID) } });
-  rolesRpc.mockImplementation(() => withLatency({ data: ['liturgist'], error: null }));
+  latency.roles = RPC_MS;
+  latency.permissions = RPC_MS;
+  rolesRpc.mockImplementation(() =>
+    withLatency({ data: ['liturgist'], error: null }, latency.roles)
+  );
   permissionsRpc.mockImplementation(() =>
-    withLatency({
-      data: [{ resource: 'liturgy_builder', action: 'write' }],
-      error: null,
-    })
+    withLatency(
+      {
+        data: [{ resource: 'liturgy_builder', action: 'write' }],
+        error: null,
+      },
+      latency.permissions
+    )
   );
   profileSingle.mockImplementation(() =>
     withLatency({
@@ -260,6 +275,103 @@ describe('AuthContext — re-notificación SIGNED_IN al volver a la pestaña', (
     });
     // El RBAC se pidió para el usuario nuevo, no para el anterior.
     expect(rolesRpc).toHaveBeenLastCalledWith({ p_user_id: OTHER_USER_ID });
+
+    // Y el veredicto debe volver a resolverse hasta mostrar contenido. Si el
+    // usuario nuevo obtiene el MISMO booleano que el anterior, guardar el
+    // veredicto y su dueño por separado hace que `setAuthorized` sea un no-op
+    // (Object.is) y React no vuelva a renderizar: la ruta se quedaría colgada
+    // en el spinner para siempre.
+    await flushRpc();
+    await waitFor(() => {
+      expect(screen.getByText('Abrir constructor')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Cambio de usuario con los permisos resolviéndose ANTES que los roles, de
+   * modo que la última actualización de estado sea `setRolesLoading(false)` y
+   * el veredicto se calcule después, con el mismo booleano que el usuario
+   * anterior.
+   *
+   * NOTA HONESTA: no se logró que este caso fallara con la implementación
+   * anterior (veredicto booleano en estado + dueño en una ref). React vuelve a
+   * renderizar el componente antes de descartar la actualización redundante,
+   * y ese render releía la ref. Es decir, aquello dependía de un detalle que
+   * React documenta como "puede que" — no como garantía. Este test no es
+   * prueba de un fallo observado: es la red de seguridad de la invariante que
+   * ahora sí se sostiene por construcción (veredicto y dueño en un solo valor
+   * de estado), y fallaría si alguien los volviera a separar de una forma que
+   * sí se atasque.
+   */
+  it('resuelve el cambio de usuario aunque el veredicto booleano no cambie', async () => {
+    latency.permissions = 5;
+    latency.roles = 40;
+
+    renderProtected();
+    await waitFor(() => screen.getByText('Abrir constructor'), { timeout: 2000 });
+
+    await act(async () => {
+      captured.cb?.('SIGNED_IN', makeSession(OTHER_USER_ID));
+    });
+    await flushMicroTick();
+
+    // El usuario nuevo tiene exactamente los mismos permisos: mismo booleano.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Abrir constructor')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Un fallo transitorio de RBAC en la carga inicial no puede quedar cacheado:
+   * marcar la identidad como "cargada" antes de que las peticiones tengan
+   * éxito dejaba al usuario sin roles y hacía que toda notificación posterior
+   * del mismo usuario se saltara la recarga. Como `refreshRoles` no tiene
+   * llamadores en producción, el usuario quedaba bloqueado hasta recargar.
+   */
+  it('reintenta el RBAC si la carga inicial falló', async () => {
+    // Primera llamada de cada RPC: error de red. Las siguientes, éxito.
+    rolesRpc.mockImplementationOnce(() =>
+      withLatency({ data: null, error: { message: 'network error' } })
+    );
+    permissionsRpc.mockImplementationOnce(() =>
+      withLatency({ data: null, error: { message: 'network error' } })
+    );
+
+    const RolesProbe: React.FC = () => {
+      const { roles, permissions } = useAuth();
+      return (
+        <span data-testid="rbac">
+          {roles.join(',')}|{permissions.length}
+        </span>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <RolesProbe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // La carga inicial falla y deja al usuario sin roles ni permisos.
+    await flushRpc();
+    expect(screen.getByTestId('rbac')).toHaveTextContent('|0');
+
+    // Volver a la pestaña re-emite SIGNED_IN: debe reintentarse.
+    await act(async () => {
+      captured.cb?.('SIGNED_IN', makeSession(USER_ID));
+    });
+    await flushMicroTick();
+    await flushRpc();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rbac')).toHaveTextContent('liturgist|1');
+    });
   });
 
   /**

@@ -92,7 +92,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Fetch user roles via RPC
-  const fetchUserRoles = useCallback(async (userId: string) => {
+  // Devuelve true sólo si el RBAC se pudo leer; el llamador lo necesita para
+  // no cachear como "cargado" un usuario cuya carga falló.
+  const fetchUserRoles = useCallback(async (userId: string): Promise<boolean> => {
     try {
       setRolesLoading(true);
       const { data, error } = await supabase.rpc('get_user_roles', {
@@ -102,21 +104,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('Error fetching user roles:', error);
         setRoles([]);
-        return;
+        return false;
       }
 
       // data is TEXT[] from the RPC function
       setRoles((data as RoleName[]) || []);
+      return true;
     } catch (error) {
       console.error('Error in fetchUserRoles:', error);
       setRoles([]);
+      return false;
     } finally {
       setRolesLoading(false);
     }
   }, []);
 
   // Fetch user permissions via RPC
-  const fetchUserPermissions = useCallback(async (userId: string) => {
+  const fetchUserPermissions = useCallback(async (userId: string): Promise<boolean> => {
     try {
       setPermissionsLoading(true);
       const { data, error } = await supabase.rpc('get_user_permissions', {
@@ -126,21 +130,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('Error fetching user permissions:', error);
         setPermissions([]);
-        return;
+        return false;
       }
 
       // data is TABLE(resource TEXT, action TEXT) from the RPC function
       setPermissions((data as UserPermission[]) || []);
+      return true;
     } catch (error) {
       console.error('Error in fetchUserPermissions:', error);
       setPermissions([]);
+      return false;
     } finally {
       setPermissionsLoading(false);
     }
   }, []);
 
-  // Id del usuario cuyo perfil/RBAC ya se cargó, para no repetir el trabajo.
+  // Id del usuario cuyo RBAC se cargó CON ÉXITO, para no repetir el trabajo.
   const loadedUserIdRef = useRef<string | null>(null);
+  // Id del usuario cuya carga está en vuelo, para no lanzarla por duplicado.
+  const loadingUserIdRef = useRef<string | null>(null);
 
   /**
    * Carga perfil, roles y permisos SÓLO si la identidad del usuario cambió.
@@ -152,14 +160,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * re-notificación como un login nuevo, `rolesLoading` volvería a true y
    * ProtectedRoute desmontaría su subárbol, haciendo que el usuario perdiera
    * el constructor de liturgias al volver de otra pestaña o aplicación.
+   *
+   * La identidad se marca como cargada SÓLO si el RBAC llegó completo. Marcarla
+   * antes cachearía un fallo transitorio de red: el usuario se quedaría con
+   * roles vacíos y toda notificación posterior se saltaría la recarga,
+   * dejándolo bloqueado hasta recargar la página entera (`refreshRoles` no
+   * tiene llamadores en producción). Si falla, la próxima notificación
+   * — por ejemplo al volver a la pestaña — reintenta.
    */
   const loadUserDataOnce = useCallback(
-    (userId: string) => {
+    async (userId: string) => {
       if (loadedUserIdRef.current === userId) return;
-      loadedUserIdRef.current = userId;
-      fetchUserProfile(userId);
-      fetchUserRoles(userId);
-      fetchUserPermissions(userId);
+      if (loadingUserIdRef.current === userId) return;
+      loadingUserIdRef.current = userId;
+
+      try {
+        fetchUserProfile(userId);
+        const [rolesOk, permissionsOk] = await Promise.all([
+          fetchUserRoles(userId),
+          fetchUserPermissions(userId),
+        ]);
+        loadedUserIdRef.current = rolesOk && permissionsOk ? userId : null;
+      } finally {
+        if (loadingUserIdRef.current === userId) {
+          loadingUserIdRef.current = null;
+        }
+      }
     },
     [fetchUserRoles, fetchUserPermissions]
   );
@@ -240,6 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, 0);
         } else {
           loadedUserIdRef.current = null;
+          loadingUserIdRef.current = null;
           setProfile(null);
           setRoles([]);
           setPermissions([]);
@@ -258,6 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loadUserDataOnce(session.user.id);
       } else {
         loadedUserIdRef.current = null;
+        loadingUserIdRef.current = null;
         setRolesLoading(false);
         setPermissionsLoading(false);
       }
@@ -311,6 +339,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await supabase.auth.signOut();
       loadedUserIdRef.current = null;
+      loadingUserIdRef.current = null;
       setUser(null);
       setProfile(null);
       setSession(null);

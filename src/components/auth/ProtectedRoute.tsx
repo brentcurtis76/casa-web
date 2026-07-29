@@ -29,21 +29,31 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+/** Resultado de autorización atado al usuario para el que se calculó. */
+type Verdict = { userId: string | null; allowed: boolean };
+
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) => {
   const { user, loading, rolesLoading, hasRole, hasPermission, isAdmin } = useAuth();
   const { toast } = useToast();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
-  // Usuario al que pertenece el veredicto vigente en `authorized`.
-  const authorizedForUserRef = useRef<string | null>(null);
+  // El veredicto y el usuario para el que se calculó viven JUNTOS en el estado.
+  //
+  // Tenerlos separados (booleano en estado + dueño en una ref) es incorrecto:
+  // al cambiar de usuario con el mismo resultado booleano, `setAuthorized`
+  // sería un no-op por Object.is y React podría no volver a renderizar, con la
+  // ref ya apuntando al usuario nuevo pero la UI comprometida mostrando el
+  // spinner. Además, leer una ref durante el render hace que la salida no sea
+  // función pura del estado. Con un objeto nuevo por veredicto, cada cambio de
+  // identidad produce siempre un valor de estado distinto.
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const currentUserId = user?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
 
     // Registra el veredicto junto al usuario para el que se calculó.
-    const settle = (value: boolean) => {
+    const settle = (allowed: boolean) => {
       if (cancelled) return;
-      authorizedForUserRef.current = user?.id ?? null;
-      setAuthorized(value);
+      setVerdict({ userId: user?.id ?? null, allowed });
     };
 
     async function checkAuthorization() {
@@ -77,20 +87,32 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) =
     };
   }, [user, loading, rolesLoading, requires, hasRole, hasPermission, isAdmin]);
 
-  // Show toast when authorization fails
+  // Show toast when authorization fails.
+  // Se avisa una vez por identidad: el veredicto es un objeto nuevo en cada
+  // revalidación, así que sin deduplicar se repetiría el toast.
+  const toastedKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (authorized === false) {
-      toast({
-        title: 'Acceso denegado',
-        description: 'No tienes permisos para acceder a esta página.',
-        variant: 'destructive',
-      });
+    if (!verdict) return;
+
+    if (verdict.allowed) {
+      // Si más adelante se le revoca el permiso, vuelve a avisarse.
+      toastedKeyRef.current = null;
+      return;
     }
-  }, [authorized, toast]);
+
+    const key = verdict.userId ?? '__anon__';
+    if (toastedKeyRef.current === key) return;
+    toastedKeyRef.current = key;
+
+    toast({
+      title: 'Acceso denegado',
+      description: 'No tienes permisos para acceder a esta página.',
+      variant: 'destructive',
+    });
+  }, [verdict, toast]);
 
   // ¿El veredicto vigente corresponde al usuario actual?
-  const verdictMatchesUser =
-    authorized !== null && authorizedForUserRef.current === (user?.id ?? null);
+  const verdictMatchesUser = verdict !== null && verdict.userId === currentUserId;
 
   // Spinner mientras no haya un veredicto válido PARA ESTE usuario.
   //
@@ -111,7 +133,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) =
   }
 
   // Unauthorized — redirect
-  if (!authorized) {
+  if (!verdict.allowed) {
     return <Navigate to="/admin" replace />;
   }
 
