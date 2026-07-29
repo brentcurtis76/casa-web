@@ -264,14 +264,25 @@ Deno.test("PC2 both research calls pin thinkingLevel LOW and maxOutputTokens 102
 // [PC3] — candidate shape -> status/code
 // ---------------------------------------------------------------------------
 
+// Each call answers with DIFFERENT text, so the assertion distinguishes the two
+// contributions. With one shared string, dropping the location research still
+// left the landmark's copy in the prompt and this case passed anyway — a
+// surviving mutation (M4) found exactly that.
 Deno.test("PC3a STOP with non-empty text is ok: no warning, and the text is used", async () => {
-  const r = await run({ gemini: () => geminiOk("faro blanco sobre roca negra") });
+  let call = 0;
+  const r = await run({
+    gemini: () => geminiOk(++call === 1 ? "costa de niebla espesa" : "faro blanco sobre roca negra"),
+  });
 
   assertStrictEquals(r.status, 200);
   assertEquals(r.body.warnings, undefined, "a successful request carries no warnings key");
   assert(
+    promptOf(r.body).includes("costa de niebla espesa"),
+    "successful location research must reach the Claude prompt",
+  );
+  assert(
     promptOf(r.body).includes("faro blanco sobre roca negra"),
-    "successful research must reach the Claude prompt",
+    "successful photo analysis must reach the Claude prompt",
   );
 });
 
