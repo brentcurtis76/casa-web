@@ -16,7 +16,7 @@
  *   </ProtectedRoute>
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -33,9 +33,18 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) =
   const { user, loading, rolesLoading, hasRole, hasPermission, isAdmin } = useAuth();
   const { toast } = useToast();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
+  // Usuario al que pertenece el veredicto vigente en `authorized`.
+  const authorizedForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    // Registra el veredicto junto al usuario para el que se calculó.
+    const settle = (value: boolean) => {
+      if (cancelled) return;
+      authorizedForUserRef.current = user?.id ?? null;
+      setAuthorized(value);
+    };
 
     async function checkAuthorization() {
       // Still loading auth or roles
@@ -43,22 +52,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) =
 
       // Not logged in
       if (!user) {
-        if (!cancelled) setAuthorized(false);
+        settle(false);
         return;
       }
 
       // Admin bypasses all checks
       if (isAdmin) {
-        if (!cancelled) setAuthorized(true);
+        settle(true);
         return;
       }
 
       if (isPermissionCheck(requires)) {
         const allowed = await hasPermission(requires.resource, requires.action);
-        if (!cancelled) setAuthorized(allowed);
+        settle(allowed);
       } else {
-        const allowed = hasRole(requires.role);
-        if (!cancelled) setAuthorized(allowed);
+        settle(hasRole(requires.role));
       }
     }
 
@@ -80,8 +88,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requires, children }) =
     }
   }, [authorized, toast]);
 
-  // Show loading spinner while auth state is resolving
-  if (loading || rolesLoading || authorized === null) {
+  // ¿El veredicto vigente corresponde al usuario actual?
+  const verdictMatchesUser =
+    authorized !== null && authorizedForUserRef.current === (user?.id ?? null);
+
+  // Spinner mientras no haya un veredicto válido PARA ESTE usuario.
+  //
+  // Una vez autorizado, una revalidación en segundo plano (p. ej. el refresco
+  // de token al recuperar el foco de la pestaña) NO vuelve a mostrar el
+  // spinner: sustituir los hijos por él los desmonta y destruye su estado
+  // local — así se perdía el constructor de liturgias a medio armar.
+  //
+  // El veredicto se ata a la identidad del usuario a propósito: si cambia,
+  // deja de ser válido y se vuelve a bloquear, de modo que nadie hereda la
+  // autorización del usuario anterior mientras se recalcula.
+  if (!verdictMatchesUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-gray-400" />

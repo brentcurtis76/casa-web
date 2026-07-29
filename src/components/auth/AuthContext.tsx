@@ -1,5 +1,5 @@
 
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import type { RoleName, PermissionAction, UserPermission } from '@/types/rbac';
@@ -139,6 +139,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Id del usuario cuyo perfil/RBAC ya se cargó, para no repetir el trabajo.
+  const loadedUserIdRef = useRef<string | null>(null);
+
+  /**
+   * Carga perfil, roles y permisos SÓLO si la identidad del usuario cambió.
+   *
+   * Supabase vuelve a emitir `SIGNED_IN` cada vez que la pestaña recupera la
+   * visibilidad: GoTrueClient escucha `visibilitychange` y llama a
+   * `_recoverAndRefresh()`, que notifica `SIGNED_IN` con la MISMA sesión
+   * (verificado en @supabase/auth-js 2.90.1). Si tratáramos esa
+   * re-notificación como un login nuevo, `rolesLoading` volvería a true y
+   * ProtectedRoute desmontaría su subárbol, haciendo que el usuario perdiera
+   * el constructor de liturgias al volver de otra pestaña o aplicación.
+   */
+  const loadUserDataOnce = useCallback(
+    (userId: string) => {
+      if (loadedUserIdRef.current === userId) return;
+      loadedUserIdRef.current = userId;
+      fetchUserProfile(userId);
+      fetchUserRoles(userId);
+      fetchUserPermissions(userId);
+    },
+    [fetchUserRoles, fetchUserPermissions]
+  );
+
   // Add refreshProfile function to fetch the latest profile data
   const refreshProfile = async () => {
     if (user) {
@@ -209,12 +234,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
+          const userId = session.user.id;
           setTimeout(() => {
-            fetchUserProfile(session.user.id);
-            fetchUserRoles(session.user.id);
-            fetchUserPermissions(session.user.id);
+            loadUserDataOnce(userId);
           }, 0);
         } else {
+          loadedUserIdRef.current = null;
           setProfile(null);
           setRoles([]);
           setPermissions([]);
@@ -230,10 +255,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        fetchUserProfile(session.user.id);
-        fetchUserRoles(session.user.id);
-        fetchUserPermissions(session.user.id);
+        loadUserDataOnce(session.user.id);
       } else {
+        loadedUserIdRef.current = null;
         setRolesLoading(false);
         setPermissionsLoading(false);
       }
@@ -242,7 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchUserRoles, fetchUserPermissions]);
+  }, [loadUserDataOnce]);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -286,6 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await supabase.auth.signOut();
+      loadedUserIdRef.current = null;
       setUser(null);
       setProfile(null);
       setSession(null);
