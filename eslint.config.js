@@ -25,5 +25,24 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": "off",
     },
+  },
+  {
+    // Date-suffixed Claude model IDs are time bombs: they keep working right
+    // up until the model's retirement date, then start returning 404 with no
+    // code change. claude-sonnet-4-20250514 took down process-reflexion-pdf
+    // this way. Pin bare aliases so this fails the lint gate, not production.
+    // Matches string literals only, so the explanatory comments citing the
+    // retired IDs are unaffected.
+    files: ["supabase/functions/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/^claude-.+-\\d{8}$/]",
+          message:
+            "Date-suffixed Claude model ID. Use the bare alias (e.g. 'claude-opus-5', 'claude-sonnet-5') — a dated ID 404s silently the day that model retires.",
+        },
+      ],
+    },
   }
 );

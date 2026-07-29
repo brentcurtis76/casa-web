@@ -10,7 +10,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-const MODEL = 'claude-opus-4-5-20251101';
+// Bare alias only. A date-suffixed ID silently 404s the day it retires —
+// that is how claude-sonnet-4-20250514 took down process-reflexion-pdf.
+const MODEL = 'claude-opus-5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -240,7 +242,11 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4096,
+        // Opus 4.5 did no thinking unless asked; Opus 5 thinks by default.
+        // max_tokens caps thinking + response together, so leaving it on
+        // would eat the budget and truncate the JSON parsed below.
+        thinking: { type: 'disabled' },
+        max_tokens: 8192,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),

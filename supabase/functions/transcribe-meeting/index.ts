@@ -100,8 +100,14 @@ Si no hay compromisos claros, retorna action_items como array vacío [].`;
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5-20251101',
-      max_tokens: 2048,
+      // Bare alias only. A date-suffixed ID silently 404s the day it retires —
+      // that is how claude-sonnet-4-20250514 took down process-reflexion-pdf.
+      model: 'claude-opus-5',
+      // Opus 4.5 did no thinking unless asked; Opus 5 thinks by default.
+      // max_tokens caps thinking + response together, so leaving it on
+      // would eat the budget and truncate the JSON parsed below.
+      thinking: { type: 'disabled' },
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     }),
   });

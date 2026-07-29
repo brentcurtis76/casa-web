@@ -17,7 +17,9 @@ import {
   type RequirePermissionDeps,
 } from "../_shared/liturgyAuth.ts";
 
-const MODEL = "claude-opus-4-5-20251101";
+// Bare alias only. A date-suffixed ID silently 404s the day it retires —
+// that is how claude-sonnet-4-20250514 took down process-reflexion-pdf.
+const MODEL = "claude-opus-5";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -229,7 +231,11 @@ export function createHandler(
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 4096,
+          // Opus 4.5 did no thinking unless asked; Opus 5 thinks by default.
+          // max_tokens caps thinking + response together, so leaving it on
+          // would eat the budget and truncate the JSON parsed below.
+          thinking: { type: "disabled" },
+          max_tokens: 8192,
           system: SYSTEM_PROMPT,
           messages: [
             {
