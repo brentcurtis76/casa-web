@@ -676,7 +676,10 @@ export function createHandler(
     try {
       requestData = await readBoundedJson(req, limits);
 
-      const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData), {
+      // `limits` reaches the collector too: the slot ceiling is enforced
+      // DURING traversal, so a pathological array is cut off instead of being
+      // copied in full and rejected afterwards.
+      const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData, limits), {
         limits,
         supabaseUrl: deps.supabaseUrl,
       });

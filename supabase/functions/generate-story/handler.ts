@@ -630,7 +630,8 @@ export function createHandler(
     try {
       requestData = await readBoundedJson(req, limits);
 
-      const prevalidated = prevalidateImageRefs(collectStoryImageRefs(requestData), {
+      // See the scene handler: the slot ceiling binds during traversal.
+      const prevalidated = prevalidateImageRefs(collectStoryImageRefs(requestData, limits), {
         limits,
         supabaseUrl: deps.supabaseUrl,
       });

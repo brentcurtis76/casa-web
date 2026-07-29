@@ -30,6 +30,7 @@ import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
 import {
   collectSceneImageRefs,
+  collectStoryImageRefs,
   DEFAULT_IMAGE_LIMITS,
   type ImageLimits,
   redirectErrorFixture,
@@ -1498,5 +1499,195 @@ Deno.test("WIRE-path cover downloads sceneReferenceImage and sends it to the pro
   }, (url) => {
     if (url.includes("generativelanguage")) return Promise.resolve(geminiImageResponse());
     return Promise.resolve(streamingResponse(PNG_BYTES(48)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PF [B2] — the slot ceiling bounds the traversal it claims to bound
+//
+// `maxImageSlots` used to be checked by `prevalidateImageRefs`, i.e. AFTER the
+// collectors had walked every client-controlled array and copied it into
+// `slots`. A 500,000-entry array therefore did 500,000 allocations before the
+// denial-of-service guard that exists to prevent exactly that got to run.
+//
+// The proof is a COUNT, not a duration: a timing assertion on a 23 ms
+// difference is a flake generator and proves nothing about the bound.
+// ---------------------------------------------------------------------------
+
+/**
+ * An array-like that reports a huge length and counts how many of its entries
+ * were actually visited. `Array.isArray` is true for a Proxy whose target is an
+ * array, so the collector treats it exactly as a client array — but building it
+ * costs one object, and every index the traversal touches is observable.
+ */
+function countingArray(length: number, entry: () => unknown) {
+  const state = { touched: 0 };
+  const proxy = new Proxy([] as unknown[], {
+    get(target, prop, recv) {
+      if (prop === "length") return length;
+      if (typeof prop === "string" && /^\d+$/.test(prop)) {
+        state.touched++;
+        return entry();
+      }
+      return Reflect.get(target, prop, recv);
+    },
+    has(target, prop) {
+      if (typeof prop === "string" && /^\d+$/.test(prop)) return Number(prop) < length;
+      return Reflect.has(target, prop);
+    },
+  });
+  return { proxy, state };
+}
+
+const CEILING = DEFAULT_IMAGE_LIMITS.maxImageSlots;
+
+// BASE-RED @ 7d32182: "collection must stop at the ceiling" — 500000 entries
+// visited, at most 513 expected; and the collector did not throw at all.
+Deno.test("SLOT-1 the scene collector stops at the ceiling instead of walking the whole array", () => {
+  const { proxy, state } = countingArray(500_000, () => ({ referenceImage: PNG_B64() }));
+
+  let thrown: unknown;
+  let slots: unknown[] = [];
+  try {
+    slots = collectSceneImageRefs({ type: "scene", characters: proxy });
+  } catch (err) {
+    thrown = err;
+  }
+
+  // The count first: it is the property, and it is what reads usefully in a
+  // failure report. `slots` is only non-empty if the collector returned
+  // normally, i.e. did not stop.
+  assert(
+    state.touched <= CEILING + 1,
+    `walked ${state.touched} entries and built ${slots.length} slots;` +
+      ` at most ${CEILING + 1} may ever be visited`,
+  );
+  assert(thrown instanceof Error, "collection must stop at the ceiling");
+  assertStrictEquals((thrown as { code?: string }).code, "TOO_MANY_IMAGES", "same D4 class");
+  assertStrictEquals((thrown as { status?: number }).status, 422);
+});
+
+// The story collector shares the same `push`, but "shares an implementation"
+// is not a property a reviewer should have to take on trust.
+Deno.test("SLOT-2 the story collector stops at the ceiling too", () => {
+  const { proxy, state } = countingArray(500_000, () => ({
+    id: "p",
+    referenceImages: [PNG_B64()],
+  }));
+
+  let thrown: unknown;
+  try {
+    collectStoryImageRefs({ props: proxy });
+  } catch (err) {
+    thrown = err;
+  }
+
+  assert(
+    state.touched <= CEILING + 1,
+    `walked ${state.touched} entries; at most ${CEILING + 1} may ever be visited`,
+  );
+  assert(thrown instanceof Error, "collection must stop at the ceiling");
+  assertStrictEquals((thrown as { code?: string }).code, "TOO_MANY_IMAGES");
+});
+
+// ---------------------------------------------------------------------------
+// PF [S2] — the two production count boundaries, exactly-at and one-over
+//
+// The corpus now carries a captured case at 500 slots / 50 consumed
+// (`draft-near-the-slot-ceiling`); these pin the edges themselves with injected
+// limits, so the boundary is exercised without a multi-megabyte payload.
+// T-F.0 pins that the injected limits stand in for the shipped ones.
+// ---------------------------------------------------------------------------
+
+/** Limits with just the two ceilings shrunk, so the edges are cheap to reach. */
+const BOUNDARY_LIMITS: ImageLimits = {
+  ...TEST_LIMITS,
+  maxImagesPerRequest: 6,
+  maxImageSlots: 10,
+};
+
+/** `n` props carrying one photo each — one slot and one consumed entry apiece. */
+function propsWithOnePhotoEach(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    name: `Objeto ${i}`,
+    visualDescription: "objeto",
+    referenceImages: [PNG_B64()],
+  }));
+}
+
+// Not base-red: at 7d32182 both edges answered the same way (the ceilings
+// themselves are unchanged — only WHERE the slot one runs moved). This is the
+// coverage [S2] asked for. MUTATION PROOF (D7), recorded in the report:
+// changing `push`'s guard from `slots.length > maxSlots` to `>=` makes the
+// exactly-at row fail with 422 / expected 200.
+Deno.test("BOUND-1 the slot ceiling accepts exactly-at and rejects one-over", async () => {
+  // Exactly at: 10 slots, 10 consumed... but the request ceiling is 6, so use
+  // a shape where surplus entries are unconsumed — 2 props x 5 photos = 10
+  // slots, 2 consumed per prop = 4 consumed.
+  const atLimit = {
+    type: "scene",
+    styleId: "storybook",
+    scene: { text: "t", visualDescription: "v" },
+    location: { name: "Valparaíso", description: "puerto" },
+    characters: [],
+    props: [0, 1].map((i) => ({
+      name: `Objeto ${i}`,
+      visualDescription: "objeto",
+      referenceImages: [PNG_B64(), PNG_B64(), PNG_B64(), PNG_B64(), PNG_B64()],
+    })),
+    count: 1,
+  };
+
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps({ imageLimits: BOUNDARY_LIMITS }))(post(atLimit));
+    assertStrictEquals(res.status, 200, "exactly at the slot ceiling must be served");
+    await res.body?.cancel();
+  }, () => Promise.resolve(geminiImageResponse()));
+
+  const overLimit = {
+    ...atLimit,
+    props: [
+      ...atLimit.props,
+      { name: "Objeto 2", visualDescription: "objeto", referenceImages: [PNG_B64()] },
+    ],
+  };
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps({ imageLimits: BOUNDARY_LIMITS }))(post(overLimit));
+    const body = await readJson(res);
+    assertEquals(spy.calls.length, 0, "one over the ceiling must reject before any fetch");
+    assertStrictEquals(res.status, 422);
+    assertStrictEquals(body.code, "TOO_MANY_IMAGES");
+  });
+});
+
+// Same shape for the OTHER ceiling: `maxImagesPerRequest` counts consumed
+// entries. Exactly at is served; one more consumed entry is a 422.
+Deno.test("BOUND-2 the consumed-image ceiling accepts exactly-at and rejects one-over", async () => {
+  const payload = (n: number) => ({
+    type: "scene",
+    styleId: "storybook",
+    scene: { text: "t", visualDescription: "v" },
+    location: { name: "Valparaíso", description: "puerto" },
+    characters: [],
+    props: propsWithOnePhotoEach(n),
+    count: 1,
+  });
+
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps({ imageLimits: BOUNDARY_LIMITS }))(
+      post(payload(BOUNDARY_LIMITS.maxImagesPerRequest)),
+    );
+    assertStrictEquals(res.status, 200, "exactly at the consumed ceiling must be served");
+    await res.body?.cancel();
+  }, () => Promise.resolve(geminiImageResponse()));
+
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps({ imageLimits: BOUNDARY_LIMITS }))(
+      post(payload(BOUNDARY_LIMITS.maxImagesPerRequest + 1)),
+    );
+    const body = await readJson(res);
+    assertEquals(spy.providerCalls.length, 0, "a rejected request must not reach the provider");
+    assertStrictEquals(res.status, 422);
+    assertStrictEquals(body.code, "TOO_MANY_IMAGES");
   });
 });

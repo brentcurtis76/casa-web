@@ -671,13 +671,15 @@ export function prevalidateImageRefs(
   slots: ImageRefSlot[],
   opts: ValidateOptions,
 ): PrevalidateResult {
-  // Bounds pass-1 work itself. Distinct from `maxImagesPerRequest`, which
-  // bounds what gets materialised.
+  // Backstop. The collectors enforce this ceiling DURING traversal (that is
+  // where it bounds anything), so a slot array that arrives here over the
+  // ceiling did not come from them — it was hand-built by a caller. Same code,
+  // same status: a caller assembling its own slots gets the same guarantee.
   if (slots.length > opts.limits.maxImageSlots) {
     throw new ImageRefError(
       "TOO_MANY_IMAGES",
       "request",
-      `La petición lleva ${slots.length} referencias de imagen; el máximo es ${opts.limits.maxImageSlots}.`,
+      `La petición lleva más de ${opts.limits.maxImageSlots} referencias de imagen.`,
     );
   }
 
@@ -1098,12 +1100,26 @@ function asArray(value: unknown): unknown[] {
 function push(
   slots: ImageRefSlot[],
   reads: ReadonlySet<string>,
+  maxSlots: number,
   path: string,
   value: unknown,
   withinIndex = true,
 ): void {
   if (value === undefined || value === null || value === "") return;
   slots.push({ path, value, consumed: withinIndex && reads.has(imageFieldOf(path)) });
+  // The ceiling is enforced HERE, during traversal, because it is a
+  // denial-of-service guard: checking it afterwards meant a 500,000-entry
+  // array was fully walked and copied into 500,000 slots before the guard that
+  // exists to bound that work got to run. `slots.length` never exceeds
+  // `maxSlots + 1` — the throw happens on the entry that crosses the line, so
+  // the same request is rejected with the same code as before.
+  if (slots.length > maxSlots) {
+    throw new ImageRefError(
+      "TOO_MANY_IMAGES",
+      "request",
+      `La petición lleva más de ${maxSlots} referencias de imagen.`,
+    );
+  }
 }
 
 /**
@@ -1115,12 +1131,13 @@ function push(
 function pushArray(
   slots: ImageRefSlot[],
   reads: ReadonlySet<string>,
+  maxSlots: number,
   prefix: string,
   value: unknown,
   consumedCount: number,
 ): void {
   asArray(value).forEach((img, j) => {
-    push(slots, reads, `${prefix}[${j}]`, img, j < consumedCount);
+    push(slots, reads, maxSlots, `${prefix}[${j}]`, img, j < consumedCount);
   });
 }
 
@@ -1279,43 +1296,47 @@ export function storyImageReadSet(payload: unknown): ReadonlySet<string> {
  * parked in a field this type ignores (T-F.9c). What the read set decides is
  * only whether an entry is CHARGED and FETCHED.
  */
-export function collectSceneImageRefs(payload: unknown): ImageRefSlot[] {
+export function collectSceneImageRefs(
+  payload: unknown,
+  limits: ImageLimits = DEFAULT_IMAGE_LIMITS,
+): ImageRefSlot[] {
   const data = asRecord(payload);
   if (!data) return [];
   const reads = sceneImageReadSet(data);
+  const maxSlots = limits.maxImageSlots;
   const slots: ImageRefSlot[] = [];
 
   const refine = asRecord(data.refine);
-  if (refine) push(slots, reads, "refine.sourceImage", refine.sourceImage);
+  if (refine) push(slots, reads, maxSlots, "refine.sourceImage", refine.sourceImage);
 
-  push(slots, reads, "sceneReferenceImage", data.sceneReferenceImage);
-  push(slots, reads, "referenceImage", data.referenceImage);
+  push(slots, reads, maxSlots, "sceneReferenceImage", data.sceneReferenceImage);
+  push(slots, reads, maxSlots, "referenceImage", data.referenceImage);
 
   asArray(data.characters).forEach((raw, i) => {
     const c = asRecord(raw);
-    if (c) push(slots, reads, `characters[${i}].referenceImage`, c.referenceImage);
+    if (c) push(slots, reads, maxSlots, `characters[${i}].referenceImage`, c.referenceImage);
   });
 
   asArray(data.landmarks).forEach((raw, i) => {
     const lm = asRecord(raw);
     if (!lm) return;
-    pushArray(slots, reads, `landmarks[${i}].referenceImages`, lm.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, maxSlots, `landmarks[${i}].referenceImages`, lm.referenceImages, SCENE_REFS_CONSUMED);
   });
 
   asArray(data.props).forEach((raw, i) => {
     const p = asRecord(raw);
     if (!p) return;
-    pushArray(slots, reads, `props[${i}].referenceImages`, p.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, maxSlots, `props[${i}].referenceImages`, p.referenceImages, SCENE_REFS_CONSUMED);
   });
 
   // `type: 'prop'` sends a single prop object rather than an array.
   const prop = asRecord(data.prop);
   if (prop) {
-    pushArray(slots, reads, "prop.referenceImages", prop.referenceImages, SCENE_REFS_CONSUMED);
+    pushArray(slots, reads, maxSlots, "prop.referenceImages", prop.referenceImages, SCENE_REFS_CONSUMED);
   }
 
   const character = asRecord(data.character);
-  if (character) push(slots, reads, "character.referenceImage", character.referenceImage);
+  if (character) push(slots, reads, maxSlots, "character.referenceImage", character.referenceImage);
 
   return slots;
 }
@@ -1327,27 +1348,31 @@ export function collectSceneImageRefs(payload: unknown): ImageRefSlot[] {
  * function does not analyse character photos, and a forbidden URL parked there
  * must still be caught.
  */
-export function collectStoryImageRefs(payload: unknown): ImageRefSlot[] {
+export function collectStoryImageRefs(
+  payload: unknown,
+  limits: ImageLimits = DEFAULT_IMAGE_LIMITS,
+): ImageRefSlot[] {
   const data = asRecord(payload);
   if (!data) return [];
   const reads = storyImageReadSet(data);
+  const maxSlots = limits.maxImageSlots;
   const slots: ImageRefSlot[] = [];
 
   asArray(data.landmarks).forEach((raw, i) => {
     const lm = asRecord(raw);
     if (!lm) return;
-    pushArray(slots, reads, `landmarks[${i}].referenceImages`, lm.referenceImages, STORY_REFS_CONSUMED);
+    pushArray(slots, reads, maxSlots, `landmarks[${i}].referenceImages`, lm.referenceImages, STORY_REFS_CONSUMED);
   });
 
   asArray(data.props).forEach((raw, i) => {
     const p = asRecord(raw);
     if (!p) return;
-    pushArray(slots, reads, `props[${i}].referenceImages`, p.referenceImages, STORY_REFS_CONSUMED);
+    pushArray(slots, reads, maxSlots, `props[${i}].referenceImages`, p.referenceImages, STORY_REFS_CONSUMED);
   });
 
   asArray(data.characters).forEach((raw, i) => {
     const c = asRecord(raw);
-    if (c) push(slots, reads, `characters[${i}].referenceImage`, c.referenceImage);
+    if (c) push(slots, reads, maxSlots, `characters[${i}].referenceImage`, c.referenceImage);
   });
 
   return slots;
