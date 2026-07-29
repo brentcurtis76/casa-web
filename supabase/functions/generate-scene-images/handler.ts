@@ -31,6 +31,7 @@ import {
   ImageRefError,
   type ImageLimits,
   isRefineRequested,
+  isSceneRequestType,
   listShape,
   type MaterializedImage,
   materializeImageRefs,
@@ -727,6 +728,10 @@ export function createHandler(
     // which is the only way "these two agree" is a testable claim.
     const reads = sceneImageReadSet(requestData);
 
+    /** The request type for logs: the branch name, or `desconocido`. */
+    const safeType = (value: unknown): string =>
+      isSceneRequestType(value) ? value : 'desconocido';
+
     /** Base64 for a validated slot, or '' when absent, skipped, or unread. */
     const takeImage = (path: string): string => {
       const field = imageFieldOf(path);
@@ -736,7 +741,7 @@ export function createHandler(
         // make loud rather than silently expensive.
         console.warn(
           `[generate-scene-images] field not in the consumption plan for this request; ignored`,
-          { field, type: typeof requestData?.type === 'string' ? requestData.type : 'unknown' },
+          { field, type: safeType(requestData?.type) },
         );
         return '';
       }
@@ -807,7 +812,7 @@ export function createHandler(
     const effectiveCount = refine ? 1 : count;
 
     console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-    console.log(`[generate-scene-images] Type: ${charCount(type)}, Style: ${charCount(styleId)}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
+    console.log(`[generate-scene-images] Type: ${safeType(type)}, Style: ${charCount(styleId)}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
 
     if (type === 'scene') {
       const { sceneReferenceMode = 'style' } = requestData;
@@ -1319,7 +1324,7 @@ Instrucciones críticas:
       prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', () => refine.feedback)}`;
     }
 
-    console.log(`[generate-scene-images] Prompt (${type}): ${charCount(prompt)}`);
+    console.log(`[generate-scene-images] Prompt (${safeType(type)}): ${charCount(prompt)}`);
     console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`);
 
     const promises = [];

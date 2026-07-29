@@ -1266,6 +1266,19 @@ export function isRefineRequested(payload: unknown): boolean {
     typeof (raw as Record<string, unknown>).feedback === "string";
 }
 
+/**
+ * Whether a value is one of the request types the handler dispatches on.
+ * Derived from the rule table, so it cannot drift from it.
+ *
+ * Used for LOGGING: `type` is client text until the switch has accepted it, so
+ * a log line that quotes it raw is another free-text channel. Classifying it
+ * keeps the fact ops actually wants (which branch ran) without the channel.
+ */
+export function isSceneRequestType(value: unknown): value is SceneRequestType {
+  return typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(SCENE_READ_RULES, value);
+}
+
 /** The field shapes this `generate-scene-images` request will actually read. */
 export function sceneImageReadSet(payload: unknown): ReadonlySet<string> {
   const data = asRecord(payload) ?? {};

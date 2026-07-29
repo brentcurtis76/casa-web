@@ -1727,12 +1727,29 @@ Deno.test("T-F.13c a URL planted in prop.visualDescription never reaches the log
     await withFetchSpy(async () => {
       const res = await createHandler(deps())(post({
         type: "prop",
-        styleId: "storybook",
-        prop: { name: "Farol", kind: "prop", visualDescription: PLANTED_URL },
+        styleId: PLANTED_URL,
+        prop: { name: PLANTED_URL, kind: "prop", visualDescription: PLANTED_URL },
         count: 1,
       }));
       await res.body?.cancel();
     }, () => Promise.resolve(geminiImageResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+
+  // `type` is client text until the switch has accepted it, and it reaches
+  // two log lines plus the consumption-plan warning. An unknown type throws
+  // out of the switch, so the outer catch's summary is on this path too.
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post({
+        type: PLANTED_URL,
+        styleId: "storybook",
+        count: 1,
+      }));
+      await res.body?.cancel();
+    });
 
     assert(lines.length > 0, "the handler must actually have logged something");
     assertNoPlantedSecret(lines);
