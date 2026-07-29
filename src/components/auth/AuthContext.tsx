@@ -112,11 +112,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /**
    * Generación de identidad. Se incrementa cada vez que cambia el usuario
    * (login, cambio de cuenta, cierre de sesión). Toda petición en vuelo captura
-   * la generación con la que salió y descarta su resultado si ya no coincide:
-   * pertenece a una identidad que ya no está en pantalla. Limpiar los
-   * marcadores no bastaba, porque no cancela lo que ya está en la red.
+   * el id de petición con el que salió y sólo la MÁS RECIENTE puede escribir
+   * datos, marcadores o banderas de carga. Limpiar los marcadores no bastaba,
+   * porque no cancela lo que ya está en la red.
+   *
+   * Los ids son por dato y monótonos, no una generación compartida: una
+   * generación sólo distingue identidades, así que dos peticiones del MISMO
+   * usuario (por ejemplo una recarga forzada sobre otra en vuelo) seguían
+   * empatadas y la vieja podía terminar la última y pisar a la nueva.
    */
-  const generationRef = useRef(0);
+  const rbacRequestIdRef = useRef(0);
+  const profileRequestIdRef = useRef(0);
+
+  /** Identidad vigente. Es la referencia contra la que se mide "obsoleto". */
   const lastIdentityRef = useRef<string | null>(null);
 
   // Marcadores por dato: "cargado con éxito" e "en vuelo" se siguen aparte para
@@ -130,7 +138,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const syncIdentity = useCallback((userId: string | null) => {
     if (lastIdentityRef.current === userId) return;
     lastIdentityRef.current = userId;
-    generationRef.current += 1;
+    // Lo que esté en vuelo deja de ser la petición vigente de su dato.
+    rbacRequestIdRef.current += 1;
+    profileRequestIdRef.current += 1;
     loadedRbacUserIdRef.current = null;
     loadingRbacUserIdRef.current = null;
     loadedProfileUserIdRef.current = null;
@@ -140,10 +150,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch user profile
   const loadProfileOnce = useCallback(async (userId: string) => {
+    // La carga se programa con setTimeout, así que entre programarla y
+    // ejecutarla la identidad puede haber cambiado: no se arranca siquiera.
+    if (lastIdentityRef.current !== userId) return;
     if (loadedProfileUserIdRef.current === userId) return;
     if (loadingProfileUserIdRef.current === userId) return;
+
     loadingProfileUserIdRef.current = userId;
-    const generation = generationRef.current;
+    const requestId = ++profileRequestIdRef.current;
+
+    // Vigente = sigue siendo la última petición de perfil Y la identidad no
+    // ha cambiado. Sólo entonces puede tocar estado o marcadores.
+    const isCurrent = () =>
+      requestId === profileRequestIdRef.current && lastIdentityRef.current === userId;
 
     try {
       const { data, error } = await supabase
@@ -152,8 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single();
 
-      // La identidad cambió mientras esto viajaba: el dato ya no aplica.
-      if (generation !== generationRef.current) return;
+      if (!isCurrent()) return;
 
       if (error) {
         console.error('Error fetching user profile:', error);
@@ -165,11 +183,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loadedProfileUserIdRef.current = userId;
     } catch (error) {
       console.error('Error in fetchUserProfile:', error);
-      if (generation === generationRef.current) {
+      if (isCurrent()) {
         loadedProfileUserIdRef.current = null;
       }
     } finally {
-      if (loadingProfileUserIdRef.current === userId) {
+      // Sólo la petición vigente libera el marcador: si no, una rezagada
+      // borraría el de la que sí está en curso.
+      if (isCurrent()) {
         loadingProfileUserIdRef.current = null;
       }
     }
@@ -183,11 +203,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * se marca como cargado, así que la próxima notificación reintenta.
    */
   const loadRbacOnce = useCallback(async (userId: string) => {
+    // Igual que el perfil: la identidad pudo cambiar entre programar esta
+    // carga y ejecutarla, y entonces no debe arrancar.
+    if (lastIdentityRef.current !== userId) return;
     if (loadedRbacUserIdRef.current === userId) return;
     if (loadingRbacUserIdRef.current === userId) return;
+
     loadingRbacUserIdRef.current = userId;
-    const generation = generationRef.current;
+    const requestId = ++rbacRequestIdRef.current;
     setRbacLoading(true);
+
+    const isCurrent = () =>
+      requestId === rbacRequestIdRef.current && lastIdentityRef.current === userId;
 
     try {
       const [rolesRes, permissionsRes] = await Promise.all([
@@ -195,8 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         supabase.rpc('get_user_permissions', { p_user_id: userId }),
       ]);
 
-      // La identidad cambió mientras esto viajaba: el dato ya no aplica.
-      if (generation !== generationRef.current) return;
+      if (!isCurrent()) return;
 
       if (rolesRes.error || permissionsRes.error) {
         console.error(
@@ -217,15 +243,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loadedRbacUserIdRef.current = userId;
     } catch (error) {
       console.error('Error in loadRbac:', error);
-      if (generation === generationRef.current) {
+      if (isCurrent()) {
         setRbac({ userId, roles: [], permissions: [] });
         loadedRbacUserIdRef.current = null;
       }
     } finally {
-      if (loadingRbacUserIdRef.current === userId) {
+      if (isCurrent()) {
         loadingRbacUserIdRef.current = null;
-      }
-      if (generation === generationRef.current) {
         setRbacLoading(false);
       }
     }

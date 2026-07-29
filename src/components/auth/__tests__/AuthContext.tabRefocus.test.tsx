@@ -404,6 +404,117 @@ describe('AuthContext — re-notificación SIGNED_IN al volver a la pestaña', (
   });
 
   /**
+   * La carga se programa con setTimeout(…, 0), así que la generación se captura
+   * cuando el callback CORRE, no cuando se programa. Si la sesión pasa a B
+   * antes de que corra el callback de A, el de A captura la generación nueva y
+   * pasa por vigente. Si además A termina el último, el snapshot guardado es de
+   * A: no se lo aplica a B (la propiedad protege eso), pero B se queda sin RBAC
+   * propio y por tanto en el spinner hasta otra notificación.
+   */
+  it('no deja al usuario nuevo colgado por una carga diferida del anterior', async () => {
+    // Sin sesión previa: las dos identidades entran por el listener.
+    getSession.mockResolvedValue({ data: { session: null } });
+
+    rbacByUser[USER_ID] = {
+      roles: ['general_admin'],
+      permissions: [{ resource: 'liturgy_builder', action: 'write' }],
+      rolesLatency: 80,
+      permissionsLatency: 80,
+    };
+    rbacByUser[OTHER_USER_ID] = {
+      roles: ['liturgist'],
+      permissions: [{ resource: 'liturgy_builder', action: 'write' }],
+      rolesLatency: 5,
+      permissionsLatency: 5,
+    };
+
+    const Probe: React.FC = () => {
+      const { roles, rolesLoading } = useAuth();
+      return (
+        <>
+          <span data-testid="roles">[{roles.join(',')}]</span>
+          <span data-testid="loading">{rolesLoading ? 'cargando' : 'listo'}</span>
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+    await flushMicroTick();
+
+    // A y B se notifican antes de que corra ningún callback diferido.
+    await act(async () => {
+      captured.cb?.('SIGNED_IN', makeSession(USER_ID));
+      captured.cb?.('SIGNED_IN', makeSession(OTHER_USER_ID));
+    });
+
+    // B responde a los 5ms; la carga rezagada de A, a los 80ms.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(screen.getByTestId('roles')).toHaveTextContent('[liturgist]');
+    expect(screen.getByTestId('loading')).toHaveTextContent('listo');
+  });
+
+  /**
+   * Una recarga forzada limpia el marcador de "en vuelo", pero la petición
+   * anterior sigue viva sobre la misma identidad: puede terminar la última y
+   * pisar el resultado nuevo (y su `finally` limpiar el marcador del nuevo).
+   * Afecta al refresco de perfil tras editarlo.
+   */
+  it('la recarga forzada de perfil gana a la petición anterior en vuelo', async () => {
+    profileSingle.mockImplementationOnce(() =>
+      withLatency(
+        { data: { id: USER_ID, full_name: 'Nombre Viejo', avatar_url: null }, error: null },
+        80
+      )
+    );
+    profileSingle.mockImplementationOnce(() =>
+      withLatency(
+        { data: { id: USER_ID, full_name: 'Nombre Nuevo', avatar_url: null }, error: null },
+        5
+      )
+    );
+
+    const Probe: React.FC = () => {
+      const { profile, refreshProfile } = useAuth();
+      return (
+        <>
+          <span data-testid="profile">{profile?.full_name ?? 'sin-perfil'}</span>
+          <button onClick={() => void refreshProfile()}>Recargar perfil</button>
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // Con la primera petición (lenta) aún en vuelo, se fuerza una recarga.
+    await flushMicroTick();
+    await act(async () => {
+      screen.getByText('Recargar perfil').click();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    // Debe quedar el resultado más reciente, no el rezagado.
+    expect(screen.getByTestId('profile')).toHaveTextContent('Nombre Nuevo');
+  });
+
+  /**
    * El perfil se pedía sin comprobar su resultado, y la identidad se marcaba
    * como cargada sólo con el RBAC. Si el perfil fallaba pero el RBAC no, toda
    * notificación posterior se saltaba las tres peticiones y el perfil quedaba
