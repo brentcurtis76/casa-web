@@ -227,8 +227,12 @@ async function yields(n: number) {
 }
 
 /** Bytes con patrón: su base64 no se parece a nada que un handler pueda inventar. */
-function referenceBytes(): Uint8Array {
-  return Uint8Array.from({ length: 4096 }, (_, i) => (i * 7 + 13) % 256);
+function referenceBytes() {
+  // `new Uint8Array(n)` y no `Uint8Array.from(...)`: el segundo se infiere como
+  // `Uint8Array<ArrayBufferLike>`, que no es un `BlobPart` válido para `File`.
+  const out = new Uint8Array(4096);
+  for (let i = 0; i < out.length; i++) out[i] = (i * 7 + 13) % 256;
+  return out;
 }
 
 /** El base64 de los bytes CRUDOS: lo que se vería si el sitio saltara el helper. */
