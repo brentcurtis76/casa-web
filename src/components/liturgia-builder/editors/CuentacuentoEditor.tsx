@@ -57,7 +57,11 @@ import { shouldAutoKick, type AutoKickIntent } from '@/lib/cuentacuentos/autoKic
 import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
-import { readReferenceImageBase64 } from '@/lib/cuentacuentos/downscaleImage';
+import {
+  isReferenceImageTooLarge,
+  readReferenceImageBase64,
+  REFERENCE_IMAGE_TOO_LARGE_MESSAGE,
+} from '@/lib/cuentacuentos/downscaleImage';
 import { buildInvokeError, describeSkippedImage, parseSkippedImages, InvokeError, type SkippedImage } from '@/lib/cuentacuentos/imageFeedback';
 import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
@@ -109,6 +113,7 @@ import {
   makeRefineEndTask,
   makeRefineSceneTask,
   makeSceneTask,
+  type InvokeGenerateSceneImages,
   type ProviderResult,
 } from '@/lib/cuentacuentos/taskFactories';
 
@@ -478,6 +483,11 @@ const StepIndicator: React.FC<{
  * mensaje útil. Todas las factories del pipeline (character/prop/scene/
  * cover/end + refines) usan este mismo canal — el editor inyecta esta
  * función a cada factory como `invokeGenerateSceneImages`.
+ *
+ * `skippedImages` viaja EN el resultado (y, en el camino de error, dentro del
+ * InvokeError): esta es una función de módulo y no puede tocar el estado del
+ * componente. Quien lo convierte en aviso es `invokeSceneImagesWithFeedback`,
+ * el envoltorio de componente que se inyecta a las factories.
  */
 async function invokeGenerateSceneImagesRequest(
   body: unknown,
@@ -491,7 +501,9 @@ async function invokeGenerateSceneImagesRequest(
   if (!data?.success || !data.images?.length) {
     throw new Error(data?.error || emptyImagesFallback);
   }
-  return data as ProviderResult;
+  // Se valida la forma en vez de confiar en el cast: `skippedImages` viene del
+  // backend y el resto del editor lo trata como dato tipado.
+  return { ...(data as ProviderResult), skippedImages: parseSkippedImages(data.skippedImages) };
 }
 
 // F4/cleanup — Helpers puros compartidos por los 4 handlers de aprobación/
@@ -602,6 +614,48 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [skippedImages, setSkippedImages] = useState<SkippedImage[]>([]);
   // El estado por-ítem de generación/persistencia de imágenes se lee
   // directamente del runner (`pipeline.statusOf`); no hay máquinas paralelas.
+
+  /**
+   * Suma al aviso lo que reportó UNA llamada de imágenes.
+   *
+   * Acumula en vez de reemplazar, y una lista vacía es no-op, porque el pipeline
+   * corre varios ítems a la vez: si cada respuesta pisara el estado, la que
+   * llegara última —típicamente sin nada que reportar— borraría el aviso de la
+   * que sí descartó una referencia. Se deduplica por `field:code` para que
+   * regenerar dos veces no repita la misma línea. Lo limpia el usuario con la X,
+   * o un cuento nuevo (`handleGenerate`, que sí reemplaza).
+   */
+  const reportSkippedImages = useCallback((incoming: SkippedImage[]) => {
+    if (incoming.length === 0) return;
+    setSkippedImages((prev) => {
+      const seen = new Set(prev.map((s) => `${s.field}:${s.code}`));
+      const fresh = incoming.filter((s) => !seen.has(`${s.field}:${s.code}`));
+      return fresh.length > 0 ? [...prev, ...fresh] : prev;
+    });
+  }, []);
+
+  /**
+   * El canal de `generate-scene-images` que se inyecta a TODAS las factories.
+   *
+   * Es el único punto por el que pasan character sheets, props, escenas,
+   * portada, fin y sus refines, así que es donde el `skippedImages` del contrato
+   * se vuelve visible — en éxito (viaja en el ProviderResult) y en fallo (viaja
+   * en el InvokeError). Las factories no cambian: siguen recibiendo una función
+   * con la misma firma.
+   */
+  const invokeSceneImagesWithFeedback = useCallback<InvokeGenerateSceneImages>(
+    async (body, emptyImagesFallback) => {
+      try {
+        const result = await invokeGenerateSceneImagesRequest(body, emptyImagesFallback);
+        reportSkippedImages(result.skippedImages ?? []);
+        return result;
+      } catch (err) {
+        if (err instanceof InvokeError) reportSkippedImages(err.skippedImages);
+        throw err;
+      }
+    },
+    [reportSkippedImages],
+  );
 
   // Estado de refinamiento de imágenes (Phase 7 scaffolding)
   const [refiningCharId, setRefiningCharId] = useState<string | null>(null);
@@ -2006,11 +2060,11 @@ Instrucciones críticas:
       currentStepRef,
       setCharacterSheetOptions,
       setSelectedCharacterSheets,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar character sheet para un personaje (botón manual)
   const handleGenerateCharacterSheet = useCallback(async (
@@ -2135,11 +2189,11 @@ Instrucciones críticas:
       propSheetOptionsRef,
       setPropSheetOptions,
       setSelectedPropSheets,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
     if (!story) return;
@@ -2276,11 +2330,11 @@ Instrucciones críticas:
       currentStepRef,
       setSceneImageOptions,
       setSelectedSceneImages,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen para una escena (botón manual)
   const handleGenerateSceneImage = useCallback(async (
@@ -2410,11 +2464,11 @@ Instrucciones críticas:
       coverOptionsRef,
       selectedCoverRef,
       setCoverOptions,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar portada
   const handleGenerateCover = useCallback(async (customPrompt?: string) => {
@@ -2496,11 +2550,11 @@ Instrucciones críticas:
       endOptionsRef,
       selectedEndRef,
       setEndOptions,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen final
   const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
@@ -2693,11 +2747,11 @@ Instrucciones críticas:
       currentStepRef,
       setCharacterSheetOptions,
       setSelectedCharacterSheets,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [story, getDraftIdentity, enqueueGeneratedSnapshot]);
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleRefineCharacterSheet = useCallback(
     async (characterId: string, sourceImage: string, feedback: string) => {
@@ -2777,11 +2831,11 @@ Instrucciones críticas:
       currentStepRef,
       setSceneImageOptions,
       setSelectedSceneImages,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [
+  }, [invokeSceneImagesWithFeedback, 
     story,
     sceneExcludedCharacters,
     sceneIncludedCharacters,
@@ -2861,11 +2915,11 @@ Instrucciones críticas:
       coverOptionsRef,
       selectedCoverRef,
       setCoverOptions,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [
+  }, [invokeSceneImagesWithFeedback, 
     story,
     coverExcludedCharacters,
     coverReferenceImage,
@@ -2932,11 +2986,11 @@ Instrucciones críticas:
       endOptionsRef,
       selectedEndRef,
       setEndOptions,
-      invokeGenerateSceneImages: invokeGenerateSceneImagesRequest,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [
+  }, [invokeSceneImagesWithFeedback, 
     story,
     endReferenceImage,
     editingEndPrompt,
@@ -4099,37 +4153,6 @@ Instrucciones críticas:
         </div>
       )}
 
-      {/* Referencias que el backend descartó. Informativo, no bloqueante: la
-          generación siguió adelante sin ellas. */}
-      {skippedImages.length > 0 && (
-        <div
-          className="p-3 rounded-lg flex items-start gap-2"
-          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
-        >
-          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
-          <div className="flex-1">
-            <div style={{ fontWeight: 600 }}>
-              {skippedImages.length === 1
-                ? 'Una foto de referencia no se usó'
-                : `${skippedImages.length} fotos de referencia no se usaron`}
-            </div>
-            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
-              {skippedImages.map((s) => (
-                <li key={`${s.field}:${s.code}`}>{describeSkippedImage(s)}</li>
-              ))}
-            </ul>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSkippedImages([])}
-            aria-label="Ocultar aviso"
-            style={{ color: '#92400E', flexShrink: 0 }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
       {/* Vista previa del prompt */}
       {showPromptPreview && promptPreview && (
         <div
@@ -5120,8 +5143,8 @@ Instrucciones críticas:
                               input.onchange = async (e) => {
                                 const file = (e.target as HTMLInputElement).files?.[0];
                                 if (!file) return;
-                                if (file.size > 5 * 1024 * 1024) {
-                                  alert('La imagen es muy grande. Máximo 5MB');
+                                if (isReferenceImageTooLarge(file)) {
+                                  alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                                   return;
                                 }
                                 try {
@@ -5983,8 +6006,8 @@ Instrucciones críticas:
                           input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert('La imagen es muy grande. Máximo 5MB');
+                            if (isReferenceImageTooLarge(file)) {
+                              alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                               return;
                             }
                             try {
@@ -6324,8 +6347,8 @@ Instrucciones críticas:
                           input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert('La imagen es muy grande. Máximo 5MB');
+                            if (isReferenceImageTooLarge(file)) {
+                              alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                               return;
                             }
                             try {
@@ -7052,6 +7075,43 @@ Instrucciones críticas:
       {/* Indicador de pasos (solo si ya hay un cuento) */}
       {currentStep !== 'config' && (
         <StepIndicator currentStep={currentStep} storyStatus={story?.metadata.status || 'draft'} />
+      )}
+
+      {/* Referencias que el backend descartó. Informativo, no bloqueante: la
+          generación siguió adelante sin ellas.
+
+          Vive acá, fuera del paso actual, y no dentro del paso de configuración:
+          las referencias que se caen en `generate-scene-images` (hojas de
+          personaje, props, estilo) se descartan en los pasos de personajes,
+          escenas y portada. Montado sólo en configuración, el aviso existía
+          justo donde esas respuestas nunca llegan. */}
+      {skippedImages.length > 0 && (
+        <div
+          className="p-3 rounded-lg flex items-start gap-2"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="flex-1">
+            <div style={{ fontWeight: 600 }}>
+              {skippedImages.length === 1
+                ? 'Una foto de referencia no se usó'
+                : `${skippedImages.length} fotos de referencia no se usaron`}
+            </div>
+            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
+              {skippedImages.map((s) => (
+                <li key={`${s.field}:${s.code}`}>{describeSkippedImage(s)}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSkippedImages([])}
+            aria-label="Ocultar aviso"
+            style={{ color: '#92400E', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
       )}
 
       {/* Contenido del paso actual */}

@@ -15,6 +15,31 @@
 /** Lado mayor por defecto, en píxeles. */
 export const DEFAULT_MAX_EDGE = 1600;
 
+/**
+ * Tope de peso del archivo de ENTRADA, en MB.
+ *
+ * Ya no es un límite de transporte: lo que viaja es la versión reducida, no el
+ * archivo. Queda sólo como guarda de seguridad del decode, para no intentar
+ * rasterizar algo absurdo y colgar la pestaña. Por eso está alto: una foto de
+ * teléfono moderna (10–25 MB) tiene que ENTRAR y salir reducida, que es
+ * exactamente el caso para el que existe este módulo.
+ */
+export const MAX_REFERENCE_IMAGE_MB = 30;
+
+/** El mismo tope en bytes, que es como llega `File.size`. */
+export const MAX_REFERENCE_IMAGE_BYTES = MAX_REFERENCE_IMAGE_MB * 1024 * 1024;
+
+/**
+ * Copy del rechazo por peso, derivado del tope para que no se separen. Los tres
+ * sitios de subida del editor lo comparten.
+ */
+export const REFERENCE_IMAGE_TOO_LARGE_MESSAGE = `La imagen es muy grande. Máximo ${MAX_REFERENCE_IMAGE_MB}MB`;
+
+/** `true` si el archivo se pasa del tope y hay que rechazarlo sin leerlo. */
+export function isReferenceImageTooLarge(file: File): boolean {
+  return file.size > MAX_REFERENCE_IMAGE_BYTES;
+}
+
 /** Calidad por defecto para la recodificación con pérdida (JPEG/WebP). */
 export const DEFAULT_QUALITY = 0.85;
 

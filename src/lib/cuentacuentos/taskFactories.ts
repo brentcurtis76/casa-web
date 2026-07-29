@@ -38,6 +38,7 @@ import type {
   EnqueueGeneratedSnapshotInput,
   EnqueueGeneratedSnapshotResult,
 } from '@/hooks/useCuentacuentosDraft';
+import type { SkippedImage } from '@/lib/cuentacuentos/imageFeedback';
 import { buildSnapshotTask } from '@/lib/cuentacuentos/pipelineTaskAdapter';
 import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import type {
@@ -61,6 +62,12 @@ export interface ProviderResult {
   images: string[];
   referenceImagesCount?: number;
   error?: string;
+  /**
+   * Referencias que el handler descartó (contrato FASE F). Viene también en las
+   * respuestas 200: la generación sigue sin ellas, así que sin esto un character
+   * sheet o un style ref que se cayó es indistinguible de uno que se usó.
+   */
+  skippedImages?: SkippedImage[];
 }
 
 /**
