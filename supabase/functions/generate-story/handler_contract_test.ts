@@ -594,6 +594,61 @@ Deno.test("PD2l unparseable prose is 502", async () => {
   assertInvalidStory(r, "prose");
 });
 
+Deno.test("PD2m [B1] a non-JSON provider body is a typed 502 that echoes no provider bytes", async () => {
+  // V8's SyntaxError quotes the first ten raw bytes of the unparseable input
+  // back into its message, so the planted token IS those ten leading bytes:
+  // any path that echoes the engine message — at base, the generic 500 — has
+  // the whole token in its `error` field. The assertions interpolate the
+  // offending text so a red run records the actual leak verbatim.
+  const TOKEN = "SIGNEDTOK1";
+  const r = await run({
+    anthropic: () => new Response(`${TOKEN} no es json {{{`, { status: 200 }),
+  });
+
+  const rendered = JSON.stringify(r.body);
+  const logged = r.lines.join("\n");
+  assert(r.lines.length > 0, "the handler must actually have logged something");
+  for (
+    const [where, text] of [["response", rendered], ["log", logged]] as const
+  ) {
+    assert(!text.includes(TOKEN), `${where} leaked the token: ${text}`);
+    assert(
+      !text.includes("no es json"),
+      `${where} leaked raw provider bytes: ${text}`,
+    );
+    assert(
+      !text.includes("not valid JSON"),
+      `${where} echoed the engine parse error: ${text}`,
+    );
+  }
+  assertInvalidStory(r, "non-JSON provider body");
+});
+
+Deno.test("PD2n [B1] a JSON null provider body is a typed 502 that keeps research warnings", async () => {
+  // `null` is valid JSON, so the parse survives and the first property read is
+  // what detonated at base: `Cannot read properties of null (reading
+  // 'stop_reason')`, echoed to the client by the generic 500. The failing
+  // research run pins [PD6] for the new guard: degradation stays reported on
+  // the typed 502.
+  const r = await run({
+    gemini: () => new Response("x", { status: 404 }),
+    anthropic: () => new Response("null", { status: 200 }),
+  });
+
+  const rendered = JSON.stringify(r.body);
+  const logged = r.lines.join("\n");
+  for (
+    const [where, text] of [["response", rendered], ["log", logged]] as const
+  ) {
+    assert(
+      !text.includes("Cannot read properties"),
+      `${where} echoed the engine error: ${text}`,
+    );
+  }
+  assertInvalidStory(r, "null provider body");
+  assertEquals(codesOf(r.body), ["location:MODEL_NOT_FOUND"]);
+});
+
 // ===========================================================================
 // [PD3] — required semantic story fields
 // ===========================================================================

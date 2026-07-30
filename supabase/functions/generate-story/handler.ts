@@ -1738,7 +1738,41 @@ export function createHandler(
       throw new Error(`Error de Claude API: ${response.status}`);
     }
 
-    const data = await response.json();
+      // ---- the response-body guard (PD review [B1]) -----------------------
+      //
+      // A provider 200 is not yet a provider answer: the body is raw
+      // provider-controlled bytes until the parse succeeds, and V8's
+      // SyntaxError quotes those leading bytes back in its own message.
+      // Letting that error escape to the generic 500 echoed provider text to
+      // the client, so the engine error is never bound at all — the guard
+      // reports through the fixed module literal only.
+      let parsed: unknown;
+      try {
+        parsed = await response.json();
+      } catch {
+        throw new ProviderOutputError(
+          "INVALID_STORY",
+          "response body not JSON",
+        );
+      }
+      // `null`, scalars and arrays are all valid JSON that still cannot carry
+      // the protocol: reading `stop_reason` off `null` was a TypeError whose
+      // engine message reached the client the same way.
+      if (
+        parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+      ) {
+        throw new ProviderOutputError(
+          "INVALID_STORY",
+          "response body not an object",
+        );
+      }
+      // The three fields the success path reads, typed no wider than it reads
+      // them. Runtime-identical to the untyped parse this replaces.
+      const data = parsed as {
+        stop_reason?: unknown;
+        content?: unknown;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
 
     // ---- the stop_reason protocol (PLAN G5) -------------------------------
     //
