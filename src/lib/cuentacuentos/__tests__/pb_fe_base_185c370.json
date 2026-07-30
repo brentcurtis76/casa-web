@@ -1,0 +1,4178 @@
+{
+  "base": "185c370f27c018fb8058b34d210a50a63d7651b3",
+  "runtime": {
+    "node": "v22.22.0",
+    "note": "Capturado con src/** byte-idéntico a cc-downscale-a@185c370"
+  },
+  "cases": {
+    "hook.characterSheets.allSuccess": {
+      "id": "hook.characterSheets.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/characters/char1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/characters/char1_1.jpg",
+                "user-pb/lit-pb/characters/char1_2.png"
+              ]
+            },
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.characterSheets.midFailure": {
+      "id": "hook.characterSheets.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/characters/char1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/characters/char1_2.png"
+              ]
+            },
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.characterSheets.allFailure": {
+      "id": "hook.characterSheets.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/characters/char1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": []
+            },
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": []
+          },
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.characterSheets.decodeFailure": {
+      "id": "hook.characterSheets.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/characters/char1_2.png"
+              ]
+            },
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "not-base64!!!***",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.characterSheets.explicitEmpty": {
+      "id": "hook.characterSheets.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.characterSheets.mixedInputs": {
+      "id": "hook.characterSheets.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/characters/char1_1.png",
+                "user-pb/lit-pb/characters/char1_2.png"
+              ]
+            },
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_2.png"
+            ]
+          },
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.allSuccess": {
+      "id": "hook.sceneImages.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/scenes/scene1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/scenes/scene1_0.png",
+                "user-pb/lit-pb/scenes/scene1_1.jpg",
+                "user-pb/lit-pb/scenes/scene1_2.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.midFailure": {
+      "id": "hook.sceneImages.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/scenes/scene1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/scenes/scene1_0.png",
+                "user-pb/lit-pb/scenes/scene1_2.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {
+            "1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.allFailure": {
+      "id": "hook.sceneImages.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/scenes/scene1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": []
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {
+            "1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": []
+          },
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.decodeFailure": {
+      "id": "hook.sceneImages.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/scenes/scene1_0.png",
+                "user-pb/lit-pb/scenes/scene1_2.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {
+            "1": [
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+              "not-base64!!!***",
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+            ]
+          },
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.explicitEmpty": {
+      "id": "hook.sceneImages.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneImages.mixedInputs": {
+      "id": "hook.sceneImages.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/scenes/scene1_1.png",
+                "user-pb/lit-pb/scenes/scene1_2.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_2.png"
+            ]
+          },
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.allSuccess": {
+      "id": "hook.cover.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/cover/cover_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png",
+              "user-pb/lit-pb/cover/cover_1.jpg",
+              "user-pb/lit-pb/cover/cover_2.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_1.jpg",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_1.jpg",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.midFailure": {
+      "id": "hook.cover.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/cover/cover_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png",
+              "user-pb/lit-pb/cover/cover_2.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.allFailure": {
+      "id": "hook.cover.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/cover/cover_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.decodeFailure": {
+      "id": "hook.cover.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png",
+              "user-pb/lit-pb/cover/cover_2.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "not-base64!!!***",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.explicitEmpty": {
+      "id": "hook.cover.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.cover.mixedInputs": {
+      "id": "hook.cover.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/characters/char1_0.png",
+              "user-pb/lit-pb/cover/cover_1.png",
+              "user-pb/lit-pb/cover/cover_2.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_1.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_1.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_2.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.allSuccess": {
+      "id": "hook.end.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/end/end_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/end/end_0.png",
+              "user-pb/lit-pb/end/end_1.jpg",
+              "user-pb/lit-pb/end/end_2.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_1.jpg",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_1.jpg",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.midFailure": {
+      "id": "hook.end.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/end/end_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/end/end_0.png",
+              "user-pb/lit-pb/end/end_2.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.allFailure": {
+      "id": "hook.end.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/end/end_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.decodeFailure": {
+      "id": "hook.end.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/end/end_0.png",
+              "user-pb/lit-pb/end/end_2.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+            "not-base64!!!***",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+          ],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.explicitEmpty": {
+      "id": "hook.end.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.end.mixedInputs": {
+      "id": "hook.end.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/characters/char1_0.png",
+              "user-pb/lit-pb/end/end_1.png",
+              "user-pb/lit-pb/end/end_2.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_1.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_1.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_2.png"
+          ],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.allSuccess": {
+      "id": "hook.propsFromStory.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {
+              "prop1": [
+                "user-pb/lit-pb/props/prop1_0.png",
+                "user-pb/lit-pb/props/prop1_1.jpg",
+                "user-pb/lit-pb/props/prop1_2.png"
+              ]
+            },
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": true,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [
+            {
+              "id": "prop1",
+              "referenceImages": [
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.jpg",
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+              ]
+            }
+          ],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.midFailure": {
+      "id": "hook.propsFromStory.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {
+              "prop1": [
+                "user-pb/lit-pb/props/prop1_0.png",
+                "user-pb/lit-pb/props/prop1_2.png"
+              ]
+            },
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": true,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [
+            {
+              "id": "prop1",
+              "referenceImages": [
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+                "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+              ]
+            }
+          ],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.allFailure": {
+      "id": "hook.propsFromStory.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {
+              "prop1": []
+            },
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": true,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [
+            {
+              "id": "prop1",
+              "referenceImages": [
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+                "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+              ]
+            }
+          ],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": []
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.decodeFailure": {
+      "id": "hook.propsFromStory.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {
+              "prop1": [
+                "user-pb/lit-pb/props/prop1_0.png",
+                "user-pb/lit-pb/props/prop1_2.png"
+              ]
+            },
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": true,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [
+            {
+              "id": "prop1",
+              "referenceImages": [
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+                "not-base64!!!***",
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=="
+              ]
+            }
+          ],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.explicitEmpty": {
+      "id": "hook.propsFromStory.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromStory.mixedInputs": {
+      "id": "hook.propsFromStory.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {
+              "prop1": [
+                "user-pb/lit-pb/characters/char1_0.png",
+                "user-pb/lit-pb/props/prop1_1.png",
+                "user-pb/lit-pb/props/prop1_2.png"
+              ]
+            },
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": true,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": [
+            {
+              "id": "prop1",
+              "referenceImages": [
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.png",
+                "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+              ]
+            }
+          ],
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.allSuccess": {
+      "id": "hook.propsFromPropRefs.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.jpg",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.midFailure": {
+      "id": "hook.propsFromPropRefs.midFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.allFailure": {
+      "id": "hook.propsFromPropRefs.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/props/prop1_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": []
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.decodeFailure": {
+      "id": "hook.propsFromPropRefs.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.explicitEmpty": {
+      "id": "hook.propsFromPropRefs.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.propsFromPropRefs.mixedInputs": {
+      "id": "hook.propsFromPropRefs.mixedInputs",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/props/prop1_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {
+            "prop1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_1.png",
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/props/prop1_2.png"
+            ]
+          },
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneReferences.allSuccess": {
+      "id": "hook.sceneReferences.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/sceneRefs/scene1_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {
+              "1": "user-pb/lit-pb/sceneRefs/scene1_0.png"
+            }
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {
+            "1": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/sceneRefs/scene1_0.png"
+          }
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {
+            "1": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/sceneRefs/scene1_0.png"
+          }
+        }
+      }
+    },
+    "hook.sceneReferences.allFailure": {
+      "id": "hook.sceneReferences.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/sceneRefs/scene1_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {
+            "1": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg=="
+          }
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneReferences.decodeFailure": {
+      "id": "hook.sceneReferences.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {
+            "1": "not-base64!!!***"
+          }
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.sceneReferences.explicitEmpty": {
+      "id": "hook.sceneReferences.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.coverReference.allSuccess": {
+      "id": "hook.coverReference.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/coverRef/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": "user-pb/lit-pb/coverRef/cover_0.png",
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/coverRef/cover_0.png",
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/coverRef/cover_0.png",
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.coverReference.allFailure": {
+      "id": "hook.coverReference.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/coverRef/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.coverReference.decodeFailure": {
+      "id": "hook.coverReference.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": "not-base64!!!***",
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.coverReference.explicitEmpty": {
+      "id": "hook.coverReference.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.endReference.allSuccess": {
+      "id": "hook.endReference.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/endRef/end_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": "user-pb/lit-pb/endRef/end_0.png",
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/endRef/end_0.png",
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/endRef/end_0.png",
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.endReference.allFailure": {
+      "id": "hook.endReference.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/endRef/end_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==",
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.endReference.decodeFailure": {
+      "id": "hook.endReference.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": "not-base64!!!***",
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.endReference.explicitEmpty": {
+      "id": "hook.endReference.explicitEmpty",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.selectFailure": {
+      "id": "hook.selectFailure",
+      "outcome": "rejected",
+      "error": "saveDraftToSupabase select failed: select boom",
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "stale": false,
+        "swap": null,
+        "uploadedUrls": null
+      }
+    },
+    "hook.upsertFailure": {
+      "id": "hook.upsertFailure",
+      "outcome": "rejected",
+      "error": "saveDraftToSupabase upsert failed: upsert boom",
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/jpeg",
+          "path": "user-pb/lit-pb/cover/cover_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_2.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png",
+              "user-pb/lit-pb/cover/cover_1.jpg",
+              "user-pb/lit-pb/cover/cover_2.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": null,
+        "uploadedUrls": null
+      }
+    },
+    "hook.duplicateConflict": {
+      "id": "hook.duplicateConflict",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg=="
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.unsupportedBytes": {
+      "id": "hook.unsupportedBytes",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.webpBytes": {
+      "id": "hook.webpBytes",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "hook.lyingDataUrl": {
+      "id": "hook.lyingDataUrl",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {},
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {},
+          "coverOptions": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "coverReferenceImage": null,
+          "endOptions": [],
+          "endReferenceImage": null,
+          "propsReferenceImages": null,
+          "sceneImageOptions": {},
+          "sceneReferenceImages": {}
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {},
+          "coverReferenceUrl": null,
+          "coverUrls": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+          ],
+          "endReferenceUrl": null,
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {},
+          "sceneReferenceUrls": {}
+        }
+      }
+    },
+    "reload.legacyPositional": {
+      "id": "reload.legacyPositional",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "characterSheetOptions": {
+          "char1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png"
+          ]
+        },
+        "coverOptions": [
+          "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_0.png"
+        ],
+        "endOptions": [
+          "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_0.png"
+        ],
+        "sceneImageOptions": {
+          "1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png"
+          ]
+        },
+        "selectedCharacterSheets": {
+          "char1": 0
+        },
+        "selectedSceneImages": {
+          "1": 0
+        }
+      }
+    },
+    "reload.hashShaped": {
+      "id": "reload.hashShaped",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "characterSheetOptions": {
+          "char1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+          ]
+        },
+        "coverOptions": [
+          "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/cover/cover_cccccccccccccccccccccccccccccccc.png"
+        ],
+        "endOptions": [
+          "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/end/end_dddddddddddddddddddddddddddddddd.png"
+        ],
+        "sceneImageOptions": {
+          "1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png"
+          ]
+        },
+        "selectedCharacterSheets": {
+          "char1": 0
+        },
+        "selectedSceneImages": {
+          "1": 0
+        }
+      }
+    },
+    "reload.mixed": {
+      "id": "reload.mixed",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "characterSheetOptions": {
+          "char1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png",
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png"
+          ]
+        },
+        "coverOptions": [],
+        "endOptions": [],
+        "sceneImageOptions": {
+          "1": [
+            "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png"
+          ]
+        },
+        "selectedCharacterSheets": {
+          "char1": 0
+        },
+        "selectedSceneImages": {
+          "1": 0
+        }
+      }
+    },
+    "roundTrip.combined": {
+      "id": "roundTrip.combined",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/sceneRefs/scene1_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/coverRef/cover_0.png",
+          "upsert": true
+        },
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/endRef/end_0.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {
+              "char1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "coverPaths": [],
+            "coverReferencePath": "user-pb/lit-pb/coverRef/cover_0.png",
+            "endPaths": [],
+            "endReferencePath": "user-pb/lit-pb/endRef/end_0.png",
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/scenes/scene1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {
+              "1": "user-pb/lit-pb/sceneRefs/scene1_0.png"
+            }
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "stale": false,
+        "swap": {
+          "characterSheetOptions": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png"
+            ]
+          },
+          "coverOptions": [],
+          "coverReferenceImage": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/coverRef/cover_0.png",
+          "endOptions": [],
+          "endReferenceImage": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/endRef/end_0.png",
+          "propsReferenceImages": [],
+          "sceneImageOptions": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png"
+            ]
+          },
+          "sceneReferenceImages": {
+            "1": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/sceneRefs/scene1_0.png"
+          }
+        },
+        "uploadedUrls": {
+          "characterSheetUrls": {
+            "char1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/characters/char1_0.png"
+            ]
+          },
+          "coverReferenceUrl": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/coverRef/cover_0.png",
+          "coverUrls": [],
+          "endReferenceUrl": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/endRef/end_0.png",
+          "endUrls": [],
+          "propImageUrls": {},
+          "sceneImageUrls": {
+            "1": [
+              "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/scenes/scene1_0.png"
+            ]
+          },
+          "sceneReferenceUrls": {
+            "1": "https://mock.supabase.co/storage/v1/object/public/cuentacuentos-drafts/user-pb/lit-pb/sceneRefs/scene1_0.png"
+          }
+        }
+      }
+    },
+    "liturgy.allSuccess": {
+      "id": "liturgy.allSuccess",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/characters/char1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/jpeg",
+          "path": "liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/cover/cover.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/end/end.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "table": "liturgias"
+        },
+        {
+          "elementStoryImageRefs": [
+            {
+              "characterSheetUrls": [
+                "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/characters/char1.png"
+              ],
+              "coverImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/cover/cover.png",
+              "endImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/end/end.png",
+              "hasInlineImage": false,
+              "sceneUrls": [
+                "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg"
+              ]
+            }
+          ],
+          "table": "liturgia_elementos"
+        }
+      ],
+      "observed": {
+        "saveResult": {
+          "success": true
+        }
+      }
+    },
+    "liturgy.midCategoryFailure": {
+      "id": "liturgy.midCategoryFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/characters/char1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/jpeg",
+          "path": "liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/cover/cover.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/end/end.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "table": "liturgias"
+        },
+        {
+          "elementStoryImageRefs": [
+            {
+              "characterSheetUrls": [
+                "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/characters/char1.png"
+              ],
+              "coverImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/cover/cover.png",
+              "endImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/end/end.png",
+              "hasInlineImage": true,
+              "sceneUrls": [
+                "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=="
+              ]
+            }
+          ],
+          "table": "liturgia_elementos"
+        }
+      ],
+      "observed": {
+        "saveResult": {
+          "success": true
+        }
+      }
+    },
+    "liturgy.allFailure": {
+      "id": "liturgy.allFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/characters/char1.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/jpeg",
+          "path": "liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/cover/cover.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/end/end.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "table": "liturgias"
+        },
+        {
+          "elementStoryImageRefs": [
+            {
+              "characterSheetUrls": [
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg=="
+              ],
+              "coverImageUrl": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg==",
+              "endImageUrl": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYPj/HwADAgH/OSkZvgAAAABJRU5ErkJggg==",
+              "hasInlineImage": true,
+              "sceneUrls": [
+                "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=="
+              ]
+            }
+          ],
+          "table": "liturgia_elementos"
+        }
+      ],
+      "observed": {
+        "saveResult": {
+          "success": true
+        }
+      }
+    },
+    "liturgy.decodeFailure": {
+      "id": "liturgy.decodeFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/jpeg",
+          "path": "liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/cover/cover.png",
+          "upsert": true
+        },
+        {
+          "bucket": "liturgia-images",
+          "contentType": "image/png",
+          "path": "liturgias/lit-pb/cuentacuentos/end/end.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "table": "liturgias"
+        },
+        {
+          "elementStoryImageRefs": [
+            {
+              "characterSheetUrls": [
+                "not-base64!!!***"
+              ],
+              "coverImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/cover/cover.png",
+              "endImageUrl": "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/end/end.png",
+              "hasInlineImage": false,
+              "sceneUrls": [
+                "https://mock.supabase.co/storage/v1/object/public/liturgia-images/liturgias/lit-pb/cuentacuentos/scenes/scene_1.jpg"
+              ]
+            }
+          ],
+          "table": "liturgia_elementos"
+        }
+      ],
+      "observed": {
+        "saveResult": {
+          "success": true
+        }
+      }
+    },
+    "editor.character.existingUrl": {
+      "id": "editor.character.existingUrl",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Imagen ya guardada"
+      }
+    },
+    "editor.character.success": {
+      "id": "editor.character.success",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Imagen guardada exitosamente"
+      }
+    },
+    "editor.character.uploadFailure": {
+      "id": "editor.character.uploadFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/characters/char1_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Error al guardar"
+      }
+    },
+    "editor.scene.existingUrl": {
+      "id": "editor.scene.existingUrl",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Imagen ya guardada"
+      }
+    },
+    "editor.scene.success": {
+      "id": "editor.scene.success",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Imagen guardada exitosamente"
+      }
+    },
+    "editor.scene.uploadFailure": {
+      "id": "editor.scene.uploadFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/scenes/scene1_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [],
+      "observed": {
+        "saveButtonCount": 1,
+        "userVisibleMessage": "Error al guardar"
+      }
+    },
+    "editor.cover.existingUrl": {
+      "id": "editor.cover.existingUrl",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Portada ya guardada"
+      }
+    },
+    "editor.cover.success": {
+      "id": "editor.cover.success",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/cover/cover_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Portada guardada exitosamente"
+      }
+    },
+    "editor.cover.uploadFailure": {
+      "id": "editor.cover.uploadFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/cover/cover_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Error al guardar"
+      }
+    },
+    "editor.end.existingUrl": {
+      "id": "editor.end.existingUrl",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Imagen ya guardada"
+      }
+    },
+    "editor.end.success": {
+      "id": "editor.end.success",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [
+              "user-pb/lit-pb/end/end_0.png"
+            ],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Imagen guardada exitosamente"
+      }
+    },
+    "editor.end.uploadFailure": {
+      "id": "editor.end.uploadFailure",
+      "outcome": "resolved",
+      "error": null,
+      "uploads": [
+        {
+          "bucket": "cuentacuentos-drafts",
+          "contentType": "image/png",
+          "path": "user-pb/lit-pb/end/end_selected.png",
+          "upsert": true
+        }
+      ],
+      "upserts": [
+        {
+          "imagePaths": {
+            "characterSheetPaths": {},
+            "coverPaths": [
+              "user-pb/lit-pb/characters/char1_0.png"
+            ],
+            "coverReferencePath": null,
+            "endPaths": [],
+            "endReferencePath": null,
+            "propImagePaths": {},
+            "sceneImagePaths": {
+              "1": [
+                "user-pb/lit-pb/characters/char1_0.png"
+              ]
+            },
+            "sceneReferenceModes": {},
+            "sceneReferencePaths": {}
+          },
+          "persistedJsonHasInlineImage": false,
+          "table": "cuentacuentos_drafts"
+        }
+      ],
+      "observed": {
+        "saveButtonCount": 2,
+        "userVisibleMessage": "Error al guardar"
+      }
+    }
+  }
+}
