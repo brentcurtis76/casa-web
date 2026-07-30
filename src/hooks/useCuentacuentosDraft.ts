@@ -8,6 +8,10 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Story, TextOverlay } from '@/types/shared/story';
 import { runWithConcurrency } from '@/lib/cuentacuentos/concurrency';
 import {
+  uploadImmutableDraftImage,
+  isHttpReference,
+} from '@/lib/cuentacuentos/immutableImageUpload';
+import {
   buildEditorStateV1,
   restoreEditorStateV1,
   isEditorStateV1Extended,
@@ -490,7 +494,28 @@ async function checkFileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Sube una imagen base64 a Supabase Storage
+ * PB — resuelve UNA imagen a su path persistible.
+ *
+ * Dos cambios de contrato respecto de 185c370, ambos exigidos por PB:
+ *
+ *  1. INMUTABILIDAD (G2): las entradas inline ya no se escriben con un nombre
+ *     posicional `${key}_${index}` y `upsert:true` — dos fotos distintas en el
+ *     mismo índice se pisaban y los bytes viejos se perdían. Ahora el nombre lo
+ *     da el contenido (hash de los bytes decodificados) y la escritura es
+ *     `upsert:false`. Todo eso vive en la primitiva compartida; acá no se
+ *     decodifica, ni se olfatea, ni se sube.
+ *
+ *  2. FAIL-CLOSED (G4): un fallo ya no se degrada a `null`. Antes, `null`
+ *     hacía que el grupo se compactara y que la categoría se persistiera
+ *     ACORTADA (o vacía) mientras la promesa resolvía con éxito — una foto
+ *     desaparecía del borrador sin que nadie se enterara. Ahora la excepción
+ *     sube y aborta la escritura lógica ANTES del upsert.
+ *
+ * Las entradas HTTP(S) NO entran a la primitiva: se arrastran tal cual,
+ * conservando su posición. Si la URL es del bucket de drafts y el objeto
+ * existe, se persiste su path (como en la base); si no se puede verificar, se
+ * conserva la URL ORIGINAL en vez de descartarla — descartarla compactaba el
+ * grupo, que es justo lo que PB prohíbe.
  */
 async function uploadImage(
   userId: string,
@@ -499,97 +524,44 @@ async function uploadImage(
   key: string,
   index: number,
   base64Data: string
-): Promise<string | null> {
-  try {
-    console.log(`[useCuentacuentosDraft] uploadImage called: ${category}/${key}_${index}, data length: ${base64Data?.length || 0}, isURL: ${base64Data?.startsWith('http')}`);
+): Promise<string> {
+  console.log(`[useCuentacuentosDraft] uploadImage called: ${category}/${key}[${index}], data length: ${base64Data?.length || 0}, isURL: ${isHttpReference(base64Data)}`);
 
-    // Si ya es una URL, verificar si el archivo REALMENTE existe en Storage
-    if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
-      // Es una URL - verificar si es de nuestro bucket de Supabase
-      if (base64Data.includes('cuentacuentos-drafts')) {
-        // Extraer el path del storage de la URL
-        const match = base64Data.match(/cuentacuentos-drafts\/([^?]+)/);
-        if (match) {
-          const extractedPath = match[1];
-          // CRITICAL FIX: Verificar que el archivo REALMENTE existe
-          const exists = await checkFileExists(extractedPath);
-          if (exists) {
-            console.log(`[useCuentacuentosDraft] File EXISTS at path: ${extractedPath}`);
-            return extractedPath;
-          } else {
-            console.warn(`[useCuentacuentosDraft] File NOT FOUND at path: ${extractedPath}, cannot recover`);
-            // El archivo no existe - retornar null porque no podemos recrearlo desde una URL
-            return null;
-          }
-        }
+  // Referencia ya persistida: se arrastra, jamás se re-sube.
+  if (isHttpReference(base64Data)) {
+    const match =
+      base64Data.match(/\/storage\/v1\/object\/public\/cuentacuentos-drafts\/([^?]+)/) ??
+      base64Data.match(/cuentacuentos-drafts\/([^?]+)/);
+    if (match) {
+      const extractedPath = match[1];
+      const exists = await checkFileExists(extractedPath);
+      if (exists) {
+        console.log(`[useCuentacuentosDraft] File EXISTS at path: ${extractedPath}`);
+        return extractedPath;
       }
-      // CRITICAL FIX: For any storage URL, try harder to extract path
-      // Try different URL formats
-      const altMatch = base64Data.match(/\/storage\/v1\/object\/public\/cuentacuentos-drafts\/([^?]+)/);
-      if (altMatch) {
-        const extractedPath = altMatch[1];
-        // Verificar que el archivo existe
-        const exists = await checkFileExists(extractedPath);
-        if (exists) {
-          console.log(`[useCuentacuentosDraft] File EXISTS at extracted path: ${extractedPath}`);
-          return extractedPath;
-        } else {
-          console.warn(`[useCuentacuentosDraft] File NOT FOUND at extracted path: ${extractedPath}`);
-          return null;
-        }
-      }
-
-      // External URL - cannot process, return null
-      console.warn('[useCuentacuentosDraft] External URL cannot be processed:', base64Data.slice(0, 100));
-      return null;
+      console.warn(
+        `[useCuentacuentosDraft] File NOT FOUND at path: ${extractedPath}; se conserva la URL original sin compactar el grupo`
+      );
+      return base64Data;
     }
-
-    // Si es un data URL, extraer el base64
-    if (base64Data.startsWith('data:')) {
-      const parts = base64Data.split(',');
-      if (parts.length > 1) {
-        base64Data = parts[1];
-      }
-    }
-
-    // Detectar tipo de imagen
-    const mimeType = base64Data.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-    const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-
-    // Convertir base64 a blob
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-
-    // Path: userId/liturgyId/category/key_index.png
-    const path = `${userId}/${liturgyId}/${category}/${key}_${index}.${extension}`;
-
-    console.log(`[useCuentacuentosDraft] Uploading to path: ${path}, blob size: ${blob.size}, mimeType: ${mimeType}`);
-
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(path, blob, {
-        contentType: mimeType,
-        upsert: true,
-      });
-
-    if (error) {
-      console.error('[useCuentacuentosDraft] Error uploading image:', error);
-      console.error('[useCuentacuentosDraft] Error details:', JSON.stringify(error));
-      return null;
-    }
-
-    console.log(`[useCuentacuentosDraft] Upload SUCCESS: ${path}, response:`, data);
-    verifiedPaths.add(path);
-    return path;
-  } catch (err) {
-    console.error('[useCuentacuentosDraft] Error uploading image:', err);
-    return null;
+    // URL externa: no se procesa, pero tampoco se descarta.
+    console.warn('[useCuentacuentosDraft] External URL preserved as-is:', base64Data.slice(0, 100));
+    return base64Data;
   }
+
+  const uploaded = await uploadImmutableDraftImage({
+    userId,
+    liturgyId,
+    category,
+    key,
+    data: base64Data,
+  });
+
+  console.log(
+    `[useCuentacuentosDraft] Upload OK: ${uploaded.path} (${uploaded.contentType}, deduplicated=${uploaded.deduplicated})`
+  );
+  verifiedPaths.add(uploaded.path);
+  return uploaded.path;
 }
 
 /**
@@ -673,9 +645,17 @@ async function saveImagesToStorage(
   const jobs: Array<() => Promise<void>> = [];
   const finalize: Array<() => void> = [];
 
+  /**
+   * PB/G4 — los slots ya NO se filtran. En 185c370 `slots.filter(Boolean)`
+   * compactaba el grupo: un fallo intermedio persistía la categoría acortada y
+   * reindexada, y un fallo total la persistía vacía, todo con la promesa
+   * resolviendo en éxito. Ahora un fallo lanza y aborta la escritura lógica
+   * completa antes del upsert, así que al llegar a `finalize` todos los slots
+   * están poblados y el orden y el largo del grupo se conservan.
+   */
   const queueGroup = (
     options: string[],
-    upload: (index: number, data: string) => Promise<string | null>,
+    upload: (index: number, data: string) => Promise<string>,
     assign: (paths: string[]) => void
   ) => {
     const slots: (string | null)[] = new Array(options.length).fill(null);
@@ -684,7 +664,21 @@ async function saveImagesToStorage(
         slots[i] = await upload(i, imageData);
       });
     });
-    finalize.push(() => assign(slots.filter((p): p is string => !!p)));
+    finalize.push(() =>
+      assign(
+        slots.map((p, i) => {
+          if (typeof p !== 'string') {
+            // Inalcanzable si el fail-closed de arriba funciona; si algún día
+            // deja de funcionar, esto lo convierte en un fallo ruidoso en vez
+            // de una pérdida silenciosa de una foto.
+            throw new Error(
+              `saveImagesToStorage: slot ${i} quedó sin path tras subidas exitosas`
+            );
+          }
+          return p;
+        })
+      )
+    );
   };
 
   if (categories.characterSheets) {
@@ -759,7 +753,7 @@ async function saveImagesToStorage(
   // like options) so we use a small helper that assigns via a captured setter.
   const queueSingle = (
     imageData: string | null | undefined,
-    upload: (data: string) => Promise<string | null>,
+    upload: (data: string) => Promise<string>,
     assign: (path: string | null) => void
   ) => {
     if (typeof imageData !== 'string' || imageData.length === 0) {
@@ -800,7 +794,23 @@ async function saveImagesToStorage(
     );
   }
 
-  await runWithConcurrency(jobs, 6);
+  // PB/G4 — `runWithConcurrency` NUNCA rechaza: devuelve resultados settled.
+  // Sin esta inspección, un fallo de subida quedaría invisible y la escritura
+  // seguiría hasta el upsert, que es exactamente la degradación silenciosa que
+  // PB elimina. Se aborta ANTES de tocar la base: sin swap de React, sin
+  // callback de éxito, sin upsert del borrador.
+  const settled = await runWithConcurrency(jobs, 6);
+  const firstRejection = settled.find(
+    (r): r is PromiseRejectedResult => r.status === 'rejected'
+  );
+  if (firstRejection) {
+    const failed = settled.filter((r) => r.status === 'rejected').length;
+    console.error(
+      `[useCuentacuentosDraft] ${failed} de ${settled.length} subida(s) fallaron; se aborta la escritura lógica sin persistir`
+    );
+    throw firstRejection.reason;
+  }
+
   finalize.forEach((fn) => fn());
 
   return {

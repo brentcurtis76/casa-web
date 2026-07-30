@@ -959,9 +959,9 @@ describe('T-A3.4 EditorStateV1 extendido round-trip (persist + reload sin pérdi
       draft.story = { ...draft.story, coverTextOverlay: overlayCover, endTextOverlay: overlayEnd };
     }
     // Referencias por escena en base64 (hook debe convertir a paths al persistir).
-    draft.sceneReferenceImages = { 1: 'data:image/png;base64,AAAA' };
-    draft.coverReferenceImage = 'data:image/png;base64,BBBB';
-    draft.endReferenceImage = 'data:image/png;base64,CCCC';
+    draft.sceneReferenceImages = { 1: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==' };
+    draft.coverReferenceImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg==';
+    draft.endReferenceImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYPj/HwADAgH/OSkZvgAAAABJRU5ErkJggg==';
 
     // Persistir.
     await saveDraftNow({
@@ -1546,7 +1546,7 @@ describe('A3a/S2 round-trip: long narrative text and prompts survive persist+loa
           narrativeRole: '',
           visualDescription: longCharNotes,
           referenceImages: [
-            'data:image/png;base64,AAAA',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==',
             'https://cdn/keep-prop-' + 'x'.repeat(600) + '.png',
           ],
           role: 'primary',

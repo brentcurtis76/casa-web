@@ -157,7 +157,7 @@ vi.mock('@/integrations/supabase/client', () => {
       storage: { from: vi.fn(() => storageApi()) },
       functions: {
         invoke: vi.fn().mockImplementation(async () => ({
-          data: { success: true, images: ['data:image/png;base64,iVBORw0KGgoAAA='] },
+          data: { success: true, images: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg=='] },
           error: null,
         })),
       },

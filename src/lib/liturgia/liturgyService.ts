@@ -8,6 +8,10 @@ import { CUSTOM_TIPO_PREFIX } from '@/types/shared/liturgy';
 import { format } from 'date-fns';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { unpublishReflexionForLiturgy } from '@/lib/publishedResourcesService';
+import {
+  uploadImmutableFinalImage,
+  isHttpReference,
+} from '@/lib/cuentacuentos/immutableImageUpload';
 
 /**
  * Sube una imagen base64 a Supabase Storage y retorna la URL pública
@@ -156,42 +160,32 @@ async function uploadSingleImage(
   category: string,
   filename: string,
   base64Data: string
-): Promise<string | null> {
-  try {
-    // If it's already a URL, return it as-is
-    if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
-      console.log(`[uploadSingleImage] Image is already URL: ${base64Data.slice(0, 80)}`);
-      return base64Data;
-    }
-
-    const blob = base64ToBlob(base64Data);
-    const extension = blob.type === 'image/jpeg' ? 'jpg' : 'png';
-    const filePath = `liturgias/${liturgyId}/cuentacuentos/${category}/${filename}.${extension}`;
-
-    console.log(`[uploadSingleImage] Uploading to ${filePath}, size: ${blob.size}`);
-
-    const { error: uploadError } = await supabase.storage
-      .from('liturgia-images')
-      .upload(filePath, blob, {
-        upsert: true,
-        contentType: blob.type,
-      });
-
-    if (uploadError) {
-      console.error(`[uploadSingleImage] Error uploading ${filePath}:`, uploadError);
-      return null;
-    }
-
-    const { data } = supabase.storage
-      .from('liturgia-images')
-      .getPublicUrl(filePath);
-
-    console.log(`[uploadSingleImage] Uploaded successfully: ${data.publicUrl.slice(0, 80)}`);
-    return data.publicUrl;
-  } catch (err) {
-    console.error(`[uploadSingleImage] Error:`, err);
-    return null;
+): Promise<string> {
+  // If it's already a URL, return it as-is
+  if (isHttpReference(base64Data)) {
+    console.log(`[uploadSingleImage] Image is already URL: ${base64Data.slice(0, 80)}`);
+    return base64Data;
   }
+
+  // PB/G2 — subida inmutable por la primitiva compartida: nombre por
+  // contenido, `upsert:false`, MIME por magic bytes.
+  //
+  // PB/G4 — el fallo ya NO se degrada a `null`. Antes, `null` hacía que
+  // `updateStoryWithImageUrls` cayera al campo original — que puede ser
+  // base64 crudo — y `saveLiturgy` lo persistía en `liturgia_elementos`
+  // reportando ÉXITO. Ahora la excepción sube y aborta el guardado antes de
+  // tocar `liturgia_elementos`.
+  const uploaded = await uploadImmutableFinalImage({
+    liturgyId,
+    category,
+    key: filename,
+    data: base64Data,
+  });
+
+  console.log(
+    `[uploadSingleImage] Uploaded successfully: ${uploaded.path} (deduplicated=${uploaded.deduplicated})`
+  );
+  return uploaded.publicUrl;
 }
 
 /**
@@ -212,10 +206,12 @@ export async function uploadCuentacuentosImages(
   // Upload character sheets
   for (const [charId, imageData] of Object.entries(images.characterSheets)) {
     if (imageData) {
-      const url = await uploadSingleImage(liturgyId, 'characters', charId, imageData);
-      if (url) {
-        result.characterSheets[charId] = url;
-      }
+      result.characterSheets[charId] = await uploadSingleImage(
+        liturgyId,
+        'characters',
+        charId,
+        imageData
+      );
     }
   }
   console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.characterSheets).length} character sheets`);
@@ -223,28 +219,24 @@ export async function uploadCuentacuentosImages(
   // Upload scene images
   for (const [sceneNum, imageData] of Object.entries(images.sceneImages)) {
     if (imageData) {
-      const url = await uploadSingleImage(liturgyId, 'scenes', `scene_${sceneNum}`, imageData);
-      if (url) {
-        result.sceneImages[Number(sceneNum)] = url;
-      }
+      result.sceneImages[Number(sceneNum)] = await uploadSingleImage(
+        liturgyId,
+        'scenes',
+        `scene_${sceneNum}`,
+        imageData
+      );
     }
   }
   console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.sceneImages).length} scene images`);
 
   // Upload cover image
   if (images.coverImage) {
-    const url = await uploadSingleImage(liturgyId, 'cover', 'cover', images.coverImage);
-    if (url) {
-      result.coverImage = url;
-    }
+    result.coverImage = await uploadSingleImage(liturgyId, 'cover', 'cover', images.coverImage);
   }
 
   // Upload end image
   if (images.endImage) {
-    const url = await uploadSingleImage(liturgyId, 'end', 'end', images.endImage);
-    if (url) {
-      result.endImage = url;
-    }
+    result.endImage = await uploadSingleImage(liturgyId, 'end', 'end', images.endImage);
   }
 
   console.log('[uploadCuentacuentosImages] Upload complete');
@@ -539,7 +531,23 @@ export async function saveLiturgy(
           }
 
           // Upload images
-          const uploadedUrls = await uploadCuentacuentosImages(liturgiaId, imagesToUpload);
+          //
+          // PB/G4 — fail-closed. Cualquier fallo que NO sea un conflicto de
+          // duplicado aborta el guardado ACÁ, antes del upsert de
+          // `liturgia_elementos` (más abajo). Antes, una subida fallida
+          // devolvía `null`, `updateStoryWithImageUrls` caía al campo original
+          // —que puede ser base64 crudo— y la liturgia se guardaba con "éxito"
+          // llevándose el base64 a la base. Los objetos hermanos que sí se
+          // crearon quedan como huérfanos permitidos: PB nunca compensa con
+          // borrados.
+          let uploadedUrls: CuentacuentosImageUrls;
+          try {
+            uploadedUrls = await uploadCuentacuentosImages(liturgiaId, imagesToUpload);
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : 'Error desconocido';
+            console.error('[saveLiturgy] Cuentacuentos image upload failed; aborting save:', err);
+            throw new Error(`No se pudieron guardar las imágenes del cuento: ${detail}`);
+          }
 
           // Update story with uploaded URLs
           const updatedStory = updateStoryWithImageUrls(story, uploadedUrls);

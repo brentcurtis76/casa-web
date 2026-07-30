@@ -103,6 +103,7 @@ interface CuentacuentoEditorProps {
   onNavigateToFullEditor?: () => void;
 }
 
+import { uploadImmutableDraftImage } from '@/lib/cuentacuentos/immutableImageUpload';
 import {
   makeCharacterSheetTask,
   makeCoverTask,
@@ -3114,28 +3115,17 @@ Instrucciones críticas:
       }
 
       // Subir solo la imagen seleccionada
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/characters/${characterId}_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — la subida inmutable vive en la primitiva compartida: nombre
+      // por contenido y `upsert:false`. El nombre posicional `_selected`
+      // desapareció porque el contenido ya identifica al objeto.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'characters',
+        key: characterId,
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
@@ -3199,17 +3189,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/scenes/scene${sceneNumber}_selected.${extension}`;
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'scenes',
+        key: `scene${sceneNumber}`,
+        data: selectedImage,
+      });
+      const path = uploaded.path;
 
       console.log('[handleSaveSceneImage] UPLOAD DETAILS:', {
         bucket: 'cuentacuentos-drafts',
@@ -3217,21 +3205,15 @@ Instrucciones críticas:
         userId: user.id,
         contextId: context.id,
         sceneNumber,
-        blobSize: blob.size,
-        mimeType,
+        contentType: uploaded.contentType,
+        hash32: uploaded.hash32,
       });
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
 
       console.log('[handleSaveSceneImage] UPLOAD RESULT:', {
-        success: !uploadError,
-        uploadData,
-        uploadError,
+        success: true,
+        path: uploaded.path,
+        deduplicated: uploaded.deduplicated,
       });
-
-      if (uploadError) throw uploadError;
 
       // VERIFICATION: Check if file actually exists in storage after upload
       console.log('[handleSaveSceneImage] VERIFYING file exists in storage...');
@@ -3319,28 +3301,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/cover/cover_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'cover',
+        key: 'cover',
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Add cache-busting timestamp to force browser to reload the image
@@ -3384,28 +3353,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/end/end_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'end',
+        key: 'end',
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Add cache-busting timestamp to force browser to reload the image

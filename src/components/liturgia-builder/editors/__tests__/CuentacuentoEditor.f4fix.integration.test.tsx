@@ -180,7 +180,7 @@ vi.mock('@/integrations/supabase/client', () => {
           return {
             data: {
               success: true,
-              images: ['data:image/png;base64,iVBORw0KGgoAAA=', 'data:image/png;base64,iVBORw0KGgoBBB='],
+              images: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=='],
             },
             error: null,
           };
@@ -643,7 +643,7 @@ describe('F2 (BASE-RED): Finalizar is disabled while a generation is in flight',
     // Release generation → it settles → finalize re-enables.
     await act(async () => {
       genBlocker.resolve({
-        data: { success: true, images: ['data:image/png;base64,iVBORw0KGgoAAA=', 'data:image/png;base64,iVBORw0KGgoBBB='] },
+        data: { success: true, images: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNg+M/wHwAEAQH/rrVV9QAAAABJRU5ErkJggg=='] },
         error: null,
       });
       await yields(25);

@@ -55,7 +55,7 @@ import {
   type UploadCall,
   type UpsertCall,
 } from './pbBaseCapture.harness';
-import { DIVERGENCES } from './pbBaseCapture.divergences';
+import { DIVERGENCES, assertNewValueInvariants } from './pbBaseCapture.divergences';
 
 // ---------------------------------------------------------------------------
 // Controles del borde externo
@@ -709,6 +709,12 @@ describe('PB G6 — captura/comparación del comportamiento base 185c370', () =>
       writeFixtureOrThrow();
       return;
     }
+    // Volcado auxiliar del resultado ACTUAL (no toca el fixture base). Se usa
+    // sólo para redactar la tabla de divergencias; no participa de ninguna
+    // aserción.
+    if (process.env.PB_DUMP) {
+      fs.writeFileSync(process.env.PB_DUMP, JSON.stringify({ cases: captured }, null, 2), 'utf8');
+    }
     compareAgainstFixture();
   }, 600_000);
 });
@@ -888,8 +894,30 @@ function writeFixtureOrThrow() {
     cases: captured,
   };
   fs.writeFileSync(FIXTURE_PATH, JSON.stringify(fixture, null, 2) + '\n', 'utf8');
-  // eslint-disable-next-line no-console
   console.log(`[PB G6] fixture escrito: ${FIXTURE_PATH} (${Object.keys(captured).length} casos)`);
+}
+
+/**
+ * PB — las llamadas a Storage se comparan como MULTICONJUNTO ordenado por path.
+ *
+ * Motivo (finding registrado): la primitiva hashea con `crypto.subtle`, que es
+ * asíncrono, así que bajo el pool de concurrencia 6 el ORDEN en que los jobs
+ * llegan a `.upload()` varía entre corridas. En 185c370 el decode era síncrono
+ * y ese orden salía estable — pero nunca fue un contrato: Storage no impone
+ * orden entre objetos distintos.
+ *
+ * Lo que SÍ es contrato (T-B.1: orden y largo del grupo preservados) se sigue
+ * comparando de forma estricta y ordenada, porque vive en `upserts`
+ * (`image_paths`) y en `observed` (`uploadedUrls` y el swap de React), que esta
+ * función no toca.
+ */
+function sortUploads<T>(value: T): T {
+  if (!Array.isArray(value)) return value;
+  return [...(value as unknown[])].sort((a, b) => {
+    const pa = String((a as { path?: unknown })?.path ?? '');
+    const pb = String((b as { path?: unknown })?.path ?? '');
+    return pa < pb ? -1 : pa > pb ? 1 : 0;
+  }) as unknown as T;
 }
 
 function compareAgainstFixture() {
@@ -907,16 +935,21 @@ function compareAgainstFixture() {
   for (const id of Object.keys(fixture.cases)) {
     const oldRec = JSON.parse(JSON.stringify(fixture.cases[id])) as CaseRecord;
     const newRec = JSON.parse(JSON.stringify(captured[id])) as CaseRecord;
+    oldRec.uploads = sortUploads(oldRec.uploads);
+    newRec.uploads = sortUploads(newRec.uploads);
 
     // Aplica las divergencias declaradas para este caso: cada una exige que el
     // VIEJO valor sea exactamente el capturado y el NUEVO exactamente el
     // requerido. Después se retira del objeto para que el resto compare igual.
     for (const div of DIVERGENCES.filter((d) => d.case === id)) {
+      const isUploads = div.path === 'uploads';
       const actualOld = getPath(oldRec, div.path);
       const actualNew = getPath(newRec, div.path);
+      const expectOld = isUploads ? sortUploads(div.oldValue) : div.oldValue;
+      const expectNew = isUploads ? sortUploads(div.newValue) : div.newValue;
       try {
-        expect(actualOld, `[${id}] divergencia ${div.path}: el fixture base ya no contiene el valor viejo declarado`).toEqual(div.oldValue);
-        expect(actualNew, `[${id}] divergencia ${div.path} (${div.reason}): el head no produce el valor nuevo requerido`).toEqual(div.newValue);
+        expect(actualOld, `[${id}] divergencia ${div.path}: el fixture base ya no contiene el valor viejo declarado`).toEqual(expectOld);
+        expect(actualNew, `[${id}] divergencia ${div.path} (${div.reason}): el head no produce el valor nuevo requerido`).toEqual(expectNew);
       } catch (err) {
         findings.push(
           `DIVERGENCIA NO SATISFECHA [${id}] ${div.path} — ${div.reason}\n${
@@ -924,6 +957,13 @@ function compareAgainstFixture() {
           }`
         );
       }
+      // Guarda independiente de la tabla: el `newValue` declarado debe
+      // satisfacer las invariantes de PB por sí mismo.
+      const violations = assertNewValueInvariants(id, div.path, div.newValue);
+      if (violations.length > 0) {
+        findings.push(`INVARIANTE VIOLADA en el newValue declarado:\n${violations.join('\n')}`);
+      }
+
       deletePath(oldRec, div.path);
       deletePath(newRec, div.path);
     }
