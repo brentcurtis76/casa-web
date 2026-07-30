@@ -78,6 +78,14 @@ function stubFetch(url: string): Promise<Response> {
       new Response(
         JSON.stringify({
           candidates: [{
+            // Stub fidelity, not an expectation change (PC r1 Q4). The real API
+            // always reports a finish reason, and PC made `STOP` the condition
+            // for consuming research text — so without this the story cases all
+            // took the OUTPUT_BLOCKED path and the corpus never exercised
+            // successful research at all. The captured outcome
+            // (status/code/fetched/providerImages/providerCalls) does not
+            // observe this field, and `corpus_baseline.json` is untouched.
+            finishReason: "STOP",
             content: {
               parts: [
                 { text: "descripción visual" },
