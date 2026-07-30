@@ -141,10 +141,17 @@ const WARNING_SOURCES: Record<WarningSource, string> = {
  * Never from provider output and never from request text: the message is
  * returned to the client and summarised in logs, so interpolating either would
  * reopen the channels PF [B3] closed.
+ *
+ * The consequence clause is ENVELOPE-NEUTRAL (PC r1 [S1]). The frozen contract
+ * puts the same warnings on three envelopes — prompt preview, story success and
+ * the downstream error — and `El cuento se generó sin esa información.` was
+ * false on two of them: the preview generates no story, and the error envelope
+ * reports that story generation failed. One message serves all three, so it
+ * states what was lost rather than what became of the story.
  */
 function warningMessage(source: WarningSource, code: ResearchFailureCode): string {
   return `${WARNING_REASONS[code]} en ${WARNING_SOURCES[source]}. ` +
-    'El cuento se generó sin esa información.';
+    'No se pudo incorporar esa información.';
 }
 
 function toWarning(source: WarningSource, result: ResearchResult): ResponseWarning | undefined {

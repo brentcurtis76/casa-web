@@ -748,6 +748,17 @@ Deno.test("PC6f warning messages never interpolate request text", async () => {
   );
 });
 
+/**
+ * The consequence clause, updated for PC r1 [S1].
+ *
+ * This assertion previously pinned `El cuento se generó sin esa información.`
+ * That sentence was FALSE on two of the three envelopes the frozen contract
+ * puts warnings on, which is what [S1] found; the reviewer named this exact
+ * replacement string. Expectation edited deliberately, on the reviewer's
+ * instruction — not to green a failure.
+ */
+const NEUTRAL_CONSEQUENCE = "No se pudo incorporar esa información.";
+
 // D8: the copy that reaches the user is Spanish, and it says what happened.
 Deno.test("PC6g warning messages are Spanish and mention the degradation", async () => {
   const r = await run({ gemini: () => new Response("x", { status: 404 }) });
@@ -757,12 +768,59 @@ Deno.test("PC6g warning messages are Spanish and mention the degradation", async
   for (const w of warningsOf(r.body)) {
     assertStrictEquals(typeof w.message, "string");
     assert(
-      w.message.includes("El cuento se generó sin esa información."),
+      w.message.includes(NEUTRAL_CONSEQUENCE),
       `message must state the consequence, got: ${w.message}`,
     );
     assert(
       w.message.startsWith("El modelo de investigación visual no está disponible en "),
       `message must state the cause, got: ${w.message}`,
     );
+  }
+});
+
+/**
+ * [S1]'s actual requirement: ONE message has to be true on all three envelopes
+ * the frozen contract writes warnings to. Asserting it on only one of them is
+ * how the false sentence survived round 1 — the preview envelope claims a story
+ * was generated when nothing was generated, and the 500 claims one was
+ * generated when generation is exactly what failed.
+ */
+Deno.test("PC6i the consequence clause is true on preview, success and error envelopes", async () => {
+  const fail404 = () => new Response("x", { status: 404 });
+
+  const preview = await run({ gemini: fail404 });
+  assertStrictEquals(preview.status, 200);
+  assert(promptOf(preview.body).length > 0, "this is the preview envelope: no story exists");
+
+  const success = await run({
+    payload: storyPayload({ previewPromptOnly: false }),
+    gemini: fail404,
+  });
+  assertStrictEquals(success.body.success, true);
+
+  const failure = await run({
+    payload: storyPayload({ previewPromptOnly: false }),
+    gemini: fail404,
+    anthropic: () => new Response("provider rejected", { status: 400 }),
+  });
+  assertStrictEquals(failure.status, 500, "this is the error envelope: no story was written");
+
+  for (const [envelope, r] of [
+    ["preview", preview],
+    ["success", success],
+    ["error", failure],
+  ] as const) {
+    const ws = warningsOf(r.body);
+    assertStrictEquals(ws.length, 2, `${envelope} envelope must carry both warnings`);
+    for (const w of ws) {
+      assert(
+        w.message.includes(NEUTRAL_CONSEQUENCE),
+        `${envelope}: expected the envelope-neutral clause, got: ${w.message}`,
+      );
+      assert(
+        !w.message.includes("El cuento se generó"),
+        `${envelope}: message claims a story was generated: ${w.message}`,
+      );
+    }
   }
 });
