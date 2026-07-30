@@ -246,7 +246,7 @@ Deno.test("PC1b index.ts owns the env read and hands the model to the handler", 
 // [PC2] — the request knobs, on both calls
 // ---------------------------------------------------------------------------
 
-Deno.test("PC2 both research calls pin thinkingLevel LOW and maxOutputTokens 1024", async () => {
+Deno.test("PC2 both research calls pin thinkingLevel LOW and maxOutputTokens 2048", async () => {
   const r = await run();
 
   assertStrictEquals(r.gemini.length, 2);
@@ -255,7 +255,7 @@ Deno.test("PC2 both research calls pin thinkingLevel LOW and maxOutputTokens 102
       maxOutputTokens?: unknown;
       thinkingConfig?: { thinkingLevel?: unknown };
     };
-    assertStrictEquals(gc?.maxOutputTokens, 1024, "maxOutputTokens");
+    assertStrictEquals(gc?.maxOutputTokens, 2048, "maxOutputTokens");
     assertStrictEquals(gc?.thinkingConfig?.thinkingLevel, "LOW", "thinkingConfig.thinkingLevel");
   }
 });

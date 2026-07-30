@@ -72,7 +72,7 @@ const MODEL = 'claude-opus-4-5-20251101';
  * tier the model offers.
  */
 const RESEARCH_THINKING_LEVEL = 'LOW';
-const RESEARCH_MAX_OUTPUT_TOKENS = 1024;
+const RESEARCH_MAX_OUTPUT_TOKENS = 2048;
 
 /**
  * Why research failed. Closed set: these codes reach the client inside
