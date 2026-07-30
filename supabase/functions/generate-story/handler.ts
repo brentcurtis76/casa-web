@@ -159,17 +159,61 @@ function toWarning(source: WarningSource, result: ResearchResult): ResponseWarni
 }
 
 /**
- * `finishReason` is provider-controlled text that this handler both logs and
- * echoes to the client, so it is classified by SHAPE before either: the real
- * field is an upper-snake-case enum (`STOP`, `MAX_TOKENS`, `SAFETY`, …), and
- * anything else — a URL, a token, a sentence — collapses to `DESCONOCIDO`.
+ * The provider's documented `Candidate.finishReason` domain.
  *
- * Shape rather than an enumerated allowlist so a new provider reason still
- * reports itself instead of being flattened, per PF's log-hygiene invariant.
+ * SOURCE: Google `generativelanguage` v1beta discovery document, revision
+ * `20260728` — `schemas.Candidate.properties.finishReason.enum`, fetched from
+ * `https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta`.
+ * That is the exact API version this handler calls (`/v1beta/models/{model}:
+ * generateContent`). Cross-checked, same names, against the googleapis
+ * `google/ai/generativelanguage/v1beta/generative_service.proto`
+ * (`Candidate.FinishReason`) and the `@google/genai` JS SDK `FinishReason`.
+ *
+ * Ordered as the provider documents it, so a future re-check is a diff.
+ */
+const PROVIDER_FINISH_REASONS: ReadonlySet<string> = new Set([
+  'FINISH_REASON_UNSPECIFIED',
+  'STOP',
+  'MAX_TOKENS',
+  'SAFETY',
+  'RECITATION',
+  'LANGUAGE',
+  'OTHER',
+  'BLOCKLIST',
+  'PROHIBITED_CONTENT',
+  'SPII',
+  'MALFORMED_FUNCTION_CALL',
+  'IMAGE_SAFETY',
+  'IMAGE_PROHIBITED_CONTENT',
+  'IMAGE_OTHER',
+  'NO_IMAGE',
+  'IMAGE_RECITATION',
+  'UNEXPECTED_TOOL_CALL',
+  'TOO_MANY_TOOL_CALLS',
+  'MISSING_THOUGHT_SIGNATURE',
+  'MALFORMED_RESPONSE',
+  'ESCALATION',
+]);
+
+/**
+ * `finishReason` is provider-controlled text that this handler both logs and
+ * echoes to the client, so it is classified against the DOMAIN above before
+ * either. Anything outside it collapses to `DESCONOCIDO`.
+ *
+ * A shape test is not enough, and that was PC r1 [B1]: `/^[A-Z_]{1,40}$/`
+ * accepts any upper-snake-case token, so a provider-controlled value shaped
+ * like an enum was logged and returned verbatim. Same shape-vs-domain hole as
+ * PF [B3-R] — an accepted lexical shape is not an accepted meaning.
+ *
+ * The cost is that a genuinely NEW provider reason reports as `DESCONOCIDO`
+ * until this list is re-checked against the docs. That is the safe direction:
+ * the taxonomy branch it lands in ([PC3], below) is decided by the value being
+ * neither `STOP` nor `MAX_TOKENS`, which an unknown reason still is not, so it
+ * still degrades to `OUTPUT_BLOCKED` and is still reported — just not named.
  */
 function safeFinishReason(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw.length === 0) return undefined;
-  return /^[A-Z_]{1,40}$/.test(raw) ? raw : 'DESCONOCIDO';
+  return PROVIDER_FINISH_REASONS.has(raw) ? raw : 'DESCONOCIDO';
 }
 
 /**

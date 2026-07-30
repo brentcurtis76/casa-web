@@ -328,8 +328,37 @@ Deno.test("PC3c MAX_TOKENS is OUTPUT_TRUNCATED and its partial text is discarded
   );
 });
 
+/**
+ * Every documented non-`STOP`/non-`MAX_TOKENS` reason, transcribed BY HAND from
+ * the v1beta discovery document (revision 20260728) rather than imported from
+ * `handler.ts` — importing the allowlist would make this test agree with the
+ * implementation by construction and prove nothing. Written out here, it fails
+ * if [B1]'s allowlist ever narrows and starts flattening real reasons.
+ */
+const DOCUMENTED_BLOCKING_REASONS = [
+  "FINISH_REASON_UNSPECIFIED",
+  "SAFETY",
+  "RECITATION",
+  "LANGUAGE",
+  "OTHER",
+  "BLOCKLIST",
+  "PROHIBITED_CONTENT",
+  "SPII",
+  "MALFORMED_FUNCTION_CALL",
+  "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT",
+  "IMAGE_OTHER",
+  "NO_IMAGE",
+  "IMAGE_RECITATION",
+  "UNEXPECTED_TOOL_CALL",
+  "TOO_MANY_TOOL_CALLS",
+  "MISSING_THOUGHT_SIGNATURE",
+  "MALFORMED_RESPONSE",
+  "ESCALATION",
+];
+
 Deno.test("PC3d any other finish reason is OUTPUT_BLOCKED, and reports which", async () => {
-  for (const finishReason of ["SAFETY", "RECITATION", "PROHIBITED_CONTENT", "OTHER"]) {
+  for (const finishReason of DOCUMENTED_BLOCKING_REASONS) {
     const r = await run({
       gemini: () => geminiCandidate({ finishReason, content: { parts: [{ text: "algo" }] } }),
     });
@@ -604,6 +633,51 @@ Deno.test("PC6b a finishReason outside the enum shape is reported as DESCONOCIDO
   });
 
   assertStrictEquals(warningsOf(r.body)[0].finishReason, "DESCONOCIDO");
+});
+
+/**
+ * Enum-SHAPED but outside the provider's documented domain.
+ *
+ * PC6a and PC6b plant values the classifier REJECTS, which proves nothing
+ * about the branch it ACCEPTS — and `finishReason` is provider-controlled, so
+ * a well-formed upper-snake-case token is trivially plantable. This is D7's
+ * both-shapes rule (PC r1 [B1]) and the same shape-vs-domain hole as PF [B3-R].
+ */
+const PLANTED_ENUM_SHAPE = "SIGNEDTOKEN_ENUM_SHAPE";
+
+Deno.test("PC6h an enum-SHAPED reason outside the provider domain is DESCONOCIDO everywhere", async () => {
+  const r = await run({
+    gemini: () =>
+      geminiCandidate({
+        finishReason: PLANTED_ENUM_SHAPE,
+        content: { parts: [{ text: "x" }] },
+      }),
+  });
+
+  // The taxonomy does not move: an unknown reason is still not STOP, so it is
+  // still OUTPUT_BLOCKED. Only the value REPORTED for it changes.
+  assertEquals(codesOf(r.body), ["location:OUTPUT_BLOCKED", "landmark:OUTPUT_BLOCKED"]);
+
+  assert(r.lines.length > 0, "the handler must actually have logged something");
+  assert(
+    !r.lines.join("\n").includes(PLANTED_ENUM_SHAPE),
+    `log leaked enum-shaped provider token: ${r.lines.join(" | ")}`,
+  );
+  assert(
+    !JSON.stringify(r.body).includes(PLANTED_ENUM_SHAPE),
+    `response leaked enum-shaped provider token: ${JSON.stringify(r.body)}`,
+  );
+
+  // Absence alone would also hold if the field were dropped entirely, which
+  // would lose the degradation report PC-UI consumes. Pin the substitute.
+  assertStrictEquals(warningsOf(r.body).length, 2, "both research calls must have warned");
+  for (const w of warningsOf(r.body)) {
+    assertStrictEquals(w.finishReason, "DESCONOCIDO");
+  }
+  assert(
+    r.lines.some((l) => l.includes("OUTPUT_BLOCKED (finishReason DESCONOCIDO)")),
+    `the log must report DESCONOCIDO instead, got: ${r.lines.join(" | ")}`,
+  );
 });
 
 Deno.test("PC6c a provider error body is never quoted into the log or the warning", async () => {
