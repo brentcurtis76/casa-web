@@ -31,8 +31,20 @@
 // Tipos observables
 // ---------------------------------------------------------------------------
 
+/**
+ * Secuencia monótona global sobre TODAS las observaciones. Es lo que permite
+ * afirmar ORDEN entre operaciones de distinta clase — p.ej. que el borrado del
+ * borrador ocurrió DESPUÉS del upsert de `liturgia_elementos` (G5 paso 4).
+ */
+let opSeq = 0;
+function nextSeq(): number {
+  opSeq += 1;
+  return opSeq;
+}
+
 /** Una llamada al borde de Storage tal como la emite producción. */
 export interface UploadCall {
+  seq: number;
   bucket: string;
   path: string;
   contentType: string | undefined;
@@ -43,18 +55,21 @@ export interface UploadCall {
 
 /** Un upsert a una tabla, reducido a lo que la fase observa. */
 export interface UpsertCall {
+  seq: number;
   table: string;
   payload: unknown;
 }
 
 /** Un `storage.remove` — T-B.7 lo cuenta por bucket. */
 export interface RemoveCall {
+  seq: number;
   bucket: string;
   paths: string[];
 }
 
 /** Un DELETE de tabla con sus filtros evaluados y su resultado. */
 export interface DeleteCall {
+  seq: number;
   table: string;
   filters: Record<string, string>;
   deleted: number;
@@ -160,6 +175,7 @@ export function resetBoundary(): void {
   deletes.length = 0;
   sim.row = null;
   updatedAtSeq = 0;
+  opSeq = 0;
   simWasSeeded = false;
 }
 
@@ -224,7 +240,7 @@ type Thenable = {
 export function makeSupabaseMock() {
   const upsertBuilder = (table: string, payload: Record<string, unknown>) => {
     const run = async () => {
-      upserts.push({ table, payload });
+      upserts.push({ seq: nextSeq(), table, payload });
       if (table === 'cuentacuentos_drafts') {
         if (ctl.upsertError) return { error: ctl.upsertError, updatedAt: null };
         const story = payload['story'] as { id?: string } | null;
@@ -277,7 +293,7 @@ export function makeSupabaseMock() {
     const filters: Record<string, string> = {};
     const run = () => {
       if (table !== 'cuentacuentos_drafts') {
-        deletes.push({ table, filters: { ...filters }, deleted: 0 });
+        deletes.push({ seq: nextSeq(), table, filters: { ...filters }, deleted: 0 });
         return { error: null, data: [] as unknown[] };
       }
       const row = sim.row;
@@ -292,7 +308,7 @@ export function makeSupabaseMock() {
       }
       const deleted = matches ? 1 : 0;
       if (matches) sim.row = null;
-      deletes.push({ table, filters: { ...filters }, deleted });
+      deletes.push({ seq: nextSeq(), table, filters: { ...filters }, deleted });
       return { error: null, data: matches ? [{ id: 'row-1' }] : [] };
     };
     const chain = {
@@ -350,7 +366,7 @@ export function makeSupabaseMock() {
   const storageApi = (bucket: string) => ({
     upload: async (p: string, blob: Blob, opts?: { contentType?: string; upsert?: boolean }) => {
       const size = blob?.size ?? 0;
-      uploads.push({ bucket, path: p, contentType: opts?.contentType, upsert: opts?.upsert, size });
+      uploads.push({ seq: nextSeq(), bucket, path: p, contentType: opts?.contentType, upsert: opts?.upsert, size });
       if (ctl.failAllUploads) {
         return { data: null, error: storageError('Storage falló', '500') };
       }
@@ -377,7 +393,7 @@ export function makeSupabaseMock() {
       data: { publicUrl: `https://mock.supabase.co/storage/v1/object/public/${bucket}/${p}` },
     }),
     remove: async (paths: string[]) => {
-      removals.push({ bucket, paths: [...paths] });
+      removals.push({ seq: nextSeq(), bucket, paths: [...paths] });
       return { error: null };
     },
     list: async (_dir: string, opts?: { search?: string }) => ({
