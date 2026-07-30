@@ -286,6 +286,47 @@ Deno.test("PC3a STOP with non-empty text is ok: no warning, and the text is used
   );
 });
 
+/**
+ * D-4, pinned directly (PC r1 [N1]).
+ *
+ * The accepted extraction behaviour is "join every non-thought text part". The
+ * rest of the suite only ever answers with ONE text part and no `thought` part,
+ * so both halves of that sentence were unpinned: taking `parts[0]` alone, or
+ * dropping the thought filter, would have gone unnoticed.
+ *
+ * Coverage-only at base — the behaviour is already correct — so per D7 it is
+ * pinned by the two recorded mutations in the report instead of a base-red.
+ */
+Deno.test("PC3f every visible text part reaches the prompt, and thought parts never do", async () => {
+  const r = await run({
+    gemini: () =>
+      geminiCandidate({
+        finishReason: "STOP",
+        content: {
+          parts: [
+            { text: "RAZONAMIENTO-INTERNO-DEL-MODELO", thought: true },
+            { text: "primera parte visible" },
+            { text: " y segunda parte visible" },
+          ],
+        },
+      }),
+  });
+
+  assertStrictEquals(r.status, 200);
+  assertEquals(r.body.warnings, undefined, "a joined non-empty answer is ok, not a failure");
+
+  const prompt = promptOf(r.body);
+  // Joined, in order, as one answer — not merely both present somewhere.
+  assert(
+    prompt.includes("primera parte visible y segunda parte visible"),
+    `both visible parts must reach the prompt joined, got: ${prompt}`,
+  );
+  assert(
+    !prompt.includes("RAZONAMIENTO-INTERNO-DEL-MODELO"),
+    "a thought part must never reach the prompt",
+  );
+});
+
 Deno.test("PC3b STOP with empty or whitespace-only text is EMPTY_RESPONSE", async () => {
   for (
     const candidate of [
