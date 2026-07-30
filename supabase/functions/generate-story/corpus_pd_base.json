@@ -1,0 +1,202 @@
+{
+  "character-sheet": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 4
+  },
+  "scene-no-references": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 4
+  },
+  "cover-plain": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 4
+  },
+  "end-plain": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 4
+  },
+  "scene-one-bucket-reference": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/ana.png"
+    ],
+    "providerImages": 4,
+    "providerCalls": 4
+  },
+  "scene-inline-reference": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 8,
+    "providerCalls": 4
+  },
+  "cover-five-characters": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 20,
+    "providerCalls": 4
+  },
+  "scene-with-style-reference-and-props": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/ref.png",
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/ana.png",
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/bote.png"
+    ],
+    "providerImages": 20,
+    "providerCalls": 4
+  },
+  "scene-landmark-visible": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 12,
+    "providerCalls": 4
+  },
+  "end-with-reference-and-characters": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/end-ref.png"
+    ],
+    "providerImages": 12,
+    "providerCalls": 4
+  },
+  "draft-with-many-prop-photos": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 48,
+    "providerCalls": 4
+  },
+  "draft-with-dead-bucket-reference": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/gone.png"
+    ],
+    "providerImages": 4,
+    "providerCalls": 4
+  },
+  "draft-with-heic-photo": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 4,
+    "providerCalls": 4
+  },
+  "draft-with-legacy-signed-url": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/sign/cuentacuentos-drafts/old.png"
+    ],
+    "providerImages": 4,
+    "providerCalls": 4
+  },
+  "draft-with-oversized-photo-in-unread-slot": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 8,
+    "providerCalls": 4
+  },
+  "scene-with-data-url-reference": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 4,
+    "providerCalls": 4
+  },
+  "prop-with-irrelevant-scene-ref": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 1
+  },
+  "prop-with-oversized-irrelevant-character-image": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 1
+  },
+  "draft-near-the-slot-ceiling": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 48,
+    "providerCalls": 4
+  },
+  "refine-scene-from-bucket": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/scene-1.png"
+    ],
+    "providerImages": 2,
+    "providerCalls": 1
+  },
+  "refine-character-from-inline": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 1,
+    "providerCalls": 1
+  },
+  "story-minimal": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 2
+  },
+  "story-preview-prompt-only": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 1
+  },
+  "story-with-prop-photos": {
+    "status": 200,
+    "fetched": [
+      "https://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/muelle.png"
+    ],
+    "providerImages": 3,
+    "providerCalls": 4
+  },
+  "story-with-many-prop-photos": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 24,
+    "providerCalls": 8
+  },
+  "story-builder-with-reference-photo": {
+    "status": 200,
+    "fetched": [],
+    "providerImages": 4,
+    "providerCalls": 3
+  },
+  "story-builder-at-the-UI-size-limit": {
+    "status": 413,
+    "code": "BODY_TOO_LARGE",
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 0
+  },
+  "REJECT-foreign-origin": {
+    "status": 422,
+    "code": "FORBIDDEN_ORIGIN",
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 0
+  },
+  "REJECT-plain-http": {
+    "status": 422,
+    "code": "INSECURE_SCHEME",
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 0
+  },
+  "REJECT-foreign-bucket": {
+    "status": 422,
+    "code": "FORBIDDEN_BUCKET",
+    "fetched": [],
+    "providerImages": 0,
+    "providerCalls": 0
+  }
+}

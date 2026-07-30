@@ -98,12 +98,27 @@ function geminiOk(text = "descripción visual del lugar"): Response {
   return geminiCandidate({ finishReason: "STOP", content: { parts: [{ text }] } });
 }
 
-/** The forced-tool path production takes when Claude behaves. */
+/**
+ * The forced-tool path production takes when Claude behaves.
+ *
+ * STUB FIDELITY, updated by PD (not an expectation change): PD reads
+ * `stop_reason` before content and requires 12–16 scenes numbered `1..N` plus an
+ * explicit `props`, so the previous one-scene fixture with no `stop_reason` is a
+ * shape the real API does not produce under a forced strict tool. Every PC
+ * assertion below is about research wiring, knobs and warnings — none reads the
+ * scene list — so the cases are unchanged; without this they would have been
+ * asserting research behaviour on a 502 that never reached the story at all.
+ */
 function anthropicStory(): Response {
   return new Response(
     JSON.stringify({
+      id: "msg_01pc",
+      type: "message",
+      role: "assistant",
+      stop_reason: "tool_use",
       content: [{
         type: "tool_use",
+        id: "toolu_01pc",
         name: "emit_story",
         input: {
           title: "El faro de Ana",
@@ -114,8 +129,13 @@ function anthropicStory(): Response {
             description: "una niña del puerto",
             visualDescription: "chaleco rojo, pelo oscuro",
           }],
-          scenes: [{ number: 1, text: "Ana camina.", visualDescription: "muelle iluminado" }],
+          scenes: Array.from({ length: 15 }, (_, i) => ({
+            number: i + 1,
+            text: `Ana camina, escena ${i + 1}.`,
+            visualDescription: `Muelle iluminado, plano ${i + 1}`,
+          })),
           spiritualConnection: "Jesús es luz.",
+          props: [],
         },
       }],
       usage: { input_tokens: 10, output_tokens: 20 },

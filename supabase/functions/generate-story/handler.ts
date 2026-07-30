@@ -68,8 +68,15 @@ const MODEL = 'claude-opus-4-5-20251101';
 
 /**
  * Research knobs, pinned by PLAN Phase PC. Both research calls send the same
- * pair: enough budget for a ~300-word Spanish answer, and the cheapest thinking
- * tier the model offers.
+ * pair: an output cap, and the cheapest thinking tier the model offers.
+ *
+ * The cap is NOT "enough for a ~300-word Spanish answer" — that was the
+ * rationale for the original 1024, and the [PC7] canary disproved it on the
+ * live surface: at `thinkingLevel: LOW` a production-shaped research ask spent
+ * 768 tokens on thinking plus 252 on the answer (1059 total), so 1024 truncated
+ * EVERY call and PC's own contract then discarded the text as degraded. 2048 is
+ * the measured thinking cost plus a ~450-token answer plus headroom. Moving it
+ * again needs another canary measurement, not an estimate.
  */
 const RESEARCH_THINKING_LEVEL = 'LOW';
 const RESEARCH_MAX_OUTPUT_TOKENS = 2048;
@@ -117,6 +124,549 @@ export interface ResponseWarning {
   message: string;
   httpStatus?: number;
   finishReason?: string;
+}
+
+/**
+ * Why story normalization dropped something. Closed set: these reach the client
+ * inside `warnings`, so a new one is a contract change.
+ *
+ * `source` is `'story'` and NOT `'prop'` on purpose: PC already uses `'prop'`
+ * for "the photo analysis of a recurring element degraded", which is a different
+ * event with a different remedy. Overloading it would make the two
+ * indistinguishable to the consumer that renders them (PLAN G3).
+ */
+export type StoryWarningCode = 'PROP_NOT_RECURRING';
+
+export interface StoryWarning {
+  source: 'story';
+  code: StoryWarningCode;
+  message: string;
+}
+
+/**
+ * Fixed copy, built from the code alone — never from the provider's prop name or
+ * description. The client is told what was lost, not what the provider called it.
+ */
+const STORY_WARNING_MESSAGES: Record<StoryWarningCode, string> = {
+  PROP_NOT_RECURRING:
+    'Se omitió un elemento recurrente porque aparece en menos de dos escenas válidas.',
+};
+
+function storyWarning(code: StoryWarningCode): StoryWarning {
+  return { source: 'story', code, message: STORY_WARNING_MESSAGES[code] };
+}
+
+/** Everything the `warnings` envelope key can carry. Additive union. */
+export type EnvelopeWarning = ResponseWarning | StoryWarning;
+
+// ---------------------------------------------------------------------------
+// Typed errors (PLAN G3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why the provider's output was unusable. INTERNAL: the reason selects one of
+ * three fixed Spanish messages and never reaches the client itself, so the
+ * client cannot distinguish "the model refused" from a raw `stop_reason`.
+ */
+export type ProviderOutputReason = 'REFUSAL' | 'MAX_TOKENS' | 'INVALID_STORY';
+
+const PROVIDER_OUTPUT_MESSAGES: Record<ProviderOutputReason, string> = {
+  REFUSAL: 'El proveedor rechazó generar el cuento. Ajusta las notas y vuelve a intentarlo.',
+  MAX_TOKENS:
+    'El proveedor cortó el cuento antes de completarlo. Usa notas más breves y vuelve a intentarlo.',
+  INVALID_STORY:
+    'El proveedor devolvió un cuento con una estructura inválida. Vuelve a intentarlo.',
+};
+
+/**
+ * The provider answered, and its answer is not a story. Mapped to 502 INSIDE
+ * the handler — a provider that returns garbage is not a server fault, and it is
+ * not the client's fault either, so neither 500 nor 4xx describes it.
+ */
+export class ProviderOutputError extends Error {
+  readonly reason: ProviderOutputReason;
+  /**
+   * Log-only. Safe validation codes, field paths and counts — this module's own
+   * literals, never provider values or serialized output.
+   */
+  readonly detail: string;
+
+  constructor(reason: ProviderOutputReason, detail = '') {
+    super(PROVIDER_OUTPUT_MESSAGES[reason]);
+    this.name = 'ProviderOutputError';
+    this.reason = reason;
+    this.detail = detail;
+  }
+}
+
+/**
+ * The request itself is unusable. 400 for a body that is not JSON, 422 for JSON
+ * that is missing a field this function requires.
+ */
+export class ClientInputError extends Error {
+  readonly httpStatus: 400 | 422;
+
+  constructor(httpStatus: 400 | 422, message: string) {
+    super(message);
+    this.name = 'ClientInputError';
+    this.httpStatus = httpStatus;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The validated story
+// ---------------------------------------------------------------------------
+
+const CHARACTER_ROLES = ['protagonist', 'secondary', 'minor'] as const;
+const PROP_KINDS = ['location', 'prop'] as const;
+
+export type CharacterRole = typeof CHARACTER_ROLES[number];
+export type PropKind = typeof PROP_KINDS[number];
+
+/** The scene window this function requests and accepts (PLAN G1). */
+const SCENE_COUNT_MIN = 12;
+const SCENE_COUNT_MAX = 16;
+
+export interface StoryCharacter {
+  name: string;
+  role: CharacterRole;
+  description: string;
+  visualDescription: string;
+  appearsInScenes?: number[];
+}
+
+export interface StoryScene {
+  number: number;
+  text: string;
+  visualDescription: string;
+  charactersInScene?: string[];
+  landmarkVisible?: boolean;
+}
+
+export interface StoryProp {
+  name: string;
+  kind: PropKind;
+  narrativeRole: string;
+  visualDescription: string;
+  sceneNumbers: number[];
+}
+
+export interface StoryOutput {
+  title: string;
+  summary: string;
+  characters: StoryCharacter[];
+  scenes: StoryScene[];
+  props: StoryProp[];
+  spiritualConnection: string;
+}
+
+/** A rejection reason. `path` is a field position, never a field value. */
+export interface StoryValidationError {
+  code: string;
+  path: string;
+}
+
+/**
+ * Discriminated on purpose: a caller cannot reach `story` without having
+ * checked `ok`, so there is no shape in which a story with fatal errors is
+ * usable (PLAN STRIKE/TIGHTEN).
+ */
+export type StoryValidationResult =
+  | { ok: true; story: StoryOutput; warnings: StoryWarning[] }
+  | { ok: false; errors: StoryValidationError[] };
+
+/** `undefined` unless the value is a string with content after trimming. */
+function trimmedString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * The uniqueness key for a character name: NFKC → trim → collapse internal
+ * whitespace → `toLocaleLowerCase('es-CL')`.
+ *
+ * Locale-aware lowercasing because the names are Spanish and the invariant is
+ * "the same person". `" Ana "` and `"ana"` collide; so do a precomposed `ñ` and
+ * an `n` followed by a combining tilde.
+ */
+function characterNameKey(raw: string): string {
+  return raw
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('es-CL');
+}
+
+/**
+ * Canonicalizes an enum that differs from the schema ONLY in capitalization.
+ *
+ * SOURCE: Anthropic's structured-outputs documentation warns that enum values
+ * can come back differing in case even under strict output, so strict mode is
+ * defence one and this is defence two. Deliberately `toLowerCase()` and not
+ * trim-then-lowercase: anything differing by more than case — `' protagonist'`,
+ * `'protagonista'` — is a different value and stays invalid. ASCII enum tokens,
+ * so the locale-aware variant is not wanted here.
+ */
+function canonicalEnum<T extends string>(
+  raw: unknown,
+  allowed: readonly T[],
+): T | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const lowered = raw.toLowerCase();
+  return allowed.find((value) => value === lowered);
+}
+
+/** An integer scene reference inside `1..max`. */
+function isSceneNumber(value: unknown, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 &&
+    value <= max;
+}
+
+/**
+ * A reference array that must be intact: unique in-range integers, returned
+ * sorted. `undefined` means fatal — this is the STRICT rule, and it is not the
+ * lossy prop rule below. Nothing is dropped or coerced here, because a
+ * character that claims to appear in a scene that does not exist is a broken
+ * story, not a story with a stray number.
+ */
+function validateSceneRefs(value: unknown, max: number): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<number>();
+  for (const entry of value) {
+    if (!isSceneNumber(entry, max)) return undefined;
+    if (seen.has(entry)) return undefined;
+    seen.add(entry);
+  }
+  return [...seen].sort((a, b) => a - b);
+}
+
+/**
+ * Second line of defence, behind the strict tool.
+ *
+ * Strict mode guarantees the SHAPE: types, required keys, no extra keys, enum
+ * membership. It cannot express any of the rules below — the documented JSON
+ * Schema subset has no `minLength`, no `minimum`/`maximum`, and no array-length
+ * constraint beyond `minItems: 0|1` — and it does not apply at all on the two
+ * documented exceptions (`stop_reason` of `refusal` or `max_tokens`). So the
+ * semantic rules live here: non-empty trimmed text, the 12–16 scene window with
+ * set-exact `1..N` numbering, normalized-unique names, exactly one protagonist,
+ * and reference integrity.
+ *
+ * Everything is fatal EXCEPT one authorized lossy rule: duplicate and
+ * out-of-range `sceneNumbers` on a prop are dropped, and a prop left with fewer
+ * than two references is dropped with a warning. That is the only place a story
+ * is repaired rather than rejected.
+ */
+export function validateAndNormalizeStory(data: unknown): StoryValidationResult {
+  const errors: StoryValidationError[] = [];
+  const warnings: StoryWarning[] = [];
+  const fail = (code: string, path: string) => errors.push({ code, path });
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, errors: [{ code: 'NOT_OBJECT', path: '' }] };
+  }
+  const raw = data as Record<string, unknown>;
+
+  // --- required prose -----------------------------------------------------
+  const prose: Partial<Record<'title' | 'summary' | 'spiritualConnection', string>> = {};
+  for (const field of ['title', 'summary', 'spiritualConnection'] as const) {
+    const value = trimmedString(raw[field]);
+    if (value === undefined) fail('EMPTY_STRING', field);
+    else prose[field] = value;
+  }
+
+  // --- scenes: the window, then set-exact 1..N numbering -------------------
+  let sceneCount = 0;
+  const sceneRecords: Array<{
+    scene: StoryScene;
+    raw: Record<string, unknown>;
+    index: number;
+  }> = [];
+
+  if (!Array.isArray(raw.scenes)) {
+    fail('NOT_ARRAY', 'scenes');
+  } else if (
+    raw.scenes.length < SCENE_COUNT_MIN || raw.scenes.length > SCENE_COUNT_MAX
+  ) {
+    // Not padded, not truncated, not merged: the count is the provider's
+    // answer and a wrong one is a rejection.
+    fail('SCENE_COUNT_OUT_OF_RANGE', 'scenes');
+  } else {
+    sceneCount = raw.scenes.length;
+    const numbers = new Set<number>();
+
+    raw.scenes.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        fail('NOT_OBJECT', `scenes[${index}]`);
+        return;
+      }
+      const scene = entry as Record<string, unknown>;
+
+      let number: number | undefined;
+      if (!isSceneNumber(scene.number, sceneCount)) {
+        fail('SCENE_NUMBER_INVALID', `scenes[${index}].number`);
+      } else if (numbers.has(scene.number)) {
+        fail('SCENE_NUMBER_DUPLICATE', `scenes[${index}].number`);
+      } else {
+        numbers.add(scene.number);
+        number = scene.number;
+      }
+
+      const text = trimmedString(scene.text);
+      if (text === undefined) fail('EMPTY_STRING', `scenes[${index}].text`);
+      const visualDescription = trimmedString(scene.visualDescription);
+      if (visualDescription === undefined) {
+        fail('EMPTY_STRING', `scenes[${index}].visualDescription`);
+      }
+
+      // Optional, but not "optional means anything goes".
+      const landmarkVisible = scene.landmarkVisible;
+      const hasLandmarkVisible = landmarkVisible !== undefined;
+      if (hasLandmarkVisible && typeof landmarkVisible !== 'boolean') {
+        fail('NOT_BOOLEAN', `scenes[${index}].landmarkVisible`);
+      }
+
+      if (number !== undefined && text !== undefined && visualDescription !== undefined) {
+        sceneRecords.push({
+          scene: {
+            number,
+            text,
+            visualDescription,
+            ...(typeof landmarkVisible === 'boolean' ? { landmarkVisible } : {}),
+          },
+          raw: scene,
+          index,
+        });
+      }
+    });
+
+    // The SET must be exactly `1..N`.
+    //
+    // HONEST NOTE: with the per-entry checks above this cannot fire on its own
+    // today — a number is only missing from the set because it was already
+    // reported as invalid, duplicate, or attached to a non-object entry, so
+    // mutation M16 (deleting this check) failed no test. It stays as the
+    // invariant stated in one place, and as the net if a per-entry rule is ever
+    // relaxed; it is documented as redundant rather than presented as a proof.
+    if (numbers.size !== sceneCount) {
+      fail('SCENE_NUMBERS_NOT_EXACT', 'scenes');
+    }
+  }
+
+  // --- characters ---------------------------------------------------------
+  const characters: StoryCharacter[] = [];
+  /** Normalized key -> the trimmed name to display and to rewrite refs to. */
+  const displayNameByKey = new Map<string, string>();
+
+  if (!Array.isArray(raw.characters)) {
+    fail('NOT_ARRAY', 'characters');
+  } else if (raw.characters.length === 0) {
+    fail('EMPTY_ARRAY', 'characters');
+  } else {
+    let protagonists = 0;
+
+    raw.characters.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        fail('NOT_OBJECT', `characters[${index}]`);
+        return;
+      }
+      const character = entry as Record<string, unknown>;
+
+      const name = trimmedString(character.name);
+      if (name === undefined) fail('EMPTY_STRING', `characters[${index}].name`);
+      const description = trimmedString(character.description);
+      if (description === undefined) {
+        fail('EMPTY_STRING', `characters[${index}].description`);
+      }
+      const visualDescription = trimmedString(character.visualDescription);
+      if (visualDescription === undefined) {
+        fail('EMPTY_STRING', `characters[${index}].visualDescription`);
+      }
+
+      const role = canonicalEnum(character.role, CHARACTER_ROLES);
+      if (role === undefined) fail('ENUM_INVALID', `characters[${index}].role`);
+      else if (role === 'protagonist') protagonists++;
+
+      let key: string | undefined;
+      if (name !== undefined) {
+        const candidate = characterNameKey(name);
+        if (displayNameByKey.has(candidate)) {
+          fail('NAME_NOT_UNIQUE', `characters[${index}].name`);
+        } else {
+          displayNameByKey.set(candidate, name);
+          key = candidate;
+        }
+      }
+
+      let appearsInScenes: number[] | undefined;
+      if (character.appearsInScenes !== undefined) {
+        appearsInScenes = validateSceneRefs(character.appearsInScenes, sceneCount);
+        if (appearsInScenes === undefined) {
+          fail('SCENE_REFS_INVALID', `characters[${index}].appearsInScenes`);
+        }
+      }
+
+      if (
+        name !== undefined && description !== undefined &&
+        visualDescription !== undefined && role !== undefined && key !== undefined
+      ) {
+        characters.push({
+          name,
+          role,
+          description,
+          visualDescription,
+          ...(appearsInScenes !== undefined ? { appearsInScenes } : {}),
+        });
+      }
+    });
+
+    // "UN personaje principal claramente definido" is a product rule the system
+    // prompt states, so a story with none or two is not the story we asked for.
+    if (protagonists !== 1) fail('PROTAGONIST_COUNT', 'characters');
+  }
+
+  // --- scene -> character references (needs the character table) ----------
+  for (const record of sceneRecords) {
+    const value = record.raw.charactersInScene;
+    if (value === undefined) continue;
+
+    if (!Array.isArray(value)) {
+      fail('NOT_ARRAY', `scenes[${record.index}].charactersInScene`);
+      continue;
+    }
+
+    const seenKeys = new Set<string>();
+    const resolved: string[] = [];
+    let broken = false;
+
+    for (const entry of value) {
+      const name = trimmedString(entry);
+      if (name === undefined) {
+        broken = true;
+        break;
+      }
+      const key = characterNameKey(name);
+      const display = displayNameByKey.get(key);
+      // Unknown reference, or the same character twice under two spellings.
+      if (display === undefined || seenKeys.has(key)) {
+        broken = true;
+        break;
+      }
+      seenKeys.add(key);
+      resolved.push(display);
+    }
+
+    if (broken) {
+      fail('CHARACTER_REF_INVALID', `scenes[${record.index}].charactersInScene`);
+      continue;
+    }
+    record.scene.charactersInScene = resolved;
+  }
+
+  // --- props: required, and the ONE lossy rule ----------------------------
+  const props: StoryProp[] = [];
+
+  if (raw.props === undefined) {
+    // Required, because an omitted `props` is indistinguishable from "this
+    // story has no recurring elements" — and the second is `[]`.
+    fail('REQUIRED', 'props');
+  } else if (!Array.isArray(raw.props)) {
+    fail('NOT_ARRAY', 'props');
+  } else {
+    raw.props.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        fail('NOT_OBJECT', `props[${index}]`);
+        return;
+      }
+      const prop = entry as Record<string, unknown>;
+
+      const name = trimmedString(prop.name);
+      if (name === undefined) fail('EMPTY_STRING', `props[${index}].name`);
+      const narrativeRole = trimmedString(prop.narrativeRole);
+      if (narrativeRole === undefined) {
+        fail('EMPTY_STRING', `props[${index}].narrativeRole`);
+      }
+      const visualDescription = trimmedString(prop.visualDescription);
+      if (visualDescription === undefined) {
+        fail('EMPTY_STRING', `props[${index}].visualDescription`);
+      }
+      const kind = canonicalEnum(prop.kind, PROP_KINDS);
+      if (kind === undefined) fail('ENUM_INVALID', `props[${index}].kind`);
+
+      let sceneNumbers: number[] | undefined;
+      if (!Array.isArray(prop.sceneNumbers)) {
+        fail('NOT_ARRAY', `props[${index}].sceneNumbers`);
+      } else if (
+        prop.sceneNumbers.some((n) => typeof n !== 'number' || !Number.isInteger(n))
+      ) {
+        // A fractional or non-number reference is corruption, not noise:
+        // silently coercing 2.5 to 2 invents a scene the provider never chose.
+        fail('SCENE_REF_NOT_INTEGER', `props[${index}].sceneNumbers`);
+      } else {
+        // THE LOSSY RULE, and its only scope: duplicates collapse and
+        // out-of-range numbers drop. Both are noise in a list whose whole
+        // purpose is "draw this the same way in these scenes".
+        const kept = new Set<number>();
+        for (const n of prop.sceneNumbers as number[]) {
+          if (n >= 1 && n <= sceneCount) kept.add(n);
+        }
+        sceneNumbers = [...kept].sort((a, b) => a - b);
+      }
+
+      if (
+        name === undefined || narrativeRole === undefined ||
+        visualDescription === undefined || kind === undefined ||
+        sceneNumbers === undefined
+      ) {
+        return;
+      }
+
+      // "Recurring" means two or more scenes. One is not a consistency
+      // constraint, it is just a detail of that scene — so the prop is dropped
+      // and the client is told, rather than the whole story being rejected.
+      if (sceneNumbers.length < 2) {
+        warnings.push(storyWarning('PROP_NOT_RECURRING'));
+        return;
+      }
+      props.push({ name, kind, narrativeRole, visualDescription, sceneNumbers });
+    });
+  }
+
+  if (errors.length > 0) {
+    // Warnings collected from a story that is being thrown away describe
+    // nothing the client can act on (PLAN [PD7]).
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    story: {
+      title: prose.title!,
+      summary: prose.summary!,
+      characters,
+      scenes: sceneRecords
+        .map((record) => record.scene)
+        .sort((a, b) => a.number - b.number),
+      props,
+      spiritualConnection: prose.spiritualConnection!,
+    },
+    warnings,
+  };
+}
+
+/**
+ * A log-safe summary of why a story was rejected: this module's own codes and
+ * field paths, plus a count. No provider values, no serialized output — the
+ * channel PF [B3] closed stays closed.
+ */
+function describeValidationErrors(errors: StoryValidationError[]): string {
+  const shown = errors
+    .slice(0, 5)
+    .map((error) => (error.path ? `${error.code}@${error.path}` : error.code));
+  return `n=${errors.length} ${shown.join(', ')}${
+    errors.length > shown.length ? ', …' : ''
+  }`;
 }
 
 const WARNING_REASONS: Record<ResearchFailureCode, string> = {
@@ -621,7 +1171,7 @@ Cada personaje DEBE tener una visualDescription muy detallada y consistente que 
 CRÍTICO: Tu respuesta debe ser ÚNICAMENTE un objeto JSON válido. No incluyas ningún texto antes o después del JSON. No uses bloques de código markdown. Solo el JSON puro.
 
 El JSON debe tener esta estructura exacta:
-{"title":"string","summary":"string","characters":[{"name":"string","role":"protagonist|secondary|minor","description":"string","visualDescription":"string","appearsInScenes":[1,2,3]}],"scenes":[{"number":1,"text":"string","visualDescription":"string","charactersInScene":["name1","name2"],"landmarkVisible":true}],"spiritualConnection":"string"}
+{"title":"string","summary":"string","characters":[{"name":"string","role":"protagonist|secondary|minor","description":"string","visualDescription":"string","appearsInScenes":[1,2,3]}],"scenes":[{"number":1,"text":"string","visualDescription":"string","charactersInScene":["name1","name2"],"landmarkVisible":true}],"spiritualConnection":"string","props":[{"name":"string","kind":"location|prop","narrativeRole":"string","visualDescription":"string","sceneNumbers":[2,5]}]}
 
 Donde:
 - title: Título del cuento
@@ -634,15 +1184,35 @@ Donde:
   - visualDescription: descripción visual detallada, bien iluminada
   - charactersInScene: nombres de personajes en la escena
   - landmarkVisible: boolean, true si el landmark/edificio debe aparecer visible en la ilustración de esta escena
-- spiritualConnection: conexión con el Evangelio`;
+- spiritualConnection: conexión con el Evangelio
+- props: Array de lugares u objetos recurrentes (ver la sección de arriba).
+  Siempre debe estar presente: usa [] si el cuento no tiene ninguno.
+  - sceneNumbers: números de las escenas donde aparece (2 o más)`;
 
 /**
- * Schema del tool `emit_story`: fuerza salida estructurada de Claude y elimina
- * el parsing frágil de JSON embebido en texto.
+ * Schema del tool `emit_story`, declarado en modo estricto.
+ *
+ * Con `strict: true` (en la definición del tool, no aquí) la API restringe el
+ * muestreo a salidas válidas según este schema, así que cada pin de abajo es una
+ * garantía y no una sugerencia:
+ *
+ *   * `additionalProperties: false` en la raíz y en CADA objeto anidado. Sin
+ *     esto el modelo puede añadir campos que ningún consumidor lee.
+ *   * `props` es requerido. Un `props` ausente y un `props: []` significan cosas
+ *     distintas — "no me acordé" y "no hay elementos recurrentes" — y sólo el
+ *     segundo es una respuesta.
+ *   * `integer` (no `number`) en todo número de escena: `2.5` no es una escena.
+ *
+ * Lo que este schema NO puede expresar, y por eso vive en
+ * `validateAndNormalizeStory`: el rango de 12–16 escenas, la numeración exacta
+ * `1..N`, y "texto no vacío". El subconjunto de JSON Schema documentado no
+ * admite `minimum`/`maximum`, ni `minLength`, ni restricciones de largo de array
+ * más allá de `minItems: 0|1`.
  */
 const STORY_TOOL_SCHEMA = {
   type: 'object',
-  required: ['title', 'summary', 'characters', 'scenes', 'spiritualConnection'],
+  required: ['title', 'summary', 'characters', 'scenes', 'spiritualConnection', 'props'],
+  additionalProperties: false,
   properties: {
     title: { type: 'string' },
     summary: { type: 'string' },
@@ -651,12 +1221,13 @@ const STORY_TOOL_SCHEMA = {
       items: {
         type: 'object',
         required: ['name', 'role', 'description', 'visualDescription'],
+        additionalProperties: false,
         properties: {
           name: { type: 'string' },
           role: { type: 'string', enum: ['protagonist', 'secondary', 'minor'] },
           description: { type: 'string' },
           visualDescription: { type: 'string' },
-          appearsInScenes: { type: 'array', items: { type: 'number' } },
+          appearsInScenes: { type: 'array', items: { type: 'integer' } },
         },
       },
     },
@@ -665,8 +1236,9 @@ const STORY_TOOL_SCHEMA = {
       items: {
         type: 'object',
         required: ['number', 'text', 'visualDescription'],
+        additionalProperties: false,
         properties: {
-          number: { type: 'number' },
+          number: { type: 'integer' },
           text: { type: 'string' },
           visualDescription: { type: 'string' },
           charactersInScene: { type: 'array', items: { type: 'string' } },
@@ -675,20 +1247,21 @@ const STORY_TOOL_SCHEMA = {
       },
     },
     // spiritualConnection va ANTES de props: si el output alcanza max_tokens,
-    // el corte cae en props (opcional) y no en un campo requerido.
+    // el corte cae en props (el último campo) y no en un campo de prosa.
     spiritualConnection: { type: 'string' },
     props: {
       type: 'array',
-      description: 'Lugares y objetos que aparecen en 2+ escenas y deben verse idénticos entre ilustraciones',
+      description: 'Lugares y objetos que aparecen en 2+ escenas y deben verse idénticos entre ilustraciones. [] si no hay ninguno.',
       items: {
         type: 'object',
         required: ['name', 'kind', 'narrativeRole', 'visualDescription', 'sceneNumbers'],
+        additionalProperties: false,
         properties: {
           name: { type: 'string' },
           kind: { type: 'string', enum: ['location', 'prop'] },
           narrativeRole: { type: 'string' },
           visualDescription: { type: 'string' },
-          sceneNumbers: { type: 'array', items: { type: 'number' } },
+          sceneNumbers: { type: 'array', items: { type: 'integer' } },
         },
       },
     },
@@ -801,32 +1374,33 @@ Por favor, crea un cuento original basándote en esta información. El cuento de
 }
 
 /**
- * Valida la estructura de la respuesta JSON (nuevo formato con escenas)
+ * Builds one of the two typed JSON error envelopes (PLAN G3).
+ *
+ * Field order is the contract's: `success`, `code`, `error`, then the additive
+ * keys — and each additive key appears only when it has something to report, so
+ * a failure with no drops and no degradation produces the body it produced
+ * before PD plus the new `code`.
  */
-function validateStory(data: unknown): boolean {
-  if (!data || typeof data !== 'object') return false;
-
-  const story = data as Record<string, unknown>;
-
-  // Validar campos requeridos
-  if (typeof story.title !== 'string') return false;
-  if (typeof story.summary !== 'string') return false;
-  if (typeof story.spiritualConnection !== 'string') return false;
-
-  // Validar characters array
-  if (!Array.isArray(story.characters) || story.characters.length === 0) return false;
-
-  // Validar scenes array
-  if (!Array.isArray(story.scenes) || story.scenes.length === 0) return false;
-
-  // Validar estructura de cada escena
-  for (const scene of story.scenes as Array<Record<string, unknown>>) {
-    if (typeof scene.number !== 'number') return false;
-    if (typeof scene.text !== 'string') return false;
-    if (typeof scene.visualDescription !== 'string') return false;
-  }
-
-  return true;
+function typedErrorResponse(params: {
+  status: number;
+  code: 'PROVIDER_OUTPUT_INVALID' | 'CLIENT_INPUT_INVALID';
+  error: string;
+  skippedImages: Array<{ field: string; code: string }>;
+  warnings: EnvelopeWarning[];
+}): Response {
+  const { status, code, error, skippedImages, warnings } = params;
+  return new Response(
+    JSON.stringify({
+      success: false,
+      code,
+      error,
+      // PFE consumes `skippedImages` from non-2xx invoke bodies; PC-UI consumes
+      // `warnings` from both. Neither may be renamed or dropped on a 502.
+      ...(skippedImages.length > 0 ? { skippedImages } : {}),
+      ...(warnings.length > 0 ? { warnings } : {}),
+    }),
+    { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
 }
 
 export const corsHeaders = {
@@ -887,7 +1461,9 @@ export function createHandler(
   // recorded before Claude is called, and the envelope that reports it may be
   // the outer catch's. Declared here so a provider failure AFTER research
   // cannot silently swallow the fact that the story was written blind.
-  const warnings: ResponseWarning[] = [];
+  // Widened by PD from `ResponseWarning[]`: story normalization appends its own
+  // entries to the SAME list, after PC's, so a client parses one array.
+  const warnings: EnvelopeWarning[] = [];
 
   try {
     // deno-lint-ignore no-explicit-any
@@ -907,6 +1483,15 @@ export function createHandler(
       skipped = result.skipped;
     } catch (err) {
       if (err instanceof ImageRefError) {
+        // A failure on the BODY itself — unparseable JSON, or a stream that was
+        // cut off — is client input, not an image problem, and PD gives it the
+        // typed 400 [PD6] requires. `readBoundedJson` reports both through
+        // PF's image error type with `path: 'body'`, which is where the
+        // misnomer came from; every other ImageRefError, including
+        // `BODY_TOO_LARGE`, keeps PF's exact status, code and envelope.
+        if (err.path === 'body' && err.code === 'INVALID_IMAGE_REF') {
+          throw new ClientInputError(400, err.message);
+        }
         console.warn(`[generate-story] request rejected: ${err.code} at ${err.path}`);
         return imageErrorResponse(err, corsHeaders);
       }
@@ -960,7 +1545,12 @@ export function createHandler(
     const { context, location, characters, landmarks, props, style, additionalNotes, previewPromptOnly } = requestData;
 
     if (!context || !location) {
-      throw new Error('Se requiere contexto de la liturgia y ubicación');
+      // Typed, so it lands on 422 CLIENT_INPUT_INVALID instead of the generic
+      // 500. The PREDICATE is deliberately unchanged: `!location` already
+      // rejects the empty string, and tightening it to reject whitespace-only
+      // input would be a NEW rejection class for a payload 96cb2cc served —
+      // exactly the "rejects too much" regression that failed FASE F twice.
+      throw new ClientInputError(422, 'Se requiere contexto de la liturgia y ubicación');
     }
 
     console.log(`[generate-story] Generando cuento; título ${charCount(context?.title)}`);
@@ -1127,6 +1717,11 @@ export function createHandler(
             {
               name: 'emit_story',
               description: 'Emite el cuento infantil completo en formato estructurado',
+              // Top-level, beside `name`/`description`/`input_schema` — that is
+              // where the API reads it. Inside `input_schema` it is an ignored
+              // extra key, which is silent: the request still succeeds and the
+              // output is simply unconstrained.
+              strict: true,
               input_schema: STORY_TOOL_SCHEMA,
             },
           ],
@@ -1145,62 +1740,61 @@ export function createHandler(
 
     const data = await response.json();
 
-    if (data.stop_reason === 'max_tokens') {
-      console.error('[generate-story] Output truncado por max_tokens');
-      throw new Error('El cuento generado es demasiado largo y quedó incompleto. Intenta con menos escenas o notas más breves.');
+    // ---- the stop_reason protocol (PLAN G5) -------------------------------
+    //
+    // `stop_reason` is read BEFORE any content, because strict mode has two
+    // DOCUMENTED exceptions that both return HTTP 200 with output that does not
+    // match the schema: `refusal` and `max_tokens`. Reading content first would
+    // serve a refusal's leftovers as a story.
+    //
+    // A normal client tool completion is `stop_reason: 'tool_use'`. Anything
+    // else — `end_turn`, `stop_sequence`, `pause_turn`, an absent reason, or a
+    // value this code has never heard of — is not the success protocol, and the
+    // safe direction is to say so rather than to guess.
+    const stopReason: unknown = data.stop_reason;
+    if (stopReason === 'refusal') {
+      throw new ProviderOutputError('REFUSAL');
+    }
+    if (stopReason === 'max_tokens') {
+      throw new ProviderOutputError('MAX_TOKENS');
+    }
+    if (stopReason !== 'tool_use') {
+      // Shape only: the raw reason is provider-controlled text, so it is neither
+      // logged nor returned. PC r1 [B1] is the same lesson one field over.
+      throw new ProviderOutputError('INVALID_STORY', 'stop_reason not tool_use');
     }
 
-    // Con tool_choice forzado el cuento llega como bloque tool_use ya parseado.
-    interface StoryOutput {
-      title: string;
-      summary: string;
-      characters: Array<Record<string, unknown>>;
-      scenes: Array<{ number: number; text: string; visualDescription: string; landmarkVisible?: boolean }>;
-      props?: Array<{
-        name: string;
-        kind: 'location' | 'prop';
-        narrativeRole: string;
-        visualDescription: string;
-        sceneNumbers: number[];
-      }>;
-      spiritualConnection: string;
-    }
-
-    const contentBlocks: Array<{ type?: string; name?: string; text?: string; input?: unknown }> =
+    const contentBlocks: Array<{ type?: string; name?: string; input?: unknown }> =
       Array.isArray(data.content) ? data.content : [];
 
-    let story = contentBlocks.find(
-      (b) => b.type === 'tool_use' && b.name === 'emit_story'
-    )?.input as StoryOutput | undefined;
-
-    if (!story) {
-      // Fallback: extraer JSON del texto (respuestas sin bloque tool_use)
-      const textBlock = contentBlocks.find((b) => b.type === 'text' && typeof b.text === 'string');
-      if (!textBlock?.text) {
-        console.error(`[generate-story] Sin tool_use ni texto. stop_reason: ${charCount(data.stop_reason)}`);
-        throw new Error('La API no retornó contenido');
-      }
-
-      console.warn('[generate-story] Sin bloque tool_use, extrayendo JSON del texto (fallback)');
-      const rawText = textBlock.text;
-      const fenced = rawText.match(/```json\s*([\s\S]*?)\s*```/);
-      const jsonText = (fenced ? fenced[1] : rawText.match(/\{[\s\S]*\}/)?.[0])
-        ?.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
-        .trim();
-
-      if (!jsonText) {
-        console.error(`[generate-story] No se encontró JSON en la respuesta: ${charCount(rawText)}`);
-        throw new Error('No se encontró JSON válido en la respuesta');
-      }
-
-      story = JSON.parse(jsonText) as StoryOutput;
+    // EXACTLY one matching block. Zero is no story; two is two stories and no
+    // way to know which one the model meant.
+    const storyBlocks = contentBlocks.filter(
+      (b) => b?.type === 'tool_use' && b?.name === 'emit_story',
+    );
+    if (storyBlocks.length !== 1) {
+      throw new ProviderOutputError(
+        'INVALID_STORY',
+        `emit_story blocks n=${storyBlocks.length}`,
+      );
     }
 
-    // Validar estructura
-    if (!validateStory(story)) {
-      console.error(`[generate-story] Estructura inválida: ${bodyShape(JSON.stringify(story))}`);
-      throw new Error('La respuesta no tiene la estructura esperada');
+    // NO text/regex/JSON.parse fallback any more. With a forced strict tool,
+    // prose is not a second success protocol — it is the model failing to
+    // answer, and parsing it was how a story that never passed the schema
+    // reached the client.
+    const validated = validateAndNormalizeStory(storyBlocks[0].input);
+    if (!validated.ok) {
+      throw new ProviderOutputError(
+        'INVALID_STORY',
+        describeValidationErrors(validated.errors),
+      );
     }
+    const story = validated.story;
+    // Appended AFTER PC's research entries, and only now that the story is
+    // known good: warnings about a story that was rejected describe nothing the
+    // client can act on.
+    warnings.push(...validated.warnings);
 
     console.log(`[generate-story] Cuento generado exitosamente; título ${charCount(story.title)}`);
     console.log(`[generate-story] Escenas: ${story.scenes?.length || 0}, Personajes: ${story.characters?.length || 0}, Props sugeridos: ${story.props?.length || 0}`);
@@ -1211,8 +1805,11 @@ export function createHandler(
     const normalizePropName = (n: string) =>
       n.toLowerCase().trim().replace(/^(el|la|los|las|un|una|unos|unas)\s+/i, '').trim();
     const userPropNames = new Set(propList.map((p) => normalizePropName(p.name || '')));
-    const suggestedProps = (story.props || []).filter(
-      (p) => p?.name && p.visualDescription && !userPropNames.has(normalizePropName(p.name))
+    // `story.props` is now always an array of fully-validated props, so the old
+    // per-entry emptiness guards are gone: the only filter left is the one that
+    // was ever load-bearing — excluding props the user already defined.
+    const suggestedProps = story.props.filter(
+      (p) => !userPropNames.has(normalizePropName(p.name))
     );
 
     // Construir el contenido como texto plano para compatibilidad
@@ -1257,6 +1854,38 @@ export function createHandler(
     );
 
   } catch (error: unknown) {
+    // Typed errors are MAPPED here, not re-thrown: letting a
+    // `ProviderOutputError` reach the generic 500 below is exactly the defect PD
+    // closes. The dispatch sits at the TOP of the catch, so the 500 is only ever
+    // the fallback branch for something genuinely unexpected.
+    if (error instanceof ProviderOutputError) {
+      console.error(
+        `[generate-story] salida del proveedor rechazada: ${error.reason}` +
+          (error.detail ? ` (${error.detail})` : ''),
+      );
+      return typedErrorResponse({
+        status: 502,
+        code: 'PROVIDER_OUTPUT_INVALID',
+        error: error.message,
+        skippedImages,
+        warnings,
+      });
+    }
+    if (error instanceof ClientInputError) {
+      // Status only: the message is this module's own fixed Spanish copy, so the
+      // log has no reason to repeat it.
+      console.warn(
+        `[generate-story] petición inválida del cliente: HTTP ${error.httpStatus}`,
+      );
+      return typedErrorResponse({
+        status: error.httpStatus,
+        code: 'CLIENT_INPUT_INVALID',
+        error: error.message,
+        skippedImages,
+        warnings,
+      });
+    }
+
     console.error(`[generate-story] Error: ${describeError(error)}`);
 
     return new Response(

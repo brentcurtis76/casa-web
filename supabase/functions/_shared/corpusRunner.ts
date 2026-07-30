@@ -44,31 +44,67 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
+ * A story the `generate-story` contract accepts: 15 scenes numbered 1..15, one
+ * protagonist, non-empty text everywhere, and an explicit empty `props`.
+ *
+ * Stub FIDELITY, not an expectation change (PD [PD8], and the same call PC r1 Q4
+ * made for `finishReason`). Until PD this stub returned a text block holding a
+ * ONE-scene story with no character role and no `props` — a shape the real API
+ * does not produce under a forced strict tool, and one the new validator
+ * rejects. Left alone it would have turned four story cases into 502s and
+ * "proved" a regression that does not exist. None of the fields below is
+ * observed by a captured outcome (status/code/fetched/providerImages/
+ * providerCalls), and `corpus_baseline.json` is untouched.
+ */
+function storyToolInput(): Record<string, unknown> {
+  return {
+    title: "El faro de Ana",
+    summary: "Un cuento sobre la esperanza.",
+    characters: [{
+      name: "Ana",
+      role: "protagonist",
+      description: "una niña del puerto",
+      visualDescription: "chaleco rojo, pelo oscuro",
+    }],
+    scenes: Array.from({ length: 15 }, (_, i) => ({
+      number: i + 1,
+      text: `Ana camina por el muelle, escena ${i + 1}.`,
+      visualDescription: `Muelle iluminado, plano ${i + 1}`,
+    })),
+    spiritualConnection: "Jesús es luz.",
+    props: [],
+  };
+}
+
+/**
  * The stub. Deterministic by construction:
  *   * any bucket object whose name contains "gone" 404s — that is how a draft
  *     citing a deleted object behaves;
  *   * any signed URL 400s, because those tokens are long expired;
  *   * every other bucket object returns a small PNG;
- *   * the provider returns one generated PNG (scene-images) or a short text
- *     (story), enough for either handler to report success.
+ *   * the provider returns one generated PNG (scene-images) or a valid
+ *     strict-tool story (story), enough for either handler to report success.
  */
 function stubFetch(url: string): Promise<Response> {
   if (isProvider(url)) {
     if (url.includes("anthropic")) {
+      // The documented success protocol: `stop_reason: "tool_use"` plus exactly
+      // one `tool_use` block named after the tool, carrying schema-valid input.
       return Promise.resolve(
         new Response(
           JSON.stringify({
+            id: "msg_01corpus",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-5-20251101",
+            stop_reason: "tool_use",
             content: [{
-              type: "text",
-              text: JSON.stringify({
-                title: "El faro de Ana",
-                summary: "Un cuento sobre esperanza.",
-                characters: [{ name: "Ana", description: "niña", visualDescription: "chaleco rojo" }],
-                scenes: [{ number: 1, text: "Ana camina.", visualDescription: "muelle" }],
-                spiritualConnection: "Jesús es luz.",
-                moral: "La esperanza guía.",
-              }),
+              type: "tool_use",
+              id: "toolu_01corpus",
+              name: "emit_story",
+              input: storyToolInput(),
             }],
+            usage: { input_tokens: 10, output_tokens: 20 },
           }),
           { status: 200 },
         ),
