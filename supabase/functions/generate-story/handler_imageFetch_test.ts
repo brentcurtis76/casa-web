@@ -408,7 +408,10 @@ Deno.test("D4-story a body-stream failure still answers JSON with CORS", async (
       assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
     }
     assertEquals(res.headers.get("Content-Type"), "application/json");
-    assertStrictEquals((await readJson(res)).success, false);
+    assertStrictEquals(res.status, 400);
+    const body = await readJson(res);
+    assertStrictEquals(body.success, false);
+    assertStrictEquals(body.code, "CLIENT_INPUT_INVALID");
     assertEquals(spy.calls.length, 0);
   });
 });
