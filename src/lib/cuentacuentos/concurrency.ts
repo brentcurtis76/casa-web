@@ -51,16 +51,15 @@ function cancellableDelay(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new RetryCancelledError());
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onAbort = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      reject(new RetryCancelledError());
-    };
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(new RetryCancelledError());
+    };
     signal?.addEventListener('abort', onAbort);
   });
 }

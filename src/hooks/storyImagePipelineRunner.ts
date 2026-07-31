@@ -320,16 +320,15 @@ const sleep = (ms: number, signal?: AbortSignal) =>
       resolve();
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onAbort = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    };
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
     signal?.addEventListener('abort', onAbort);
   });
 

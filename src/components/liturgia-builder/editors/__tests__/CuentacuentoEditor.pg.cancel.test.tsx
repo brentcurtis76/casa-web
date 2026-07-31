@@ -617,7 +617,9 @@ describe('T-G.13 — aviso tardío aceptado, imagen tardía descartada', () => {
       });
       await yields(60);
     });
-    const notice = await screen.findByText('Una foto de referencia no se usó', { timeout: 10000 });
+    const notice = await screen.findByText('Una foto de referencia no se usó', undefined, {
+      timeout: 10000,
+    });
     const box = notice.parentElement!.parentElement!;
     expect(
       within(box).getByText('el personaje 1: no se pudo recuperar; puede que se haya borrado.'),
@@ -653,7 +655,7 @@ describe('T-G.13 — aviso tardío aceptado, imagen tardía descartada', () => {
       });
       await yields(60);
     });
-    const notice2 = await screen.findByText('2 fotos de referencia no se usaron', {
+    const notice2 = await screen.findByText('2 fotos de referencia no se usaron', undefined, {
       timeout: 10000,
     });
     const box2 = notice2.parentElement!.parentElement!;
