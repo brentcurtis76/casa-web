@@ -136,21 +136,16 @@ export interface CuentacuentosImageUrls {
   endImage?: string;
 }
 
-/**
- * Helper to convert base64 to blob
- */
-function base64ToBlob(base64Data: string): Blob {
-  // Remove data URL prefix if present
-  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-  const binaryData = atob(cleanBase64);
-  const bytes = new Uint8Array(binaryData.length);
-  for (let i = 0; i < binaryData.length; i++) {
-    bytes[i] = binaryData.charCodeAt(i);
-  }
-  // Detect if JPEG or PNG from magic bytes
-  const isJpeg = cleanBase64.startsWith('/9j/');
-  return new Blob([bytes], { type: isJpeg ? 'image/jpeg' : 'image/png' });
-}
+// PB/G2 — [B5]: acá vivía `base64ToBlob`, una SEGUNDA implementación de
+// producción de quitado del prefijo data-URL, decodificación base64, inferencia
+// de MIME por prefijo (`/9j/` ⇒ jpeg, si no png) y construcción de `Blob`.
+// Quedó sin llamadores al enrutar la finalización por la primitiva compartida,
+// pero seguía siendo una topología de doble fuente: G2 exige que la primitiva
+// inmutable sea la ÚNICA dueña de esas responsabilidades, y su inferencia por
+// prefijo era además incorrecta (etiquetaba WebP/GIF como PNG) justo al lado de
+// la implementación por magic bytes. Se elimina; el único decodificador/
+// sniffer/hasher/subidor de cuentacuentos es
+// `@/lib/cuentacuentos/immutableImageUpload`.
 
 /**
  * Upload a single image and return its public URL
