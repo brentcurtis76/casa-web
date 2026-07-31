@@ -109,12 +109,89 @@ export function parseSkippedImages(value: unknown): SkippedImage[] {
   );
 }
 
+/**
+ * Degradación de la INVESTIGACIÓN, no de las imágenes de referencia.
+ *
+ * `skippedImages` dice "esta foto quedó fuera"; `warnings` dice "esta llamada de
+ * investigación falló" o "la normalización descartó un elemento". Son canales
+ * distintos con remedios distintos, y por eso no comparten estado ni aviso.
+ *
+ * Las fuentes son un conjunto CERRADO: una fuente nueva cambia el significado de
+ * lo que se muestra, así que llegar a ella es un cambio de contrato, no un
+ * detalle de implementación. Los códigos son lo contrario — deliberadamente
+ * compatibles hacia adelante — porque la autoridad del texto es el `message` que
+ * manda el servidor, no una tabla de códigos del cliente.
+ */
+export type WarningSource = 'location' | 'landmark' | 'prop' | 'story';
+
+export interface EnvelopeWarning {
+  source: WarningSource;
+  code: string;
+  message: string;
+  httpStatus?: number;
+  finishReason?: string;
+}
+
+const WARNING_SOURCES: ReadonlySet<string> = new Set<WarningSource>([
+  'location',
+  'landmark',
+  'prop',
+  'story',
+]);
+
+const isNonBlankString = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
+
+/**
+ * Único parser de `warnings` del cliente: lo llaman tanto `buildInvokeError`
+ * (cuerpos de error) como los handlers de éxito y de vista previa.
+ *
+ * Queda en pie sólo lo que tiene la forma del contrato. Un opcional presente
+ * pero mal formado invalida la ENTRADA entera en vez de descartarse solo: si el
+ * borde mandó `httpStatus` y no es un número, lo que llegó no es el envelope que
+ * creemos y renderizar la mitad sería peor que omitirla. Las propiedades que no
+ * están en el contrato se ignoran y NO se copian — el aviso muestra texto del
+ * servidor, y nada del request o del proveedor debe poder viajar de polizón.
+ *
+ * Se preservan ORDEN y MULTIPLICIDAD: el borde emite una entrada por resultado
+ * fallido, así que dos props pueden producir el mismo `source`+`code` y ninguna
+ * de las dos es un duplicado que se pueda borrar.
+ */
+export function parseWarnings(value: unknown): EnvelopeWarning[] {
+  if (!Array.isArray(value)) return [];
+
+  const out: EnvelopeWarning[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const w = raw as Record<string, unknown>;
+
+    if (typeof w.source !== 'string' || !WARNING_SOURCES.has(w.source)) continue;
+    if (!isNonBlankString(w.code) || !isNonBlankString(w.message)) continue;
+
+    const { httpStatus, finishReason } = w;
+    if (httpStatus !== undefined && !(typeof httpStatus === 'number' && Number.isFinite(httpStatus))) {
+      continue;
+    }
+    if (finishReason !== undefined && typeof finishReason !== 'string') continue;
+
+    out.push({
+      source: w.source as WarningSource,
+      code: w.code,
+      message: w.message,
+      ...(httpStatus !== undefined ? { httpStatus: httpStatus as number } : {}),
+      ...(finishReason !== undefined ? { finishReason: finishReason as string } : {}),
+    });
+  }
+  return out;
+}
+
 /** Error de invoke con los campos tipados del contrato a mano. */
 export class InvokeError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly field?: string;
   readonly skippedImages: SkippedImage[];
+  readonly warnings: EnvelopeWarning[];
 
   constructor(
     message: string,
@@ -122,6 +199,7 @@ export class InvokeError extends Error {
     code: string | undefined,
     field: string | undefined,
     skippedImages: SkippedImage[],
+    warnings: EnvelopeWarning[],
   ) {
     super(message);
     this.name = 'InvokeError';
@@ -129,6 +207,7 @@ export class InvokeError extends Error {
     this.code = code;
     this.field = field;
     this.skippedImages = skippedImages;
+    this.warnings = warnings;
   }
 }
 
@@ -145,9 +224,13 @@ export function buildInvokeError(status: number, body: unknown): InvokeError {
   const field = typeof b.field === 'string' ? b.field : undefined;
   const detail = typeof b.error === 'string' ? b.error : '';
   const skippedImages = parseSkippedImages(b.skippedImages);
+  // La degradación de investigación viaja en TODOS los envelopes de error
+  // (400/422/502 tipados y el 500 genérico), así que se lee acá, en la única
+  // costura por la que pasan los cuatro sitios de invoke.
+  const warnings = parseWarnings(b.warnings);
 
   const friendly = refineErrorMessage(code, field, detail);
   const message = friendly ?? `Error ${status}${detail ? `: ${detail}` : ''}`;
 
-  return new InvokeError(message, status, code, field, skippedImages);
+  return new InvokeError(message, status, code, field, skippedImages, warnings);
 }

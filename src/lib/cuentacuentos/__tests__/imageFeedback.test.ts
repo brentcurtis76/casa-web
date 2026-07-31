@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { describeField, describeSkippedImage, refineErrorMessage, buildInvokeError } from '../imageFeedback';
+import {
+  describeField,
+  describeSkippedImage,
+  refineErrorMessage,
+  buildInvokeError,
+  parseWarnings,
+} from '../imageFeedback';
+import {
+  researchWarning,
+  storyWarning,
+  serverWarningMessage,
+  PROP_NOT_RECURRING_MESSAGE,
+  typedErrorBody,
+  genericErrorBody,
+  CLIENT_INPUT_INVALID_400_DETAIL,
+} from './pcuiWarningFixtures';
 
 /**
  * Los `field` reales que emiten las edge functions, tomados de los handlers
@@ -153,5 +168,273 @@ describe('buildInvokeError', () => {
 
   it('sigue siendo un Error de verdad, para que los catch existentes funcionen', () => {
     expect(buildInvokeError(500, {})).toBeInstanceOf(Error);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PC-UI / T-U.1 — contrato del parser de `warnings`
+//
+// Las fuentes son un conjunto CERRADO (`location|landmark|prop|story`): una
+// fuente nueva cambia el significado de la UI. Los códigos, en cambio, son
+// deliberadamente compatibles hacia adelante — cualquier código no vacío de una
+// fuente conocida se acepta, porque el `message` DEL SERVIDOR es la autoridad y
+// el cliente no tiene tabla de códigos.
+// ---------------------------------------------------------------------------
+
+describe('parseWarnings', () => {
+  it('acepta las dos formas del borde: ResponseWarning y StoryWarning', () => {
+    const research = researchWarning('landmark', 'PROVIDER_HTTP_ERROR');
+    const story = storyWarning();
+    expect(parseWarnings([research, story])).toEqual([
+      {
+        source: 'landmark',
+        code: 'PROVIDER_HTTP_ERROR',
+        message: serverWarningMessage('landmark', 'PROVIDER_HTTP_ERROR'),
+      },
+      { source: 'story', code: 'PROP_NOT_RECURRING', message: PROP_NOT_RECURRING_MESSAGE },
+    ]);
+  });
+
+  it('acepta las cuatro fuentes conocidas', () => {
+    const entries = [
+      researchWarning('location', 'NO_API_KEY'),
+      researchWarning('landmark', 'EMPTY_RESPONSE'),
+      researchWarning('prop', 'OUTPUT_TRUNCATED'),
+      storyWarning(),
+    ];
+    expect(parseWarnings(entries).map((w) => w.source)).toEqual([
+      'location',
+      'landmark',
+      'prop',
+      'story',
+    ]);
+  });
+
+  it('conserva los opcionales cuando vienen, y no los inventa cuando no', () => {
+    const conHttp = researchWarning('prop', 'PROVIDER_HTTP_ERROR', {
+      httpStatus: 503,
+      finishReason: 'MAX_TOKENS',
+    });
+    const [conOpcionales] = parseWarnings([conHttp]);
+    expect(conOpcionales.httpStatus).toBe(503);
+    expect(conOpcionales.finishReason).toBe('MAX_TOKENS');
+
+    const [sinOpcionales] = parseWarnings([researchWarning('prop', 'PROVIDER_HTTP_ERROR')]);
+    expect('httpStatus' in sinOpcionales).toBe(false);
+    expect('finishReason' in sinOpcionales).toBe(false);
+  });
+
+  it('acepta un código DESCONOCIDO de una fuente conocida: manda el message del servidor', () => {
+    const futuro = {
+      source: 'prop',
+      code: 'CODIGO_QUE_AUN_NO_EXISTE',
+      message: 'Un motivo nuevo que el servidor sabe redactar y el cliente no.',
+    };
+    expect(parseWarnings([futuro])).toEqual([futuro]);
+  });
+
+  it('descarta una fuente desconocida: una fuente nueva cambia el significado de la UI', () => {
+    expect(
+      parseWarnings([{ source: 'personaje', code: 'X', message: 'algo' }]),
+    ).toEqual([]);
+  });
+
+  it('exige code y message no vacíos', () => {
+    const malos = [
+      { source: 'prop', code: '', message: 'algo' },
+      { source: 'prop', code: '   ', message: 'algo' },
+      { source: 'prop', code: 'X', message: '' },
+      { source: 'prop', code: 'X', message: '   ' },
+      { source: 'prop', code: 7, message: 'algo' },
+      { source: 'prop', code: 'X', message: 7 },
+      { source: 'prop', code: 'X' },
+      { source: 'prop', message: 'algo' },
+      { code: 'X', message: 'algo' },
+    ];
+    for (const m of malos) {
+      expect(parseWarnings([m]), JSON.stringify(m)).toEqual([]);
+    }
+  });
+
+  it('un opcional MAL FORMADO invalida la entrada entera, no sólo el campo', () => {
+    const malos = [
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), httpStatus: '503' },
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), httpStatus: null },
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), httpStatus: Number.NaN },
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), httpStatus: Number.POSITIVE_INFINITY },
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), finishReason: 5 },
+      { ...researchWarning('prop', 'PROVIDER_HTTP_ERROR'), finishReason: null },
+    ];
+    for (const m of malos) {
+      expect(parseWarnings([m]), JSON.stringify(m)).toEqual([]);
+    }
+  });
+
+  it('ignora propiedades desconocidas y NO las copia al objeto de salida', () => {
+    const conBasura = {
+      ...researchWarning('location', 'NO_API_KEY'),
+      promptEnviado: 'texto-del-request-que-no-debe-viajar',
+      proveedor: 'gemini-interno',
+      requestId: 'req-secreto',
+    };
+    const [limpio] = parseWarnings([conBasura]);
+    expect(limpio).toEqual({
+      source: 'location',
+      code: 'NO_API_KEY',
+      message: serverWarningMessage('location', 'NO_API_KEY'),
+    });
+    expect(Object.keys(limpio).sort()).toEqual(['code', 'message', 'source']);
+  });
+
+  it('preserva ORDEN y MULTIPLICIDAD, incluidos source/code repetidos', () => {
+    // El borde emite una entrada POR RESULTADO fallido: dos props o dos
+    // landmarks producen el MISMO par source//code. Deduplicar borraría un
+    // fallo real, así que ambas entradas sobreviven.
+    const a = researchWarning('prop', 'PROVIDER_HTTP_ERROR', { httpStatus: 500 });
+    const b = researchWarning('prop', 'PROVIDER_HTTP_ERROR', { httpStatus: 503 });
+    const c = researchWarning('location', 'NO_API_KEY');
+    const out = parseWarnings([a, b, c, b]);
+    expect(out).toHaveLength(4);
+    expect(out.map((w) => `${w.source}:${w.code}`)).toEqual([
+      'prop:PROVIDER_HTTP_ERROR',
+      'prop:PROVIDER_HTTP_ERROR',
+      'location:NO_API_KEY',
+      'prop:PROVIDER_HTTP_ERROR',
+    ]);
+    expect(out.map((w) => w.httpStatus)).toEqual([500, 503, undefined, 503]);
+  });
+
+  it('en un array mixto deja pasar sólo lo válido, sin lanzar', () => {
+    const ok1 = researchWarning('location', 'NO_API_KEY');
+    const ok2 = storyWarning();
+    const mezcla = [
+      null,
+      ok1,
+      'texto suelto',
+      { source: 'prop' },
+      42,
+      ['array', 'anidado'],
+      ok2,
+      undefined,
+      { source: 'desconocida', code: 'X', message: 'y' },
+    ];
+    expect(() => parseWarnings(mezcla)).not.toThrow();
+    expect(parseWarnings(mezcla)).toEqual([ok1, ok2]);
+  });
+
+  it('un array anidado NO es una entrada: sólo objetos no-array sobreviven', () => {
+    expect(parseWarnings([[researchWarning('prop', 'NO_API_KEY')]])).toEqual([]);
+  });
+
+  it('ausente, null o no-array devuelve [] sin lanzar', () => {
+    for (const v of [undefined, null, 'nope', 7, {}, { warnings: [] }, true]) {
+      expect(parseWarnings(v), String(v)).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PC-UI / T-U.2 — la costura de InvokeError lleva los warnings SIN cambiar nada
+// de lo que ya hacía. `extractInvokeError` (privado del editor) se prueba en la
+// suite de componente contra `FunctionsHttpError` reales.
+// ---------------------------------------------------------------------------
+
+describe('buildInvokeError — warnings (PC-UI)', () => {
+  it('parsea los warnings de un 502 tipado con el MISMO parser', () => {
+    const w = researchWarning('landmark', 'PROVIDER_UNAVAILABLE');
+    const e = buildInvokeError(
+      502,
+      typedErrorBody({
+        code: 'PROVIDER_OUTPUT_INVALID',
+        error: 'El modelo devolvió una estructura inválida.',
+        warnings: [w],
+      }),
+    );
+    expect(e.warnings).toEqual([w]);
+    expect(parseWarnings([w])).toEqual(e.warnings);
+  });
+
+  it('los lleva también en el 400 CLIENT_INPUT_INVALID y en el 422', () => {
+    const w = researchWarning('prop', 'OUTPUT_BLOCKED');
+    const e400 = buildInvokeError(
+      400,
+      typedErrorBody({
+        code: 'CLIENT_INPUT_INVALID',
+        error: CLIENT_INPUT_INVALID_400_DETAIL,
+        warnings: [w],
+      }),
+    );
+    expect(e400.warnings).toEqual([w]);
+    expect(e400.code).toBe('CLIENT_INPUT_INVALID');
+
+    const e422 = buildInvokeError(
+      422,
+      typedErrorBody({
+        code: 'CLIENT_INPUT_INVALID',
+        error: 'Se requiere contexto de la liturgia y ubicación',
+        warnings: [w, storyWarning()],
+      }),
+    );
+    expect(e422.warnings).toHaveLength(2);
+  });
+
+  it('los lleva en el envelope genérico 500, que no trae `code`', () => {
+    const w = storyWarning();
+    const e = buildInvokeError(500, genericErrorBody({ error: 'Error generando cuento', warnings: [w] }));
+    expect(e.warnings).toEqual([w]);
+    expect(e.code).toBeUndefined();
+    expect(e.message).toBe('Error 500: Error generando cuento');
+  });
+
+  it('sin la clave `warnings` (el borde la omite vacía) el error trae []', () => {
+    expect(buildInvokeError(502, typedErrorBody({
+      code: 'PROVIDER_OUTPUT_INVALID',
+      error: 'x',
+    })).warnings).toEqual([]);
+    expect(buildInvokeError(500, null).warnings).toEqual([]);
+    expect(buildInvokeError(500, {}).warnings).toEqual([]);
+  });
+
+  it('un `warnings` basura no rompe ni fabrica avisos', () => {
+    expect(buildInvokeError(500, { warnings: 'nope' }).warnings).toEqual([]);
+    expect(buildInvokeError(500, { warnings: [{ source: 'x' }] }).warnings).toEqual([]);
+    expect(buildInvokeError(500, { warnings: {} }).warnings).toEqual([]);
+  });
+
+  it('no cambia status/code/field/skippedImages/refine/message al agregar warnings', () => {
+    // Mismo cuerpo con y sin la clave nueva: todo lo demás debe coincidir.
+    const base = {
+      code: 'REFINE_SOURCE_UNAVAILABLE',
+      field: 'refine.sourceImage',
+      error: 'La imagen a refinar no está disponible.',
+      skippedImages: [{ field: 'props[0].referenceImages[1]', code: 'NOT_USED' }],
+    };
+    const sin = buildInvokeError(422, base);
+    const con = buildInvokeError(422, { ...base, warnings: [storyWarning()] });
+
+    expect(con.status).toBe(sin.status);
+    expect(con.code).toBe(sin.code);
+    expect(con.field).toBe(sin.field);
+    expect(con.message).toBe(sin.message);
+    expect(con.skippedImages).toEqual(sin.skippedImages);
+    // …y sólo difieren en el canal nuevo.
+    expect(sin.warnings).toEqual([]);
+    expect(con.warnings).toHaveLength(1);
+    expect(con.message).toMatch(/se conserva/i);
+  });
+
+  it('warnings y skippedImages son canales SEPARADOS en el mismo cuerpo', () => {
+    const e = buildInvokeError(
+      502,
+      typedErrorBody({
+        code: 'PROVIDER_OUTPUT_INVALID',
+        error: 'x',
+        skippedImages: [{ field: 'props[0].referenceImages[0]', code: 'NOT_IMAGE' }],
+        warnings: [researchWarning('prop', 'EMPTY_RESPONSE')],
+      }),
+    );
+    expect(e.skippedImages).toHaveLength(1);
+    expect(e.warnings).toHaveLength(1);
+    expect(e.warnings[0].message).not.toContain('el objeto 1');
   });
 });
