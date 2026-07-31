@@ -64,6 +64,17 @@ export interface UpsertCall {
   payload: unknown;
 }
 
+/**
+ * PG — Una llamada al borde de funciones pagas, con lo que PG necesita
+ * observar: qué función, con qué cuerpo y con QUÉ señal de cancelación.
+ */
+export interface InvokeCall {
+  seq: number;
+  fn: string;
+  body: Record<string, unknown>;
+  signal: AbortSignal | undefined;
+}
+
 /** Un `storage.remove` — T-B.7 lo cuenta por bucket. */
 export interface RemoveCall {
   seq: number;
@@ -144,6 +155,13 @@ export interface BoundaryControls {
   listFindsFile: boolean;
   /** Respuesta de `functions.invoke` para las funciones pagas. */
   invokeResponse: { data: unknown; error: unknown };
+  /**
+   * PG — Respuesta POR LLAMADA del borde pagado. `null` (default) conserva el
+   * comportamiento previo: se devuelve la constante `invokeResponse`.
+   */
+  invokeHandler:
+    | ((call: InvokeCall) => Promise<{ data: unknown; error: unknown }>)
+    | null;
 }
 
 export const ctl: BoundaryControls = makeDefaultControls();
@@ -167,6 +185,7 @@ function makeDefaultControls(): BoundaryControls {
     repeatPathUsesNon409: false,
     listFindsFile: true,
     invokeResponse: { data: { success: true, images: [] }, error: null },
+    invokeHandler: null,
   };
 }
 
@@ -175,6 +194,8 @@ function makeDefaultControls(): BoundaryControls {
 // ---------------------------------------------------------------------------
 
 export const uploads: UploadCall[] = [];
+/** PG — llamadas al borde pagado, en orden de emisión. */
+export const invokes: InvokeCall[] = [];
 export const upserts: UpsertCall[] = [];
 export const removals: RemoveCall[] = [];
 export const deletes: DeleteCall[] = [];
@@ -206,6 +227,7 @@ export function nextUpdatedAt(): string {
 export function resetBoundary(): void {
   Object.assign(ctl, makeDefaultControls());
   uploads.length = 0;
+  invokes.length = 0;
   upserts.length = 0;
   removals.length = 0;
   deletes.length = 0;
@@ -461,7 +483,20 @@ export function makeSupabaseMock() {
     from: (t: string) => tableApi(t),
     storage: { from: (b: string) => storageApi(b) },
     functions: {
-      invoke: async () => ctl.invokeResponse,
+      invoke: async (fn: string, opts?: { body?: unknown; signal?: AbortSignal }) => {
+        // PG — el borde pagado se OBSERVA (nombre, cuerpo y señal) y puede
+        // contestar por llamada. Sin `invokeHandler` el comportamiento previo
+        // se conserva EXACTO: la constante `ctl.invokeResponse`.
+        const call: InvokeCall = {
+          seq: nextSeq(),
+          fn,
+          body: (opts?.body ?? {}) as Record<string, unknown>,
+          signal: opts?.signal,
+        };
+        invokes.push(call);
+        if (ctl.invokeHandler) return ctl.invokeHandler(call);
+        return ctl.invokeResponse;
+      },
     },
     auth: {
       getUser: async () => ({ data: { user: ctl.userId ? { id: ctl.userId } : null } }),
