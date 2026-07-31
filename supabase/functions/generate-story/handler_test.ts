@@ -336,3 +336,154 @@ Deno.test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// T-INT-generate-story-truncation
+//
+// Regression cover for the 2026-07 outage: the Anthropic response hit
+// max_tokens, the truncated JSON prefix failed every parse attempt, and the
+// user saw only "JSON inválido" while the real cause stayed in the logs.
+// ---------------------------------------------------------------------------
+
+/**
+ * Replaces globalThis.fetch with a router keyed on request URL, so a test can
+ * drive the Gemini research call and the Anthropic provider call separately.
+ */
+async function withFetchRouter<T>(
+  routes: { gemini?: () => Response; anthropic: () => Response },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
+    const url = typeof input === "string" ? input : (input as Request).url;
+    if (url.includes("generativelanguage.googleapis.com")) {
+      return Promise.resolve(
+        routes.gemini?.() ?? new Response("", { status: 404 }),
+      );
+    }
+    if (url.includes("api.anthropic.com")) {
+      return Promise.resolve(routes.anthropic());
+    }
+    throw new Error(`unexpected fetch to ${url}`);
+  }) as typeof fetch;
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+function anthropicResponse(body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function authorizedRequest() {
+  return new Request("https://example.test/generate-story", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer good-token",
+    },
+    body: JSON.stringify(samplePayload()),
+  });
+}
+
+Deno.test(
+  "max_tokens truncation reports the real cause, not a JSON parse error",
+  async () => {
+    const { deps: authz } = makeAuthzDeps();
+    const handler = createHandler(baseDeps(authz));
+
+    // A truncated story: valid JSON prefix, cut mid-array. This is exactly
+    // what production returned when max_tokens was 4096.
+    const truncated =
+      '{"title":"El Pan Compartido","summary":"Un niño aprende a compartir",' +
+      '"characters":[{"name":"Alejandro","role":"protagonist",' +
+      '"description":"Un niño","visualDescription":"7 años, pelo castaño"';
+
+    await withFetchRouter(
+      {
+        anthropic: () =>
+          anthropicResponse({
+            content: [{ type: "text", text: truncated }],
+            stop_reason: "max_tokens",
+            usage: { input_tokens: 2000, output_tokens: 8192 },
+          }),
+      },
+      async () => {
+        const res = await handler(authorizedRequest());
+
+        assertEquals(res.status, 500);
+        const body = await res.json() as { success: boolean; error: string };
+        assertEquals(body.success, false);
+
+        // The actionable message, not the generic parser failure.
+        assertStrictEquals(
+          body.error.includes("límite de tokens"),
+          true,
+          `expected a token-limit message, got: ${body.error}`,
+        );
+        assertStrictEquals(
+          body.error.includes("JSON inválido"),
+          false,
+          "truncation must not be reported as a JSON parse error",
+        );
+      },
+    );
+  },
+);
+
+Deno.test(
+  "a complete story response still parses and returns 200",
+  async () => {
+    const { deps: authz } = makeAuthzDeps();
+    const handler = createHandler(baseDeps(authz));
+
+    const story = {
+      title: "El Pan Compartido",
+      summary: "Un niño aprende a compartir",
+      characters: [{
+        name: "Alejandro",
+        role: "protagonist",
+        description: "Un niño curioso",
+        visualDescription: "7 años, pelo castaño, polera azul",
+        appearsInScenes: [1],
+      }],
+      scenes: [{
+        number: 1,
+        text: "Alejandro caminaba por la plaza.",
+        visualDescription: "Plaza soleada con árboles verdes.",
+        charactersInScene: ["Alejandro"],
+        landmarkVisible: false,
+      }],
+      spiritualConnection: "Compartir como Jesús enseñó",
+    };
+
+    await withFetchRouter(
+      {
+        anthropic: () =>
+          anthropicResponse({
+            content: [{ type: "text", text: JSON.stringify(story) }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 2000, output_tokens: 4000 },
+          }),
+      },
+      async () => {
+        const res = await handler(authorizedRequest());
+
+        assertEquals(res.status, 200);
+        const body = await res.json() as {
+          success: boolean;
+          title: string;
+          scenes: unknown[];
+        };
+        assertEquals(body.success, true);
+        assertEquals(body.title, "El Pan Compartido");
+        assertEquals(body.scenes.length, 1);
+      },
+    );
+  },
+);

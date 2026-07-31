@@ -67,6 +67,7 @@ Responde en español, de forma concisa pero detallada (máximo 300 palabras). So
       console.error(
         "[generate-story] Error researching location:",
         response.status,
+        await response.text(),
       );
       return "";
     }
@@ -209,6 +210,7 @@ async function analyzeImagesForVisualDescription(
       console.error(
         `[generate-story] Error analyzing ${kind} "${name}":`,
         response.status,
+        await response.text(),
       );
       return "";
     }
@@ -778,6 +780,20 @@ export function createHandler(
 
       if (!data.content || !data.content[0] || !data.content[0].text) {
         throw new Error("La API no retornó contenido");
+      }
+
+      // Truncated output is still syntactically "a JSON prefix", so every
+      // parse attempt below fails with a generic syntax error and the real
+      // cause (hitting max_tokens) stays invisible. Catch it here instead.
+      if (data.stop_reason === "max_tokens") {
+        console.error(
+          "[generate-story] Respuesta truncada en max_tokens. output_tokens:",
+          data.usage?.output_tokens,
+        );
+        throw new Error(
+          "El cuento superó el límite de tokens y quedó incompleto. " +
+            "Reduce el número de escenas, personajes o referencias visuales e inténtalo de nuevo.",
+        );
       }
 
       let jsonText = data.content[0].text;
