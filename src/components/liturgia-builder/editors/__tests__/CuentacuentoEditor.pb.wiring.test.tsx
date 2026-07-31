@@ -7,7 +7,6 @@
  *
  *   - cliente Supabase (auth / tablas / storage),
  *   - invocación de funciones pagas,
- *   - `use-toast`,
  *   - `fetch` (el HEAD de verificación de existencia),
  *   - el input de archivo del navegador (se dispara un `change` real con un
  *     `File` real; el `FileReader` que lo decodifica es el de jsdom).
@@ -56,7 +55,13 @@ vi.mock('@/integrations/supabase/client', async () => {
   const { makeSupabaseMock } = await import('@/lib/cuentacuentos/__tests__/pbBoundary');
   return { supabase: makeSupabaseMock() };
 });
-vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
+// PB/G7 — [B2]: acá había un `vi.mock('@/hooks/use-toast', …)`. G7 permite
+// mockear SÓLO bordes externos (Supabase auth/tabla/storage, invocación de
+// funciones pagas, timers y el input de archivo del navegador). `use-toast` es
+// un hook de React de PRODUCCIÓN, interno, y NO está en esa lista: mockearlo
+// bajaba la barra de integración de T-B.8. No necesita provider —es un store
+// con reducer a nivel de módulo (`src/hooks/use-toast.ts`)— así que la suite
+// corre el hook real.
 
 import {
   ctl,
@@ -520,11 +525,18 @@ describe('PB G7/T-B.8 — camino 5: el hook persiste una opción inline por una 
   }, 60_000);
 });
 
-describe('PB T-B.14 — inventario de inmutabilidad en los cinco caminos', () => {
+describe('PB T-B.14 — inventario de inmutabilidad en los cuatro controles manuales', () => {
   it('ninguna subida de cuentacuentos usa `upsert:true` ni un nombre posicional', async () => {
-    // Recorre los cuatro controles manuales en una sola verificación de
+    // Recorre los CUATRO controles manuales en una sola verificación de
     // inventario: si cualquiera volviera a `upsert:true`, esto falla en el
     // borde externo (no por inspección de código).
+    //
+    // [B2] — el título decía "los cinco caminos"; el recorrido es de cuatro.
+    // El camino 5 (la ruta del hook) queda cubierto por su propio caso, cuya
+    // `assertImmutableBoundary` exige `upsert:false` en TODAS las subidas de
+    // ese caso. Por eso la mutación por sitio del hook deja este inventario en
+    // verde: no es un sustituto del resultado por sitio, tal como lo anticipa
+    // la revisión.
     for (const site of ['character', 'scene', 'cover', 'end'] as const) {
       cleanup();
       resetBoundary();
