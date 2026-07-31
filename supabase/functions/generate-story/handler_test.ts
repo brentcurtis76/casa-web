@@ -351,10 +351,16 @@ Deno.test(
  */
 async function withFetchRouter<T>(
   routes: { gemini?: () => Response; anthropic: () => Response },
-  fn: () => Promise<T>,
+  fn: (sent: { anthropic: Record<string, unknown> | null }) => Promise<T>,
 ): Promise<T> {
   const original = globalThis.fetch;
-  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
+  const sent: { anthropic: Record<string, unknown> | null } = {
+    anthropic: null,
+  };
+  globalThis.fetch = ((
+    input: Parameters<typeof fetch>[0],
+    init?: RequestInit,
+  ) => {
     const url = typeof input === "string" ? input : (input as Request).url;
     if (url.includes("generativelanguage.googleapis.com")) {
       return Promise.resolve(
@@ -362,12 +368,15 @@ async function withFetchRouter<T>(
       );
     }
     if (url.includes("api.anthropic.com")) {
+      // Capture the outgoing payload so tests can pin the request
+      // parameters, not just the response handling.
+      sent.anthropic = JSON.parse(String(init?.body ?? "{}"));
       return Promise.resolve(routes.anthropic());
     }
     throw new Error(`unexpected fetch to ${url}`);
   }) as typeof fetch;
   try {
-    return await fn();
+    return await fn(sent);
   } finally {
     globalThis.fetch = original;
   }
@@ -483,6 +492,71 @@ Deno.test(
         assertEquals(body.success, true);
         assertEquals(body.title, "El Pan Compartido");
         assertEquals(body.scenes.length, 1);
+      },
+    );
+  },
+);
+
+Deno.test(
+  "pins the provider parameters that keep the story from being truncated",
+  async () => {
+    const { deps: authz } = makeAuthzDeps();
+    const handler = createHandler(baseDeps(authz));
+
+    await withFetchRouter(
+      {
+        anthropic: () =>
+          anthropicResponse({
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                title: "T",
+                summary: "S",
+                characters: [{
+                  name: "A",
+                  role: "protagonist",
+                  description: "d",
+                  visualDescription: "v",
+                  appearsInScenes: [1],
+                }],
+                scenes: [{
+                  number: 1,
+                  text: "t",
+                  visualDescription: "v",
+                  charactersInScene: ["A"],
+                  landmarkVisible: false,
+                }],
+                spiritualConnection: "c",
+              }),
+            }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 20 },
+          }),
+      },
+      async (sent) => {
+        const res = await handler(authorizedRequest());
+        assertEquals(res.status, 200);
+        await res.body?.cancel();
+
+        const body = sent.anthropic as {
+          model: string;
+          max_tokens: number;
+        };
+
+        // A dated model ID silently 404s the day it retires; that is how the
+        // sibling process-reflexion-pdf function broke.
+        assertStrictEquals(
+          body.model,
+          "claude-opus-5",
+          "model must stay a bare alias, never a dated snapshot ID",
+        );
+
+        // 4096 truncated a real 15-scene story mid-JSON in production.
+        assertStrictEquals(
+          body.max_tokens >= 16000,
+          true,
+          `max_tokens regressed to ${body.max_tokens}; a full story needs ~4.8k plus margin`,
+        );
       },
     );
   },

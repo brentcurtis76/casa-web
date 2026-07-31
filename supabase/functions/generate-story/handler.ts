@@ -755,7 +755,11 @@ export function createHandler(
           // max_tokens caps thinking + response together, so leaving it on
           // would eat the budget and truncate the JSON parsed below.
           thinking: { type: "disabled" },
-          max_tokens: 8192,
+          // A full 15-scene story measured ~4.8k output tokens, so 8192 left
+          // only ~1.7x margin and stories with landmarks and props run longer.
+          // Billing is per token generated, not per ceiling, so the headroom
+          // is free; 16k also stays under the non-streaming HTTP timeout.
+          max_tokens: 16000,
           system: SYSTEM_PROMPT,
           messages: [
             {
@@ -778,13 +782,11 @@ export function createHandler(
 
       const data = await response.json();
 
-      if (!data.content || !data.content[0] || !data.content[0].text) {
-        throw new Error("La API no retornó contenido");
-      }
-
       // Truncated output is still syntactically "a JSON prefix", so every
       // parse attempt below fails with a generic syntax error and the real
-      // cause (hitting max_tokens) stays invisible. Catch it here instead.
+      // cause (hitting max_tokens) stays invisible. Checked before the
+      // empty-content guard so a response truncated before any text still
+      // reports truncation rather than "no retornó contenido".
       if (data.stop_reason === "max_tokens") {
         console.error(
           "[generate-story] Respuesta truncada en max_tokens. output_tokens:",
@@ -794,6 +796,10 @@ export function createHandler(
           "El cuento superó el límite de tokens y quedó incompleto. " +
             "Reduce el número de escenas, personajes o referencias visuales e inténtalo de nuevo.",
         );
+      }
+
+      if (!data.content || !data.content[0] || !data.content[0].text) {
+        throw new Error("La API no retornó contenido");
       }
 
       let jsonText = data.content[0].text;
