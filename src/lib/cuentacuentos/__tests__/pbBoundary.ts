@@ -6,8 +6,12 @@
  * borde y nada más:
  *
  *   - cliente Supabase (auth / tablas / storage),
- *   - invocación de funciones pagas,
- *   - `use-toast` (lo mockea cada archivo de test, es un import de React).
+ *   - invocación de funciones pagas.
+ *
+ * [B2] — `use-toast` NO es un borde externo: es un hook de React interno de
+ * producción y G7 no lo admite en la lista. La suite de cableado (G7/T-B.8)
+ * corre el hook REAL. Las suites que todavía lo mockean lo hacen por su cuenta
+ * y ninguna de ellas es la que sostiene la barra de integración de T-B.8.
  *
  * NO importa producción: si lo hiciera, el `vi.mock` de cada archivo lo
  * cargaría antes de instalar el doble y el aislamiento se rompería.
