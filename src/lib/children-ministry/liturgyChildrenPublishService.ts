@@ -37,6 +37,7 @@ import {
   updateSession,
 } from '@/lib/children-ministry/calendarService';
 import { parseMaterials, serializeMaterials } from '@/lib/children-ministry/parseMaterials';
+import { buildEffectiveMaterialsList } from '@/lib/children-ministry/materialsList';
 
 // ─── Age group mapping ──────────────────────────────────────────────────────
 
@@ -162,6 +163,12 @@ export interface PublishChildrenActivitiesParams {
   };
   selectedAgeGroupIds: string[];
   ageGroups: ChildrenAgeGroupRow[];
+  /**
+   * Church inventory the activity must be designed with (PLAN-MATERIALES
+   * M-D2). Raw caller input: the service canonicalizes it ONCE per call via
+   * `buildEffectiveMaterialsList` and threads only that result onward.
+   */
+  availableMaterials?: string[];
 }
 
 interface SingleGroupContext {
@@ -175,6 +182,11 @@ interface SingleGroupContext {
   groupIndex: number;
   groupCount: number;
   userId: string | null;
+  /**
+   * The CANONICAL effective list (already through `buildEffectiveMaterialsList`),
+   * shared by every group of one publish call. Never the raw param.
+   */
+  availableMaterials?: string[];
 }
 
 // ─── Per-group orchestration ────────────────────────────────────────────────
@@ -186,6 +198,10 @@ interface SingleGroupContext {
  */
 async function publishSingleAgeGroup(ctx: SingleGroupContext): Promise<GroupGenerationResult> {
   const { liturgyId, ageGroup, groupIndex, groupCount, userId } = ctx;
+  // Already canonical (M-D5): the caller ran the list once for the whole
+  // publish call, so the invoke body and the persisted snapshot below are the
+  // same list by construction ([B1] equality).
+  const effectiveMaterials = ctx.availableMaterials ?? [];
   const ageGroupId = ageGroup.id;
   const ageGroupName = ageGroup.name;
   const requestId = makeRequestId();
@@ -219,6 +235,9 @@ async function publishSingleAgeGroup(ctx: SingleGroupContext): Promise<GroupGene
     childrenCountMin: 2,
     childrenCountMax: 15,
     requestId,
+    // M-D2: the key is present only when there is something to constrain with,
+    // so an empty list produces a byte-identical prompt to the pre-M1 base.
+    ...(effectiveMaterials.length > 0 ? { availableMaterials: effectiveMaterials } : {}),
   };
 
   const generatedData = await runStep('invoke_generate', baseFields, async () => {
@@ -243,10 +262,14 @@ async function publishSingleAgeGroup(ctx: SingleGroupContext): Promise<GroupGene
   });
 
   // 3. Persist (or update) the lesson.
+  // M-D3: the per-lesson snapshot is the SAME canonical list that was just
+  // sent, so a later refine can reconstruct the constraint without re-fetching
+  // the inventory.
   const fullContent = JSON.stringify({
     sequence: generatedData.sequence,
     adaptations: generatedData.adaptations,
     volunteerPlan: generatedData.volunteerPlan,
+    ...(effectiveMaterials.length > 0 ? { availableMaterials: effectiveMaterials } : {}),
   });
   const materialsNeeded = serializeMaterials(generatedData.materials);
 
@@ -381,7 +404,13 @@ export async function publishChildrenActivities(
     storyData,
     selectedAgeGroupIds,
     ageGroups,
+    availableMaterials,
   } = params;
+
+  // M-D5 runs ONCE per publish call: every group then shares one identical
+  // canonical list, so the prompts, the invoke bodies and the persisted
+  // snapshots cannot drift from each other or from the UI.
+  const effectiveMaterials = buildEffectiveMaterialsList(availableMaterials ?? []);
 
   // Normalize to YYYY-MM-DD to prevent idempotency mismatches.
   const liturgyDate = rawLiturgyDate.includes('T') ? rawLiturgyDate.split('T')[0] : rawLiturgyDate;
@@ -490,6 +519,7 @@ export async function publishChildrenActivities(
         groupIndex,
         groupCount,
         userId,
+        availableMaterials: effectiveMaterials,
       });
       results.push(groupResult);
     } catch (error) {
@@ -588,10 +618,15 @@ export async function refineChildrenActivity(
     };
   }
 
+  // Widened past the three model-owned keys: stored content may legitimately
+  // carry the M-D3 materials snapshot plus keys this service does not own, and
+  // both have to survive the round-trip (M-D11).
   let parsedContent: {
     sequence: GeneratedLesson['sequence'];
     adaptations: GeneratedLesson['adaptations'];
     volunteerPlan: GeneratedLesson['volunteerPlan'];
+    availableMaterials?: unknown;
+    [key: string]: unknown;
   };
   try {
     parsedContent = JSON.parse(lesson.content);
@@ -605,6 +640,18 @@ export async function refineChildrenActivity(
   }
 
   const currentMaterials = parseMaterials(lesson.materials_needed);
+
+  // M-D11 usable snapshot: a string array whose canonical form is non-empty.
+  // Refine reads the snapshot only — it never re-fetches the inventory — and
+  // canonicalizing here also heals historical or hand-edited content
+  // (LessonEditDialog exposes the raw JSON). Anything else yields an empty
+  // list, which means "no materials constraint" for both the body and the
+  // rewritten content below.
+  const snapshotSource = parsedContent.availableMaterials;
+  const snapshotMaterials =
+    Array.isArray(snapshotSource) && snapshotSource.every((entry) => typeof entry === 'string')
+      ? buildEffectiveMaterialsList(snapshotSource)
+      : [];
 
   const currentLesson = {
     activityName: lesson.title,
@@ -626,6 +673,9 @@ export async function refineChildrenActivity(
         refinementType,
         liturgyContext,
         ageGroupLabel,
+        // M-D4: the constraint applies to EVERY refinementType whenever the
+        // lesson carries a usable snapshot.
+        ...(snapshotMaterials.length > 0 ? { availableMaterials: snapshotMaterials } : {}),
       },
     });
 
@@ -655,11 +705,35 @@ export async function refineChildrenActivity(
       throw new Error(refined.error || 'Refinamiento falló');
     }
 
-    const newContent = JSON.stringify({
+    // M-D11 additive-key-safe write: keep every key this service does not own
+    // (readers downstream are additive-key-tolerant, and LessonEditDialog lets
+    // people add their own), overwrite only the three model-owned keys, then
+    // set or remove ONLY the materials snapshot.
+    //
+    // JSON.parse yields `any` and array-form content exists in the wild (the
+    // service-packet builder still expects it), so spread only a plain object —
+    // spreading an array would invent numeric keys where the base wrote none.
+    const preservedContent =
+      parsedContent !== null && typeof parsedContent === 'object' && !Array.isArray(parsedContent)
+        ? parsedContent
+        : {};
+
+    const nextContent: Record<string, unknown> = {
+      ...preservedContent,
       sequence: refined.sequence,
       adaptations: refined.adaptations,
       volunteerPlan: refined.volunteerPlan,
-    });
+    };
+
+    if (snapshotMaterials.length > 0) {
+      // Re-serialize the CANONICAL list — the same one the Edge Function just
+      // received — so the stored snapshot converges on its canonical form.
+      nextContent.availableMaterials = snapshotMaterials;
+    } else {
+      delete nextContent.availableMaterials;
+    }
+
+    const newContent = JSON.stringify(nextContent);
 
     await updateLesson(lessonId, {
       title: refined.activityName,

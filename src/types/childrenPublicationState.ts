@@ -85,6 +85,10 @@ export interface GenerateChildrenLessonRequest {
   childrenCountMin?: number;
   childrenCountMax?: number;
   previewPromptOnly?: boolean;
+  /** Optional client-supplied correlation id for log joining across the EF and the orchestrator */
+  requestId?: string;
+  /** Canonical church inventory the activity must be designed with (PLAN-MATERIALES M-D2) */
+  availableMaterials?: string[];
 }
 
 /** Phase in the 3-phase lesson structure */
