@@ -162,6 +162,19 @@ export interface BoundaryControls {
   invokeHandler:
     | ((call: InvokeCall) => Promise<{ data: unknown; error: unknown }>)
     | null;
+  /**
+   * PG/[B1] — Compuerta OPT-IN del borde de PERSISTENCIA (el upsert de tabla).
+   * Se consulta DESPUÉS de registrar la llamada en `upserts` —la observación
+   * nunca se demora— y ANTES de tocar la fila simulada, así que devolver una
+   * promesa PARQUEA la escritura ahí: el `persist` del runner sigue en vuelo y
+   * el ítem se queda en `persisting` de verdad, sin tocar producción.
+   *
+   * Devolver `undefined` deja pasar la llamada. `null` (default) conserva el
+   * comportamiento previo EXACTO: no hay `await` extra, ni tick adicional, ni
+   * rama nueva en el camino de las suites que no la usan. `resetBoundary` la
+   * limpia junto con el resto de los controles.
+   */
+  upsertGate: ((call: UpsertCall) => Promise<void> | void) | null;
 }
 
 export const ctl: BoundaryControls = makeDefaultControls();
@@ -186,6 +199,7 @@ function makeDefaultControls(): BoundaryControls {
     listFindsFile: true,
     invokeResponse: { data: { success: true, images: [] }, error: null },
     invokeHandler: null,
+    upsertGate: null,
   };
 }
 
@@ -299,7 +313,11 @@ type Thenable = {
 export function makeSupabaseMock() {
   const upsertBuilder = (table: string, payload: Record<string, unknown>) => {
     const run = async () => {
-      upserts.push({ seq: nextSeq(), table, payload });
+      const call: UpsertCall = { seq: nextSeq(), table, payload };
+      upserts.push(call);
+      // PG/[B1] — único punto de espera opcional del borde de persistencia.
+      // Sin `upsertGate` no se evalúa nada más que este `if`.
+      if (ctl.upsertGate) await ctl.upsertGate(call);
       if (table === 'cuentacuentos_drafts') {
         if (ctl.upsertError) return { error: ctl.upsertError, updatedAt: null };
         const story = payload['story'] as { id?: string } | null;

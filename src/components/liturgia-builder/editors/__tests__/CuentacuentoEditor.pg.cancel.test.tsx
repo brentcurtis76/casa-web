@@ -429,7 +429,134 @@ describe('T-G.11 — el paso portada/fin expone su Cancelar y vuelve a un estado
     expect((generarFin as HTMLButtonElement).disabled).toBe(false);
   }, 50000);
 
-  it('cancelar NO interrumpe el trabajo ya aplicado: la portada persiste igual y sus opciones sobreviven', async () => {
+  /**
+   * [B1] — LA prueba del hermano `persisting` bajo la barra G7.
+   *
+   * El caso siguiente (persistencia YA COMPLETADA al pulsar) demuestra que lo
+   * aplicado no se revierte, pero no puede demostrar nada sobre una
+   * persistencia EN VUELO: en el camino rápido del mock ya terminó. Acá la
+   * escritura se PARQUEA en el borde externo (`ctl.upsertGate`), así que la
+   * portada está de verdad en `persisting` en el instante del click y la
+   * afirmación "el Cancelar deja en paz al hermano que guarda" se vuelve
+   * sensible a la mutación que barre `persisting`.
+   */
+  it('con la portada PARQUEADA en `persisting` y el fin en vuelo, el Cancelar real no toca la persistencia: sigue guardando, completa a `done` y sus opciones quedan', async () => {
+    // El provider de la portada se libera a mano; el del fin nunca contesta,
+    // así el hermano mantiene VIVA la corrida de portada/fin.
+    const coverProvider = deferred<BoundaryResult>();
+    ctl.invokeHandler = async (call) =>
+      call.body.type === 'cover' ? coverProvider.promise : new Promise<BoundaryResult>(() => {});
+
+    // Compuerta del BORDE de persistencia: la primera escritura de borrador
+    // que llegue una vez armada queda detenida hasta que el test la suelte.
+    const persistGate = deferred<void>();
+    let armed = false;
+    let gatedCall: { payload: unknown } | null = null;
+    ctl.upsertGate = (call) => {
+      if (!armed || call.table !== 'cuentacuentos_drafts') return;
+      armed = false;
+      gatedCall = call;
+      return persistGate.promise;
+    };
+
+    render(
+      <CuentacuentoEditor
+        context={CONTEXT}
+        initialStory={makeStory('story-g11d', 'scenes-pending', {
+          sceneCount: 1,
+          scenesWithImages: [1],
+        })}
+        onStoryCreated={vi.fn()}
+      />,
+    );
+    await approveScenesIntoCoverStep();
+
+    // Portada en vuelo y fin ya despachado (su stagger de 400 ms venció): la
+    // corrida tiene los DOS ítems y el hermano la sostiene.
+    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
+    await settle(700);
+    expect(invokesOfType('end')).toHaveLength(1);
+
+    // Armamos la compuerta ANTES de que la portada aplique: su persistencia es
+    // la primera escritura que llega al borde.
+    const upsertsBeforeArm = upserts.length;
+    armed = true;
+    await act(async () => {
+      coverProvider.resolve(okImages(4));
+      await yields(60);
+    });
+    await settle(300);
+
+    // La portada quedó REALMENTE parqueada guardando: su tarjeta dice
+    // "Guardando..." (`persisting`), la escritura está detenida en el borde y
+    // el hermano sigue generando. Desde que armamos llegó EXACTAMENTE una
+    // escritura: la parqueada es la de la portada, no una autosave que se le
+    // haya adelantado.
+    expect(gatedCall).not.toBeNull();
+    expect(upserts.length).toBe(upsertsBeforeArm + 1);
+    expect(screen.getAllByRole('button', { name: /Guardando\.\.\./ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Generando\.\.\./ })).toHaveLength(1);
+    const upsertsAtPark = upserts.length;
+    const invokesAtPark = sceneImagesInvokes().length;
+
+    // Y hay UN solo Cancelar habilitado, que es el que se pulsa.
+    await clickCancelar();
+
+    // (1) LA CANCELACIÓN OCURRIÓ DE VERDAD: la señal de la corrida —la misma
+    //     que viajó al borde pagado— está abortada.
+    expect(invokesOfType('cover')[0].signal!.aborted).toBe(true);
+    // (2) …y AUN ASÍ la persistencia sigue en pie: la portada continúa en
+    //     "Guardando...". Con un barrido que incluyera `persisting`, acá ya
+    //     diría "Regenerar".
+    expect(screen.getAllByRole('button', { name: /Guardando\.\.\./ })).toHaveLength(1);
+    // (3) No se abortó ni se reemitió la escritura: ninguna llamada nueva al
+    //     borde de persistencia, y la que estaba sigue sin resolver.
+    expect(upserts.length).toBe(upsertsAtPark);
+    // (4) El hermano NO aplicado quedó normalizado y recolectable, sin spinner
+    //     colgado, y el control de la corrida desapareció con ella.
+    expect(screen.queryAllByRole('button', { name: /Generando\.\.\./ })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Cancelar' })).toBeNull();
+    const generarFin = screen.getByRole('button', { name: /Generar "Fin"/i });
+    expect((generarFin as HTMLButtonElement).disabled).toBe(false);
+
+    // (5) Nada se despacha después del cancel, ni con el tiempo corriendo.
+    await settle(1200);
+    expect(sceneImagesInvokes().length).toBe(invokesAtPark);
+    expect(screen.getAllByRole('button', { name: /Guardando\.\.\./ })).toHaveLength(1);
+
+    // (6) Al soltar la compuerta la persistencia COMPLETA NORMALMENTE: la
+    //     portada llega a `done` (ni `save-failed` ni vuelta a ocioso sin
+    //     guardar) y sus opciones aplicadas siguen ahí.
+    await act(async () => {
+      persistGate.resolve();
+      await yields(60);
+    });
+    await settle(300);
+
+    expect(screen.queryAllByRole('button', { name: /Guardando\.\.\./ })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Reintentar guardado/i })).toBeNull();
+    expect(screen.queryByText(/Genera o sube opciones de portada/i)).toBeNull();
+    const regenerarPortada = screen.getByRole('button', { name: /^Regenerar$/ });
+    expect((regenerarPortada as HTMLButtonElement).disabled).toBe(false);
+
+    // (7) …y la escritura parqueada era la de la portada: su carga llevaba las
+    //     cuatro opciones generadas, así que lo que completó fue ESA
+    //     persistencia y no otra cosa.
+    const payload = (gatedCall as unknown as { payload: Record<string, unknown> }).payload;
+    const coverPaths = (payload.image_paths as { coverPaths?: string[] } | undefined)?.coverPaths;
+    expect(coverPaths).toHaveLength(4);
+
+    // (8) El hermano sigue siendo recolectable SIN remontar: pedirlo despacha
+    //     exactamente una invocación nueva de `end`.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Generar "Fin"/i }));
+      await yields(40);
+    });
+    await settle(300);
+    expect(invokesOfType('end')).toHaveLength(2);
+  }, 60000);
+
+  it('con la persistencia YA COMPLETADA al pulsar, cancelar tampoco revierte lo aplicado: las opciones de portada sobreviven', async () => {
     ctl.invokeHandler = async (call) =>
       call.body.type === 'cover' ? okImages(4) : new Promise<BoundaryResult>(() => {});
 
