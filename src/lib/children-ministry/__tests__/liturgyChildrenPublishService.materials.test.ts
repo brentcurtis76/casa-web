@@ -45,32 +45,43 @@ vi.mock('@/lib/children-ministry/calendarService', () => ({
 
 // Override the global supabase mock from src/test/setup.ts with one that
 // exposes the exact shape this service touches.
-const invokeMock = vi.fn();
+// Each mock declares the signature the service actually calls it with: a bare
+// `vi.fn()` infers a zero-argument type, which makes every wrapper below a tsc
+// error even though the runtime behaviour is fine.
+const invokeMock =
+  vi.fn<(name: string, options: { body: Record<string, unknown> }) => Promise<unknown>>();
 const getUserMock = vi.fn();
 const getSessionMock = vi.fn();
 const refreshSessionMock = vi.fn();
 const maybeSingleMock = vi.fn();
-const eqMock = vi.fn(() => ({
-  maybeSingle: (...args: unknown[]) => maybeSingleMock(...args),
+const eqMock = vi.fn<(column: string, value: string) => { maybeSingle: () => unknown }>(() => ({
+  maybeSingle: () => maybeSingleMock(),
 }));
-const selectMock = vi.fn(() => ({
-  eq: (...args: unknown[]) => eqMock(...args),
+const selectMock = vi.fn<
+  (columns: string) => { eq: (column: string, value: string) => unknown }
+>(() => ({
+  eq: (column: string, value: string) => eqMock(column, value),
 }));
-const fromMock = vi.fn(() => ({
-  select: (...args: unknown[]) => selectMock(...args),
+const fromMock = vi.fn<(table: string) => { select: (columns: string) => unknown }>(() => ({
+  select: (columns: string) => selectMock(columns),
 }));
 
+// The arrow wrappers are load-bearing: `vi.mock` factories are hoisted above
+// these consts, so the factory may only READ them when it is finally invoked.
+// Each wrapper mirrors the arity the service actually calls, which also keeps
+// the spread-typing noise of `(...args: unknown[])` out of the tsc gate.
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     auth: {
-      getUser: (...args: unknown[]) => getUserMock(...args),
-      getSession: (...args: unknown[]) => getSessionMock(...args),
-      refreshSession: (...args: unknown[]) => refreshSessionMock(...args),
+      getUser: () => getUserMock(),
+      getSession: () => getSessionMock(),
+      refreshSession: () => refreshSessionMock(),
     },
     functions: {
-      invoke: (...args: unknown[]) => invokeMock(...args),
+      invoke: (name: string, options: { body: Record<string, unknown> }) =>
+        invokeMock(name, options),
     },
-    from: (...args: unknown[]) => fromMock(...args),
+    from: (table: string) => fromMock(table),
   },
 }));
 
