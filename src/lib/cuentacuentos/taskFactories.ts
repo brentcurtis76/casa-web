@@ -72,8 +72,13 @@ export interface ProviderResult {
 
 /**
  * Injected provider surface. The editor supplies a wrapper around
- * `supabase.functions.invoke('generate-scene-images', {body})` that also
+ * `supabase.functions.invoke('generate-scene-images', {body, signal})` that also
  * unwraps FunctionsHttpError and validates `success/images`.
+ *
+ * PG/G4 — `signal` is the runner's own run signal, threaded verbatim from
+ * `ProviderContext.signal`. Cancelling settles the client request and prevents
+ * any future dispatch; it does NOT recall an edge request already dispatched
+ * and does not refund its spend (the handler never observes `req.signal`).
  */
 export type InvokeGenerateSceneImages = (
   body:
@@ -83,6 +88,7 @@ export type InvokeGenerateSceneImages = (
     | GenerateSceneImagesEndRequest
     | Record<string, unknown>,
   emptyImagesFallback: string,
+  signal: AbortSignal,
 ) => Promise<ProviderResult>;
 
 /**
@@ -212,7 +218,7 @@ export function makeCharacterSheetTask(
     id: `sheet-${character.id}`,
     kind: 'sheet',
     label: character.name,
-    provider: () =>
+    provider: (ctx) =>
       invokeGenerateSceneImages(
         {
           type: 'character',
@@ -226,6 +232,7 @@ export function makeCharacterSheetTask(
           modelTier: 'flash',
         },
         'No se pudieron generar imágenes',
+        ctx.signal,
       ),
     computePatch: (result) => {
       const base = characterSheetOptionsRef.current;
@@ -288,7 +295,7 @@ export function makePropSheetTask(
     id: `prop-${prop.id}`,
     kind: 'prop',
     label: prop.name,
-    provider: () =>
+    provider: (ctx) =>
       invokeGenerateSceneImages(
         {
           type: 'prop',
@@ -303,6 +310,7 @@ export function makePropSheetTask(
           modelTier: 'flash',
         },
         'No se pudieron generar imágenes',
+        ctx.signal,
       ),
     computePatch: (result) => {
       const base = propSheetOptionsRef.current;
@@ -375,7 +383,7 @@ export function makeSceneTask(
     id: `scene-${scene.number}`,
     kind: 'scene',
     label: `Escena ${scene.number}`,
-    provider: () =>
+    provider: (ctx) =>
       invokeGenerateSceneImages(
         {
           type: 'scene',
@@ -390,6 +398,7 @@ export function makeSceneTask(
           modelTier: 'flash',
         },
         'No se pudieron generar imágenes',
+        ctx.signal,
       ),
     computePatch: (result) => {
       const base = sceneImageOptionsRef.current;
@@ -458,7 +467,7 @@ export function makeCoverTask(
     id: 'cover',
     kind: 'cover',
     label: 'Portada',
-    provider: () =>
+    provider: (ctx) =>
       invokeGenerateSceneImages(
         {
           type: 'cover',
@@ -474,6 +483,7 @@ export function makeCoverTask(
           modelTier: 'pro',
         },
         'No se pudieron generar imágenes de portada',
+        ctx.signal,
       ),
     computePatch: (result) => {
       const nextOptions = result.images;
@@ -514,7 +524,7 @@ export function makeEndTask(
     id: 'end',
     kind: 'end',
     label: 'Imagen final',
-    provider: () =>
+    provider: (ctx) =>
       invokeGenerateSceneImages(
         {
           type: 'end',
@@ -527,6 +537,7 @@ export function makeEndTask(
           modelTier: 'pro',
         },
         'No se pudieron generar imágenes de fin',
+        ctx.signal,
       ),
     computePatch: (result) => {
       const nextOptions = result.images;
@@ -576,7 +587,7 @@ export function makeRefineCharacterSheetTask(
     id: `sheet-${character.id}`,
     kind: 'sheet',
     label: character.name,
-    provider: () => {
+    provider: (ctx) => {
       const body: GenerateSceneImagesCharacterRequest = {
         type: 'character',
         styleId: illustrationStyle,
@@ -588,7 +599,7 @@ export function makeRefineCharacterSheetTask(
         modelTier: 'pro',
         refine: { sourceImage, feedback },
       };
-      return invokeGenerateSceneImages(body, 'No se pudo refinar el personaje');
+      return invokeGenerateSceneImages(body, 'No se pudo refinar el personaje', ctx.signal);
     },
     computePatch: (result) => {
       const refined = result.images[0];
@@ -677,7 +688,7 @@ export function makeRefineSceneTask(
     id: `scene-${scene.number}`,
     kind: 'scene',
     label: `Escena ${scene.number}`,
-    provider: () => {
+    provider: (ctx) => {
       const body: GenerateSceneImagesSceneRequest = {
         type: 'scene',
         styleId: illustrationStyle,
@@ -690,7 +701,7 @@ export function makeRefineSceneTask(
         modelTier: 'pro',
         refine: { sourceImage, feedback },
       };
-      return invokeGenerateSceneImages(body, 'No se pudo refinar la escena');
+      return invokeGenerateSceneImages(body, 'No se pudo refinar la escena', ctx.signal);
     },
     computePatch: (result) => {
       const refined = result.images[0];
@@ -772,7 +783,7 @@ export function makeRefineCoverTask(
     id: 'cover',
     kind: 'cover',
     label: 'Portada',
-    provider: () => {
+    provider: (ctx) => {
       const body: GenerateSceneImagesCoverRequest = {
         type: 'cover',
         styleId: illustrationStyle,
@@ -786,7 +797,7 @@ export function makeRefineCoverTask(
         modelTier: 'pro',
         refine: { sourceImage, feedback },
       };
-      return invokeGenerateSceneImages(body, 'No se pudo refinar la portada');
+      return invokeGenerateSceneImages(body, 'No se pudo refinar la portada', ctx.signal);
     },
     computePatch: (result) => {
       const refined = result.images[0];
@@ -844,7 +855,7 @@ export function makeRefineEndTask(
     id: 'end',
     kind: 'end',
     label: 'Imagen final',
-    provider: () => {
+    provider: (ctx) => {
       const body: GenerateSceneImagesEndRequest = {
         type: 'end',
         styleId: illustrationStyle,
@@ -855,7 +866,7 @@ export function makeRefineEndTask(
         modelTier: 'pro',
         refine: { sourceImage, feedback },
       };
-      return invokeGenerateSceneImages(body, 'No se pudo refinar la imagen final');
+      return invokeGenerateSceneImages(body, 'No se pudo refinar la imagen final', ctx.signal);
     },
     computePatch: (result) => {
       const refined = result.images[0];

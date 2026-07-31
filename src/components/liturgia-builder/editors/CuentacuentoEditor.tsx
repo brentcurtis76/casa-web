@@ -478,7 +478,7 @@ const StepIndicator: React.FC<{
 };
 
 /**
- * Wrapper alrededor de `supabase.functions.invoke('generate-scene-images', {body})`
+ * Wrapper alrededor de `supabase.functions.invoke('generate-scene-images', {body, signal})`
  * que desempaqueta FunctionsHttpError vía extractInvokeError y valida
  * `success`/`images` para producir un `ProviderResult` o un `Error` con
  * mensaje útil. Todas las factories del pipeline (character/prop/scene/
@@ -493,10 +493,11 @@ const StepIndicator: React.FC<{
 async function invokeGenerateSceneImagesRequest(
   body: unknown,
   emptyImagesFallback: string,
+  signal: AbortSignal,
 ): Promise<ProviderResult> {
   const { data, error: fnError } = await supabase.functions.invoke(
     'generate-scene-images',
-    { body: body as Record<string, unknown> },
+    { body: body as Record<string, unknown>, signal },
   );
   if (fnError) throw await extractInvokeError(fnError);
   if (!data?.success || !data.images?.length) {
@@ -643,11 +644,17 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
    * se vuelve visible — en éxito (viaja en el ProviderResult) y en fallo (viaja
    * en el InvokeError). Las factories no cambian: siguen recibiendo una función
    * con la misma firma.
+   *
+   * PG/G4 — `signal` es la MISMA instancia que el runner puso en
+   * `ProviderContext.signal`: este envoltorio la reenvía verbatim, sin crear un
+   * controlador propio ni traducirla a un booleano. Cancelar corta la espera
+   * del cliente y prohíbe despachos futuros; NO revoca una petición ya
+   * despachada al edge ni recupera su gasto.
    */
   const invokeSceneImagesWithFeedback = useCallback<InvokeGenerateSceneImages>(
-    async (body, emptyImagesFallback) => {
+    async (body, emptyImagesFallback, signal) => {
       try {
-        const result = await invokeGenerateSceneImagesRequest(body, emptyImagesFallback);
+        const result = await invokeGenerateSceneImagesRequest(body, emptyImagesFallback, signal);
         reportSkippedImages(result.skippedImages ?? []);
         return result;
       } catch (err) {
@@ -5808,6 +5815,16 @@ Instrucciones críticas:
   const renderCoverStep = () => {
     if (!story) return null;
 
+    // PG/G6 — Este paso no exponía ningún control de cancelación (la asimetría
+    // que documentaba el Finding 5), así que una corrida de portada/fin sólo
+    // podía esperarse. La condición replica la de los banners de hojas y
+    // escenas —`isRunning` + hay ítems de este paso— para que el botón siga
+    // disponible durante stagger, backoff y llamada en vuelo, y no sólo
+    // mientras UNA tarjeta reporte `running`. Cancelar nunca interrumpe una
+    // persistencia: el runner excluye `persisting` de su normalización.
+    const coverEndItems = pipeline.items.filter(i => i.kind === 'cover' || i.kind === 'end');
+    const coverEndBatchActive = pipeline.isRunning && coverEndItems.length > 0;
+
     return (
       <div className="space-y-4">
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
@@ -5815,6 +5832,25 @@ Instrucciones críticas:
             Genera la portada del cuento y la imagen final de "Fin".
           </p>
         </div>
+
+        {coverEndBatchActive && (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+            <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+              <Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} />
+              Generando portada y fin…
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={pipeline.cancel}
+                className="px-3 py-1.5 rounded-lg text-sm border transition-colors"
+                style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, color: CASA_BRAND.colors.secondary.grayDark }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Portada */}
         <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>

@@ -40,7 +40,7 @@
  *     existe `APPLY_EPHEMERAL`.
  */
 
-import { retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
+import { RetryCancelledError, retryWithBackoff } from '@/lib/cuentacuentos/concurrency';
 import { hashSnapshot } from '@/lib/cuentacuentos/snapshotHash';
 import {
   createSaveRetryRegistry,
@@ -307,7 +307,31 @@ const DEFAULT_STAGGER_MS = 400;
 const DEFAULT_PROVIDER_ATTEMPTS = 2;
 const DEFAULT_PROVIDER_BASE_DELAY_MS = 2000;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/**
+ * PG/G5 boundary 2 — Espera del stagger, abortable. Al abortar RESUELVE (no
+ * rechaza): el worker despierta y sale por el chequeo `signal.aborted` de su
+ * bucle, así la corrida cierra sin esperar el stagger residual y sin convertir
+ * una cancelación en un rechazo de `runItems`. Limpia timer y listener en todos
+ * los caminos de salida.
+ */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort);
+  });
 
 function isRateLimitError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
@@ -435,6 +459,28 @@ export function createStoryImagePipelineRunner(
     notify();
   };
 
+  /**
+   * PG/G3 — Normalización de invalidación. Los puntos SÍNCRONOS que invalidan
+   * una corrida (`cancel()` y el desplazamiento de `reserveRun`) son los dueños
+   * del estado del trabajo cancelado: todo ítem `running` vuelve a `pending`
+   * con su texto de error limpio.
+   *
+   * NO toca `persisting` (contrato A2: el trabajo ya aplicado persiste hasta
+   * `done`/`save-failed`), ni `done`, ni `error`, ni `save-failed`, ni los que
+   * ya estaban en `pending`. Tampoco toca el registry de save-retries.
+   *
+   * No notifica: quien lo llama ya emite su propio `notify()` — así la
+   * invalidación se observa como UN solo paso.
+   */
+  const sweepRunningToPending = () => {
+    for (const s of items.values()) {
+      if (s.status === 'running') {
+        s.status = 'pending';
+        s.error = undefined;
+      }
+    }
+  };
+
   const mintRunToken = (): RunToken => ({}) as RunToken;
 
   /**
@@ -469,10 +515,28 @@ export function createStoryImagePipelineRunner(
             if (isRateLimitError(err)) concurrencyOverride = 1;
             return !signal.aborted;
           },
+          // PG/G2 — la señal de la corrida ES la entrada de cancelación del
+          // helper: corta el backoff y prohíbe el despacho del intento N+1.
+          signal,
         }
       );
     } catch (err) {
-      // Provider falla → 'error'. No hay snapshot retenido.
+      // PG/G3 — Toda continuación del provider es DUEÑA-POR-TOKEN. Si el token
+      // de esta corrida ya no es el vigente, no se escribe NINGÚN estado: la
+      // invalidación (cancel/desplazamiento) ya normalizó a esta corrida, y una
+      // escritura tardía podría pisar el estado de una corrida NUEVA que
+      // re-encoló el MISMO itemId.
+      if (getActiveRunToken() !== runToken) return;
+      // Cancelación gana sobre error genuino: un `RetryCancelledError` o
+      // cualquier rechazo atrapado con la señal ya abortada es cancelación, no
+      // falla — aunque un error real haya corrido la carrera. El trabajo no
+      // aplicado vuelve a `pending` y el resume derivado de estado lo re-ofrece.
+      if (err instanceof RetryCancelledError || signal.aborted) {
+        setStatus(itemState.id, 'pending');
+        return;
+      }
+      // Falla genuina con señal viva y token propio → 'error'. No hay snapshot
+      // retenido.
       setStatus(
         itemState.id,
         'error',
@@ -741,7 +805,7 @@ export function createStoryImagePipelineRunner(
     let next = 0;
 
     const worker = async (workerIndex: number) => {
-      if (workerIndex > 0 && staggerMs > 0) await sleep(workerIndex * staggerMs);
+      if (workerIndex > 0 && staggerMs > 0) await sleep(workerIndex * staggerMs, signal);
       // Bucle: mientras no haya cancelación y aún queden ítems.
       while (!signal.aborted && currentRunToken === runToken) {
         if (workerIndex >= concurrencyOverride) return;
@@ -771,6 +835,12 @@ export function createStoryImagePipelineRunner(
     currentRunToken = runToken;
     const abortController = new AbortController();
     currentAbortController = abortController;
+    // PG/G3 — El desplazamiento normaliza a la corrida DESPLAZADA, igual que
+    // `cancel()`. Va DESPUÉS de que el token viejo perdió la propiedad y ANTES
+    // de instalar las tareas nuevas: así, si esta corrida re-encola el MISMO
+    // itemId, el ítem arranca limpio bajo el token nuevo y ninguna continuación
+    // vieja (que ya quedó muda por el chequeo de token) puede pisarlo.
+    sweepRunningToPending();
     if (priorAbort) priorAbort.abort();
 
     if (tasks.length === 0) {
@@ -923,6 +993,12 @@ export function createStoryImagePipelineRunner(
     // pero aún no llegó a apply, el chequeo de token bloquea la aplicación.
     currentRunToken = null;
     running = false;
+    // PG/G3 — La cancelación es dueña de normalizar el trabajo NO aplicado de
+    // la corrida que acaba de invalidar: `running` → `pending`, error limpio.
+    // `persisting` queda intacto (A2: lo aplicado persiste), igual que `done`,
+    // `error`, `save-failed` y lo que ya estaba `pending`. El registry de
+    // save-retries no se toca: un cancel de usuario no es un cambio de ciclo.
+    sweepRunningToPending();
     if (currentAbortController) currentAbortController.abort();
     notify();
   };
