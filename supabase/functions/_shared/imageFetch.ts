@@ -121,22 +121,39 @@ export const DEFAULT_IMAGE_LIMITS: ImageLimits = {
   fetchConcurrency: 4,
 };
 
-/** The one bucket these functions are allowed to read from. */
+/** Where cuentacuentos images live while the story is still a draft. */
 export const DRAFTS_BUCKET_PATH = "/storage/v1/object/public/cuentacuentos-drafts/";
 
 /**
- * Storage path prefixes accepted on the pinned origin. Both address the SAME
- * bucket — origin and bucket stay pinned either way.
+ * Storage path prefixes accepted on the pinned origin. Two buckets, listed as
+ * exact path prefixes: origin, bucket and prefix all stay pinned. This is an
+ * allowlist of proven producers, never an origin-wide rule — a bucket is added
+ * only when a first-party writer for it exists, and the trailing slash is what
+ * keeps `liturgia-images-evil` from matching `liturgia-images`.
  *
- * `object/sign/` is here because drafts written before 2026-01-11 stored
- * signed `characterSheetUrl`s. Those tokens are long expired, so the object
- * 404s and the entry is skipped — but treating the URL shape itself as
- * forbidden made one stale character sheet a fatal 422 for every later
- * generation on that story, with no way for the user to clear it.
+ * `object/sign/cuentacuentos-drafts/` is here because drafts written before
+ * 2026-01-11 stored signed `characterSheetUrl`s. Those tokens are long expired,
+ * so the object 404s and the entry is skipped — but treating the URL shape
+ * itself as forbidden made one stale character sheet a fatal 422 for every
+ * later generation on that story, with no way for the user to clear it.
+ *
+ * `public/liturgia-images/` (PB) is where a cuento's images land once it is
+ * finalized: on the parent liturgy save, `uploadCuentacuentosImages` uploads
+ * the fields still held inline and `updateStoryWithImageUrls` rewrites the
+ * element config to these public URLs. Re-opening that element seeds the
+ * editor from them, so a later refine sends one back as `refine.sourceImage`.
+ * Without this prefix every re-opened finalized cuento lost its refine to a
+ * FORBIDDEN_BUCKET 422.
+ *
+ * Only the PUBLIC form is accepted. The bucket is public and
+ * `uploadSingleImage` resolves it with `getPublicUrl`; no `createSignedUrl`
+ * producer exists for it, and a live read on 2026-07-30 found zero persisted
+ * signed URLs for it. A future signed producer needs its own contract change.
  */
 const ACCEPTED_BUCKET_PATHS = [
   DRAFTS_BUCKET_PATH,
   "/storage/v1/object/sign/cuentacuentos-drafts/",
+  "/storage/v1/object/public/liturgia-images/",
 ];
 
 export type ImageRefFailureCode =
