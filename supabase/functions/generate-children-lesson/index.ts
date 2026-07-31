@@ -9,31 +9,16 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  type GenerateChildrenLessonRequest,
+} from './prompt.ts';
+
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 // claude-sonnet-4-6 is the current confirmed-valid Sonnet model (2026-03).
 // The prior ID 'claude-sonnet-4-5-20250929' used a date-suffix variant that is no longer valid.
 const MODEL = 'claude-sonnet-4-6';
-
-interface GenerateChildrenLessonRequest {
-  liturgyId: string;
-  liturgyTitle: string;
-  liturgySummary: string;
-  bibleText: string;
-  storyData: {
-    title: string;
-    summary: string;
-    spiritualConnection: string;
-    scenes: Array<{ text: string }>;
-  };
-  ageGroup: 'nursery' | 'preschool' | 'elementary' | 'mixed';
-  ageGroupLabel: string;
-  durationMax?: number;
-  childrenCountMin?: number;
-  childrenCountMax?: number;
-  previewPromptOnly?: boolean;
-  /** Optional client-supplied correlation id for log joining across the EF and the orchestrator */
-  requestId?: string;
-}
 
 interface LessonPhase {
   phase: 'movimiento' | 'expresion_conversacion' | 'reflexion_metaprendizaje';
@@ -108,141 +93,6 @@ function validateLesson(data: unknown): data is GeneratedLesson {
   }
 
   return true;
-}
-
-/**
- * Build the system prompt for children's lesson generation
- */
-function buildSystemPrompt(): string {
-  return `Eres un especialista en educación religiosa y pedagogía infantil para la comunidad anglicana progresista CASA.
-
-Tu tarea es crear actividades educativas para niños pequeños basadas en un cuentacuentos litúrgico.
-
-## Estructura de la Actividad
-
-Las actividades deben seguir EXACTAMENTE esta estructura de 3 fases:
-
-1. **FASE 1: Movimiento** (5-10 minutos)
-   - Actividad física o lúdica que engage a los niños
-   - Conecta con el tema del cuento
-   - Calienta el grupo y prepara para la reflexión
-
-2. **FASE 2: Expresión y Conversación** (5-10 minutos)
-   - Expresión creativa (dibujo, dramatización, modelado, etc.)
-   - Conversación guiada sobre el cuento
-   - Los niños comparten sus impresiones y conexiones
-
-3. **FASE 3: Reflexión y Meta-aprendizaje** (5-10 minutos)
-   - Reflexión individual o grupal
-   - Conexión con el mensaje espiritual
-   - Cierre significativo
-
-## Duración Total
-- Máximo 30 minutos (por defecto)
-- Las 3 fases deben sumar exactamente el tiempo estimado
-
-## Grupo de Niños
-- Rango: 2-15 niños
-- Adaptaciones para grupos pequeños (2-5), medianos (6-10), grandes (11-15) y mixto (todas las edades)
-
-## Equipo de Voluntarios
-- Líder: descripción del rol y responsabilidades
-- Apoyo: descripción del rol de apoyo
-
-## Respuesta JSON
-
-Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido, sin texto antes o después. Usa esta estructura:
-
-{
-  "activityName": "string - Nombre corto de la actividad",
-  "materials": ["lista", "de", "materiales", "necesarios"],
-  "sequence": [
-    {
-      "phase": "movimiento",
-      "title": "string",
-      "description": "string",
-      "minutes": number
-    },
-    {
-      "phase": "expresion_conversacion",
-      "title": "string",
-      "description": "string",
-      "minutes": number
-    },
-    {
-      "phase": "reflexion_metaprendizaje",
-      "title": "string",
-      "description": "string",
-      "minutes": number
-    }
-  ],
-  "adaptations": {
-    "small": "Cómo adaptar para 2-5 niños",
-    "medium": "Cómo adaptar para 6-10 niños",
-    "large": "Cómo adaptar para 11-15 niños",
-    "mixed": "Cómo adaptar para todas las edades juntas"
-  },
-  "volunteerPlan": {
-    "leader": "Descripción del rol del líder",
-    "support": "Descripción del rol de apoyo"
-  },
-  "estimatedTotalMinutes": number
-}`;
-}
-
-/**
- * Build the user prompt with liturgy and story context
- */
-function buildUserPrompt(request: GenerateChildrenLessonRequest): string {
-  const {
-    liturgyTitle,
-    liturgySummary,
-    bibleText,
-    storyData,
-    ageGroupLabel,
-    durationMax = 30,
-    childrenCountMin = 2,
-    childrenCountMax = 15,
-  } = request;
-
-  return `## Contexto Litúrgico
-
-### Título de la Liturgia
-${liturgyTitle}
-
-### Resumen del Mensaje
-${liturgySummary}
-
-### Texto Bíblico
-${bibleText}
-
-### Cuentacuentos
-**Título:** ${storyData.title}
-**Resumen:** ${storyData.summary}
-**Conexión Espiritual:** ${storyData.spiritualConnection}
-
-**Escenas del Cuento:**
-${storyData.scenes.map((s, i) => `${i + 1}. ${s.text}`).join('\n')}
-
----
-
-## Parámetros de la Actividad
-
-**Grupo de Edad:** ${ageGroupLabel}
-**Duración Máxima:** ${durationMax} minutos
-**Rango de Niños:** ${childrenCountMin}-${childrenCountMax}
-
----
-
-Por favor, crea una actividad educativa estructurada en 3 fases que:
-- Esté basada en el cuentacuentos y mensaje litúrgico anterior
-- Sea apropiada para el grupo de edad "${ageGroupLabel}"
-- Tenga exactamente 3 fases (movimiento, expresión/conversación, reflexión)
-- No exceda ${durationMax} minutos en total
-- Incluya adaptaciones para diferentes tamaños de grupo
-- Especifique claramente los roles del líder y apoyo
-- Liste todos los materiales necesarios
-- Sea divertida, educativa y espiritualmente significativa`;
 }
 
 const corsHeaders = {
