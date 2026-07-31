@@ -248,6 +248,87 @@ describe('PB T-B.1 — un grupo mixto conserva orden, largo y la referencia ya p
 });
 
 // ===========================================================================
+// T-B.2 — idempotencia de duplicados DENTRO DE UN GRUPO
+// ===========================================================================
+
+/**
+ * [B3] — la forma EXACTA que pide T-B.2, que hasta acá faltaba: dos entradas
+ * con bytes decodificados idénticos en UN MISMO grupo lógico, una creada y la
+ * otra en conflicto de duplicado, ambas exitosas, con orden y largo del grupo
+ * preservados.
+ *
+ * Lo que ya existía no lo cubría: la suite del helper prueba una llamada creada
+ * y otra con 409 capturado, pero son invocaciones INDEPENDIENTES; y el caso de
+ * criterio inyectaba el 409 en una escritura de portada de UNA sola entrada.
+ *
+ * Acá el conflicto NO se planta a mano: el borde corre con la semántica real de
+ * `upsert:false` (`conflictOnRepeatPath`), así que la primera subida crea el
+ * objeto y la segunda —que resuelve al MISMO path, porque los bytes son los
+ * mismos— conflictúa sola, igual que contra Storage.
+ */
+describe('PB T-B.2 — dos entradas de bytes idénticos: una creada, una en conflicto 409', () => {
+  /** Mismos bytes decodificados, declarados distinto (crudo y data URL). */
+  const TWIN_GROUP = [PNG_A_B64, PNG_A_DATA_URL];
+  const TWIN_PATH = draftPath('characters', 'char1', PNG_A_B64);
+  const TWIN_URL = `https://mock.supabase.co/storage/v1/object/public/${DRAFTS_BUCKET}/${TWIN_PATH}`;
+
+  it('el grupo persiste el MISMO path DOS veces, en orden, y la escritura lógica tiene éxito', async () => {
+    resetBoundary();
+    ctl.conflictOnRepeatPath = true;
+
+    const out = await write({ characterSheetOptions: { char1: TWIN_GROUP } });
+
+    // La escritura lógica tiene ÉXITO: el 409 es éxito idempotente.
+    expect(out.rejected, out.error ?? '').toBe(false);
+
+    // DOS llamadas al borde, al MISMO path, ambas inmutables. La primera creó;
+    // la segunda recibió el conflicto estructural capturado.
+    const calls = draftUploads();
+    expect(calls).toHaveLength(2);
+    expect(calls.map((u) => u.path)).toEqual([TWIN_PATH, TWIN_PATH]);
+    for (const u of calls) {
+      expect(u.upsert).toBe(false);
+      expect(u.bucket).toBe(DRAFTS_BUCKET);
+      expect(u.path.split('/')[0]).toBe(USER_ID);
+    }
+
+    // GRUPO PERSISTIDO: largo exacto dos, mismo path dos veces, orden original.
+    const persisted = (lastImagePaths()!.characterSheetPaths as Record<string, string[]>).char1;
+    expect(persisted).toEqual([TWIN_PATH, TWIN_PATH]);
+
+    // GRUPO DE URLs DEVUELTO al editor: mismo largo y mismo orden.
+    expect(out.committed!.characterSheetOptions.char1).toEqual([TWIN_URL, TWIN_URL]);
+
+    // Y nada se compensó con borrados.
+    expect(cuentacuentosRemovals()).toEqual([]);
+  }, 60_000);
+
+  /**
+   * El otro lado del contrato de T-B.2: un error de NO-conflicto con mensaje
+   * parecido-a-duplicado RECHAZA el grupo. Es un control del borde (no una
+   * mutación de producción): el `statusCode` es lo único que cambia respecto
+   * del caso anterior, así que aísla el discriminante estructural.
+   *
+   * Las DOS mutaciones NOMBRADAS que T-B.2 exige se aplican sobre PRODUCCIÓN
+   * (`isDuplicateConflict`) y están registradas en el reporte: tratar el 409
+   * como fallo, y tratar el no-409 parecido-a-duplicado como éxito; cada una
+   * deja en rojo la evidencia de arriba.
+   */
+  it('control — un no-409 con el MISMO mensaje en la segunda entrada rechaza el grupo', async () => {
+    resetBoundary();
+    ctl.conflictOnRepeatPath = true;
+    ctl.repeatPathUsesNon409 = true;
+
+    const out = await write({ characterSheetOptions: { char1: TWIN_GROUP } });
+
+    expect(out.rejected).toBe(true);
+    expect(upsertsTo('cuentacuentos_drafts')).toEqual([]);
+    // Los objetos hermanos ya creados se dejan en paz: PB nunca compensa.
+    expect(cuentacuentosRemovals()).toEqual([]);
+  }, 60_000);
+});
+
+// ===========================================================================
 // T-B.5 — vacío explícito vs ausencia, y recarga
 // ===========================================================================
 
@@ -695,6 +776,137 @@ describe('PB T-B.12 — matriz de fallos: ninguna categoría se persiste acortad
       }, 90_000);
     }
   });
+});
+
+// ===========================================================================
+// T-B.9 — conflicto de duplicado A TRAVÉS del `saveLiturgy` de producción
+// ===========================================================================
+
+/**
+ * [B4] — hasta acá los únicos casos de 409 CAPTURADO del repo vivían en el
+ * helper o en el hook de borrador. T-B.9 pide explícitamente que el
+ * `saveLiturgy` de PRODUCCIÓN escriba las categorías finales con `upsert:false`
+ * y que un conflicto de duplicado tenga ÉXITO.
+ *
+ * Se ejerce `saveLiturgy` entero (no `uploadSingleImage` a mano) y se observa
+ * el borde externo: la subida de la portada a `liturgia-images` devuelve el
+ * conflicto estructural capturado, y el guardado debe completar escribiendo la
+ * URL pública determinista en `liturgia_elementos`.
+ */
+describe('PB T-B.9 — un 409 en una imagen final NO rompe el guardado de la liturgia', () => {
+  /** Path finalizado determinista de una categoría. */
+  const finalPath = (category: string, key: string, bytes: string) =>
+    `liturgias/${LITURGY_ID}/cuentacuentos/${category}/${key}_${hash32(bytes)}.png`;
+  const finalUrl = (category: string, key: string, bytes: string) =>
+    `https://mock.supabase.co/storage/v1/object/public/liturgia-images/${finalPath(category, key, bytes)}`;
+
+  /** Historia finalizada con las CUATRO categorías todavía inline. */
+  function finalStory(): Story {
+    return storyWith({
+      characters: [
+        {
+          id: 'char1', name: 'María', role: 'protagonist', description: 'd',
+          visualDescription: 'v', characterSheetUrl: PNG_A_B64,
+        } as unknown as Story['characters'][number],
+      ],
+      scenes: [
+        {
+          number: 1, text: 'Escena 1', visualDescription: 'plaza',
+          selectedImageUrl: PNG_B_B64,
+        } as unknown as Story['scenes'][number],
+      ],
+      coverImageUrl: PNG_C_B64,
+      endImageUrl: PNG_D_B64,
+    });
+  }
+
+  function saveWith(story: Story) {
+    return saveLiturgy({
+      id: LITURGY_ID,
+      context: baseContext,
+      status: 'draft',
+      metadata: { createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z' },
+      elements: [
+        {
+          id: 'el-1', type: 'cuentacuentos', order: 0, title: 'Cuento',
+          status: 'pending', config: { storyData: story },
+        },
+      ],
+    } as never);
+  }
+
+  it('la portada en conflicto 409 se guarda con ÉXITO y con su URL pública determinista', async () => {
+    resetBoundary();
+    // El objeto de la portada YA existe en `liturgia-images`: `upsert:false`
+    // devuelve el conflicto estructural capturado.
+    ctl.duplicateWhenPathIncludes = '/cuentacuentos/cover/';
+
+    const result = await saveWith(finalStory());
+
+    // 1. El guardado tiene ÉXITO: el 409 es éxito idempotente.
+    expect(result.success, result.error ?? '').toBe(true);
+
+    // 2. El elemento se persistió con la URL pública EXACTA del path por
+    //    contenido — la del objeto que ya estaba ahí, que por direccionamiento
+    //    de contenido ES el que íbamos a escribir.
+    const elementUpserts = upsertsTo('liturgia_elementos');
+    expect(elementUpserts).toHaveLength(1);
+    const rows = elementUpserts[0].payload as Array<Record<string, unknown>>;
+    const cuento = rows.find((r) => r['tipo'] === 'cuentacuentos')!;
+    const storyData = (cuento['config'] as { storyData: Record<string, unknown> }).storyData;
+
+    expect(storyData['coverImageUrl']).toBe(finalUrl('cover', 'cover', PNG_C_B64));
+    // Las otras tres categorías se subieron normal y también quedaron por URL.
+    expect(storyData['endImageUrl']).toBe(finalUrl('end', 'end', PNG_D_B64));
+    expect(
+      (storyData['characters'] as Array<Record<string, unknown>>)[0]['characterSheetUrl']
+    ).toBe(finalUrl('characters', 'char1', PNG_A_B64));
+    expect(
+      (storyData['scenes'] as Array<Record<string, unknown>>)[0]['selectedImageUrl']
+    ).toBe(finalUrl('scenes', 'scene_1', PNG_B_B64));
+
+    // 3. SIN fallback inline: el `storyData` persistido no lleva un solo byte
+    //    crudo (el bug de G4 era caer al campo original tras un fallo).
+    const inline: string[] = [];
+    const walk = (node: unknown, at: string) => {
+      if (typeof node === 'string') {
+        if (node.startsWith('data:') || (node.length > 40 && /^[A-Za-z0-9+/]+={0,2}$/.test(node))) {
+          inline.push(at);
+        }
+        return;
+      }
+      if (Array.isArray(node)) return node.forEach((v, i) => walk(v, `${at}[${i}]`));
+      if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node as Record<string, unknown>)) walk(v, `${at}.${k}`);
+      }
+    };
+    walk(storyData, 'storyData');
+    expect(inline, `bytes inline en: ${inline.join(', ')}`).toEqual([]);
+
+    // 4. Toda subida finalizada es inmutable, y la de la portada se intentó
+    //    igual (upload-first: no hay chequeo previo de existencia).
+    expect(finalUploads().length).toBe(4);
+    expect(finalUploads().every((u) => u.upsert === false)).toBe(true);
+    expect(finalUploads().map((u) => u.path)).toContain(finalPath('cover', 'cover', PNG_C_B64));
+
+    // 5. CERO borrados compensatorios.
+    expect(cuentacuentosRemovals()).toEqual([]);
+  }, 90_000);
+
+  it('control — un no-409 con el MISMO mensaje, en el MISMO camino, no persiste el elemento', async () => {
+    resetBoundary();
+    // Idéntico al caso anterior salvo el `statusCode` (500 en vez de 409): un
+    // clasificador por TEXTO lo habría aceptado y guardado igual.
+    ctl.duplicateLikeMessageWhenPathIncludes = '/cuentacuentos/cover/';
+
+    const result = await saveWith(finalStory());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/No se pudieron guardar las imágenes del cuento/);
+    expect(upsertsTo('liturgia_elementos')).toEqual([]);
+    // Los hermanos ya creados quedan como huérfanos permitidos.
+    expect(cuentacuentosRemovals()).toEqual([]);
+  }, 90_000);
 });
 
 /** Historia mínima para llegar al control de guardado de cada sitio manual. */

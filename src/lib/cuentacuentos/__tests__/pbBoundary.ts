@@ -114,6 +114,28 @@ export interface BoundaryControls {
    * clasificador por texto quede descartado: esto debe RECHAZAR.
    */
   duplicateLikeMessageWhenSize: number | null;
+  /**
+   * Igual que el anterior pero seleccionando por PATH. Los fixtures comparten
+   * tamaño, así que el selector por bytes no puede apuntar a un sitio concreto;
+   * éste sí, y es el que necesita el control no-409 de T-B.9 sobre el MISMO
+   * camino de producción.
+   */
+  duplicateLikeMessageWhenPathIncludes: string | null;
+  /**
+   * Semántica REAL de `upsert:false`: la PRIMERA subida a un path lo crea; toda
+   * subida posterior al MISMO path devuelve el conflicto capturado (409).
+   *
+   * Es lo que hace fiel la prueba de grupo de T-B.2 sin plantar el error a
+   * mano: dos entradas con bytes decodificados idénticos producen el MISMO
+   * path, así que una llamada crea y la otra conflictúa por sí sola, igual que
+   * contra Storage.
+   */
+  conflictOnRepeatPath: boolean;
+  /**
+   * Variante del anterior con un error NO-409 de texto duplicado-parecido: es
+   * la mutación de T-B.2 que trata un no-409 como éxito.
+   */
+  repeatPathUsesNon409: boolean;
   /** `storage.list` encuentra el archivo buscado (verificación de existencia). */
   listFindsFile: boolean;
   /** Respuesta de `functions.invoke` para las funciones pagas. */
@@ -136,6 +158,9 @@ function makeDefaultControls(): BoundaryControls {
     duplicateWhenSize: null,
     duplicateWhenPathIncludes: null,
     duplicateLikeMessageWhenSize: null,
+    duplicateLikeMessageWhenPathIncludes: null,
+    conflictOnRepeatPath: false,
+    repeatPathUsesNon409: false,
     listFindsFile: true,
     invokeResponse: { data: { success: true, images: [] }, error: null },
   };
@@ -152,6 +177,13 @@ export const deletes: DeleteCall[] = [];
 
 /** Estado de la fila simulada; `null` = no existe. */
 export const sim: { row: SimDraftRow | null } = { row: null };
+
+/**
+ * Objetos que ya existen en el "Storage" simulado (`bucket/path`). Sólo lo
+ * consulta `conflictOnRepeatPath`, para reproducir el 409 de `upsert:false`
+ * cuando una segunda entrada del mismo grupo resuelve al mismo path.
+ */
+const createdPaths = new Set<string>();
 
 /**
  * ¿La fila simulada llegó a existir en este caso? Distingue "nunca hubo fila"
@@ -173,6 +205,7 @@ export function resetBoundary(): void {
   upserts.length = 0;
   removals.length = 0;
   deletes.length = 0;
+  createdPaths.clear();
   sim.row = null;
   updatedAtSeq = 0;
   opSeq = 0;
@@ -376,10 +409,26 @@ export function makeSupabaseMock() {
       if (ctl.failUploadWhenSize !== null && size === ctl.failUploadWhenSize) {
         return { data: null, error: storageError('Storage falló', '500') };
       }
+      if (
+        ctl.duplicateLikeMessageWhenPathIncludes &&
+        p.includes(ctl.duplicateLikeMessageWhenPathIncludes)
+      ) {
+        return { data: null, error: storageError('The resource already exists', '500') };
+      }
       if (ctl.duplicateLikeMessageWhenSize !== null && size === ctl.duplicateLikeMessageWhenSize) {
         // Mensaje idéntico al del duplicado, pero statusCode 500: un
         // clasificador por TEXTO lo aceptaría; el estructural debe rechazarlo.
         return { data: null, error: storageError('The resource already exists', '500') };
+      }
+      if (ctl.conflictOnRepeatPath && createdPaths.has(`${bucket}/${p}`)) {
+        // Semántica REAL de `upsert:false`: el objeto ya existe.
+        return {
+          data: null,
+          error: storageError(
+            'The resource already exists',
+            ctl.repeatPathUsesNon409 ? '500' : '409'
+          ),
+        };
       }
       if (ctl.duplicateWhenPathIncludes && p.includes(ctl.duplicateWhenPathIncludes)) {
         return { data: null, error: storageError('The resource already exists', '409') };
@@ -387,6 +436,7 @@ export function makeSupabaseMock() {
       if (ctl.duplicateWhenSize !== null && size === ctl.duplicateWhenSize) {
         return { data: null, error: storageError('The resource already exists', '409') };
       }
+      createdPaths.add(`${bucket}/${p}`);
       return { data: { path: p }, error: null };
     },
     getPublicUrl: (p: string) => ({
