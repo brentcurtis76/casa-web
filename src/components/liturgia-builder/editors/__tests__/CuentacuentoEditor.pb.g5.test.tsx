@@ -470,17 +470,16 @@ describe('PB G5/T-B.9 — pasos 4-5: el padre de producción guarda y sólo ento
       expect(String(value).startsWith('http'), `${name} no es una URL: ${String(value).slice(0, 60)}`).toBe(true);
     }
 
-    // FINDING PB-F7 (PRE-EXISTENTE, fuera del alcance de PB) — PINEADO, no
-    // silenciado: la finalización copia `coverImageOptions`/`endImageOptions`
-    // TAL CUAL (editor :3765/:3767) y `updateStoryWithImageUrls` sólo reescribe
-    // `coverImageUrl`/`endImageUrl` (liturgyService :271-272). Una opción NO
-    // guardada sigue siendo bytes inline y viaja cruda a `liturgia_elementos`.
-    // Verificado idéntico en 185c370 con `git show`: PB no lo introduce ni lo
-    // agrava, y arreglarlo sería un cambio de alcance no autorizado (el scrub
-    // de A3 cubre el JSON del BORRADOR, que es otra tabla).
+    // [B1] — RECORRIDO COMPLETO del `storyData` persistido: CERO campos con
+    // imagen inline, en ningún lado del árbol.
     //
-    // Se pinea para que deje de ser invisible: si el leak se extendiera a otro
-    // campo, o desapareciera, este test lo dice.
+    // Antes acá se PINEABA `['storyData.coverImageOptions[]']` como leak
+    // aceptado (el ex-hallazgo PB-F7). Eso contradecía el propio contrato de
+    // G5 paso 4 ("nada de base64") y T-B.9 ("sólo la URL pública nueva"): la
+    // finalización copia las opciones TAL CUAL y `updateStoryWithImageUrls`
+    // sólo reescribía el campo seleccionado, así que una opción no guardada
+    // viajaba cruda a `liturgia_elementos`. La aserción ahora exige el
+    // invariante entero en vez de describir la fuga.
     const inlineFields: string[] = [];
     const walk = (node: unknown, pathStr: string) => {
       if (typeof node === 'string') {
@@ -499,9 +498,25 @@ describe('PB G5/T-B.9 — pasos 4-5: el padre de producción guarda y sólo ento
     };
     walk(storyData, 'storyData');
     expect(
-      [...new Set(inlineFields.map((f) => f.replace(/\[\d+\]$/, '[]')))].sort(),
-      'apareció base64 inline en un campo del elemento distinto de los options preexistentes'
-    ).toEqual(['storyData.coverImageOptions[]']);
+      inlineFields,
+      `el elemento persistido lleva bytes inline en: ${inlineFields.join(', ')}`
+    ).toEqual([]);
+
+    // La representación LIMPIA de las opciones, campo por campo:
+    //
+    //  - la opción inline SELECCIONADA se conserva como su URL final H2 (no se
+    //    descarta la referencia seleccionada);
+    //  - la opción inline NO seleccionada (H1, que nunca se subió a
+    //    `liturgia-images`) desaparece;
+    //  - las opciones HTTP(S) ya persistidas pasan intactas.
+    expect(storyData['coverImageOptions']).toEqual([finalCoverUrl(H2)]);
+    expect(storyData['endImageOptions']).toEqual([EXISTING_DRAFTS_URL]);
+    expect(
+      (storyData['characters'] as Array<Record<string, unknown>>)[0]['characterSheetOptions']
+    ).toEqual([EXISTING_DRAFTS_URL]);
+    expect(
+      (storyData['scenes'] as Array<Record<string, unknown>>)[0]['imageOptions']
+    ).toEqual([EXISTING_DRAFTS_URL]);
 
     // Y SÓLO ENTONCES el cierre borró la fila: el DELETE es posterior, en la
     // secuencia global de operaciones, al upsert del elemento.
@@ -511,6 +526,74 @@ describe('PB G5/T-B.9 — pasos 4-5: el padre de producción guarda y sólo ento
     expect(ack!.filters['updated_at']).toBe(rowBeforeSave!.updated_at);
     expect(ack!.seq).toBeGreaterThan(elementUpserts[0].seq);
     expect(sim.row).toBeNull();
+  }, 180_000);
+
+  it('[B1] reopen — la representación limpia de opciones no rompe la portada/fin seleccionadas', async () => {
+    const record = { results: [] as Array<{ success: boolean; error?: string }> };
+    const triggerSave = await mountAndFinalize(record);
+    await triggerSave();
+    expect(record.results[0]?.success).toBe(true);
+
+    // El `storyData` REAL que quedó en `liturgia_elementos` — el mismo objeto
+    // que producción vuelve a pasar como `initialStory` al reabrir el elemento
+    // guardado (`loadLiturgy` → config.storyData → `<CuentacuentoEditor
+    // initialStory={...}>`).
+    const rows = upsertsTo('liturgia_elementos')[0].payload as Array<Record<string, unknown>>;
+    const persisted = (rows.find((r) => r['tipo'] === 'cuentacuentos')!['config'] as {
+      storyData: Story;
+    }).storyData;
+
+    // Desmontar el constructor y REABRIR con el editor de producción.
+    cleanup();
+    resetBoundary();
+    ctl.draftRow = null;
+
+    render(
+      <CuentacuentoEditor
+        context={baseContext}
+        initialStory={persisted}
+        onStoryCreated={vi.fn()}
+      />
+    );
+    await act(async () => { await yields(30); });
+
+    /** `src` de todas las imágenes que el editor real está mostrando. */
+    const srcs = () =>
+      screen.queryAllByRole('img').map((el) => el.getAttribute('src') ?? '').filter(Boolean);
+
+    // 1. La vista finalizada muestra la portada H2 y la imagen de fin. La
+    //    referencia seleccionada sobrevivió al saneo.
+    await waitFor(() => expect(srcs().some((s) => s.startsWith(finalCoverUrl(H2)))).toBe(true), {
+      timeout: 10000,
+    });
+    expect(srcs().some((s) => s.startsWith(EXISTING_DRAFTS_URL))).toBe(true);
+    expect(srcs().filter((s) => s.startsWith('data:'))).toEqual([]);
+
+    // 2. Y el estado de selección sigue vivo camino adentro: "Editar cuento" →
+    //    "Aprobar escenas" llega al paso de portada, donde el editor siembra
+    //    sus opciones de portada/fin desde los campos seleccionados. Ambos
+    //    selectores muestran la referencia correcta y NINGUNA opción inline.
+    const edit = await waitFor(() => screen.getByRole('button', { name: /Editar cuento/i }), {
+      timeout: 10000,
+    });
+    await act(async () => {
+      fireEvent.click(edit);
+      await yields(25);
+    });
+    const approve = await waitFor(
+      () => screen.getByRole('button', { name: /Aprobar escenas/i }),
+      { timeout: 10000 }
+    );
+    await act(async () => {
+      fireEvent.click(approve);
+      await yields(30);
+    });
+
+    await waitFor(() => expect(srcs().some((s) => s.startsWith(finalCoverUrl(H2)))).toBe(true), {
+      timeout: 10000,
+    });
+    expect(srcs().some((s) => s.startsWith(EXISTING_DRAFTS_URL))).toBe(true);
+    expect(srcs().filter((s) => s.startsWith('data:'))).toEqual([]);
   }, 180_000);
 
   it('paso 5 — un fallo NO-409 de imagen final: sin upsert de elemento, sin confirmación, el borrador vive', async () => {

@@ -244,24 +244,152 @@ export async function uploadCuentacuentosImages(
 }
 
 /**
+ * PB/G5 — [B1]: reescritura de un arreglo de OPCIONES de imagen para el payload
+ * finalizado.
+ *
+ * El leak que cierra: la finalización del editor copia las opciones TAL CUAL
+ * (`coverImageOptions`, `endImageOptions`, `characterSheetOptions`,
+ * `imageOptions`), y hasta acá `updateStoryWithImageUrls` sólo reescribía el
+ * campo SELECCIONADO. Una opción no seleccionada seguía siendo bytes inline y
+ * viajaba cruda a `liturgia_elementos`, contra G5 paso 4 ("nada de base64") y
+ * T-B.9 ("sólo la URL pública nueva").
+ *
+ * Regla, en este orden y preservando el orden original:
+ *  - una opción HTTP(S) YA persistida pasa intacta (G2/G4: las referencias
+ *    existentes nunca se re-suben ni se reescriben);
+ *  - la opción inline que ES la seleccionada se REEMPLAZA por su URL final
+ *    subida — así el elemento conserva la referencia H2 dentro del arreglo y
+ *    el reopen no pierde la selección;
+ *  - cualquier otra opción inline se DESCARTA: nunca se subió, no existe URL
+ *    para ella, y persistir sus bytes es exactamente el leak.
+ */
+function rewriteFinalizedOptions(
+  options: string[] | undefined,
+  selectedBefore: string | undefined,
+  selectedAfter: string | undefined
+): string[] | undefined {
+  if (!options) return options;
+  const rewritten: string[] = [];
+  for (const option of options) {
+    if (isHttpReference(option)) {
+      rewritten.push(option);
+      continue;
+    }
+    if (
+      selectedBefore !== undefined &&
+      option === selectedBefore &&
+      isHttpReference(selectedAfter)
+    ) {
+      rewritten.push(selectedAfter);
+    }
+  }
+  return rewritten;
+}
+
+/** Deja SÓLO referencias HTTP(S) en un arreglo de imágenes. */
+function httpOnly(images: string[] | undefined): string[] | undefined {
+  return images ? images.filter(isHttpReference) : images;
+}
+
+/** Un escalar de referencia que quedó inline no puede persistirse. */
+function httpOrUndefined(value: string | undefined): string | undefined {
+  return value === undefined || isHttpReference(value) ? value : undefined;
+}
+
+/**
+ * PB/G5 — [B1]: borde de persistencia del elemento cuentacuentos.
+ *
+ * `updateStoryWithImageUrls` cubre los cuatro slots que la finalización SÍ
+ * sube. Este paso cierra el resto de la superficie de imagen del `Story` —
+ * referencias de landmarks/props/personajes, que `saveLiturgy` nunca sube — de
+ * modo que el `storyData` persistido no contenga NINGÚN byte inline, que es lo
+ * que exige el recorrido completo de G5 paso 4.
+ *
+ * Es una lista EXPLÍCITA de campos tipados, no un barrido heurístico: un walk
+ * genérico sobre strings largos podría descartar prosa del cuento.
+ *
+ * Los cuatro campos seleccionados (`characterSheetUrl`, `selectedImageUrl`,
+ * `coverImageUrl`, `endImageUrl`) NO se tocan acá a propósito: en la rama de
+ * subida ya son URLs porque la finalización subió todo inline seleccionado, y
+ * en la rama de re-guardado la condición de entrada garantiza que ya eran
+ * HTTP(S). Si alguna vez dejara de ser cierto, el recorrido completo del test
+ * de G5 lo delata en vez de que un descarte silencioso lo esconda.
+ */
+export function stripInlineImageRefs(
+  story: import('@/types/shared/story').Story
+): import('@/types/shared/story').Story {
+  return {
+    ...story,
+    characters: story.characters?.map(char => ({
+      ...char,
+      characterSheetOptions: httpOnly(char.characterSheetOptions),
+    })) ?? story.characters,
+    scenes: story.scenes?.map(scene => ({
+      ...scene,
+      imageOptions: httpOnly(scene.imageOptions),
+    })) ?? story.scenes,
+    landmarks: story.landmarks?.map(landmark => ({
+      ...landmark,
+      referenceImages: httpOnly(landmark.referenceImages) ?? [],
+      selectedReferenceUrl: httpOrUndefined(landmark.selectedReferenceUrl),
+    })),
+    props: story.props?.map(prop => ({
+      ...prop,
+      referenceImages: httpOnly(prop.referenceImages) ?? [],
+      selectedReferenceUrl: httpOrUndefined(prop.selectedReferenceUrl),
+    })),
+    coverImageOptions: httpOnly(story.coverImageOptions),
+    endImageOptions: httpOnly(story.endImageOptions),
+  };
+}
+
+/**
  * Update a Story object with uploaded image URLs
  */
 export function updateStoryWithImageUrls(
   story: import('@/types/shared/story').Story,
   urls: CuentacuentosImageUrls
 ): import('@/types/shared/story').Story {
+  const coverAfter = urls.coverImage || story.coverImageUrl;
+  const endAfter = urls.endImage || story.endImageUrl;
   return {
     ...story,
-    characters: story.characters.map(char => ({
-      ...char,
-      characterSheetUrl: urls.characterSheets[char.id] || char.characterSheetUrl,
-    })),
-    scenes: story.scenes.map(scene => ({
-      ...scene,
-      selectedImageUrl: urls.sceneImages[scene.number] || scene.selectedImageUrl,
-    })),
-    coverImageUrl: urls.coverImage || story.coverImageUrl,
-    endImageUrl: urls.endImage || story.endImageUrl,
+    characters: story.characters.map(char => {
+      const sheetAfter = urls.characterSheets[char.id] || char.characterSheetUrl;
+      return {
+        ...char,
+        characterSheetUrl: sheetAfter,
+        characterSheetOptions: rewriteFinalizedOptions(
+          char.characterSheetOptions,
+          char.characterSheetUrl,
+          sheetAfter
+        ),
+      };
+    }),
+    scenes: story.scenes.map(scene => {
+      const sceneAfter = urls.sceneImages[scene.number] || scene.selectedImageUrl;
+      return {
+        ...scene,
+        selectedImageUrl: sceneAfter,
+        imageOptions: rewriteFinalizedOptions(
+          scene.imageOptions,
+          scene.selectedImageUrl,
+          sceneAfter
+        ),
+      };
+    }),
+    coverImageUrl: coverAfter,
+    coverImageOptions: rewriteFinalizedOptions(
+      story.coverImageOptions,
+      story.coverImageUrl,
+      coverAfter
+    ),
+    endImageUrl: endAfter,
+    endImageOptions: rewriteFinalizedOptions(
+      story.endImageOptions,
+      story.endImageUrl,
+      endAfter
+    ),
   };
 }
 
@@ -550,7 +678,15 @@ export async function saveLiturgy(
           }
 
           // Update story with uploaded URLs
-          const updatedStory = updateStoryWithImageUrls(story, uploadedUrls);
+          //
+          // PB/G5 — [B1]: `updateStoryWithImageUrls` reescribe los cuatro slots
+          // seleccionados Y sus arreglos de opciones; `stripInlineImageRefs`
+          // cierra el resto de la superficie de imagen (referencias de
+          // landmarks/props) que la finalización nunca sube. El `storyData` que
+          // llega a `liturgia_elementos` queda sin un solo byte inline.
+          const updatedStory = stripInlineImageRefs(
+            updateStoryWithImageUrls(story, uploadedUrls)
+          );
 
           // CRITICAL: Regenerate slides from updated story with URLs
           // Without this, element.slides would still have base64 data instead of URLs
@@ -572,15 +708,22 @@ export async function saveLiturgy(
       // For cuentacuentos with existing URLs (resave), ensure slides are in sync with storyData
       if (element.type === 'cuentacuentos' && element.config?.storyData) {
         const story = element.config.storyData as import('@/types/shared/story').Story;
+        // PB/G5 — [B1]: esta rama corre cuando NINGÚN campo seleccionado es
+        // inline, pero los arreglos de opciones SÍ pueden traer bytes crudos
+        // (p. ej. una portada seleccionada que ya era URL junto a opciones
+        // generadas que nunca se subieron). Sin este saneo el leak sobrevivía
+        // por el camino de re-guardado aunque la rama de subida quedara limpia.
+        const cleanedStory = stripInlineImageRefs(story);
         // Regenerate slides to ensure they have the correct URLs from storyData
-        const regeneratedSlides = createPreviewSlideGroup(story);
+        const regeneratedSlides = createPreviewSlideGroup(cleanedStory);
         console.log('[saveLiturgy] Cuentacuentos resave, regenerating slides to sync with storyData:', {
-          hasSceneUrls: story.scenes.some(s => s.selectedImageUrl?.startsWith('http')),
+          hasSceneUrls: cleanedStory.scenes.some(s => s.selectedImageUrl?.startsWith('http')),
           slideCount: regeneratedSlides.slides.length,
         });
         return {
           ...element,
           slides: regeneratedSlides,
+          config: { ...element.config, storyData: cleanedStory },
         };
       }
 
