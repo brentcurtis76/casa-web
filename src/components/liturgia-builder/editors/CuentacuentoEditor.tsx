@@ -62,7 +62,7 @@ import {
   readReferenceImageBase64,
   REFERENCE_IMAGE_TOO_LARGE_MESSAGE,
 } from '@/lib/cuentacuentos/downscaleImage';
-import { buildInvokeError, describeSkippedImage, parseSkippedImages, InvokeError, type SkippedImage } from '@/lib/cuentacuentos/imageFeedback';
+import { buildInvokeError, describeSkippedImage, parseSkippedImages, parseWarnings, InvokeError, type SkippedImage, type EnvelopeWarning } from '@/lib/cuentacuentos/imageFeedback';
 import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
@@ -614,6 +614,16 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // generación salió bien, pero una foto que faltó es indistinguible de una
   // que sí se usó si no lo decimos.
   const [skippedImages, setSkippedImages] = useState<SkippedImage[]>([]);
+  // Degradación de la INVESTIGACIÓN (lugar, lugar destacado, elementos
+  // recurrentes) y descartes de la normalización. Estado APARTE del de las
+  // fotos descartadas: son eventos distintos, con remedios distintos, y el
+  // camino de imágenes no debe poder pisar el de la historia.
+  //
+  // Semántica de historia: se REEMPLAZA entero en cada intento COMPLETO de
+  // `generate-story` —éxito, error o vista previa—. Nunca acumula: los avisos
+  // describen la generación que se acaba de intentar, y arrastrar los del
+  // intento anterior sería decir algo falso sobre el actual.
+  const [warnings, setWarnings] = useState<EnvelopeWarning[]>([]);
   // El estado por-ítem de generación/persistencia de imágenes se lee
   // directamente del runner (`pipeline.statusOf`); no hay máquinas paralelas.
 
@@ -1715,12 +1725,21 @@ Instrucciones críticas:
 
       if (fnError) throw await extractInvokeError(fnError);
 
+      // La vista previa es un intento COMPLETO de `generate-story`: reemplaza
+      // el conjunto de avisos aunque no haya cuento. Va antes del guard de
+      // `promptPreview` para que una respuesta sin panel igual limpie los
+      // avisos del intento anterior.
+      setWarnings(parseWarnings(data?.warnings));
+
       if (data?.promptPreview) {
         setPromptPreview(data.promptPreview);
         setShowPromptPreview(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar el prompt');
+      // Mismo contrato que en la generación: los avisos del cuerpo de error
+      // siguen siendo ciertos, y un error sin cuerpo legible limpia el estado.
+      setWarnings(err instanceof InvokeError ? err.warnings : []);
     } finally {
       setLoadingPrompt(false);
     }
@@ -1751,6 +1770,9 @@ Instrucciones críticas:
       // El cuento se generó; si alguna referencia quedó fuera, se avisa aparte
       // y sin bloquear.
       setSkippedImages(parseSkippedImages(data.skippedImages));
+      // Ídem para la investigación que se degradó: el cuento existe, pero se
+      // escribió sin esa información y el usuario tiene que poder saberlo.
+      setWarnings(parseWarnings(data.warnings));
 
       const hasStructuredData = Array.isArray(data.scenes) && data.scenes.length > 0;
 
@@ -1853,6 +1875,10 @@ Instrucciones críticas:
       // El contrato manda skippedImages también en las respuestas de error:
       // saber qué referencia quedó fuera suele explicar el fallo.
       setSkippedImages(err instanceof InvokeError ? err.skippedImages : []);
+      // Y los avisos de investigación igual: la degradación ocurrió ANTES del
+      // fallo y sigue siendo cierta. El aviso y el error rojo conviven; ninguno
+      // reemplaza al otro. Un error sin cuerpo legible (red, no-JSON) limpia.
+      setWarnings(err instanceof InvokeError ? err.warnings : []);
     } finally {
       setIsGenerating(false);
     }
@@ -2008,6 +2034,9 @@ Instrucciones críticas:
       setSelectedEnd(null);
       setEndIncludedCharacters([]);
       setStoryProps([]);
+      // Los avisos describían la generación del cuento que se acaba de borrar:
+      // sobrevivir a su ciclo de vida los volvería una afirmación falsa.
+      setWarnings([]);
       setCurrentStep('config');
       setShowForm(true);
       setConfirmed(false);
@@ -3867,6 +3896,8 @@ Instrucciones críticas:
     setStoryProps([]);
     setPropSheetOptions({});
     setSelectedPropSheets({});
+    // Ídem los avisos: hablan del intento abandonado, no del que viene.
+    setWarnings([]);
   }, [cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity, setStory]);
 
   // Editar cuento existente (sin borrar)
@@ -7099,6 +7130,47 @@ Instrucciones críticas:
             type="button"
             onClick={() => setSkippedImages([])}
             aria-label="Ocultar aviso"
+            style={{ color: '#92400E', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Investigación que se degradó (PC/PD). Hermano del aviso de fotos y con
+          la misma forma no bloqueante, pero estado propio: una foto descartada
+          y una investigación que falló son eventos distintos.
+
+          Vive acá, fuera del paso actual, por dos motivos: la vista previa se
+          abre en configuración y la generación termina en el paso del cuento —
+          montarlo dentro de un paso lo haría desaparecer justo cuando cambia—,
+          y así convive con la superficie roja de error sin reemplazarla.
+
+          Los mensajes son los que redactó el SERVIDOR y se muestran verbatim:
+          el cliente no tiene tabla de códigos, así que un código nuevo sigue
+          diciendo algo cierto. La key incluye el índice porque el borde emite
+          una entrada por resultado y dos fallos iguales son legales: dedupli-
+          carlos para fabricar unicidad borraría un fallo real. */}
+      {warnings.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="p-3 rounded-lg flex items-start gap-2"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="flex-1">
+            <div style={{ fontWeight: 600 }}>Avisos de la generación</div>
+            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
+              {warnings.map((w, i) => (
+                <li key={`${w.source}:${w.code}:${i}`}>{w.message}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWarnings([])}
+            aria-label="Ocultar avisos de la generación"
             style={{ color: '#92400E', flexShrink: 0 }}
           >
             <X size={14} />

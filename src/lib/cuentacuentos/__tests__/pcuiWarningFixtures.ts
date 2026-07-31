@@ -131,3 +131,52 @@ export function imageRefErrorBody(params: {
 }): Record<string, unknown> {
   return { success: false, code: params.code, error: params.error, field: params.field };
 }
+
+/** Una escena tal cual la emite el esquema estricto (handler :243, :424-436). */
+export interface EdgeScene {
+  number: number;
+  text: string;
+  visualDescription: string;
+  landmarkVisible?: boolean;
+}
+
+/**
+ * Envelope de ÉXITO de `generate-story` (handler :1854-1875). `warnings` se
+ * OMITE cuando está vacío — igual que en producción.
+ */
+export function storySuccessBody(params: {
+  scenes: EdgeScene[];
+  warnings?: unknown[];
+  skippedImages?: Array<{ field: string; code: string }>;
+  title?: string;
+}): Record<string, unknown> {
+  const { scenes, warnings = [], skippedImages = [], title = 'Cuento de prueba' } = params;
+  return {
+    success: true,
+    skippedImages,
+    ...(warnings.length > 0 ? { warnings } : {}),
+    title,
+    summary: 'Resumen del cuento',
+    characters: [
+      { name: 'María', role: 'protagonist', description: 'Una niña', visualDescription: 'Niña de trenzas' },
+    ],
+    scenes,
+    spiritualConnection: 'Esperanza',
+    propAnalyses: [],
+    content: scenes.map((s) => s.text).join('\n\n'),
+  };
+}
+
+/** Envelope de VISTA PREVIA (handler :1666-1681). */
+export function previewBody(params: { warnings?: unknown[] }): Record<string, unknown> {
+  const { warnings = [] } = params;
+  return {
+    success: true,
+    skippedImages: [],
+    ...(warnings.length > 0 ? { warnings } : {}),
+    promptPreview: {
+      systemPrompt: 'SYSTEM PROMPT capturado',
+      userPrompt: 'USER PROMPT capturado',
+    },
+  };
+}
