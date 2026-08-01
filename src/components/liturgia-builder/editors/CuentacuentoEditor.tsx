@@ -1805,10 +1805,22 @@ Instrucciones críticas:
               visualDescription: name,
             })),
         scenes: hasStructuredData
-          ? data.scenes.map((scene: { number: number; text: string; visualDescription: string }) => ({
+          ? data.scenes.map((scene: { number: number; text: string; visualDescription: string; landmarkVisible?: unknown }) => ({
               number: scene.number,
               text: scene.text,
               visualDescription: scene.visualDescription,
+              // T-D.13 — El esquema estricto del borde emite `landmarkVisible` y
+              // el constructor de peticiones de escena ya lo reenviaba; este
+              // mapper era el eslabón que lo tiraba, así que el campo existía a
+              // los dos extremos y no llegaba nunca.
+              //
+              // Sólo sobreviven booleanos, y `false` es tan significativo como
+              // `true`: dice "este landmark NO va en esta escena". Un valor
+              // ausente o mal formado NO se coacciona — se omite, y el opcional
+              // sigue siendo opcional.
+              ...(typeof scene.landmarkVisible === 'boolean'
+                ? { landmarkVisible: scene.landmarkVisible }
+                : {}),
             }))
           : (data.content || '').split('\n\n').filter((p: string) => p.trim().length > 0).map((text: string, i: number) => ({
               number: i + 1,

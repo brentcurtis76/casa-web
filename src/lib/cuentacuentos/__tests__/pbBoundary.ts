@@ -175,6 +175,24 @@ export interface BoundaryControls {
    * limpia junto con el resto de los controles.
    */
   upsertGate: ((call: UpsertCall) => Promise<void> | void) | null;
+  /**
+   * PC-UI/[T-D.13] — Compuerta OPT-IN de FIDELIDAD DE IDA Y VUELTA de la fila
+   * de borrador.
+   *
+   * Con `false` (default) el comportamiento previo se conserva EXACTO: la
+   * lectura devuelve la constante `ctl.draftRow`, escrita a mano por el test.
+   * Eso alcanza para los escenarios que sólo necesitan "hay un borrador", pero
+   * NO para afirmar que un campo SOBREVIVIÓ la persistencia: la fila leída no
+   * tendría relación con lo que producción escribió.
+   *
+   * Con `true`, el upsert de `cuentacuentos_drafts` GUARDA el payload que
+   * escribió producción —clonado a través de JSON, como haría una columna
+   * `jsonb`— y la lectura devuelve ESA fila. Nadie redacta la fila: la única
+   * forma de que el campo aparezca al recargar es que producción lo haya
+   * escrito. Es el borde externo comportándose como la base, no una afirmación
+   * sobre producción.
+   */
+  persistDraftRow: boolean;
 }
 
 export const ctl: BoundaryControls = makeDefaultControls();
@@ -200,6 +218,7 @@ function makeDefaultControls(): BoundaryControls {
     invokeResponse: { data: { success: true, images: [] }, error: null },
     invokeHandler: null,
     upsertGate: null,
+    persistDraftRow: false,
   };
 }
 
@@ -231,6 +250,12 @@ const createdPaths = new Set<string>();
  */
 let simWasSeeded = false;
 
+/**
+ * PC-UI/[T-D.13] — La fila REALMENTE escrita por producción, cuando
+ * `ctl.persistDraftRow` está activo. `null` = todavía nadie escribió.
+ */
+let storedDraftRow: Record<string, unknown> | null = null;
+
 /** Contador monótono de `updated_at` — determinista entre corridas. */
 let updatedAtSeq = 0;
 export function nextUpdatedAt(): string {
@@ -250,6 +275,7 @@ export function resetBoundary(): void {
   updatedAtSeq = 0;
   opSeq = 0;
   simWasSeeded = false;
+  storedDraftRow = null;
 }
 
 /** Subidas al bucket de borradores, en orden de emisión. */
@@ -322,6 +348,13 @@ export function makeSupabaseMock() {
         if (ctl.upsertError) return { error: ctl.upsertError, updatedAt: null };
         const story = payload['story'] as { id?: string } | null;
         const updatedAt = nextUpdatedAt();
+        // PC-UI/[T-D.13] — Con la compuerta activa, la fila guardada ES el
+        // payload de producción, clonado a través de JSON igual que `jsonb`.
+        if (ctl.persistDraftRow) {
+          storedDraftRow = JSON.parse(
+            JSON.stringify({ ...payload, updated_at: updatedAt }),
+          ) as Record<string, unknown>;
+        }
         // El upsert (re)escribe la fila simulada: nueva identidad, nuevo instante.
         sim.row = {
           liturgia_id: String(payload['liturgia_id']),
@@ -418,6 +451,10 @@ export function makeSupabaseMock() {
     maybeSingle: async () => {
       if (table === 'cuentacuentos_drafts') {
         if (ctl.selectError) return { data: null, error: ctl.selectError };
+        // PC-UI/[T-D.13] — La lectura devuelve lo que producción escribió, no
+        // una fila redactada por el test. Antes de la primera escritura no hay
+        // fila, igual que en una liturgia nueva.
+        if (ctl.persistDraftRow) return { data: storedDraftRow, error: null };
         // Una fila borrada por el compare-and-delete deja de verse en la
         // recarga: sin esto, "el prompt no vuelve" sólo probaría la
         // contabilidad del propio test.
