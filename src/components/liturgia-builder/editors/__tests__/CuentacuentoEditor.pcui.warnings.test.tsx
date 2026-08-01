@@ -97,6 +97,38 @@ function nonJsonHttpError(status: number) {
   return err;
 }
 
+/**
+ * Un `context` cuyo `clone()` LANZA. `extractInvokeError` sólo protege el
+ * `await ctx.clone().json()`; el propio `clone()` corre dentro del mismo `try`,
+ * así que este caso prueba que tampoco por ahí se escapa una excepción.
+ */
+function throwingCloneError(status: number) {
+  const err = new Error('Edge Function returned a non-2xx status code') as Error & {
+    context?: Response;
+  };
+  err.name = 'FunctionsHttpError';
+  err.context = {
+    status,
+    clone: () => {
+      throw new TypeError('body stream already read');
+    },
+  } as unknown as Response;
+  return err;
+}
+
+/** Un `context` cuyo `json()` RECHAZA (cuerpo cortado a mitad de camino). */
+function rejectingJsonError(status: number) {
+  const err = new Error('Edge Function returned a non-2xx status code') as Error & {
+    context?: Response;
+  };
+  err.name = 'FunctionsHttpError';
+  err.context = {
+    status,
+    clone: () => ({ json: () => Promise.reject(new Error('Unexpected end of JSON input')) }),
+  } as unknown as Response;
+  return err;
+}
+
 /** Contesta `generate-story` con lo que se le indique; el resto queda por defecto. */
 function answerStory(reply: { data?: unknown; error?: unknown }) {
   ctl.invokeHandler = async (call: InvokeCall) => {
@@ -580,6 +612,43 @@ describe('T-U.6 — coexistencia con la superficie de error, agnóstica al statu
       () => expect(screen.getByText('Error 502: El modelo devolvió una estructura inválida.')).toBeTruthy(),
       { timeout: 10000 },
     );
+    expect(notice()).toBeNull();
+  });
+
+  it('un `clone()` que LANZA no rompe: status-only, sin aviso', async () => {
+    answerStory({
+      error: functionsHttpError(502, typedErrorBody({
+        code: 'PROVIDER_OUTPUT_INVALID',
+        error: 'x',
+        warnings: [storyWarning()],
+      })),
+    });
+    await mountEditor();
+    await clickGenerate();
+    await waitFor(() => expect(notice()).not.toBeNull(), { timeout: 10000 });
+
+    answerStory({ error: throwingCloneError(502) });
+    await clickGenerate();
+
+    await waitFor(() => expect(screen.getByText('Error 502')).toBeTruthy(), { timeout: 10000 });
+    expect(notice()).toBeNull();
+  });
+
+  it('un `json()` que RECHAZA no rompe: status-only, sin aviso', async () => {
+    answerStory({
+      error: functionsHttpError(500, genericErrorBody({
+        error: 'Error generando cuento',
+        warnings: [researchWarning('prop', 'EMPTY_RESPONSE')],
+      })),
+    });
+    await mountEditor();
+    await clickGenerate();
+    await waitFor(() => expect(notice()).not.toBeNull(), { timeout: 10000 });
+
+    answerStory({ error: rejectingJsonError(422) });
+    await clickGenerate();
+
+    await waitFor(() => expect(screen.getByText('Error 422')).toBeTruthy(), { timeout: 10000 });
     expect(notice()).toBeNull();
   });
 
