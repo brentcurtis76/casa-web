@@ -238,7 +238,13 @@ const ImageSelector: React.FC<{
    * muestra la nueva. Deshabilitar durante el envelope evita esa divergencia.
    */
   disabled?: boolean;
-}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled }) => {
+  /**
+   * PH/G3 — Copy del botón de regenerar. Aditiva y opcional: los callsites de
+   * sheets/scenes no la pasan y conservan la copy de reemplazo por defecto.
+   * Portada y fin SÍ la pasan, porque ahí regenerar ya no descarta nada.
+   */
+  regenerateLabel?: string;
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled, regenerateLabel = 'No me gustan, generar otras opciones' }) => {
   if (phase !== 'idle') {
     return (
       <div className="flex items-center justify-center p-8">
@@ -389,7 +395,7 @@ const ImageSelector: React.FC<{
           }}
         >
           <RefreshCw size={14} />
-          No me gustan, generar otras opciones
+          {regenerateLabel}
         </button>
       )}
     </div>
@@ -2481,7 +2487,7 @@ Instrucciones críticas:
   }, [story, coverExcludedCharacters, editingCoverPrompt]);
 
   // Builder: portada — delega en `makeCoverTask`.
-  const buildCoverTask = useCallback((customPrompt?: string): PipelineItemTask<ProviderResult> => {
+  const buildCoverTask = useCallback((customPrompt?: string, append = false): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
 
     // Usar EXACTAMENTE la misma lógica que las escenas
@@ -2510,9 +2516,11 @@ Instrucciones críticas:
       coverReferenceImage,
       primaryProps: getPrimaryProps(),
       customPrompt: customPrompt || editingCoverPrompt || undefined,
+      append,
       coverOptionsRef,
       selectedCoverRef,
       setCoverOptions,
+      setSelectedCover,
       invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
@@ -2520,16 +2528,25 @@ Instrucciones críticas:
   }, [invokeSceneImagesWithFeedback, story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar portada
-  const handleGenerateCover = useCallback(async (customPrompt?: string) => {
+  const handleGenerateCover = useCallback(async (
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
     // Finding 3 — Guarda imperativa: el `disabled` del botón es feedback
     // visual, no una garantía. `deriveNextStory` lee `coverOptionsRef` VIVA
     // dentro del tail, así que una regeneración iniciada durante el envelope
     // publicaría una portada distinta de la mostrada.
-    if (isApprovingRef.current) return;
+    //
+    // PH/G5 — `pipeline.isBusy()` es la consulta VIVA al runner, no el booleano
+    // de render `pipeline.isRunning` (que puede ir un render atrás) ni un
+    // `statusOf` de un solo id: `reserveRun` desplaza la corrida GLOBAL, así
+    // que tras arrancar la portada el ítem `end` sigue idle y una guarda por
+    // ítem dejaría pasar el clic que aborta el lote en vuelo.
+    if (isApprovingRef.current || pipeline.isBusy()) return;
     setError(null);
     try {
-      const task = buildCoverTask(customPrompt);
+      const task = buildCoverTask(customPrompt, generateOptions?.append ?? false);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando portada');
@@ -2574,7 +2591,7 @@ Instrucciones críticas:
   }, [story, editingEndPrompt, endIncludedCharacters]);
 
   // Builder: imagen final — delega en `makeEndTask`.
-  const buildEndTask = useCallback((customPrompt?: string): PipelineItemTask<ProviderResult> => {
+  const buildEndTask = useCallback((customPrompt?: string, append = false): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
 
     // Opt-in characters for the end image: only those explicitly selected
@@ -2596,9 +2613,11 @@ Instrucciones críticas:
       endReferenceImage: endReferenceImage || undefined,
       charactersWithReferences,
       customPrompt: customPrompt || editingEndPrompt || undefined,
+      append,
       endOptionsRef,
       selectedEndRef,
       setEndOptions,
+      setSelectedEnd,
       invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
@@ -2606,13 +2625,17 @@ Instrucciones críticas:
   }, [invokeSceneImagesWithFeedback, story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen final
-  const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
+  const handleGenerateEnd = useCallback(async (
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
-    // Finding 3 — misma guarda imperativa que `handleGenerateCover`.
-    if (isApprovingRef.current) return;
+    // Finding 3 + PH/G5 — misma guarda imperativa que `handleGenerateCover`,
+    // incluida la consulta VIVA al runner que cierra la carrera cover↔end.
+    if (isApprovingRef.current || pipeline.isBusy()) return;
     setError(null);
     try {
-      const task = buildEndTask(customPrompt);
+      const task = buildEndTask(customPrompt, generateOptions?.append ?? false);
       await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen final');
@@ -2659,8 +2682,12 @@ Instrucciones críticas:
       return st === 'running' || st === 'persisting';
     };
     const tasks: Array<PipelineItemTask<ProviderResult>> = [];
-    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask());
-    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask());
+    // PH/G4 — El colector sigue siendo SÓLO-VACÍO: nunca regenera ni re-ofrece
+    // un append. Por eso construye con intent de reemplazo explícito; con las
+    // options vacías, append y replace producen el mismo array, pero el intent
+    // queda declarado en vez de heredado del default.
+    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask(undefined, false));
+    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask(undefined, false));
     return tasks;
   }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, pipeline]);
 
@@ -5962,17 +5989,20 @@ Instrucciones críticas:
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleGenerateCover()}
+                  // PH/G3 — Con options ya generadas, este botón AGREGA: no
+                  // queda ninguna superficie de reemplazo de lote para portada.
+                  onClick={() => handleGenerateCover(undefined, { append: coverOptions.length > 0 })}
                   disabled={isItemBusy('cover') || isRefiningCover}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                  title={coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('cover') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
                   ) : phaseOf('cover') === 'saving' ? (
                     <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : coverOptions.length > 0 ? (
-                    <><RefreshCw size={14} /> Regenerar</>
+                    <><Sparkles size={14} /> 2 más</>
                   ) : (
                     <><Camera size={14} /> Generar portada</>
                   )}
@@ -6245,7 +6275,13 @@ Instrucciones críticas:
                     onSelect={setSelectedCover}
                     disabled={isApproving}
                     onSave={handleSaveCover}
-                    onRegenerate={() => handleGenerateCover()}
+                    // PH/G3+G5 — Pre-filtro VISUAL, igual que sheets/scenes; la
+                    // garantía imperativa vive en el handler (`pipeline.isBusy()`).
+                    onRegenerate={() => {
+                      if (isRefiningCover || pipeline.isRunning) return;
+                      handleGenerateCover(undefined, { append: true });
+                    }}
+                    regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('cover')}
                     isSaving={savingCover}
                     savedMessage={savedCoverMessage}
@@ -6303,17 +6339,19 @@ Instrucciones críticas:
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleGenerateEnd()}
+                  // PH/G3 — Igual que la portada: con options ya generadas, agrega.
+                  onClick={() => handleGenerateEnd(undefined, { append: endOptions.length > 0 })}
                   disabled={isItemBusy('end') || isRefiningEnd}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                  title={endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('end') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
                   ) : phaseOf('end') === 'saving' ? (
                     <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : endOptions.length > 0 ? (
-                    <><RefreshCw size={14} /> Regenerar</>
+                    <><Sparkles size={14} /> 2 más</>
                   ) : (
                     <><Camera size={14} /> Generar "Fin"</>
                   )}
@@ -6589,7 +6627,12 @@ Instrucciones críticas:
                     onSelect={setSelectedEnd}
                     disabled={isApproving}
                     onSave={handleSaveEnd}
-                    onRegenerate={() => handleGenerateEnd()}
+                    // PH/G3+G5 — ver el equivalente de portada.
+                    onRegenerate={() => {
+                      if (isRefiningEnd || pipeline.isRunning) return;
+                      handleGenerateEnd(undefined, { append: true });
+                    }}
+                    regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('end')}
                     isSaving={savingEnd}
                     savedMessage={savedEndMessage}

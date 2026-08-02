@@ -105,6 +105,8 @@ interface Harness {
   setSelectedSceneImages: Dispatch<SetStateAction<Record<number, number>>>;
   setCoverOptions: Dispatch<SetStateAction<string[]>>;
   setEndOptions: Dispatch<SetStateAction<string[]>>;
+  setSelectedCover: Dispatch<SetStateAction<number | null>>;
+  setSelectedEnd: Dispatch<SetStateAction<number | null>>;
 }
 
 function makeHarness(): Harness {
@@ -128,6 +130,8 @@ function makeHarness(): Harness {
     setSelectedSceneImages: vi.fn(),
     setCoverOptions: vi.fn(),
     setEndOptions: vi.fn(),
+    setSelectedCover: vi.fn(),
+    setSelectedEnd: vi.fn(),
   };
 }
 
@@ -215,7 +219,7 @@ const CASES: FactoryCase[] = [
   {
     key: 'cover',
     itemId: 'cover',
-    expectedBody: { type: 'cover', styleId: 'ghibli', count: 4, modelTier: 'pro' },
+    expectedBody: { type: 'cover', styleId: 'ghibli', count: 2, modelTier: 'pro' },
     expectedFallback: 'No se pudieron generar imágenes de portada',
     build: (h, i) =>
       makeCoverTask({
@@ -227,9 +231,11 @@ const CASES: FactoryCase[] = [
         coverReferenceImage: null,
         primaryProps: [],
         customPrompt: undefined,
+        append: false,
         coverOptionsRef: h.coverOptionsRef,
         selectedCoverRef: h.selectedCoverRef,
         setCoverOptions: h.setCoverOptions,
+        setSelectedCover: h.setSelectedCover,
         invokeGenerateSceneImages: i.invoke,
         getLiveIdentity: i.getLiveIdentity,
         enqueueGeneratedSnapshot: i.enqueueGeneratedSnapshot,
@@ -238,7 +244,7 @@ const CASES: FactoryCase[] = [
   {
     key: 'end',
     itemId: 'end',
-    expectedBody: { type: 'end', styleId: 'ghibli', count: 4, modelTier: 'pro' },
+    expectedBody: { type: 'end', styleId: 'ghibli', count: 2, modelTier: 'pro' },
     expectedFallback: 'No se pudieron generar imágenes de fin',
     build: (h, i) =>
       makeEndTask({
@@ -246,9 +252,11 @@ const CASES: FactoryCase[] = [
         endReferenceImage: undefined,
         charactersWithReferences: [],
         customPrompt: undefined,
+        append: false,
         endOptionsRef: h.endOptionsRef,
         selectedEndRef: h.selectedEndRef,
         setEndOptions: h.setEndOptions,
+        setSelectedEnd: h.setSelectedEnd,
         invokeGenerateSceneImages: i.invoke,
         getLiveIdentity: i.getLiveIdentity,
         enqueueGeneratedSnapshot: i.enqueueGeneratedSnapshot,

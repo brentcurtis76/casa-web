@@ -148,6 +148,8 @@ interface EditorHarness {
   setSelectedSceneImages: Dispatch<SetStateAction<Record<number, number>>>;
   setCoverOptions: Dispatch<SetStateAction<string[]>>;
   setEndOptions: Dispatch<SetStateAction<string[]>>;
+  setSelectedCover: Dispatch<SetStateAction<number | null>>;
+  setSelectedEnd: Dispatch<SetStateAction<number | null>>;
 }
 
 function makeHarness(): EditorHarness {
@@ -171,6 +173,8 @@ function makeHarness(): EditorHarness {
     setSelectedSceneImages: vi.fn(),
     setCoverOptions: vi.fn(),
     setEndOptions: vi.fn(),
+    setSelectedCover: vi.fn(),
+    setSelectedEnd: vi.fn(),
   };
 }
 
@@ -467,7 +471,7 @@ describe('makeSceneTask (generate)', () => {
 });
 
 describe('makeCoverTask (generate)', () => {
-  it('provider posts cover body with count=4 modelTier=pro; apply sets coverOptions', async () => {
+  it('provider posts cover body with count=2 modelTier=pro; apply sets coverOptions', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
     const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
@@ -488,9 +492,11 @@ describe('makeCoverTask (generate)', () => {
         { name: 'linterna', visualDescription: 'linterna metálica', referenceImages: [] },
       ],
       customPrompt: 'portada de aventura',
+      append: false,
       coverOptionsRef: harness.coverOptionsRef,
       selectedCoverRef: harness.selectedCoverRef,
       setCoverOptions: harness.setCoverOptions,
+      setSelectedCover: harness.setSelectedCover,
       invokeGenerateSceneImages: invoke,
       getLiveIdentity: () => LIVE_IDENTITY,
       enqueueGeneratedSnapshot: enqueue,
@@ -507,7 +513,7 @@ describe('makeCoverTask (generate)', () => {
       location: LOCATION,
       sceneReferenceImage: 'cover-ref.png',
       customPrompt: 'portada de aventura',
-      count: 4,
+      count: 2,
       modelTier: 'pro',
     });
 
@@ -528,7 +534,7 @@ describe('makeCoverTask (generate)', () => {
 });
 
 describe('makeEndTask (generate)', () => {
-  it('provider posts end body with count=4 modelTier=pro; omits characters when empty', async () => {
+  it('provider posts end body with count=2 modelTier=pro; omits characters when empty', async () => {
     const harness = makeHarness();
     const enqueue = makeEnqueueSpy();
     const invoke = vi.fn<InvokeGenerateSceneImages>(async () => ({
@@ -541,9 +547,11 @@ describe('makeEndTask (generate)', () => {
       endReferenceImage: 'end-ref.png',
       charactersWithReferences: [],
       customPrompt: 'atmósfera nocturna',
+      append: false,
       endOptionsRef: harness.endOptionsRef,
       selectedEndRef: harness.selectedEndRef,
       setEndOptions: harness.setEndOptions,
+      setSelectedEnd: harness.setSelectedEnd,
       invokeGenerateSceneImages: invoke,
       getLiveIdentity: () => LIVE_IDENTITY,
       enqueueGeneratedSnapshot: enqueue,
@@ -558,7 +566,7 @@ describe('makeEndTask (generate)', () => {
       styleId: 'folk-art',
       referenceImage: 'end-ref.png',
       customPrompt: 'atmósfera nocturna',
-      count: 4,
+      count: 2,
       modelTier: 'pro',
     });
     expect(body.characters).toBeUndefined();
@@ -976,9 +984,11 @@ const GUARD_CASES: GuardCase[] = [
         coverReferenceImage: null,
         primaryProps: [],
         customPrompt: undefined,
+        append: false,
         coverOptionsRef: h.coverOptionsRef,
         selectedCoverRef: h.selectedCoverRef,
         setCoverOptions: h.setCoverOptions,
+        setSelectedCover: h.setSelectedCover,
         invokeGenerateSceneImages: s.invoke,
         getLiveIdentity: s.getLiveIdentity,
         enqueueGeneratedSnapshot: s.enqueueGeneratedSnapshot,
@@ -993,9 +1003,11 @@ const GUARD_CASES: GuardCase[] = [
         endReferenceImage: undefined,
         charactersWithReferences: [],
         customPrompt: undefined,
+        append: false,
         endOptionsRef: h.endOptionsRef,
         selectedEndRef: h.selectedEndRef,
         setEndOptions: h.setEndOptions,
+        setSelectedEnd: h.setSelectedEnd,
         invokeGenerateSceneImages: s.invoke,
         getLiveIdentity: s.getLiveIdentity,
         enqueueGeneratedSnapshot: s.enqueueGeneratedSnapshot,
@@ -1253,9 +1265,11 @@ describe('PERSIST_STALE propagation (A3a/S3 F3) via a representative factory', (
       coverReferenceImage: null,
       primaryProps: [],
       customPrompt: undefined,
+      append: false,
       coverOptionsRef: harness.coverOptionsRef,
       selectedCoverRef: harness.selectedCoverRef,
       setCoverOptions: harness.setCoverOptions,
+      setSelectedCover: harness.setSelectedCover,
       invokeGenerateSceneImages: invoke,
       getLiveIdentity: () => LIVE_IDENTITY,
       enqueueGeneratedSnapshot: enqueue,
