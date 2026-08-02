@@ -8,6 +8,7 @@
  */
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { expect } from 'vitest';
 
 import type { LiturgyContext } from '@/types/shared/liturgy';
 import type { Story } from '@/types/shared/story';
