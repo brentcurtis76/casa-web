@@ -443,6 +443,14 @@ export interface CoverTaskInput extends CommonFactoryDeps, CoverRefs {
   coverReferenceImage: string | null;
   primaryProps: ReferenceProp[];
   customPrompt: string | undefined;
+  /** `true` = append to existing options; `false` = replace + clear selection. */
+  append: boolean;
+  /**
+   * PH/G2 — Setter de selección, exclusivo del GENERATE. Vive acá y no en
+   * `CoverRefs` porque sólo la rama `!append` limpia la selección: el refine
+   * reemplaza un slot por valor y preserva el índice a propósito.
+   */
+  setSelectedCover: Dispatch<SetStateAction<number | null>>;
 }
 
 export function makeCoverTask(
@@ -457,7 +465,11 @@ export function makeCoverTask(
     coverReferenceImage,
     primaryProps,
     customPrompt,
+    append,
+    coverOptionsRef,
+    selectedCoverRef,
     setCoverOptions,
+    setSelectedCover,
     invokeGenerateSceneImages,
     getLiveIdentity,
     enqueueGeneratedSnapshot,
@@ -479,15 +491,31 @@ export function makeCoverTask(
           sceneReferenceImage: coverReferenceImage ?? undefined,
           props: primaryProps.length > 0 ? primaryProps : undefined,
           customPrompt,
-          count: 4,
+          count: 2,
           modelTier: 'pro',
         },
         'No se pudieron generar imágenes de portada',
         ctx.signal,
       ),
     computePatch: (result) => {
-      const nextOptions = result.images;
+      // PH/G2 — Mismo patrón que sheets/scenes: la ref VIVA es la base del
+      // append (el estado de React puede ir un render atrás), y se escribe
+      // ANTES del setter para que cualquier lectura síncrona posterior
+      // — `deriveNextStory` en el tail de la cola, el refine, un segundo
+      // batch — vea ya el array completo.
+      const existingOptions = append ? coverOptionsRef.current : [];
+      const nextOptions = [...existingOptions, ...result.images];
+      coverOptionsRef.current = nextOptions;
       setCoverOptions(nextOptions);
+
+      // El append preserva la selección: extender por la derecha no invalida
+      // ningún índice. El reemplazo sí, y dejar el índice viejo lo rebindea
+      // en silencio a una imagen distinta.
+      if (!append && selectedCoverRef.current !== null) {
+        selectedCoverRef.current = null;
+        setSelectedCover(null);
+      }
+
       return { coverOptions: nextOptions };
     },
     getLiveIdentity,
@@ -504,6 +532,10 @@ export interface EndTaskInput extends CommonFactoryDeps, EndRefs {
   endReferenceImage: string | undefined;
   charactersWithReferences: ReferenceCharacter[];
   customPrompt: string | undefined;
+  /** `true` = append to existing options; `false` = replace + clear selection. */
+  append: boolean;
+  /** PH/G2 — Setter de selección, exclusivo del GENERATE (ver `CoverTaskInput`). */
+  setSelectedEnd: Dispatch<SetStateAction<number | null>>;
 }
 
 export function makeEndTask(
@@ -514,7 +546,11 @@ export function makeEndTask(
     endReferenceImage,
     charactersWithReferences,
     customPrompt,
+    append,
+    endOptionsRef,
+    selectedEndRef,
     setEndOptions,
+    setSelectedEnd,
     invokeGenerateSceneImages,
     getLiveIdentity,
     enqueueGeneratedSnapshot,
@@ -533,15 +569,24 @@ export function makeEndTask(
           characters:
             charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
           customPrompt,
-          count: 4,
+          count: 2,
           modelTier: 'pro',
         },
         'No se pudieron generar imágenes de fin',
         ctx.signal,
       ),
     computePatch: (result) => {
-      const nextOptions = result.images;
+      // PH/G2 — Simétrico a `makeCoverTask`; ver el comentario de allá.
+      const existingOptions = append ? endOptionsRef.current : [];
+      const nextOptions = [...existingOptions, ...result.images];
+      endOptionsRef.current = nextOptions;
       setEndOptions(nextOptions);
+
+      if (!append && selectedEndRef.current !== null) {
+        selectedEndRef.current = null;
+        setSelectedEnd(null);
+      }
+
       return { endOptions: nextOptions };
     },
     getLiveIdentity,
