@@ -43,7 +43,6 @@ type MockResponder = () => MockResult | Promise<MockResult>;
 interface RecordedQuery {
   table: string;
   op: 'select' | 'insert' | 'update';
-  columns: string | null;
   payload: Record<string, unknown> | null;
   filters: Array<{ column: string; value: unknown }>;
   limitCount: number | null;
@@ -52,7 +51,7 @@ interface RecordedQuery {
 }
 
 interface ChainQuery extends PromiseLike<MockResult> {
-  select: (columns: string) => ChainQuery;
+  select: () => ChainQuery;
   insert: (payload: Record<string, unknown>) => ChainQuery;
   update: (payload: Record<string, unknown>) => ChainQuery;
   eq: (column: string, value: unknown) => ChainQuery;
@@ -150,7 +149,6 @@ function createTableQuery(table: string): ChainQuery {
   const query: RecordedQuery = {
     table,
     op: 'select',
-    columns: null,
     payload: null,
     filters: [],
     limitCount: null,
@@ -164,10 +162,7 @@ function createTableQuery(table: string): ChainQuery {
   }
 
   const chain: ChainQuery = {
-    select: (columns) => {
-      query.columns = columns;
-      return chain;
-    },
+    select: () => chain,
     insert: (payload) => {
       query.op = 'insert';
       query.payload = payload;
