@@ -240,11 +240,96 @@ describe('T-H.4 — las cuatro superficies de portada/fin agregan, con copy exac
 });
 
 // =============================================================================
+// T-H.11 (higiene de copy) — las etiquetas nuevas son CONSTANTES del cliente
+// =============================================================================
+
+/**
+ * Se plantan las DOS formas que exige D7: una obviamente malformada y otra
+ * LÉXICAMENTE PLAUSIBLE — un texto con la forma exacta de una etiqueta real
+ * pero con el número equivocado, que un clasificador por forma dejaría pasar.
+ * Van en el título del cuento, en el prompt editable y en campos extra de la
+ * respuesta del borde, con nombres que invitan a ser usados (`regenerateLabel`,
+ * `label`, `title`).
+ */
+const MALFORMADO = '<<<%%% no-soy-una-etiqueta >>>';
+const PLAUSIBLE = 'Generar 9 opciones adicionales';
+
+describe('T-H.11 — ningún valor del borde ni del cuento llega a las etiquetas', () => {
+  it('con tokens malformados Y léxicamente plausibles plantados, la copy de las cuatro superficies es exactamente la constante', async () => {
+    ctl.invokeHandler = async (call: InvokeCall) => {
+      const type = String(call.body.type);
+      if (type !== 'cover' && type !== 'end') return okImages(img('otro'));
+      return {
+        data: {
+          success: true,
+          images: [img(`${type}-1`), img(`${type}-2`)],
+          skippedImages: [],
+          // Campos extra con nombres apetecibles: nada de esto es copy.
+          regenerateLabel: PLAUSIBLE,
+          label: MALFORMADO,
+          title: PLAUSIBLE,
+          error: MALFORMADO,
+        },
+        error: null,
+      };
+    };
+
+    const story = makeStory('ph-h11');
+    (story as unknown as { title: string }).title = MALFORMADO;
+    render(
+      <CuentacuentoEditor context={CONTEXT} initialStory={story} onStoryCreated={vi.fn()} />,
+    );
+    await approveScenesIntoCoverStep();
+    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
+    await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 10000 });
+    await settle(600);
+
+    for (const panel of [coverPanel(), endPanel()]) {
+      expect(within(panel).getByRole('button', { name: /2 más/ }).textContent?.trim()).toBe(
+        '2 más',
+      );
+      expect(
+        within(panel).getByRole('button', { name: /2 más/ }).getAttribute('title'),
+      ).toBe('Genera 2 opciones adicionales sin descartar las existentes');
+      expect(
+        within(panel)
+          .getByRole('button', { name: /Generar 2 opciones adicionales/ })
+          .textContent?.trim(),
+      ).toBe('Generar 2 opciones adicionales');
+
+      // Y NINGUNA de las dos formas aparece en la copy de los CONTROLES. (El
+      // título del cuento sí se renderiza en el panel: es contenido del
+      // usuario, no copy — por eso la comprobación se acota a los controles.)
+      const controles = [
+        within(panel).getByRole('button', { name: /2 más/ }),
+        within(panel).getByRole('button', { name: /Generar 2 opciones adicionales/ }),
+      ];
+      for (const control of controles) {
+        for (const plantado of [MALFORMADO, PLAUSIBLE]) {
+          expect(control.textContent ?? '').not.toContain(plantado);
+          expect(control.getAttribute('title') ?? '').not.toContain(plantado);
+        }
+      }
+    }
+  }, 60000);
+});
+
+// =============================================================================
 // T-H.3 — Colector y alcanzabilidad
 // =============================================================================
 
-describe('T-H.3 — el colector sigue siendo vacío-only y NO re-ofrece un append', () => {
-  it('con options vacías el auto-arranque genera portada y fin UNA vez; con options ya presentes no vuelve a encolar nada', async () => {
+/**
+ * ALCANCE (honestidad D7): estas dos pruebas afirman lo OBSERVABLE desde
+ * producción — que tras el primer lote nada se vuelve a generar solo. La
+ * condición `vacío-only` del colector es load-bearing pero NO es sensible a una
+ * mutación aislada, porque el colector sólo es alcanzable desde el auto-arranque
+ * y su intención ya fue consumida: hace falta la mutación COMPUESTA
+ * (colector ignora vacío + intención nunca consumida) para volverlas rojas.
+ * Está registrada como tal en el reporte; ninguna de las dos mutaciones sola
+ * las rompe.
+ */
+describe('T-H.3 — tras el primer lote nada se re-genera solo', () => {
+  it('con options vacías el auto-arranque genera portada y fin UNA vez; después no vuelve a encolar nada', async () => {
     await renderWithFirstBatch('ph-h3-colector');
 
     // El primer lote (options vacías) produjo exactamente una tanda por ítem.
