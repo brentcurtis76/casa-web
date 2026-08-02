@@ -25,7 +25,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import type { ChildrenInventoryRow, InventoryCategory } from '@/types/childrenMinistry';
 
 // ─── The single mock boundary: the Supabase client ──────────────────────────
@@ -826,10 +826,14 @@ describe('[A6] alta rápida de materiales (M-D6)', () => {
 
     const saveButtons = screen.getAllByRole('button', { name: /Guardar en inventario/ });
     expect(saveButtons).toHaveLength(2);
-    // Both clicks land inside one tick, before any state has flushed: only a
-    // guard that does NOT read React state can stop the second insert.
-    fireEvent.click(saveButtons[0]);
-    fireEvent.click(saveButtons[1]);
+    // ONE act() scope around both clicks, so React batches and no state flushes
+    // between them — the real double-click shape. `fireEvent` would flush in
+    // between and let a state-reading guard pass; only a guard that does not
+    // read React state stops the second insert here.
+    act(() => {
+      saveButtons[0].click();
+      saveButtons[1].click();
+    });
 
     await waitFor(() => expect(inventoryInsertPayloads()).toHaveLength(1));
     expect(inventoryInsertPayloads()[0]?.name).toBe('Plumones');
@@ -932,6 +936,43 @@ describe('[A8] reinicio de contexto ([S5])', () => {
     expect(invokeMock).not.toHaveBeenCalled();
 
     // The active context's own fetch still settles normally.
+    fresh.resolve({ data: [makeInventoryRow('inv-2', 'Cartulina')], error: null });
+    await waitForInventorySettled();
+    expect(screen.getByRole('checkbox', { name: 'Cartulina' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Fantasma' })).not.toBeInTheDocument();
+  });
+
+  it('una carga en vuelo de un contexto cerrado no contamina el reabierto (misma liturgia)', async () => {
+    // The liturgyId guard cannot see this one: the liturgy never changes. Only
+    // the per-context token distinguishes the abandoned fetch from the live one.
+    const stale = defer<MockResult>();
+    const fresh = defer<MockResult>();
+    let call = 0;
+    dbState.inventorySelect = () => {
+      call += 1;
+      return call === 1 ? stale.promise : fresh.promise;
+    };
+
+    const { rerender } = render(<ChildrenActivityDialog {...dialogProps()} />);
+    await goToMaterials();
+    expect(screen.getByText('Cargando materiales disponibles…')).toBeInTheDocument();
+
+    // Close and reopen on the SAME liturgy while fetch #1 is still in flight.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    rerender(<ChildrenActivityDialog {...dialogProps({ isOpen: false })} />);
+    rerender(<ChildrenActivityDialog {...dialogProps()} />);
+    await goToMaterials();
+    await waitFor(() => expect(call).toBe(2));
+
+    stale.resolve({ data: [makeInventoryRow('inv-stale', 'Fantasma')], error: null });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The abandoned fetch neither pre-checked anything nor unlocked Generar.
+    expect(screen.queryByRole('checkbox', { name: 'Fantasma' })).not.toBeInTheDocument();
+    expect(generarButton()).toBeDisabled();
+
     fresh.resolve({ data: [makeInventoryRow('inv-2', 'Cartulina')], error: null });
     await waitForInventorySettled();
     expect(screen.getByRole('checkbox', { name: 'Cartulina' })).toBeChecked();
