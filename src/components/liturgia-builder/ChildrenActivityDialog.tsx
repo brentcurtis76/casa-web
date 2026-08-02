@@ -153,23 +153,29 @@ function canonicalKey(name: string): string | null {
 }
 
 /**
- * True when `next` still holds every entry of `current`. M-D5 caps by dropping
- * the TAIL, so a selection that would push the effective list past
- * MAX_AVAILABLE_MATERIALS shows up here as a lost entry. This is how the dialog
- * owns cap enforcement (M3a binding note) without re-implementing M-D5: a
- * canonical duplicate costs nothing and is admitted, a 61st distinct name
- * evicts something and is refused.
+ * Does adding `name` fit under the M-D5 cap, given the effective list built so
+ * far? This is how the dialog owns cap enforcement (M3a binding note) without a
+ * second implementation of M-D5: `current` already holds canonical entries, so
+ * lowercasing one yields exactly the key the algorithm dedupes on, and the
+ * candidate's key comes from the algorithm itself. A canonical duplicate — or a
+ * name M-D5 would drop outright — costs no slot; anything else needs a free one.
+ *
+ * Comparing the canonicalized lists before and after would NOT work: the cap
+ * truncates the tail, so at 60 the 61st distinct name is the entry that
+ * disappears and the list looks unchanged.
  */
-function keepsEverything(next: string[], current: string[]): boolean {
-  const nextNames = new Set(next);
-  return current.every((name) => nextNames.has(name));
+function fitsUnderCap(name: string, current: string[]): boolean {
+  const key = canonicalKey(name);
+  if (key === null) return true;
+  if (current.some((entry) => entry.toLowerCase() === key)) return true;
+  return current.length < MAX_AVAILABLE_MATERIALS;
 }
 
 /**
  * Greedy "first N canonical-distinct names in M-D12 order" ([S2-R]): walk the
- * ordered rows and take each one that evicts nothing already in the effective
- * list — extras included, since they always count toward the cap. Canonical
- * name collisions cost no slot, so they never under-fill the selection.
+ * ordered rows and take each one that still fits — extras included, since they
+ * always count toward the cap. Canonical name collisions cost no slot, so they
+ * never under-fill the selection.
  */
 function selectWithinCap(
   orderedItems: ChildrenInventoryRow[],
@@ -180,11 +186,10 @@ function selectWithinCap(
   let current = buildEffectiveMaterialsList(extras);
 
   for (const item of orderedItems) {
-    const next = buildEffectiveMaterialsList([...chosenNames, item.name, ...extras]);
-    if (!keepsEverything(next, current)) continue;
+    if (!fitsUnderCap(item.name, current)) continue;
     chosenNames.push(item.name);
     chosenIds.add(item.id);
-    current = next;
+    current = buildEffectiveMaterialsList([...chosenNames, ...extras]);
   }
 
   return chosenIds;
@@ -269,6 +274,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   const materialsContextRef = useRef(0);
   // The inventory is fetched lazily, ONCE per context, on first materials entry.
   const inventoryFetchStartedRef = useRef(false);
+  // M-D6 repeat-save guard. A ref, not the state: two clicks inside one tick
+  // would both read `savingExtra === null` and both insert.
+  const savingExtraRef = useRef<string | null>(null);
 
   const isMaterialsContextCurrent = useCallback(
     (requestLiturgyId: string, requestToken: number) =>
@@ -284,6 +292,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   const resetMaterialsState = useCallback(() => {
     materialsContextRef.current += 1;
     inventoryFetchStartedRef.current = false;
+    savingExtraRef.current = null;
     setPendingGroupIds([]);
     setRegenerateGroupId(null);
     setInventoryItems([]);
@@ -466,16 +475,19 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       }
       next.add(itemId);
 
-      // Cap ownership lives here: at the cap, a canonically new name would evict
-      // a tail entry of the effective list, so the toggle is refused. Both lists
-      // are derived from `prev`, never from a possibly-stale render snapshot.
+      // Cap ownership lives here: at the cap a canonically new name has no slot,
+      // so the toggle is refused rather than checking a row whose name would
+      // never reach the prompt. Derived from `prev`, never from a possibly
+      // stale render snapshot.
       const ordered = orderInventory(inventoryItems);
-      const namesFor = (ids: Set<string>) =>
-        ordered.filter((item) => ids.has(item.id)).map((item) => item.name);
-      const current = buildEffectiveMaterialsList([...namesFor(prev), ...materialExtras]);
-      const candidate = buildEffectiveMaterialsList([...namesFor(next), ...materialExtras]);
+      const item = ordered.find((row) => row.id === itemId);
+      if (!item) return prev;
+      const current = buildEffectiveMaterialsList([
+        ...ordered.filter((row) => prev.has(row.id)).map((row) => row.name),
+        ...materialExtras,
+      ]);
 
-      return keepsEverything(candidate, current) ? next : prev;
+      return fitsUnderCap(item.name, current) ? next : prev;
     });
   };
 
@@ -508,9 +520,10 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     }
 
     // [S4] Case-insensitively already a one-off: adding it again is a no-op.
-    if (materialExtras.some((extra) => canonicalKey(extra) === key)) return;
-
-    setMaterialExtras((prev) => [...prev, name]);
+    // The check runs inside the updater so two adds in one tick cannot race.
+    setMaterialExtras((prev) =>
+      prev.some((extra) => canonicalKey(extra) === key) ? prev : [...prev, name],
+    );
   };
 
   const handleSaveExtra = async (name: string) => {
@@ -518,8 +531,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     const requestToken = materialsContextRef.current;
     // M-D6 repeat guard: one save in flight at a time, so a double click (or a
     // click on a second row mid-save) cannot insert the same name twice.
-    if (savingExtra !== null) return;
+    if (savingExtraRef.current !== null) return;
 
+    savingExtraRef.current = name;
     setSavingExtra(name);
     try {
       const created = await createInventoryItem({
@@ -552,6 +566,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         variant: 'destructive',
       });
     } finally {
+      // Always release the guard — a save that landed in a dead context must
+      // not leave the next one unable to save.
+      savingExtraRef.current = null;
       if (isMaterialsContextCurrent(requestLiturgyId, requestToken)) {
         setSavingExtra(null);
       }
