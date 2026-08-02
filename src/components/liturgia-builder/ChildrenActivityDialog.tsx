@@ -4,6 +4,10 @@
  * View states:
  *   - 'select'            → show existing activities per group (with Refinar/Regenerar)
  *                           + checkboxes for groups that do NOT yet have an activity.
+ *   - 'materials'         → "materiales disponibles" step: pick the church
+ *                           inventory the activity must be designed with
+ *                           (PLAN-MATERIALES M3b). Every generation path —
+ *                           Continuar and Regenerar alike — passes through it.
  *   - 'refine'            → feedback input for a specific existing lesson.
  *   - 'refine-confirm'    → confirmation panel after successful refinement.
  *   - 'results'           → per-group generation results.
@@ -11,7 +15,7 @@
  * Pattern: ExportPanel + MusicPublishDialog
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -32,7 +36,12 @@ import {
 import { Loader2, Check, X, Sparkles, RefreshCw, ArrowLeft } from 'lucide-react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { useToast } from '@/hooks/use-toast';
-import type { ChildrenAgeGroupRow, ChildrenLessonRow } from '@/types/childrenMinistry';
+import type {
+  ChildrenAgeGroupRow,
+  ChildrenInventoryRow,
+  ChildrenLessonRow,
+  InventoryCategory,
+} from '@/types/childrenMinistry';
 import type {
   GroupGenerationResult,
   LessonPhase,
@@ -40,10 +49,19 @@ import type {
 } from '@/types/childrenPublicationState';
 import { getAgeGroups } from '@/lib/children-ministry/ageGroupService';
 import {
+  createInventoryItem,
+  getInventory,
+} from '@/lib/children-ministry/inventoryService';
+import {
+  buildEffectiveMaterialsList,
+  MAX_AVAILABLE_MATERIALS,
+} from '@/lib/children-ministry/materialsList';
+import {
   publishChildrenActivities,
   refineChildrenActivity,
   type PublishChildrenActivitiesParams,
 } from '@/lib/children-ministry/liturgyChildrenPublishService';
+import MaterialsStepView from '@/components/liturgia-builder/MaterialsStepView';
 import { supabase } from '@/integrations/supabase/client';
 
 const REFINEMENT_TYPE_OPTIONS: Array<{ value: RefinementType; label: string }> = [
@@ -90,7 +108,7 @@ interface ChildrenActivityDialogProps {
   };
 }
 
-type ViewState = 'select' | 'refine' | 'refine-confirm' | 'results';
+type ViewState = 'select' | 'materials' | 'refine' | 'refine-confirm' | 'results';
 
 type ExistingActivityMap = Map<string, ChildrenLessonRow>;
 
@@ -99,6 +117,87 @@ function truncateMaterials(materials: string | null, limit = 80): string {
   const trimmed = materials.trim();
   if (trimmed.length <= limit) return trimmed;
   return `${trimmed.slice(0, limit - 1)}…`;
+}
+
+// ─── Materials step helpers (PLAN-MATERIALES M-D5 / M-D12) ──────────────────
+
+/** M-D12 fixed category order — the same one MaterialsStepView renders in. */
+const MATERIAL_CATEGORY_ORDER: InventoryCategory[] = [
+  'craft',
+  'book',
+  'supply',
+  'equipment',
+  'other',
+];
+
+/**
+ * The ONE order (M-D12): fixed category order, then the order `getInventory()`
+ * returned (name-ascending) within each category. Used for rendering, the
+ * initial pre-check, bulk selection and effective-list construction alike, so
+ * the prompt order can never drift from what the user saw.
+ */
+function orderInventory(items: ChildrenInventoryRow[]): ChildrenInventoryRow[] {
+  return MATERIAL_CATEGORY_ORDER.flatMap((category) =>
+    items.filter((item) => item.category === category),
+  );
+}
+
+/**
+ * The key M-D5 dedupes on, obtained by running the frozen algorithm itself —
+ * never a second implementation of it. `null` when the name canonicalizes away
+ * entirely (empty / whitespace-only / control chars only).
+ */
+function canonicalKey(name: string): string | null {
+  const [canonical] = buildEffectiveMaterialsList([name]);
+  return canonical ? canonical.toLowerCase() : null;
+}
+
+/**
+ * True when `next` still holds every entry of `current`. M-D5 caps by dropping
+ * the TAIL, so a selection that would push the effective list past
+ * MAX_AVAILABLE_MATERIALS shows up here as a lost entry. This is how the dialog
+ * owns cap enforcement (M3a binding note) without re-implementing M-D5: a
+ * canonical duplicate costs nothing and is admitted, a 61st distinct name
+ * evicts something and is refused.
+ */
+function keepsEverything(next: string[], current: string[]): boolean {
+  const nextNames = new Set(next);
+  return current.every((name) => nextNames.has(name));
+}
+
+/**
+ * Greedy "first N canonical-distinct names in M-D12 order" ([S2-R]): walk the
+ * ordered rows and take each one that evicts nothing already in the effective
+ * list — extras included, since they always count toward the cap. Canonical
+ * name collisions cost no slot, so they never under-fill the selection.
+ */
+function selectWithinCap(
+  orderedItems: ChildrenInventoryRow[],
+  extras: string[],
+): Set<string> {
+  const chosenIds = new Set<string>();
+  const chosenNames: string[] = [];
+  let current = buildEffectiveMaterialsList(extras);
+
+  for (const item of orderedItems) {
+    const next = buildEffectiveMaterialsList([...chosenNames, item.name, ...extras]);
+    if (!keepsEverything(next, current)) continue;
+    chosenNames.push(item.name);
+    chosenIds.add(item.id);
+    current = next;
+  }
+
+  return chosenIds;
+}
+
+/** M-D6: `created_by` is the current user id, or null when unavailable. */
+async function currentUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
@@ -129,6 +228,24 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   const [refinementType, setRefinementType] = useState<RefinementType>('general');
   const [lastRefinementNotes, setLastRefinementNotes] = useState<string | null>(null);
 
+  // ── Materials step state (M3b) ────────────────────────────────────────────
+  // Groups staged by Continuar/Regenerar and generated once the user leaves the
+  // materials step; `regenerateGroupId` remembers which path staged them so the
+  // Regenerar-only view refresh still runs afterwards.
+  const [pendingGroupIds, setPendingGroupIds] = useState<string[]>([]);
+  const [regenerateGroupId, setRegenerateGroupId] = useState<string | null>(null);
+  const [inventoryItems, setInventoryItems] = useState<ChildrenInventoryRow[]>([]);
+  const [checkedMaterialIds, setCheckedMaterialIds] = useState<Set<string>>(new Set());
+  const [materialExtras, setMaterialExtras] = useState<string[]>([]);
+  const [savingExtra, setSavingExtra] = useState<string | null>(null);
+  const [isInventoryLoading, setIsInventoryLoading] = useState(false);
+  const [inventoryLoadError, setInventoryLoadError] = useState(false);
+  // M-D10 generation eligibility: false until the FIRST inventory request for
+  // the active context settles (success — including empty — or error).
+  const [inventorySettled, setInventorySettled] = useState(false);
+  // Row count when the inventory exceeded the cap, so the step can say so ([B1]).
+  const [inventoryOverCapCount, setInventoryOverCapCount] = useState<number | null>(null);
+
   // Tracks whether the dialog is still mounted/open; async handlers check this
   // before calling setState to avoid stale updates after close/unmount.
   const isActiveRef = useRef(false);
@@ -145,6 +262,47 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   useEffect(() => {
     liturgyIdRef.current = liturgyId;
   }, [liturgyId]);
+
+  // [S5] Monotonic token for the materials step. Every reset bumps it, so an
+  // in-flight inventory fetch from a previous context is recognisable as stale
+  // even when the liturgyId happens to be unchanged.
+  const materialsContextRef = useRef(0);
+  // The inventory is fetched lazily, ONCE per context, on first materials entry.
+  const inventoryFetchStartedRef = useRef(false);
+
+  const isMaterialsContextCurrent = useCallback(
+    (requestLiturgyId: string, requestToken: number) =>
+      isActiveRef.current &&
+      requestLiturgyId === liturgyIdRef.current &&
+      requestToken === materialsContextRef.current,
+    [],
+  );
+
+  // [S5] Everything the materials step owns, back to its initial value. The
+  // token bump is what makes a stale fetch harmless: it can no longer mark the
+  // new context loaded/errored, pre-check anything, or enable Generar.
+  const resetMaterialsState = useCallback(() => {
+    materialsContextRef.current += 1;
+    inventoryFetchStartedRef.current = false;
+    setPendingGroupIds([]);
+    setRegenerateGroupId(null);
+    setInventoryItems([]);
+    setCheckedMaterialIds(new Set());
+    setMaterialExtras([]);
+    setSavingExtra(null);
+    setIsInventoryLoading(false);
+    setInventoryLoadError(false);
+    setInventorySettled(false);
+    setInventoryOverCapCount(null);
+    // Only the step this phase added is navigated away from; the refine and
+    // results views keep the behaviour they had before M3b.
+    setViewState((current) => (current === 'materials' ? 'select' : current));
+  }, []);
+
+  // [S5] A different liturgy is a different materials context.
+  useEffect(() => {
+    resetMaterialsState();
+  }, [liturgyId, resetMaterialsState]);
 
   // Fetch the latest existing lessons for this liturgy and rebuild the
   // age-group → lesson map from DB. Returns the new map (or null on error)
@@ -216,6 +374,51 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     };
   }, [isOpen, liturgyId, toast]);
 
+  // Lazy inventory fetch — the FIRST time this context reaches the materials
+  // step ([S1-R]: Continuar itself generates nothing; the fetch is what starts
+  // here). M-D10: `inventorySettled` stays false until this request settles, and
+  // the footer's Generar is disabled meanwhile, so a pending fetch can never be
+  // bypassed into an unintended unconstrained generation.
+  useEffect(() => {
+    if (viewState !== 'materials') return;
+    if (inventoryFetchStartedRef.current) return;
+    inventoryFetchStartedRef.current = true;
+
+    const requestLiturgyId = liturgyId;
+    const requestToken = materialsContextRef.current;
+    // The step hides the one-off input while loading, so this is [] in practice;
+    // reading it keeps the pre-check honest if that ever changes.
+    const extrasAtEntry = materialExtras;
+
+    setIsInventoryLoading(true);
+    setInventoryLoadError(false);
+
+    (async () => {
+      try {
+        const rows = await getInventory();
+        if (!isMaterialsContextCurrent(requestLiturgyId, requestToken)) return;
+
+        setInventoryItems(rows);
+        // Pre-check ALL (Brent's product decision) — or, past the cap, the first
+        // MAX_AVAILABLE_MATERIALS canonical-distinct names in M-D12 order ([B1]).
+        setCheckedMaterialIds(selectWithinCap(orderInventory(rows), extrasAtEntry));
+        setInventoryOverCapCount(
+          rows.length > MAX_AVAILABLE_MATERIALS ? rows.length : null,
+        );
+        setIsInventoryLoading(false);
+        setInventorySettled(true);
+      } catch (error) {
+        console.warn('Error cargando el inventario de materiales:', error);
+        if (!isMaterialsContextCurrent(requestLiturgyId, requestToken)) return;
+        // M-D1 degradation: the step stays usable and generation proceeds
+        // without a materials constraint.
+        setInventoryLoadError(true);
+        setIsInventoryLoading(false);
+        setInventorySettled(true);
+      }
+    })();
+  }, [viewState, liturgyId, materialExtras, isMaterialsContextCurrent]);
+
   const resetAll = () => {
     setSelectedGroupIds(new Set());
     setResults([]);
@@ -224,6 +427,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     setFeedback('');
     setRefinementType('general');
     setLastRefinementNotes(null);
+    resetMaterialsState();
   };
 
   const handleClose = () => {
@@ -241,7 +445,124 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     setSelectedGroupIds(next);
   };
 
-  const runGenerationForGroups = async (groupIds: string[], requestLiturgyId: string) => {
+  // ── Derived materials state (M-D5 / M-D12) ────────────────────────────────
+  const orderedInventoryItems = orderInventory(inventoryItems);
+  // Checked inventory names in M-D12 order, then extras in entry order — the
+  // ONE construction order behind the counter, the cap and the prompt.
+  const effectiveMaterials = buildEffectiveMaterialsList([
+    ...orderedInventoryItems
+      .filter((item) => checkedMaterialIds.has(item.id))
+      .map((item) => item.name),
+    ...materialExtras,
+  ]);
+  const capReached = effectiveMaterials.length >= MAX_AVAILABLE_MATERIALS;
+
+  const handleToggleMaterial = (itemId: string) => {
+    setCheckedMaterialIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+        return next;
+      }
+      next.add(itemId);
+
+      // Cap ownership lives here: at the cap, a canonically new name would evict
+      // a tail entry of the effective list, so the toggle is refused. Both lists
+      // are derived from `prev`, never from a possibly-stale render snapshot.
+      const ordered = orderInventory(inventoryItems);
+      const namesFor = (ids: Set<string>) =>
+        ordered.filter((item) => ids.has(item.id)).map((item) => item.name);
+      const current = buildEffectiveMaterialsList([...namesFor(prev), ...materialExtras]);
+      const candidate = buildEffectiveMaterialsList([...namesFor(next), ...materialExtras]);
+
+      return keepsEverything(candidate, current) ? next : prev;
+    });
+  };
+
+  const handleToggleAllMaterials = (checked: boolean) => {
+    if (!checked) {
+      setCheckedMaterialIds(new Set());
+      return;
+    }
+    setCheckedMaterialIds(selectWithinCap(orderInventory(inventoryItems), materialExtras));
+  };
+
+  const handleAddExtra = (rawName: string) => {
+    const name = rawName.trim();
+    const key = canonicalKey(name);
+    // M-D5 would drop it anyway; nothing to add.
+    if (key === null) return;
+
+    // [S4] An existing inventory row always wins over a one-off: check that row,
+    // insert nothing, and say so.
+    const match = inventoryItems.find((item) => canonicalKey(item.name) === key);
+    if (match) {
+      if (!checkedMaterialIds.has(match.id)) {
+        handleToggleMaterial(match.id);
+      }
+      toast({
+        title: 'Aviso',
+        description: 'Ese material ya está en el inventario; quedó seleccionado.',
+      });
+      return;
+    }
+
+    // [S4] Case-insensitively already a one-off: adding it again is a no-op.
+    if (materialExtras.some((extra) => canonicalKey(extra) === key)) return;
+
+    setMaterialExtras((prev) => [...prev, name]);
+  };
+
+  const handleSaveExtra = async (name: string) => {
+    const requestLiturgyId = liturgyId;
+    const requestToken = materialsContextRef.current;
+    // M-D6 repeat guard: one save in flight at a time, so a double click (or a
+    // click on a second row mid-save) cannot insert the same name twice.
+    if (savingExtra !== null) return;
+
+    setSavingExtra(name);
+    try {
+      const created = await createInventoryItem({
+        name,
+        category: 'other',
+        quantity: 0,
+        min_quantity: 0,
+        location: 'Sala Infantil',
+        notes: null,
+        last_restocked_at: null,
+        created_by: await currentUserId(),
+      });
+
+      if (!isMaterialsContextCurrent(requestLiturgyId, requestToken)) return;
+
+      // M-D6 terminal state: the name leaves "Adicionales (solo esta vez)" and
+      // joins its category group, checked. Its canonical entry is unchanged, so
+      // the move cannot push the effective list over the cap.
+      setInventoryItems((prev) => [...prev, created]);
+      setCheckedMaterialIds((prev) => new Set(prev).add(created.id));
+      setMaterialExtras((prev) => prev.filter((extra) => extra !== name));
+      toast({ title: 'Éxito', description: 'Material guardado en el inventario' });
+    } catch (error) {
+      if (!isMaterialsContextCurrent(requestLiturgyId, requestToken)) return;
+      console.warn('Error guardando el material en el inventario:', error);
+      // A failed save NEVER blocks generation: the one-off stays usable.
+      toast({
+        title: 'Aviso',
+        description: 'No se pudo guardar el material. Puedes usarlo solo esta vez.',
+        variant: 'destructive',
+      });
+    } finally {
+      if (isMaterialsContextCurrent(requestLiturgyId, requestToken)) {
+        setSavingExtra(null);
+      }
+    }
+  };
+
+  const runGenerationForGroups = async (
+    groupIds: string[],
+    requestLiturgyId: string,
+    availableMaterials: string[],
+  ) => {
     const selectedGroups = ageGroups.filter((ag) => groupIds.includes(ag.id));
 
     const params: PublishChildrenActivitiesParams = {
@@ -253,6 +574,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       storyData,
       selectedAgeGroupIds: groupIds,
       ageGroups: selectedGroups,
+      // M-D2: no selection at all ⇒ the key is omitted entirely, which is the
+      // "sin restricción de materiales" escape and a byte-identical prompt.
+      ...(availableMaterials.length > 0 ? { availableMaterials } : {}),
     };
 
     const result = await publishChildrenActivities(params);
@@ -300,8 +624,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     }
   };
 
-  const handleGenerateNew = async () => {
-    const requestLiturgyId = liturgyId;
+  // Continuar — stages the checked groups and opens the materials step. No
+  // generation and no invoke happen here ([S1-R]); only the inventory fetch does.
+  const handleContinueToMaterials = () => {
     if (selectedGroupIds.size === 0) {
       toast({
         title: 'Error',
@@ -311,35 +636,43 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       return;
     }
 
-    setIsGenerating(true);
-    try {
-      await runGenerationForGroups(Array.from(selectedGroupIds), requestLiturgyId);
-    } catch (error) {
-      if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Error desconocido',
-        variant: 'destructive',
-      });
-    } finally {
-      if (isActiveRef.current && requestLiturgyId === liturgyIdRef.current) {
-        setIsGenerating(false);
-      }
-    }
+    setPendingGroupIds(Array.from(selectedGroupIds));
+    setRegenerateGroupId(null);
+    setViewState('materials');
   };
 
-  const handleRegenerate = async (groupId: string) => {
+  // M-D7: Regenerar stages exactly its own group and routes through the SAME
+  // step, so a single group can never silently reuse a stale selection.
+  const handleRegenerate = (groupId: string) => {
+    setPendingGroupIds([groupId]);
+    setRegenerateGroupId(groupId);
+    setViewState('materials');
+  };
+
+  // Volver — back to 'select' with both the group and the material checkbox
+  // state intact for this dialog session (M-D7).
+  const handleBackFromMaterials = () => {
+    setViewState('select');
+  };
+
+  const handleGenerateFromMaterials = async () => {
     const requestLiturgyId = liturgyId;
+    const groupIds = pendingGroupIds;
+    const regeneratedGroupId = regenerateGroupId;
+    if (groupIds.length === 0) return;
+
     setIsGenerating(true);
     try {
-      await runGenerationForGroups([groupId], requestLiturgyId);
+      // The canonical effective list, computed ONCE for this click.
+      await runGenerationForGroups(groupIds, requestLiturgyId, effectiveMaterials);
+      if (!regeneratedGroupId) return;
       if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
       // Refresh existing activities map for this group so returning to 'select' shows updated data
       const { data: updated, error: updatedError } = await supabase
         .from('church_children_lessons')
         .select('*')
         .eq('liturgy_id', requestLiturgyId)
-        .eq('age_group_id', groupId)
+        .eq('age_group_id', regeneratedGroupId)
         .order('updated_at', { ascending: false })
         .limit(1);
       if (!isActiveRef.current || requestLiturgyId !== liturgyIdRef.current) return;
@@ -356,7 +689,7 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
       if (updatedRow) {
         setExistingActivities((prev) => {
           const next = new Map(prev);
-          next.set(groupId, updatedRow);
+          next.set(regeneratedGroupId, updatedRow);
           return next;
         });
       }
@@ -611,6 +944,33 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
           </div>
         )}
 
+        {viewState === 'materials' && (
+          <>
+            <MaterialsStepView
+              groupNames={pendingGroupIds
+                .map((id) => ageGroups.find((group) => group.id === id)?.name)
+                .filter((name): name is string => Boolean(name))}
+              items={orderedInventoryItems}
+              checkedIds={checkedMaterialIds}
+              extras={materialExtras}
+              savingExtra={savingExtra}
+              isLoading={isInventoryLoading}
+              loadError={inventoryLoadError}
+              capReached={capReached}
+              effectiveCount={effectiveMaterials.length}
+              onToggleItem={handleToggleMaterial}
+              onToggleAll={handleToggleAllMaterials}
+              onAddExtra={handleAddExtra}
+              onSaveExtra={handleSaveExtra}
+            />
+            {inventoryOverCapCount !== null && (
+              <p className="text-xs" style={{ color: CASA_BRAND.colors.primary.amber }}>
+                {`El inventario tiene ${inventoryOverCapCount} materiales; se preseleccionaron los primeros ${MAX_AVAILABLE_MATERIALS}.`}
+              </p>
+            )}
+          </>
+        )}
+
         {viewState === 'refine' && refineTarget && (() => {
           const phases = parseLessonPhases(refineTarget.lesson.content);
           const materials = refineTarget.lesson.materials_needed?.trim();
@@ -827,13 +1187,29 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
               </Button>
               {groupsWithoutActivity.length > 0 && (
                 <Button
-                  onClick={handleGenerateNew}
+                  onClick={handleContinueToMaterials}
                   disabled={isBusy || selectedGroupIds.size === 0}
                 >
-                  {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {isGenerating ? 'Generando…' : 'Generar'}
+                  Continuar
                 </Button>
               )}
+            </>
+          )}
+
+          {viewState === 'materials' && (
+            <>
+              <Button variant="outline" onClick={handleBackFromMaterials} disabled={isBusy}>
+                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                Volver
+              </Button>
+              {/* M-D10: disabled until the first inventory request settles. */}
+              <Button
+                onClick={handleGenerateFromMaterials}
+                disabled={isBusy || !inventorySettled}
+              >
+                {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isGenerating ? 'Generando…' : 'Generar'}
+              </Button>
             </>
           )}
 
