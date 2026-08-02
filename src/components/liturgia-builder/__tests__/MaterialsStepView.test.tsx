@@ -285,6 +285,31 @@ describe('MaterialsStepView', () => {
     expect(hints[0].closest('label')).toHaveTextContent(name121);
   });
 
+  /**
+   * El caso ASCII de arriba no distingue la unidad congelada: con sólo letras
+   * ASCII, unidades UTF-16 y puntos de código coinciden. Este testigo usa
+   * caracteres del plano suplementario (1 punto de código = 2 unidades UTF-16)
+   * para fijar M-D5 en unidades UTF-16: 61 caracteres son 122 unidades (pista)
+   * y 60 son exactamente 120 (sin pista). Una implementación por puntos de
+   * código contaría 61 y 60 y no mostraría ninguna pista.
+   */
+  it('[A8] la pista cuenta unidades UTF-16, no puntos de código', () => {
+    const astral = String.fromCodePoint(0x1f3a8);
+    const units122 = astral.repeat(61);
+    const units120 = astral.repeat(60);
+    renderView({
+      items: [makeItem('u1', units122, 'craft'), makeItem('u2', units120, 'craft')],
+    });
+
+    const hints = screen.getAllByText('(se usará abreviado)');
+    expect(hints).toHaveLength(1);
+    expect(hints[0].closest('label')).toHaveTextContent(units122);
+
+    expect(screen.getByText(units120).closest('label')).not.toHaveTextContent(
+      '(se usará abreviado)',
+    );
+  });
+
   it('muestra la nota de cero selección sólo cuando effectiveCount es 0', () => {
     const { rerender, props } = renderView({ effectiveCount: 0 });
     expect(
