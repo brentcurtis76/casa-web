@@ -519,7 +519,12 @@ describe('makeCoverTask (generate)', () => {
 
     const applied = makeAppliedIdentity('cover');
     const patch = task.apply!(result, applied) as DraftPatch;
-    expect(patch).toEqual({ coverOptions: ['c1.png', 'c2.png', 'c3.png', 'c4.png'] });
+    // PH/G6 — el generate lleva también la clave de selección: `append:false` con
+    // la ref en `null` ⇒ `null` explícito. (El refine NO la lleva; ver abajo.)
+    expect(patch).toEqual({
+      coverOptions: ['c1.png', 'c2.png', 'c3.png', 'c4.png'],
+      selectedCover: null,
+    });
     expect(harness.setCoverOptions).toHaveBeenCalledWith([
       'c1.png',
       'c2.png',
@@ -573,7 +578,11 @@ describe('makeEndTask (generate)', () => {
 
     const applied = makeAppliedIdentity('end');
     const patch = task.apply!(result, applied) as DraftPatch;
-    expect(patch).toEqual({ endOptions: ['e1.png', 'e2.png', 'e3.png', 'e4.png'] });
+    // PH/G6 — simétrico a la portada.
+    expect(patch).toEqual({
+      endOptions: ['e1.png', 'e2.png', 'e3.png', 'e4.png'],
+      selectedEnd: null,
+    });
     expect(harness.setEndOptions).toHaveBeenCalled();
     await task.persist!(patch, applied);
     expect(enqueue.mock.calls[0][0].provenance?.contentHash).toBe(hashSnapshot(patch));
