@@ -839,6 +839,88 @@ describe('[A6] alta rápida de materiales (M-D6)', () => {
     );
     expect(inventoryInsertPayloads()).toHaveLength(1);
   });
+
+  it('un guardado obsoleto NO libera la guardia que ya reclamó el contexto nuevo ([B1])', async () => {
+    // The guard must be owned per attempt. A save started in liturgy A and
+    // settled AFTER liturgy B claimed the guard for its own in-flight save must
+    // not release B's ownership: comparing the material name — or clearing the
+    // ref unconditionally — lets a second click in B admit a THIRD insert.
+    const staleSave = defer<MockResult>();
+    const liveSave = defer<MockResult>();
+    let insertCall = 0;
+    dbState.inventorySelect = () => ({ data: [makeInventoryRow('inv-1', 'Papel')], error: null });
+    dbState.inventoryInsert = () => {
+      insertCall += 1;
+      if (insertCall === 1) return staleSave.promise;
+      if (insertCall === 2) return liveSave.promise;
+      // Only a broken guard gets here: a third insert in the active context.
+      return { data: makeInventoryRow('inv-tercero', 'Tijeras', 'other'), error: null };
+    };
+
+    // Context A — start a save and leave it in flight.
+    const { rerender } = render(<ChildrenActivityDialog {...dialogProps()} />);
+    await goToMaterials();
+    await waitForInventorySettled();
+    await addExtra('Plumones');
+    fireEvent.click(screen.getByRole('button', { name: /Guardar en inventario/ }));
+    await waitFor(() => expect(inventoryInsertPayloads()).toHaveLength(1));
+
+    // Context B — a different liturgy resets the step, which releases A's
+    // guard so the new context can save. B then claims it for its own insert.
+    rerender(<ChildrenActivityDialog {...dialogProps({ liturgyId: 'lit-2' })} />);
+    await waitFor(() => expect(materialsStepIsVisible()).toBe(false));
+    await goToMaterials();
+    await waitForInventorySettled();
+    await addExtra('Cartulina');
+    fireEvent.click(screen.getByRole('button', { name: /Guardar en inventario/ }));
+    await waitFor(() => expect(inventoryInsertPayloads()).toHaveLength(2));
+    expect(inventoryInsertPayloads()[1]?.name).toBe('Cartulina');
+
+    // A's insert settles into a dead context. Its UI/toast stay suppressed…
+    await act(async () => {
+      staleSave.resolve({
+        data: makeInventoryRow('inv-obsoleto', 'Plumones', 'other'),
+        error: null,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(toastDescriptions()).not.toContain('Material guardado en el inventario');
+    expect(screen.queryByRole('checkbox', { name: 'Plumones' })).not.toBeInTheDocument();
+
+    // …and B's live save is untouched: its own row is still the one spinning.
+    await addExtra('Tijeras');
+    const saveButtons = screen.getAllByRole('button', { name: /Guardar en inventario/ });
+    expect(saveButtons).toHaveLength(2);
+    expect(saveButtons[0]).toBeDisabled();
+    expect(saveButtons[1]).toBeEnabled();
+
+    // The guard is still held, so this click inserts NOTHING.
+    await act(async () => {
+      saveButtons[1].click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(inventoryInsertPayloads()).toHaveLength(2);
+    expect(inventoryInsertPayloads().map((payload) => payload?.name)).toEqual([
+      'Plumones',
+      'Cartulina',
+    ]);
+
+    // B's own save then settles normally: terminal move, success copy, no
+    // extra insert — and the released guard leaves Tijeras usable as a one-off.
+    await act(async () => {
+      liveSave.resolve({
+        data: makeInventoryRow('inv-vivo', 'Cartulina', 'other'),
+        error: null,
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Cartulina' })).toBeEnabled(),
+    );
+    expect(toastDescriptions()).toContain('Material guardado en el inventario');
+    expect(inventoryInsertPayloads()).toHaveLength(2);
+    expect(screen.getByText('Adicionales (solo esta vez)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Guardar en inventario/ })).toBeEnabled();
+  });
 });
 
 // ─── [A7] quick-add case-insensitive duplicates ([S4]) ──────────────────────

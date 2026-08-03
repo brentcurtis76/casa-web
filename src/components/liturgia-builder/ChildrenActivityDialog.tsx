@@ -275,8 +275,11 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
   // The inventory is fetched lazily, ONCE per context, on first materials entry.
   const inventoryFetchStartedRef = useRef(false);
   // M-D6 repeat-save guard. A ref, not the state: two clicks inside one tick
-  // would both read `savingExtra === null` and both insert.
-  const savingExtraRef = useRef<string | null>(null);
+  // would both read `savingExtra === null` and both insert. It holds the OWNER
+  // token of the save in flight — a fresh symbol per attempt, never the
+  // material name: the same name can be added again after a context reset, so
+  // only identity tells the live owner apart from an obsolete one ([B1]).
+  const savingExtraRef = useRef<symbol | null>(null);
 
   const isMaterialsContextCurrent = useCallback(
     (requestLiturgyId: string, requestToken: number) =>
@@ -533,7 +536,9 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
     // click on a second row mid-save) cannot insert the same name twice.
     if (savingExtraRef.current !== null) return;
 
-    savingExtraRef.current = name;
+    // This attempt's ownership token: only its holder may release the guard.
+    const owner = Symbol('savingExtra');
+    savingExtraRef.current = owner;
     setSavingExtra(name);
     try {
       const created = await createInventoryItem({
@@ -566,11 +571,15 @@ export const ChildrenActivityDialog: React.FC<ChildrenActivityDialogProps> = ({
         variant: 'destructive',
       });
     } finally {
-      // Always release the guard — a save that landed in a dead context must
-      // not leave the next one unable to save.
-      savingExtraRef.current = null;
-      if (isMaterialsContextCurrent(requestLiturgyId, requestToken)) {
-        setSavingExtra(null);
+      // [B1] Release ONLY what this attempt still owns. Abandoning a context
+      // already frees the guard (`resetMaterialsState` nulls the ref), so the
+      // next context can save right away; a stale save settling afterwards must
+      // leave the newer owner's guard — and its spinner — untouched.
+      if (savingExtraRef.current === owner) {
+        savingExtraRef.current = null;
+        if (isMaterialsContextCurrent(requestLiturgyId, requestToken)) {
+          setSavingExtra(null);
+        }
       }
     }
   };
