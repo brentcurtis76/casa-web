@@ -164,7 +164,10 @@ function toolUse(
       id: "msg_01PD",
       type: "message",
       role: "assistant",
-      model: "claude-opus-4-5-20251101",
+      // Inert stub echo — the handler emits its own MODEL constant into the
+      // envelope, never this. Moved off the dated ID at PREL integration to
+      // satisfy main's no-restricted-syntax guard.
+      model: "claude-opus-5",
       stop_reason: "tool_use",
       content: [{
         type: "tool_use",

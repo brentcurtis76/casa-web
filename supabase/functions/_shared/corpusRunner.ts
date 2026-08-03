@@ -96,7 +96,10 @@ function stubFetch(url: string): Promise<Response> {
             id: "msg_01corpus",
             type: "message",
             role: "assistant",
-            model: "claude-opus-4-5-20251101",
+            // Inert stub echo — nothing reads it and the read-only corpus
+            // baseline captures no model string. Moved off the dated ID at
+            // PREL integration to satisfy main's no-restricted-syntax guard.
+            model: "claude-opus-5",
             stop_reason: "tool_use",
             content: [{
               type: "tool_use",
