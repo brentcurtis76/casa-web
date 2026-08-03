@@ -28,6 +28,10 @@ type InvokeOutcome =
 
 let sceneImagesOutcome: InvokeOutcome = { kind: 'success' };
 
+/** PNG 1x1 válido — mismos bytes que `PNG_A_B64` de `pbImageFixtures`. */
+const PNG_1X1_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8DwHwAFAAH/VscvDQAAAABJRU5ErkJggg==';
+
 vi.mock('@/integrations/supabase/client', () => {
   let seq = 0;
   /** El upsert devuelve `updated_at`, que el hook usa como testigo. */
@@ -110,7 +114,13 @@ vi.mock('@/integrations/supabase/client', () => {
           return {
             data: {
               success: true,
-              images: ['data:image/png;base64,iVBORw0KGgoAAA='],
+              // PNG 1x1 REAL. El payload anterior no era base64 válido (largo
+              // no múltiplo de 4), así que `decodeBase64Strict` lo rechazaba y
+              // el auto-arranque de portada/fin terminaba en `save-failed` con
+              // su escritura lógica abortada. Con la guarda global de PH ese
+              // arranque zombi bloquea el clic de B2a/B2b; el borde tiene que
+              // entregar bytes que la ruta de subida real pueda aceptar.
+              images: [PNG_1X1_DATA_URL],
               skippedImages: sceneImagesOutcome.skippedImages,
             },
             error: null,
@@ -241,6 +251,16 @@ async function renderAtCoverStep() {
     await yields(40);
   });
   await waitFor(() => expect(coverGenerateButton()).toBeTruthy(), { timeout: 5000 });
+  // Aprobar escenas ARRANCA por sí solo el lote de portada+fin. Esperar a que
+  // el botón exista no es esperar a que el editor esté ocioso: el control
+  // aparece con la corrida todavía en vuelo. Con la guarda global de PH, un
+  // clic en esa ventana no despacha nada (antes DESPLAZABA la corrida). El
+  // helper espera entonces a que el control esté realmente accionable, que es
+  // lo que el gesto de cada test presupone.
+  await waitFor(
+    () => expect((coverGenerateButton() as HTMLButtonElement).disabled).toBe(false),
+    { timeout: 15000 },
+  );
   return view;
 }
 
