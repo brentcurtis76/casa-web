@@ -216,7 +216,7 @@ async function yields(n: number) {
 
 /** El botón de generación de portada; dice "Regenerar" si ya hay opciones. */
 function coverGenerateButton(): HTMLElement {
-  return screen.getAllByRole('button', { name: /Generar portada|Regenerar/i })[0];
+  return screen.getAllByRole('button', { name: /Generar portada|Regenerar|2 más/i })[0];
 }
 
 /**

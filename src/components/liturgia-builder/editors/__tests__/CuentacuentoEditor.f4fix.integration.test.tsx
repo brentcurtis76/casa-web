@@ -493,7 +493,7 @@ describe('F4 (BASE-RED): option selectors are disabled during the finalize envel
     // Generate a second cover option so there is a selection to (attempt to)
     // change. The generation provider returns two images.
     await act(async () => {
-      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones/i })[0];
+      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones|Generar 2 opciones adicionales/i })[0];
       fireEvent.click(regen);
       await yields(25);
     });
@@ -630,7 +630,7 @@ describe('F2 (BASE-RED): Finalizar is disabled while a generation is in flight',
     invokeDeferreds.push(genBlocker);
 
     await act(async () => {
-      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones/i })[0];
+      const regen = screen.getAllByRole('button', { name: /No me gustan, generar otras opciones|Generar 2 opciones adicionales/i })[0];
       fireEvent.click(regen);
       await yields(15);
     });

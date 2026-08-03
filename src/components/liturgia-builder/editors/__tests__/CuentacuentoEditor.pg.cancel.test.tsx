@@ -536,7 +536,7 @@ describe('T-G.11 — el paso portada/fin expone su Cancelar y vuelve a un estado
     expect(screen.queryAllByRole('button', { name: /Guardando\.\.\./ })).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /Reintentar guardado/i })).toBeNull();
     expect(screen.queryByText(/Genera o sube opciones de portada/i)).toBeNull();
-    const regenerarPortada = screen.getByRole('button', { name: /^Regenerar$/ });
+    const regenerarPortada = screen.getByRole('button', { name: /^(?:Regenerar|2 más)$/ });
     expect((regenerarPortada as HTMLButtonElement).disabled).toBe(false);
 
     // (7) …y la escritura parqueada era la de la portada: su carga llevaba las

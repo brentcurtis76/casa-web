@@ -451,7 +451,7 @@ describe('R3 (BASE-RED): regenerar está bloqueado durante el envelope de aproba
     // El regenerar de portada existe y está habilitado ANTES del envelope —
     // sin esto la aserción de abajo sería vacua (un botón ausente "pasa").
     const regenerateBefore = screen.getAllByRole('button', {
-      name: /No me gustan, generar otras opciones/i,
+      name: /No me gustan, generar otras opciones|Generar 2 opciones adicionales/i,
     });
     expect(regenerateBefore.length).toBeGreaterThan(0);
     expect((regenerateBefore[0] as HTMLButtonElement).disabled).toBe(false);
@@ -469,7 +469,7 @@ describe('R3 (BASE-RED): regenerar está bloqueado durante el envelope de aproba
     // lee `coverOptionsRef` VIVA dentro del tail, así que una regeneración en
     // esta ventana publica una portada que el usuario nunca eligió.
     const regenerateDuring = screen.getAllByRole('button', {
-      name: /No me gustan, generar otras opciones/i,
+      name: /No me gustan, generar otras opciones|Generar 2 opciones adicionales/i,
     });
     expect((regenerateDuring[0] as HTMLButtonElement).disabled).toBe(true);
 
