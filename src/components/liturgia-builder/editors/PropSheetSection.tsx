@@ -8,6 +8,11 @@
 
 import React, { useState } from 'react';
 import { Loader2, RefreshCw, Camera, MapPin, Package, Plus, Trash2, Check } from 'lucide-react';
+// PropSheetSection sólo maneja estados alcanzables para candidatas efímeras
+// (`pending`/`running`/`done`/`error`). Las hojas de referencia NO se persisten
+// en el draft — apply devuelve APPLY_EPHEMERAL y el runner marca `done` sin
+// invocar persist, por lo que `persisting` y `save-failed` son inalcanzables
+// para ítems `prop-*` y no existe una acción de "reintentar guardado".
 import { CASA_BRAND } from '@/lib/brand-kit';
 import ImageUploadButton from '@/components/shared/ImageUploadButton';
 import type { StoryProp, PropKind } from '@/types/shared/story';
@@ -19,7 +24,6 @@ export interface PropSheetSectionProps {
   storyProps: StoryProp[];
   sheetOptions: Record<string, string[]>;
   selectedSheets: Record<string, number>;
-  generatingPropId: string | null;
   pipelineBusy: boolean;
   /** Estado del item `prop-<id>` en el pipeline (undefined si no participa). */
   statusOf: (id: string) => string | undefined;
@@ -35,7 +39,6 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
   storyProps,
   sheetOptions,
   selectedSheets,
-  generatingPropId,
   pipelineBusy,
   statusOf,
   onGenerate,
@@ -53,7 +56,7 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
   // para no reconstruir el story (y sus slides de preview) en cada tecla.
   const [descriptionDrafts, setDescriptionDrafts] = useState<Record<string, string>>({});
 
-  const busy = pipelineBusy || generatingPropId !== null;
+  const busy = pipelineBusy;
 
   const handleAdd = () => {
     if (!newName.trim() || !newDescription.trim()) return;
@@ -152,8 +155,8 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
         const options = sheetOptions[prop.id] || [];
         const selectedIdx = selectedSheets[prop.id];
         const hasPhotos = (prop.referenceImages?.length ?? 0) > 0;
-        const isGeneratingThis =
-          generatingPropId === prop.id || statusOf(`prop-${prop.id}`) === 'running';
+        const propStatus = statusOf(`prop-${prop.id}`);
+        const isGeneratingThis = propStatus === 'running';
 
         return (
           <div key={prop.id} className="p-4 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
@@ -171,7 +174,7 @@ const PropSheetSection: React.FC<PropSheetSectionProps> = ({
                     Escenas {prop.sceneNumbers!.join(', ')}
                   </span>
                 )}
-                {statusOf(`prop-${prop.id}`) === 'error' && !pipelineBusy && (
+                {propStatus === 'error' && !pipelineBusy && (
                   <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Error</span>
                 )}
               </div>

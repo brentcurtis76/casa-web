@@ -8,6 +8,10 @@ import { CUSTOM_TIPO_PREFIX } from '@/types/shared/liturgy';
 import { format } from 'date-fns';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { unpublishReflexionForLiturgy } from '@/lib/publishedResourcesService';
+import {
+  uploadImmutableFinalImage,
+  isHttpReference,
+} from '@/lib/cuentacuentos/immutableImageUpload';
 
 /**
  * Sube una imagen base64 a Supabase Storage y retorna la URL pública
@@ -132,21 +136,16 @@ export interface CuentacuentosImageUrls {
   endImage?: string;
 }
 
-/**
- * Helper to convert base64 to blob
- */
-function base64ToBlob(base64Data: string): Blob {
-  // Remove data URL prefix if present
-  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-  const binaryData = atob(cleanBase64);
-  const bytes = new Uint8Array(binaryData.length);
-  for (let i = 0; i < binaryData.length; i++) {
-    bytes[i] = binaryData.charCodeAt(i);
-  }
-  // Detect if JPEG or PNG from magic bytes
-  const isJpeg = cleanBase64.startsWith('/9j/');
-  return new Blob([bytes], { type: isJpeg ? 'image/jpeg' : 'image/png' });
-}
+// PB/G2 — [B5]: acá vivía `base64ToBlob`, una SEGUNDA implementación de
+// producción de quitado del prefijo data-URL, decodificación base64, inferencia
+// de MIME por prefijo (`/9j/` ⇒ jpeg, si no png) y construcción de `Blob`.
+// Quedó sin llamadores al enrutar la finalización por la primitiva compartida,
+// pero seguía siendo una topología de doble fuente: G2 exige que la primitiva
+// inmutable sea la ÚNICA dueña de esas responsabilidades, y su inferencia por
+// prefijo era además incorrecta (etiquetaba WebP/GIF como PNG) justo al lado de
+// la implementación por magic bytes. Se elimina; el único decodificador/
+// sniffer/hasher/subidor de cuentacuentos es
+// `@/lib/cuentacuentos/immutableImageUpload`.
 
 /**
  * Upload a single image and return its public URL
@@ -156,42 +155,32 @@ async function uploadSingleImage(
   category: string,
   filename: string,
   base64Data: string
-): Promise<string | null> {
-  try {
-    // If it's already a URL, return it as-is
-    if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
-      console.log(`[uploadSingleImage] Image is already URL: ${base64Data.slice(0, 80)}`);
-      return base64Data;
-    }
-
-    const blob = base64ToBlob(base64Data);
-    const extension = blob.type === 'image/jpeg' ? 'jpg' : 'png';
-    const filePath = `liturgias/${liturgyId}/cuentacuentos/${category}/${filename}.${extension}`;
-
-    console.log(`[uploadSingleImage] Uploading to ${filePath}, size: ${blob.size}`);
-
-    const { error: uploadError } = await supabase.storage
-      .from('liturgia-images')
-      .upload(filePath, blob, {
-        upsert: true,
-        contentType: blob.type,
-      });
-
-    if (uploadError) {
-      console.error(`[uploadSingleImage] Error uploading ${filePath}:`, uploadError);
-      return null;
-    }
-
-    const { data } = supabase.storage
-      .from('liturgia-images')
-      .getPublicUrl(filePath);
-
-    console.log(`[uploadSingleImage] Uploaded successfully: ${data.publicUrl.slice(0, 80)}`);
-    return data.publicUrl;
-  } catch (err) {
-    console.error(`[uploadSingleImage] Error:`, err);
-    return null;
+): Promise<string> {
+  // If it's already a URL, return it as-is
+  if (isHttpReference(base64Data)) {
+    console.log(`[uploadSingleImage] Image is already URL: ${base64Data.slice(0, 80)}`);
+    return base64Data;
   }
+
+  // PB/G2 — subida inmutable por la primitiva compartida: nombre por
+  // contenido, `upsert:false`, MIME por magic bytes.
+  //
+  // PB/G4 — el fallo ya NO se degrada a `null`. Antes, `null` hacía que
+  // `updateStoryWithImageUrls` cayera al campo original — que puede ser
+  // base64 crudo — y `saveLiturgy` lo persistía en `liturgia_elementos`
+  // reportando ÉXITO. Ahora la excepción sube y aborta el guardado antes de
+  // tocar `liturgia_elementos`.
+  const uploaded = await uploadImmutableFinalImage({
+    liturgyId,
+    category,
+    key: filename,
+    data: base64Data,
+  });
+
+  console.log(
+    `[uploadSingleImage] Uploaded successfully: ${uploaded.path} (deduplicated=${uploaded.deduplicated})`
+  );
+  return uploaded.publicUrl;
 }
 
 /**
@@ -212,10 +201,12 @@ export async function uploadCuentacuentosImages(
   // Upload character sheets
   for (const [charId, imageData] of Object.entries(images.characterSheets)) {
     if (imageData) {
-      const url = await uploadSingleImage(liturgyId, 'characters', charId, imageData);
-      if (url) {
-        result.characterSheets[charId] = url;
-      }
+      result.characterSheets[charId] = await uploadSingleImage(
+        liturgyId,
+        'characters',
+        charId,
+        imageData
+      );
     }
   }
   console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.characterSheets).length} character sheets`);
@@ -223,32 +214,128 @@ export async function uploadCuentacuentosImages(
   // Upload scene images
   for (const [sceneNum, imageData] of Object.entries(images.sceneImages)) {
     if (imageData) {
-      const url = await uploadSingleImage(liturgyId, 'scenes', `scene_${sceneNum}`, imageData);
-      if (url) {
-        result.sceneImages[Number(sceneNum)] = url;
-      }
+      result.sceneImages[Number(sceneNum)] = await uploadSingleImage(
+        liturgyId,
+        'scenes',
+        `scene_${sceneNum}`,
+        imageData
+      );
     }
   }
   console.log(`[uploadCuentacuentosImages] Uploaded ${Object.keys(result.sceneImages).length} scene images`);
 
   // Upload cover image
   if (images.coverImage) {
-    const url = await uploadSingleImage(liturgyId, 'cover', 'cover', images.coverImage);
-    if (url) {
-      result.coverImage = url;
-    }
+    result.coverImage = await uploadSingleImage(liturgyId, 'cover', 'cover', images.coverImage);
   }
 
   // Upload end image
   if (images.endImage) {
-    const url = await uploadSingleImage(liturgyId, 'end', 'end', images.endImage);
-    if (url) {
-      result.endImage = url;
-    }
+    result.endImage = await uploadSingleImage(liturgyId, 'end', 'end', images.endImage);
   }
 
   console.log('[uploadCuentacuentosImages] Upload complete');
   return result;
+}
+
+/**
+ * PB/G5 — [B1]: reescritura de un arreglo de OPCIONES de imagen para el payload
+ * finalizado.
+ *
+ * El leak que cierra: la finalización del editor copia las opciones TAL CUAL
+ * (`coverImageOptions`, `endImageOptions`, `characterSheetOptions`,
+ * `imageOptions`), y hasta acá `updateStoryWithImageUrls` sólo reescribía el
+ * campo SELECCIONADO. Una opción no seleccionada seguía siendo bytes inline y
+ * viajaba cruda a `liturgia_elementos`, contra G5 paso 4 ("nada de base64") y
+ * T-B.9 ("sólo la URL pública nueva").
+ *
+ * Regla, en este orden y preservando el orden original:
+ *  - una opción HTTP(S) YA persistida pasa intacta (G2/G4: las referencias
+ *    existentes nunca se re-suben ni se reescriben);
+ *  - la opción inline que ES la seleccionada se REEMPLAZA por su URL final
+ *    subida — así el elemento conserva la referencia H2 dentro del arreglo y
+ *    el reopen no pierde la selección;
+ *  - cualquier otra opción inline se DESCARTA: nunca se subió, no existe URL
+ *    para ella, y persistir sus bytes es exactamente el leak.
+ */
+function rewriteFinalizedOptions(
+  options: string[] | undefined,
+  selectedBefore: string | undefined,
+  selectedAfter: string | undefined
+): string[] | undefined {
+  if (!options) return options;
+  const rewritten: string[] = [];
+  for (const option of options) {
+    if (isHttpReference(option)) {
+      rewritten.push(option);
+      continue;
+    }
+    if (
+      selectedBefore !== undefined &&
+      option === selectedBefore &&
+      isHttpReference(selectedAfter)
+    ) {
+      rewritten.push(selectedAfter);
+    }
+  }
+  return rewritten;
+}
+
+/** Deja SÓLO referencias HTTP(S) en un arreglo de imágenes. */
+function httpOnly(images: string[] | undefined): string[] | undefined {
+  return images ? images.filter(isHttpReference) : images;
+}
+
+/** Un escalar de referencia que quedó inline no puede persistirse. */
+function httpOrUndefined(value: string | undefined): string | undefined {
+  return value === undefined || isHttpReference(value) ? value : undefined;
+}
+
+/**
+ * PB/G5 — [B1]: borde de persistencia del elemento cuentacuentos.
+ *
+ * `updateStoryWithImageUrls` cubre los cuatro slots que la finalización SÍ
+ * sube. Este paso cierra el resto de la superficie de imagen del `Story` —
+ * referencias de landmarks/props/personajes, que `saveLiturgy` nunca sube — de
+ * modo que el `storyData` persistido no contenga NINGÚN byte inline, que es lo
+ * que exige el recorrido completo de G5 paso 4.
+ *
+ * Es una lista EXPLÍCITA de campos tipados, no un barrido heurístico: un walk
+ * genérico sobre strings largos podría descartar prosa del cuento.
+ *
+ * Los cuatro campos seleccionados (`characterSheetUrl`, `selectedImageUrl`,
+ * `coverImageUrl`, `endImageUrl`) NO se tocan acá a propósito: en la rama de
+ * subida ya son URLs porque la finalización subió todo inline seleccionado, y
+ * en la rama de re-guardado la condición de entrada garantiza que ya eran
+ * HTTP(S). Si alguna vez dejara de ser cierto, el recorrido completo del test
+ * de G5 lo delata en vez de que un descarte silencioso lo esconda.
+ */
+export function stripInlineImageRefs(
+  story: import('@/types/shared/story').Story
+): import('@/types/shared/story').Story {
+  return {
+    ...story,
+    characters: story.characters?.map(char => ({
+      ...char,
+      characterSheetOptions: httpOnly(char.characterSheetOptions),
+    })) ?? story.characters,
+    scenes: story.scenes?.map(scene => ({
+      ...scene,
+      imageOptions: httpOnly(scene.imageOptions),
+    })) ?? story.scenes,
+    landmarks: story.landmarks?.map(landmark => ({
+      ...landmark,
+      referenceImages: httpOnly(landmark.referenceImages) ?? [],
+      selectedReferenceUrl: httpOrUndefined(landmark.selectedReferenceUrl),
+    })),
+    props: story.props?.map(prop => ({
+      ...prop,
+      referenceImages: httpOnly(prop.referenceImages) ?? [],
+      selectedReferenceUrl: httpOrUndefined(prop.selectedReferenceUrl),
+    })),
+    coverImageOptions: httpOnly(story.coverImageOptions),
+    endImageOptions: httpOnly(story.endImageOptions),
+  };
 }
 
 /**
@@ -258,18 +345,46 @@ export function updateStoryWithImageUrls(
   story: import('@/types/shared/story').Story,
   urls: CuentacuentosImageUrls
 ): import('@/types/shared/story').Story {
+  const coverAfter = urls.coverImage || story.coverImageUrl;
+  const endAfter = urls.endImage || story.endImageUrl;
   return {
     ...story,
-    characters: story.characters.map(char => ({
-      ...char,
-      characterSheetUrl: urls.characterSheets[char.id] || char.characterSheetUrl,
-    })),
-    scenes: story.scenes.map(scene => ({
-      ...scene,
-      selectedImageUrl: urls.sceneImages[scene.number] || scene.selectedImageUrl,
-    })),
-    coverImageUrl: urls.coverImage || story.coverImageUrl,
-    endImageUrl: urls.endImage || story.endImageUrl,
+    characters: story.characters.map(char => {
+      const sheetAfter = urls.characterSheets[char.id] || char.characterSheetUrl;
+      return {
+        ...char,
+        characterSheetUrl: sheetAfter,
+        characterSheetOptions: rewriteFinalizedOptions(
+          char.characterSheetOptions,
+          char.characterSheetUrl,
+          sheetAfter
+        ),
+      };
+    }),
+    scenes: story.scenes.map(scene => {
+      const sceneAfter = urls.sceneImages[scene.number] || scene.selectedImageUrl;
+      return {
+        ...scene,
+        selectedImageUrl: sceneAfter,
+        imageOptions: rewriteFinalizedOptions(
+          scene.imageOptions,
+          scene.selectedImageUrl,
+          sceneAfter
+        ),
+      };
+    }),
+    coverImageUrl: coverAfter,
+    coverImageOptions: rewriteFinalizedOptions(
+      story.coverImageOptions,
+      story.coverImageUrl,
+      coverAfter
+    ),
+    endImageUrl: endAfter,
+    endImageOptions: rewriteFinalizedOptions(
+      story.endImageOptions,
+      story.endImageUrl,
+      endAfter
+    ),
   };
 }
 
@@ -539,10 +654,34 @@ export async function saveLiturgy(
           }
 
           // Upload images
-          const uploadedUrls = await uploadCuentacuentosImages(liturgiaId, imagesToUpload);
+          //
+          // PB/G4 — fail-closed. Cualquier fallo que NO sea un conflicto de
+          // duplicado aborta el guardado ACÁ, antes del upsert de
+          // `liturgia_elementos` (más abajo). Antes, una subida fallida
+          // devolvía `null`, `updateStoryWithImageUrls` caía al campo original
+          // —que puede ser base64 crudo— y la liturgia se guardaba con "éxito"
+          // llevándose el base64 a la base. Los objetos hermanos que sí se
+          // crearon quedan como huérfanos permitidos: PB nunca compensa con
+          // borrados.
+          let uploadedUrls: CuentacuentosImageUrls;
+          try {
+            uploadedUrls = await uploadCuentacuentosImages(liturgiaId, imagesToUpload);
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : 'Error desconocido';
+            console.error('[saveLiturgy] Cuentacuentos image upload failed; aborting save:', err);
+            throw new Error(`No se pudieron guardar las imágenes del cuento: ${detail}`);
+          }
 
           // Update story with uploaded URLs
-          const updatedStory = updateStoryWithImageUrls(story, uploadedUrls);
+          //
+          // PB/G5 — [B1]: `updateStoryWithImageUrls` reescribe los cuatro slots
+          // seleccionados Y sus arreglos de opciones; `stripInlineImageRefs`
+          // cierra el resto de la superficie de imagen (referencias de
+          // landmarks/props) que la finalización nunca sube. El `storyData` que
+          // llega a `liturgia_elementos` queda sin un solo byte inline.
+          const updatedStory = stripInlineImageRefs(
+            updateStoryWithImageUrls(story, uploadedUrls)
+          );
 
           // CRITICAL: Regenerate slides from updated story with URLs
           // Without this, element.slides would still have base64 data instead of URLs
@@ -564,15 +703,22 @@ export async function saveLiturgy(
       // For cuentacuentos with existing URLs (resave), ensure slides are in sync with storyData
       if (element.type === 'cuentacuentos' && element.config?.storyData) {
         const story = element.config.storyData as import('@/types/shared/story').Story;
+        // PB/G5 — [B1]: esta rama corre cuando NINGÚN campo seleccionado es
+        // inline, pero los arreglos de opciones SÍ pueden traer bytes crudos
+        // (p. ej. una portada seleccionada que ya era URL junto a opciones
+        // generadas que nunca se subieron). Sin este saneo el leak sobrevivía
+        // por el camino de re-guardado aunque la rama de subida quedara limpia.
+        const cleanedStory = stripInlineImageRefs(story);
         // Regenerate slides to ensure they have the correct URLs from storyData
-        const regeneratedSlides = createPreviewSlideGroup(story);
+        const regeneratedSlides = createPreviewSlideGroup(cleanedStory);
         console.log('[saveLiturgy] Cuentacuentos resave, regenerating slides to sync with storyData:', {
-          hasSceneUrls: story.scenes.some(s => s.selectedImageUrl?.startsWith('http')),
+          hasSceneUrls: cleanedStory.scenes.some(s => s.selectedImageUrl?.startsWith('http')),
           slideCount: regeneratedSlides.slides.length,
         });
         return {
           ...element,
           slides: regeneratedSlides,
+          config: { ...element.config, storyData: cleanedStory },
         };
       }
 

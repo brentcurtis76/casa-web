@@ -3,7 +3,7 @@
  * Integra generación de cuentos con Claude y imágenes con Nano Banana Pro
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -51,15 +51,21 @@ import type {
   OverlayPosition,
   OverlayColor,
   OverlaySize,
-  GenerateSceneImagesCharacterRequest,
-  GenerateSceneImagesSceneRequest,
-  GenerateSceneImagesCoverRequest,
-  GenerateSceneImagesEndRequest,
   SuggestedStoryProp,
 } from '@/types/shared/story';
+import { shouldAutoKick, type AutoKickIntent } from '@/lib/cuentacuentos/autoKick';
+import type { EditorCreationStep } from '@/lib/cuentacuentos/recoverySnapshot';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
-import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
-import { useStoryImagePipeline, type PipelineTask } from '@/hooks/useStoryImagePipeline';
+import { canApprove, runApprovalTransaction } from '@/lib/cuentacuentos/approvalGate';
+import {
+  isReferenceImageTooLarge,
+  readReferenceImageBase64,
+  REFERENCE_IMAGE_TOO_LARGE_MESSAGE,
+} from '@/lib/cuentacuentos/downscaleImage';
+import { buildInvokeError, describeSkippedImage, parseSkippedImages, parseWarnings, InvokeError, type SkippedImage, type EnvelopeWarning } from '@/lib/cuentacuentos/imageFeedback';
+import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFull, type DraftPatch, type EnqueueDraftWriteResult, type EnqueueDraftWriteStale } from '@/hooks/useCuentacuentosDraft';
+import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
+import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -81,11 +87,36 @@ interface CuentacuentoEditorProps {
   context: LiturgyContext;
   initialStory?: Story;
   initialSlides?: SlideGroup;
-  onStoryCreated: (story: Story, slides: SlideGroup) => void;
+  /**
+   * B1 — El tercer argumento es un cierre de UN SOLO USO que confirma la
+   * finalización (compare-and-delete del borrador). El padre debe guardarlo y
+   * ejecutarlo DESPUÉS de guardar la liturgia; hasta entonces el borrador
+   * permanece recuperable. Se omite en llamadas que no provienen de finalizar.
+   */
+  onStoryCreated: (
+    story: Story,
+    slides: SlideGroup,
+    confirmFinalization?: () => Promise<void>,
+  ) => void;
   onStoryProgress?: (story: Story, slides: SlideGroup | null) => void;
   onStoryDeleted?: () => void;
   onNavigateToFullEditor?: () => void;
 }
+
+import { uploadImmutableDraftImage } from '@/lib/cuentacuentos/immutableImageUpload';
+import {
+  makeCharacterSheetTask,
+  makeCoverTask,
+  makeEndTask,
+  makePropSheetTask,
+  makeRefineCharacterSheetTask,
+  makeRefineCoverTask,
+  makeRefineEndTask,
+  makeRefineSceneTask,
+  makeSceneTask,
+  type InvokeGenerateSceneImages,
+  type ProviderResult,
+} from '@/lib/cuentacuentos/taskFactories';
 
 // Lugares predefinidos para Chile
 const LOCATION_PRESETS = [
@@ -126,42 +157,23 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * status code"; el status y el detalle real viven en error.context (Response).
  * Sin esto, la detección de rate-limit del pipeline y los mensajes al usuario
  * solo verían el texto genérico.
+ *
+ * Además del texto, el cuerpo tipado trae `code`, `field` y `skippedImages`;
+ * buildInvokeError los deja accesibles para que la UI pueda ramificar en vez
+ * de mostrar el mensaje crudo.
  */
 async function extractInvokeError(fnError: unknown): Promise<Error> {
   const ctx = (fnError as { context?: Response })?.context;
   if (ctx && typeof ctx.status === 'number' && typeof ctx.clone === 'function') {
-    let detail = '';
+    let body: unknown = null;
     try {
-      const body = await ctx.clone().json();
-      if (body && typeof body.error === 'string') detail = body.error;
+      body = await ctx.clone().json();
     } catch {
       // cuerpo no-JSON o ya consumido: nos quedamos solo con el status
     }
-    return new Error(`Error ${ctx.status}${detail ? `: ${detail}` : ''}`);
+    return buildInvokeError(ctx.status, body);
   }
   return fnError instanceof Error ? fnError : new Error(String(fnError));
-}
-
-/**
- * Reemplaza opciones base64 en memoria por las URLs públicas devueltas por el
- * guardado del draft. Solo intercambia una key cuando la cantidad de URLs
- * coincide con la cantidad de opciones (mismo orden garantizado por el hook);
- * si algún upload falló se conserva el base64 para no perder candidatas.
- */
-function swapOptionsWithUploadedUrls<K extends string | number>(
-  current: Record<K, string[]>,
-  uploaded: Record<K, string[]>
-): Record<K, string[]> {
-  let changed = false;
-  const next = { ...current };
-  for (const [key, urls] of Object.entries(uploaded) as Array<[K, string[]]>) {
-    const options = next[key];
-    if (Array.isArray(options) && Array.isArray(urls) && urls.length > 0 && urls.length === options.length) {
-      next[key] = urls;
-      changed = true;
-    }
-  }
-  return changed ? next : current;
 }
 
 // Pasos del flujo de creación
@@ -205,22 +217,50 @@ const StorySlidePreview: React.FC<{ slide: Slide }> = ({ slide }) => {
 /**
  * Componente para mostrar opciones de imagen y seleccionar
  */
+type ImageSelectorPhase = 'idle' | 'generating' | 'saving';
+
 const ImageSelector: React.FC<{
   options: string[];
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onSave?: () => Promise<void>;
   onRegenerate?: () => void;
-  isGenerating: boolean;
+  /** Runner phase for this asset: shows a placeholder while generating/saving. */
+  phase: ImageSelectorPhase;
   isSaving?: boolean;
   savedMessage?: string | null;
   label: string;
-}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, isGenerating, isSaving, savedMessage, label }) => {
-  if (isGenerating) {
+  /**
+   * F4 — Deshabilita la selección de opción mientras el envelope de aprobación/
+   * finalización está en vuelo. Cambiar la selección durante el upsert
+   * autoritativo NO bumpea contentRevision (es state aparte), así que el CAS no
+   * la detecta y una finalización publicaría la selección VIEJA mientras el UI
+   * muestra la nueva. Deshabilitar durante el envelope evita esa divergencia.
+   */
+  disabled?: boolean;
+  /**
+   * PH/G3 — Copy del botón de regenerar. Aditiva y opcional: los callsites de
+   * sheets/scenes no la pasan y conservan la copy de reemplazo por defecto.
+   * Portada y fin SÍ la pasan, porque ahí regenerar ya no descarta nada.
+   */
+  regenerateLabel?: string;
+  /**
+   * PH/G5 [B1-PM] — Pre-filtro VISUAL del botón de regenerar, y SÓLO de él:
+   * la guarda de lote es GLOBAL (`pipeline.isBusy()`), así que con el lote del
+   * hermano en vuelo este control no despacha nada. Sin esto se veía
+   * habilitado y no hacía nada. Aditiva y opcional: sheets/scenes no la pasan
+   * y su salida no cambia. `disabled` sigue siendo la del envelope y gobierna
+   * además la selección de opción — este flag no la toca.
+   */
+  regenerateDisabled?: boolean;
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled, regenerateLabel = 'No me gustan, generar otras opciones', regenerateDisabled = false }) => {
+  if (phase !== 'idle') {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 size={24} className="animate-spin mr-2" style={{ color: CASA_BRAND.colors.primary.amber }} />
-        <span style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>Generando {label}...</span>
+        <span style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+          {phase === 'saving' ? `Guardando ${label}...` : `Generando ${label}...`}
+        </span>
       </div>
     );
   }
@@ -261,10 +301,11 @@ const ImageSelector: React.FC<{
           <button
             key={`${index}-${imageValue?.slice(-20) || 'empty'}`}
             type="button"
+            disabled={disabled}
             onClick={() => onSelect(index)}
             className={`relative rounded-lg overflow-hidden transition-all ${
               selectedIndex === index ? 'ring-4' : 'hover:ring-2'
-            }`}
+            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
             style={{
               ringColor: CASA_BRAND.colors.primary.amber,
             }}
@@ -310,7 +351,7 @@ const ImageSelector: React.FC<{
           <button
             type="button"
             onClick={onSave}
-            disabled={isSaving}
+            disabled={isSaving || disabled}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
             style={{
               backgroundColor: CASA_BRAND.colors.primary.amber,
@@ -348,7 +389,14 @@ const ImageSelector: React.FC<{
         <button
           type="button"
           onClick={onRegenerate}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border"
+          // Finding 3 — Regenerar durante el envelope reemplaza
+          // `coverOptionsRef`/`endOptionsRef` EN VIVO, y `deriveNextStory` las
+          // lee dentro del tail de la cola: se publicaría una imagen que el
+          // usuario nunca eligió (o ninguna, si el índice queda fuera de rango).
+          // Deshabilitar el thumbnail sin deshabilitar esto dejaba la puerta de
+          // al lado abierta.
+          disabled={disabled || regenerateDisabled}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: CASA_BRAND.colors.primary.white,
             borderColor: CASA_BRAND.colors.secondary.grayLight,
@@ -356,7 +404,7 @@ const ImageSelector: React.FC<{
           }}
         >
           <RefreshCw size={14} />
-          No me gustan, generar otras opciones
+          {regenerateLabel}
         </button>
       )}
     </div>
@@ -444,6 +492,74 @@ const StepIndicator: React.FC<{
   );
 };
 
+/**
+ * Wrapper alrededor de `supabase.functions.invoke('generate-scene-images', {body, signal})`
+ * que desempaqueta FunctionsHttpError vía extractInvokeError y valida
+ * `success`/`images` para producir un `ProviderResult` o un `Error` con
+ * mensaje útil. Todas las factories del pipeline (character/prop/scene/
+ * cover/end + refines) usan este mismo canal — el editor inyecta esta
+ * función a cada factory como `invokeGenerateSceneImages`.
+ *
+ * `skippedImages` viaja EN el resultado (y, en el camino de error, dentro del
+ * InvokeError): esta es una función de módulo y no puede tocar el estado del
+ * componente. Quien lo convierte en aviso es `invokeSceneImagesWithFeedback`,
+ * el envoltorio de componente que se inyecta a las factories.
+ */
+async function invokeGenerateSceneImagesRequest(
+  body: unknown,
+  emptyImagesFallback: string,
+  signal: AbortSignal,
+): Promise<ProviderResult> {
+  const { data, error: fnError } = await supabase.functions.invoke(
+    'generate-scene-images',
+    { body: body as Record<string, unknown>, signal },
+  );
+  if (fnError) throw await extractInvokeError(fnError);
+  if (!data?.success || !data.images?.length) {
+    throw new Error(data?.error || emptyImagesFallback);
+  }
+  // Se valida la forma en vez de confiar en el cast: `skippedImages` viene del
+  // backend y el resto del editor lo trata como dato tipado.
+  return { ...(data as ProviderResult), skippedImages: parseSkippedImages(data.skippedImages) };
+}
+
+// F4/cleanup — Helpers puros compartidos por los 4 handlers de aprobación/
+// finalización (dedup del metadata-spread y de los maps de selección). El flag
+// `keepExisting` preserva la diferencia real entre aprobar (fallback undefined)
+// y finalizar (fallback = valor existente en el story).
+function withStatus(story: Story, status: Story['metadata']['status']): Story {
+  return {
+    ...story,
+    metadata: { ...story.metadata, status, updatedAt: new Date().toISOString() },
+  };
+}
+function applyCharacterSelections(
+  characters: Story['characters'],
+  options: Record<string, string[]>,
+  selected: Record<string, number>,
+  keepExisting: boolean,
+): Story['characters'] {
+  return characters.map((char) => {
+    const opts = options[char.id];
+    const idx = selected[char.id];
+    const url = opts && idx !== undefined ? opts[idx] : (keepExisting ? char.characterSheetUrl : undefined);
+    return { ...char, characterSheetOptions: opts, characterSheetUrl: url };
+  });
+}
+function applySceneSelections(
+  scenes: Story['scenes'],
+  options: Record<number, string[]>,
+  selected: Record<number, number>,
+  keepExisting: boolean,
+): Story['scenes'] {
+  return scenes.map((scene) => {
+    const opts = options[scene.number];
+    const idx = selected[scene.number];
+    const url = opts && idx !== undefined ? opts[idx] : (keepExisting ? scene.selectedImageUrl : undefined);
+    return { ...scene, imageOptions: opts, selectedImageUrl: url };
+  });
+}
+
 const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   context,
   initialStory,
@@ -482,7 +598,21 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [additionalNotes, setAdditionalNotes] = useState('');
 
   // Estado del cuento
-  const [story, setStory] = useState<Story | null>(initialStory || null);
+  const [story, setStoryState] = useState<Story | null>(initialStory || null);
+  // F4 — Ref VIVO del story, actualizado SÍNCRONAMENTE en cada setStory. El
+  // builder del patch autoritativo corre dentro del tail de la cola (tras
+  // awaits) y debe leer el story vigente en ese instante — un closure de
+  // React state quedaría stale. TODA escritura de story pasa por `setStory`
+  // (nunca por setStoryState directo) para que el ref no se desincronice.
+  const storyRef = useRef<Story | null>(initialStory || null);
+  const setStory = useCallback((next: React.SetStateAction<Story | null>) => {
+    const resolved =
+      typeof next === 'function'
+        ? (next as (prev: Story | null) => Story | null)(storyRef.current)
+        : next;
+    storyRef.current = resolved;
+    setStoryState(resolved);
+  }, []);
   const [previewSlides, setPreviewSlides] = useState<SlideGroup | null>(initialSlides || null);
 
   // Props (lugares/objetos de referencia visual) — se inicializan desde initialStory.props
@@ -492,13 +622,73 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // Estado del flujo
   const [currentStep, setCurrentStep] = useState<CreationStep>(getInitialStep());
 
-  // Estado de generación de imágenes
+  // Estado de generación del cuento (texto con IA — no imágenes).
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [generatingCharacterIndex, setGeneratingCharacterIndex] = useState<number | null>(null);
-  const [generatingSceneIndex, setGeneratingSceneIndex] = useState<number | null>(null);
-  const [generatingCover, setGeneratingCover] = useState(false);
-  const [generatingEnd, setGeneratingEnd] = useState(false);
+  // Referencias que el backend descartó. No es un estado de error: la
+  // generación salió bien, pero una foto que faltó es indistinguible de una
+  // que sí se usó si no lo decimos.
+  const [skippedImages, setSkippedImages] = useState<SkippedImage[]>([]);
+  // Degradación de la INVESTIGACIÓN (lugar, lugar destacado, elementos
+  // recurrentes) y descartes de la normalización. Estado APARTE del de las
+  // fotos descartadas: son eventos distintos, con remedios distintos, y el
+  // camino de imágenes no debe poder pisar el de la historia.
+  //
+  // Semántica de historia: se REEMPLAZA entero en cada intento COMPLETO de
+  // `generate-story` —éxito, error o vista previa—. Nunca acumula: los avisos
+  // describen la generación que se acaba de intentar, y arrastrar los del
+  // intento anterior sería decir algo falso sobre el actual.
+  const [warnings, setWarnings] = useState<EnvelopeWarning[]>([]);
+  // El estado por-ítem de generación/persistencia de imágenes se lee
+  // directamente del runner (`pipeline.statusOf`); no hay máquinas paralelas.
+
+  /**
+   * Suma al aviso lo que reportó UNA llamada de imágenes.
+   *
+   * Acumula en vez de reemplazar, y una lista vacía es no-op, porque el pipeline
+   * corre varios ítems a la vez: si cada respuesta pisara el estado, la que
+   * llegara última —típicamente sin nada que reportar— borraría el aviso de la
+   * que sí descartó una referencia. Se deduplica por `field:code` para que
+   * regenerar dos veces no repita la misma línea. Lo limpia el usuario con la X,
+   * o un cuento nuevo (`handleGenerate`, que sí reemplaza).
+   */
+  const reportSkippedImages = useCallback((incoming: SkippedImage[]) => {
+    if (incoming.length === 0) return;
+    setSkippedImages((prev) => {
+      const seen = new Set(prev.map((s) => `${s.field}:${s.code}`));
+      const fresh = incoming.filter((s) => !seen.has(`${s.field}:${s.code}`));
+      return fresh.length > 0 ? [...prev, ...fresh] : prev;
+    });
+  }, []);
+
+  /**
+   * El canal de `generate-scene-images` que se inyecta a TODAS las factories.
+   *
+   * Es el único punto por el que pasan character sheets, props, escenas,
+   * portada, fin y sus refines, así que es donde el `skippedImages` del contrato
+   * se vuelve visible — en éxito (viaja en el ProviderResult) y en fallo (viaja
+   * en el InvokeError). Las factories no cambian: siguen recibiendo una función
+   * con la misma firma.
+   *
+   * PG/G4 — `signal` es la MISMA instancia que el runner puso en
+   * `ProviderContext.signal`: este envoltorio la reenvía verbatim, sin crear un
+   * controlador propio ni traducirla a un booleano. Cancelar corta la espera
+   * del cliente y prohíbe despachos futuros; NO revoca una petición ya
+   * despachada al edge ni recupera su gasto.
+   */
+  const invokeSceneImagesWithFeedback = useCallback<InvokeGenerateSceneImages>(
+    async (body, emptyImagesFallback, signal) => {
+      try {
+        const result = await invokeGenerateSceneImagesRequest(body, emptyImagesFallback, signal);
+        reportSkippedImages(result.skippedImages ?? []);
+        return result;
+      } catch (err) {
+        if (err instanceof InvokeError) reportSkippedImages(err.skippedImages);
+        throw err;
+      }
+    },
+    [reportSkippedImages],
+  );
 
   // Estado de refinamiento de imágenes (Phase 7 scaffolding)
   const [refiningCharId, setRefiningCharId] = useState<string | null>(null);
@@ -523,7 +713,6 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // como primera referenceImage del prop y viaja a cada escena.
   const [propSheetOptions, setPropSheetOptions] = useState<Record<string, string[]>>({});
   const [selectedPropSheets, setSelectedPropSheets] = useState<Record<string, number>>({});
-  const [generatingPropId, setGeneratingPropId] = useState<string | null>(null);
 
   // Estado de portada/fin
   const [coverOptions, setCoverOptions] = useState<string[]>([]);
@@ -563,6 +752,9 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const [coverIncludedCharacters, setCoverIncludedCharacters] = useState<string[]>([]);
   // Opt-in: characters to include as references for the end image (default: none)
   const [endIncludedCharacters, setEndIncludedCharacters] = useState<string[]>([]);
+  // A3/S5: lado explícito que faltaba — cover ya tenía include/exclude, end no.
+  // El pipeline/prompts pueden usarlo como opt-out; no lo reseteamos en restore.
+  const [endExcludedCharacters, setEndExcludedCharacters] = useState<string[]>([]);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
 
   // Estado de UI
@@ -587,12 +779,30 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     isSaving,
     saveDraft,
     deleteDraft,
-    deleteStoryImages,
+    deleteDraftRecord,
+    confirmFinalizationDelete,
+    getPendingDraftPatchKeys,
     showRecoveryPrompt,
     acceptRecovery,
     declineRecovery,
-    saveDraftNow,
+    enqueueDraftWrite,
+    enqueueAuthoritativeWrite,
+    flushPendingDraftWrites,
+    bumpDraftEpoch,
+    setActiveDraftStoryId,
+    enqueueGeneratedSnapshot,
+    getDraftIdentity,
+    getDraftWriteIdentity,
+    activeIdentity,
+    bumpContentRevision,
   } = useCuentacuentosDraft({ liturgyId: context.id });
+
+  // F4 — Latch de re-entrancy del envelope de aprobación/finalización. El REF
+  // cierra la carrera de doble-click de forma síncrona (un setState no alcanza:
+  // se aplica async y no bloquea un doble-disparo en el mismo tick). El STATE es
+  // sólo feedback visual: deshabilita los botones durante el envelope en vuelo.
+  const isApprovingRef = useRef(false);
+  const [isApproving, setIsApproving] = useState(false);
 
   // Estado del diálogo de confirmación de eliminación
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -608,6 +818,12 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const selectedSceneImagesRef = useRef<Record<number, number>>({});
   const sceneReferenceModeRef = useRef<Record<number, 'style' | 'pov'>>({});
   const propSheetOptionsRef = useRef<Record<string, string[]>>({});
+  // Cover/end refs — refine reads latest slot state during apply so a click
+  // right after a generate replaces the correct slot without closure staleness.
+  const coverOptionsRef = useRef<string[]>([]);
+  const selectedCoverRef = useRef<number | null>(null);
+  const endOptionsRef = useRef<string[]>([]);
+  const selectedEndRef = useRef<number | null>(null);
   const currentStepRef = useRef<CreationStep>(currentStep);
   // Prompts editados: los closures de tareas del pipeline (que retryFailed
   // re-ejecuta más tarde) leen SIEMPRE el prompt vigente, no el del momento
@@ -615,6 +831,13 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const editingScenePromptRef = useRef<Record<number, string>>({});
   const editingCharacterPromptRef = useRef<Record<string, string>>({});
 
+  // F4 — Reemplazo simple (NO mutación en sitio). El workaround anterior
+  // mutaba el objeto compartido para que un patch YA armado "viera" ediciones
+  // posteriores; eso era insalvable (la persistencia clona el payload antes
+  // del await) y rompía la inmutabilidad del snapshot. La corrección real es
+  // el protocolo de contentRevision: el patch autoritativo se arma DENTRO del
+  // tail con copias inmutables, y una edición posterior vuelve stale a la
+  // escritura autoritativa vía CAS — nunca muta un snapshot ya construido.
   useEffect(() => { editingScenePromptRef.current = editingScenePrompt; }, [editingScenePrompt]);
   useEffect(() => { editingCharacterPromptRef.current = editingCharacterPrompt; }, [editingCharacterPrompt]);
   useEffect(() => { propSheetOptionsRef.current = propSheetOptions; }, [propSheetOptions]);
@@ -624,19 +847,167 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   useEffect(() => { selectedSceneImagesRef.current = selectedSceneImages; }, [selectedSceneImages]);
   useEffect(() => { sceneReferenceModeRef.current = sceneReferenceMode; }, [sceneReferenceMode]);
   useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
+  useEffect(() => { coverOptionsRef.current = coverOptions; }, [coverOptions]);
+  useEffect(() => { selectedCoverRef.current = selectedCover; }, [selectedCover]);
+  useEffect(() => { endOptionsRef.current = endOptions; }, [endOptions]);
+  useEffect(() => { selectedEndRef.current = selectedEnd; }, [selectedEnd]);
 
-  // Cola de guardado serializada: los guardados disparados por tareas
-  // concurrentes del pipeline nunca se solapan entre sí.
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // A3a/S7 — Refs vivos para TODO campo editor-visible que el
+  // `buildAuthoritativeDraftPatch` lee al armar el snapshot autoritativo.
+  // El patch se resuelve DESPUÉS del CAS de queue-start (patch factory), así
+  // que cualquier edición hecha ENTRE el click y el momento del snapshot
+  // debe reflejarse — closures de useCallback quedarían stale. Cada ref se
+  // sincroniza en un useEffect de una sola dependencia para minimizar
+  // invalidaciones y evitar el patrón de "stale ref" (Ver F4/Case 2).
+  const editingSceneTextRef = useRef<Record<number, string>>({});
+  const editingTitleRef = useRef<string | null>(null);
+  const editingCoverPromptRef = useRef<string>('');
+  const editingEndPromptRef = useRef<string>('');
+  const sceneIncludedCharactersRef = useRef<Record<number, string[]>>({});
+  const sceneExcludedCharactersRef = useRef<Record<number, string[]>>({});
+  const coverIncludedCharactersRef = useRef<string[]>([]);
+  const coverExcludedCharactersRef = useRef<string[]>([]);
+  const endIncludedCharactersRef = useRef<string[]>([]);
+  const endExcludedCharactersRef = useRef<string[]>([]);
+  const sceneReferenceImagesRef = useRef<Record<number, string>>({});
+  const coverReferenceImageRef = useRef<string | null>(null);
+  const endReferenceImageRef = useRef<string | null>(null);
+  const locationRef = useRef<string>('');
+  const customLocationRef = useRef<string>('');
+  const charactersRef = useRef<string>('');
+  const styleRef = useRef<string>('reflexivo');
+  const illustrationStyleRef = useRef<string>('ghibli');
+  const additionalNotesRef = useRef<string>('');
+
+  useEffect(() => { editingSceneTextRef.current = editingSceneText; }, [editingSceneText]);
+  useEffect(() => { editingTitleRef.current = editingTitle; }, [editingTitle]);
+  useEffect(() => { editingCoverPromptRef.current = editingCoverPrompt; }, [editingCoverPrompt]);
+  useEffect(() => { editingEndPromptRef.current = editingEndPrompt; }, [editingEndPrompt]);
+  useEffect(() => { sceneIncludedCharactersRef.current = sceneIncludedCharacters; }, [sceneIncludedCharacters]);
+  useEffect(() => { sceneExcludedCharactersRef.current = sceneExcludedCharacters; }, [sceneExcludedCharacters]);
+  useEffect(() => { coverIncludedCharactersRef.current = coverIncludedCharacters; }, [coverIncludedCharacters]);
+  useEffect(() => { coverExcludedCharactersRef.current = coverExcludedCharacters; }, [coverExcludedCharacters]);
+  useEffect(() => { endIncludedCharactersRef.current = endIncludedCharacters; }, [endIncludedCharacters]);
+  useEffect(() => { endExcludedCharactersRef.current = endExcludedCharacters; }, [endExcludedCharacters]);
+  useEffect(() => { sceneReferenceImagesRef.current = sceneReferenceImages; }, [sceneReferenceImages]);
+  useEffect(() => { coverReferenceImageRef.current = coverReferenceImage; }, [coverReferenceImage]);
+  useEffect(() => { endReferenceImageRef.current = endReferenceImage; }, [endReferenceImage]);
+  useEffect(() => { locationRef.current = location; }, [location]);
+  useEffect(() => { customLocationRef.current = customLocation; }, [customLocation]);
+  useEffect(() => { charactersRef.current = characters; }, [characters]);
+  useEffect(() => { styleRef.current = style; }, [style]);
+  useEffect(() => { illustrationStyleRef.current = illustrationStyle; }, [illustrationStyle]);
+  useEffect(() => { additionalNotesRef.current = additionalNotes; }, [additionalNotes]);
 
   // Id del cuento vigente: las tareas en vuelo lo comparan antes de aplicar
   // resultados, para que un reset/regeneración no reciba imágenes huérfanas.
   const storyIdRef = useRef<string | null>(null);
-  useEffect(() => { storyIdRef.current = story?.id ?? null; }, [story]);
+  // A3a/S6 — recuerda el storyId previo para poder invalidar el registry de
+  // save-retries del ciclo abandonado en cada reemplazo (nuevo id o null).
+  // Consumido por el effect que corre DESPUÉS de declarar `pipeline`.
+  const prevStoryIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    storyIdRef.current = story?.id ?? null;
+    // También registrar el story activo en el hook para que enqueueDraftWrite
+    // pueda invalidar escrituras encoladas cuando el story cambia (delete/
+    // regenerar/aceptar recovery). Cambios de id resetean revision a 0.
+    setActiveDraftStoryId(story?.id ?? null);
+  }, [story, setActiveDraftStoryId]);
 
-  const pipeline = useStoryImagePipeline();
-  // Métodos estables del pipeline (el objeto cambia de identidad por render)
-  const { markResolved: markPipelineResolved, cancel: cancelPipeline } = pipeline;
+  // A3/S5: auto-persist de buffers editor extendidos (edited prompts, includes/
+  // excludes, referencias, currentStep, title, endExcluded). Cada cambio pasa
+  // por `saveDraft`, que debouncea 2s y encola vía `enqueueDraftWrite` —
+  // NUNCA se llama a `saveDraftNow` directo. Se salta:
+  //  - Antes del primer commit hidratado (evita spam al montar / al restore).
+  //  - En pasos `config` / `complete` (fuera del flujo de edición).
+  //
+  // Semántica: cada patch trae SÓLO las claves editor-buffer; la selección de
+  // opciones y las imágenes originales las escriben sus propios sitios.
+  const skipNextAutoPersistRef = useRef(true);
+  useEffect(() => {
+    if (skipNextAutoPersistRef.current) {
+      skipNextAutoPersistRef.current = false;
+      return;
+    }
+    if (currentStep === 'config' || currentStep === 'complete') return;
+    // A3a/S7 — Bump SÍNCRONO del contentRevision ANTES de encolar el patch
+    // debounceado. Marca esta edición como una revisión nueva del contenido:
+    // si un debounce previo aún no disparó, la identidad capturada por el
+    // patch anterior queda invalidada (queue-start CAS lo detectará como
+    // stale). El propio saveDraft capturará el contentRev nuevo justo debajo.
+    bumpContentRevision();
+    saveDraft({
+      currentStep,
+      editingScenePrompt,
+      editingCharacterPrompt,
+      editingCoverPrompt,
+      editingEndPrompt,
+      editingSceneText,
+      editingTitle,
+      sceneIncludedCharacters,
+      coverIncludedCharacters,
+      endIncludedCharacters,
+      sceneExcludedCharacters,
+      coverExcludedCharacters,
+      endExcludedCharacters,
+      sceneReferenceImages,
+      coverReferenceImage,
+      endReferenceImage,
+    });
+  }, [
+    saveDraft,
+    bumpContentRevision,
+    currentStep,
+    editingScenePrompt,
+    editingCharacterPrompt,
+    editingCoverPrompt,
+    editingEndPrompt,
+    editingSceneText,
+    editingTitle,
+    sceneIncludedCharacters,
+    coverIncludedCharacters,
+    endIncludedCharacters,
+    sceneExcludedCharacters,
+    coverExcludedCharacters,
+    endExcludedCharacters,
+    sceneReferenceImages,
+    coverReferenceImage,
+    endReferenceImage,
+  ]);
+
+  // A3a/S6 — pasamos `activeIdentity` para que `pipeline.saveFailedCount`
+  // sea el conteo scopeado al (storyId, epoch) actual. Fallas de Story A no
+  // deben bloquear el gate mientras el UI está en Story B.
+  const pipeline = useStoryImagePipeline({ activeIdentity });
+  // Método estable del pipeline (el objeto cambia de identidad por render).
+  // `markResolved` no se re-exporta: apply YA no publica estado terminal — ese
+  // rol es exclusivo del runner (ver storyImagePipelineRunner.executePhase).
+  const { cancel: cancelPipeline, invalidateSaveRetries: pipelineInvalidateSaveRetries } = pipeline;
+
+  // A3a/S6 — Story replacement detector. Corre DESPUÉS de que `pipeline` está
+  // declarado (TDZ) y sincronizado con el ciclo anterior de `story`. Cuando el
+  // storyId cambia (nuevo id O null), purga las entradas save-failed del ciclo
+  // abandonado — pertenecen a un lifecycle ya cerrado y no deben bloquear el
+  // gate del próximo cuento.
+  useEffect(() => {
+    const nextStoryId = story?.id ?? null;
+    const prevStoryId = prevStoryIdRef.current;
+    if (prevStoryId !== null && prevStoryId !== nextStoryId) {
+      pipelineInvalidateSaveRetries({ storyId: prevStoryId });
+    }
+    prevStoryIdRef.current = nextStoryId;
+  }, [story, pipelineInvalidateSaveRetries]);
+
+  // Derivadores del estado del runner. Un ítem está "ocupado" mientras el
+  // provider está corriendo o mientras el snapshot se persiste; el UI no
+  // celebra completitud durante `persisting`.
+  const phaseOf = (id: string): ImageSelectorPhase => {
+    const s = pipeline.statusOf(id);
+    if (s === 'running') return 'generating';
+    if (s === 'persisting') return 'saving';
+    return 'idle';
+  };
+  const isItemBusy = (id: string) => phaseOf(id) !== 'idle';
 
   // Al desmontar, dejar de sacar tareas de la cola (las en vuelo se descartan
   // solas vía storyIdRef).
@@ -729,8 +1100,18 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     // Si el cuento ya está completo Y tiene todas las imágenes, eliminar cualquier borrador viejo
     // NO borrar el draft si faltan imágenes - las necesitamos recuperar del draft
     if (initialStory.metadata.status === 'ready' && !hasMissingSceneImages) {
-      deleteDraft();
-      console.log('[CuentacuentoEditor] Deleted old draft - story is complete with all images');
+      // B1 — ANTES esto llamaba `deleteDraft()`, un borrado sin guardas keyed
+      // sólo por (liturgia_id, user_id). Bajo B1 eso es inseguro por dos vías:
+      //   1) `initialStory` sale del elemento EN MEMORIA, que ya está en
+      //      'ready' apenas se finaliza y ANTES de que la liturgia se guarde —
+      //      así que un remonte en esa ventana destruía la única copia
+      //      superviviente del cuento;
+      //   2) la fila es compartida por toda la liturgia (UNIQUE), de modo que
+      //      podía borrar el borrador de OTRA historia.
+      // El único borrador autorizado bajo B1 es el compare-and-delete
+      // confirmado por el padre tras guardar la liturgia. Una fila sobrante es
+      // inofensiva: se ofrece para recuperar y el usuario la descarta.
+      console.log('[CuentacuentoEditor] Story is complete; leaving the draft for the confirmed compare-and-delete');
     } else if (hasMissingSceneImages) {
       console.log('[CuentacuentoEditor] Keeping draft - story is missing scene images, will try to recover from draft');
     }
@@ -851,7 +1232,15 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   ]);
 
   // Función para restaurar desde un draft
-  const restoreFromDraft = useCallback((draftData: CuentacuentosDraftFull) => {
+  const restoreFromDraft = useCallback((draftData: CuentacuentosDraftFull): Story | null => {
+    // Devuelve la story RECONSTRUIDA (con las URLs de imagen rehidratadas) para
+    // que el caller no tenga que rehacer ese trabajo — lo necesita la
+    // recuperación de un borrador ya finalizado (B1).
+    let restoredForCaller: Story | null = null;
+    // A3/S5: silenciar el auto-persist effect durante el batch de restore —
+    // los sucesivos setState no deben re-persistir lo que acabamos de leer.
+    skipNextAutoPersistRef.current = true;
+
     // Restaurar configuración
     setLocation(draftData.config.location);
     setCustomLocation(draftData.config.customLocation);
@@ -899,6 +1288,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
           : draftData.story.endImageUrl,
       };
       setStory(restoredStory);
+      restoredForCaller = restoredStory;
 
       // Restaurar storyProps desde el story del draft para que las llamadas a
       // generate-scene-images incluyan los props correctos al regenerar imágenes.
@@ -935,8 +1325,6 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     setSelectedCover(draftData.selectedCover);
     setEndOptions(draftData.endOptions);
     setSelectedEnd(draftData.selectedEnd);
-    setEndIncludedCharacters([]);
-    setEditingSceneText({});
 
     // Restaurar modos de imagen de referencia de escena (style | pov)
     // Normalizar keys a números por el mismo motivo que sceneImageOptions
@@ -947,13 +1335,58 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
       }
     }
     setSceneReferenceMode(normalizedModes);
+    // A3/S5: sincronizar ref inmediatamente para que el pipeline lea el modo
+    // vigente antes del próximo useEffect flush.
+    sceneReferenceModeRef.current = normalizedModes;
+
+    // A3/S5: restaurar buffers extendidos del editor (edited prompts, includes/
+    // excludes, referencias por escena, title, landmarkVisible). Se aplican
+    // TANTO al React state como a las refs síncronas — cualquier pipeline read
+    // que corra antes del próximo commit ve el snapshot restaurado, no la
+    // pizarra en blanco del render anterior.
+    const normalizeNumericRecord = <T,>(src: Record<number, T> | undefined): Record<number, T> => {
+      const out: Record<number, T> = {};
+      for (const [k, v] of Object.entries(src || {})) out[Number(k)] = v;
+      return out;
+    };
+    const restoredScenePrompt = normalizeNumericRecord<string>(draftData.editingScenePrompt);
+    const restoredCharacterPrompt = { ...(draftData.editingCharacterPrompt || {}) };
+    const restoredSceneText = normalizeNumericRecord<string>(draftData.editingSceneText);
+    const restoredSceneRefs = normalizeNumericRecord<string>(draftData.sceneReferenceImages);
+    const restoredSceneIncluded = normalizeNumericRecord<string[]>(draftData.sceneIncludedCharacters);
+    const restoredSceneExcluded = normalizeNumericRecord<string[]>(draftData.sceneExcludedCharacters);
+
+    setEditingScenePrompt(restoredScenePrompt);
+    setEditingCharacterPrompt(restoredCharacterPrompt);
+    setEditingSceneText(restoredSceneText);
+    setSceneReferenceImages(restoredSceneRefs);
+    setSceneIncludedCharacters(restoredSceneIncluded);
+    setSceneExcludedCharacters(restoredSceneExcluded);
+    setEditingCoverPrompt(draftData.editingCoverPrompt ?? '');
+    setEditingEndPrompt(draftData.editingEndPrompt ?? '');
+    setCoverReferenceImage(draftData.coverReferenceImage ?? null);
+    setEndReferenceImage(draftData.endReferenceImage ?? null);
+    setCoverIncludedCharacters(draftData.coverIncludedCharacters ?? []);
+    setCoverExcludedCharacters(draftData.coverExcludedCharacters ?? []);
+    setEndIncludedCharacters(draftData.endIncludedCharacters ?? []);
+    // A3/S5: end excluded lo restauramos igual que cover (nunca silent reset).
+    setEndExcludedCharacters(draftData.endExcludedCharacters ?? []);
+    setEditingTitle(draftData.editingTitle ?? null);
+
+    // Sincronizar refs de prompts editados INMEDIATAMENTE — el pipeline
+    // (retryFailed / autoKick) puede leerlos antes de que se propague el
+    // efecto que sincroniza refs con state.
+    editingScenePromptRef.current = restoredScenePrompt;
+    editingCharacterPromptRef.current = restoredCharacterPrompt;
 
     // Restaurar paso actual
     setCurrentStep(draftData.currentStep);
+    currentStepRef.current = draftData.currentStep;
     setShowForm(false);
 
     console.log(`[CuentacuentoEditor] Restored from draft, step: ${draftData.currentStep}`);
-  }, []);
+    return restoredForCaller;
+  }, [setStory]);
 
   // Efecto para auto-recuperar imágenes de escenas del draft cuando faltan en initialStory
   // Este efecto corre cuando el draft se carga y detecta que hay imágenes en el draft pero no en el story
@@ -1005,7 +1438,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
         scenes: updatedScenes,
       };
     });
-  }, [draft, initialStory]);
+  }, [draft, initialStory, setStory]);
 
   // Sincronizar endIncludedCharacters cuando cambian los personajes del cuento
   useEffect(() => {
@@ -1018,17 +1451,93 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   }, [story?.characters]);
 
   // Manejar aceptación de recuperación
+  // A3a/S6: recovery = reemplazo de ciclo de vida — purgar registry del
+  // ciclo abandonado ANTES de mutar identidad para no arrastrar entradas.
   const handleAcceptRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
     const recoveredDraft = acceptRecovery();
-    if (recoveredDraft) {
-      restoreFromDraft(recoveredDraft);
-    }
-  }, [acceptRecovery, restoreFromDraft]);
+    if (!recoveredDraft) return;
+    const restoredStory = restoreFromDraft(recoveredDraft);
 
-  // Manejar rechazo de recuperación
+    // B1 — Una fila `complete` recuperada es una finalización que NUNCA fue
+    // confirmada por el padre (se finalizó y se cerró la pestaña sin guardar la
+    // liturgia). Sin esto el borrador quedaba en un limbo permanente: el usuario
+    // recuperaba, guardaba la liturgia, y el prompt de recuperación volvía a
+    // aparecer en cada montaje porque nadie tenía un cierre con el que
+    // confirmarlo — y la única salida visible ("Empezar de nuevo") descarta.
+    //
+    // Rearmamos el handshake desde la propia fila, usando `persistedUpdatedAt`
+    // (el `updated_at` REAL de la base, escrito sólo por el load). Si el
+    // usuario edita después de recuperar, `updated_at` se mueve y el
+    // compare-and-delete no borra nada — que es la semántica correcta: un
+    // borrador más nuevo que lo entregado exige re-finalizar.
+    if (
+      recoveredDraft.currentStep === 'complete' &&
+      restoredStory?.id &&
+      recoveredDraft.persistedUpdatedAt
+    ) {
+      const storyId = restoredStory.id;
+      // F3 — SOLO el `updated_at` que vino de la base sirve de testigo.
+      // `savedAt` lo re-estampa `normalizeSnapshot` con el reloj del cliente en
+      // cada commit, así que una escritura entre el montaje y este clic lo
+      // convertía en un valor que nunca puede coincidir con la fila: la
+      // confirmación quedaba condenada a borrar 0 y el prompt volvía para
+      // siempre — exactamente el limbo que el finding 1 vino a cerrar.
+      const expectedUpdatedAt = recoveredDraft.persistedUpdatedAt;
+      const usedRef = { used: false };
+      const confirmFinalization = async (): Promise<void> => {
+        if (usedRef.used) return;
+        usedRef.used = true;
+        await confirmFinalizationDelete({ storyId, expectedUpdatedAt });
+      };
+      const slides = createPreviewSlideGroup(restoredStory);
+      setPreviewSlides(slides as unknown as SlideGroup);
+      setConfirmed(true);
+      onStoryCreated(restoredStory, slides as unknown as SlideGroup, confirmFinalization);
+    }
+  }, [
+    acceptRecovery,
+    restoreFromDraft,
+    pipeline,
+    activeIdentity,
+    confirmFinalizationDelete,
+    onStoryCreated,
+  ]);
+
+  // Manejar rechazo de recuperación (equivalente lifecycle a delete).
   const handleDeclineRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
     declineRecovery();
-  }, [declineRecovery]);
+  }, [declineRecovery, pipeline, activeIdentity]);
+
+  // A6 — REPARAR un borrador roto (paso avanzado sin historia utilizable).
+  //
+  // Nunca se reescribe el borrador en silencio: se conserva TODO lo que el
+  // usuario había configurado (`config`, y el `editorStateV1` restaurado por
+  // B5 donde exista) y se lo devuelve al paso `config`, que es el único desde
+  // el que puede volver a generar. La alternativa —restaurar tal cual— dejaría
+  // al editor en "generando escenas" sin nada que mostrar.
+  const handleRepairRecovery = useCallback(() => {
+    pipeline.invalidateSaveRetries(activeIdentity);
+    const recoveredDraft = acceptRecovery();
+    if (!recoveredDraft) return;
+
+    // Restaurar SÓLO la configuración persistida; la historia no existe.
+    setLocation(recoveredDraft.config.location);
+    setCustomLocation(recoveredDraft.config.customLocation);
+    setCharacters(recoveredDraft.config.characters);
+    setStyle(recoveredDraft.config.style);
+    setIllustrationStyle(recoveredDraft.config.illustrationStyle);
+    setAdditionalNotes(recoveredDraft.config.additionalNotes);
+
+    setStory(null);
+    setPreviewSlides(null);
+    setConfirmed(false);
+    setCurrentStep('config');
+    currentStepRef.current = 'config';
+    setShowForm(true);
+    setError(null);
+  }, [acceptRecovery, pipeline, activeIdentity, setStory]);
 
   const selectedLocation = location === 'custom' ? customLocation : location;
 
@@ -1231,12 +1740,21 @@ Instrucciones críticas:
 
       if (fnError) throw await extractInvokeError(fnError);
 
+      // La vista previa es un intento COMPLETO de `generate-story`: reemplaza
+      // el conjunto de avisos aunque no haya cuento. Va antes del guard de
+      // `promptPreview` para que una respuesta sin panel igual limpie los
+      // avisos del intento anterior.
+      setWarnings(parseWarnings(data?.warnings));
+
       if (data?.promptPreview) {
         setPromptPreview(data.promptPreview);
         setShowPromptPreview(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar el prompt');
+      // Mismo contrato que en la generación: los avisos del cuerpo de error
+      // siguen siendo ciertos, y un error sin cuerpo legible limpia el estado.
+      setWarnings(err instanceof InvokeError ? err.warnings : []);
     } finally {
       setLoadingPrompt(false);
     }
@@ -1263,6 +1781,13 @@ Instrucciones críticas:
       if (!data?.success) {
         throw new Error(data?.error || 'Error al generar el cuento');
       }
+
+      // El cuento se generó; si alguna referencia quedó fuera, se avisa aparte
+      // y sin bloquear.
+      setSkippedImages(parseSkippedImages(data.skippedImages));
+      // Ídem para la investigación que se degradó: el cuento existe, pero se
+      // escribió sin esa información y el usuario tiene que poder saberlo.
+      setWarnings(parseWarnings(data.warnings));
 
       const hasStructuredData = Array.isArray(data.scenes) && data.scenes.length > 0;
 
@@ -1295,10 +1820,22 @@ Instrucciones críticas:
               visualDescription: name,
             })),
         scenes: hasStructuredData
-          ? data.scenes.map((scene: { number: number; text: string; visualDescription: string }) => ({
+          ? data.scenes.map((scene: { number: number; text: string; visualDescription: string; landmarkVisible?: unknown }) => ({
               number: scene.number,
               text: scene.text,
               visualDescription: scene.visualDescription,
+              // T-D.13 — El esquema estricto del borde emite `landmarkVisible` y
+              // el constructor de peticiones de escena ya lo reenviaba; este
+              // mapper era el eslabón que lo tiraba, así que el campo existía a
+              // los dos extremos y no llegaba nunca.
+              //
+              // Sólo sobreviven booleanos, y `false` es tan significativo como
+              // `true`: dice "este landmark NO va en esta escena". Un valor
+              // ausente o mal formado NO se coacciona — se omite, y el opcional
+              // sigue siendo opcional.
+              ...(typeof scene.landmarkVisible === 'boolean'
+                ? { landmarkVisible: scene.landmarkVisible }
+                : {}),
             }))
           : (data.content || '').split('\n\n').filter((p: string) => p.trim().length > 0).map((text: string, i: number) => ({
               number: i + 1,
@@ -1362,10 +1899,17 @@ Instrucciones críticas:
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
+      // El contrato manda skippedImages también en las respuestas de error:
+      // saber qué referencia quedó fuera suele explicar el fallo.
+      setSkippedImages(err instanceof InvokeError ? err.skippedImages : []);
+      // Y los avisos de investigación igual: la degradación ocurrió ANTES del
+      // fallo y sigue siendo cierta. El aviso y el error rojo conviven; ninguno
+      // reemplaza al otro. Un error sin cuerpo legible (red, no-JSON) limpia.
+      setWarnings(err instanceof InvokeError ? err.warnings : []);
     } finally {
       setIsGenerating(false);
     }
-  }, [context, getRequestBody, selectedLocation, characters, illustrationStyle, storyProps]);
+  }, [context, getRequestBody, selectedLocation, characters, illustrationStyle, storyProps, setStory]);
 
   // Refinar cuento con feedback
   const handleRefineStory = useCallback(async () => {
@@ -1438,7 +1982,25 @@ Instrucciones críticas:
         },
       };
 
+      // F3 (D13) — Un refinamiento reemplaza title/summary/characters/scenes/
+      // spiritualConnection sobre `story`. Es una mutación editor-visible del
+      // contenido: bumpea contentRevision ANTES del setStory para que una
+      // aprobación en vuelo (handleApproveStory) lo detecte vía el CAS
+      // post-persistencia y quede stale (conservando el refinamiento) en vez de
+      // transicionar con la story pre-refine y revertirlo con setStory(committed).
+      bumpContentRevision();
       setStory(refinedStory);
+      // Finding 4 (re-revisión de c4f3b6b) — dos cosas en una línea:
+      //   1) El bump de arriba invalida, vía el CAS de queue-start, cualquier
+      //      patch de buffer pendiente en el debounce (p.ej. una edición de
+      //      texto de escena hecha mientras el refine viajaba). Pasar por
+      //      `saveDraft` dispara el merge D14 y lo RE-ESTAMPA bajo la identidad
+      //      fresca en vez de dejarlo caer con cero I/O — el mismo patrón que
+      //      F1 exige para todo bump de contenido.
+      //   2) El refinamiento ahora SE PERSISTE. Antes vivía sólo en estado React
+      //      hasta que una aprobación autoritativa posterior lo arrastrara; una
+      //      recarga en el medio lo perdía.
+      saveDraft({ story: refinedStory });
       setStoryFeedback('');
       setShowFeedbackPanel(false);
 
@@ -1452,26 +2014,38 @@ Instrucciones críticas:
     } finally {
       setIsRefining(false);
     }
-  }, [story, storyFeedback, refinementType, context]);
+  }, [story, storyFeedback, refinementType, context, setStory, bumpContentRevision, saveDraft]);
 
-  // Eliminar cuento completamente (historia + imágenes + draft)
+  // Eliminar cuento: limpia el estado local y BORRA SOLO LA FILA del draft.
+  // A4/A4a — invariante 7: ninguna acción del editor borra bytes de Storage.
+  // Las imágenes quedan: una liturgia ya guardada puede referenciarlas, y su
+  // recolección es un GC aparte consciente de referencias.
   const handleDeleteStory = useCallback(async () => {
     setIsDeleting(true);
     setError(null);
 
     // Descartar el lote en curso antes de borrar: las tareas en vuelo se
-    // auto-descartan al ver que storyIdRef ya no coincide.
+    // auto-descartan al ver que storyIdRef ya no coincide. El bump de epoch
+    // asegura que además cualquier guardado encolado ya en vuelo hacia el
+    // hook persista pero no commitee al estado (drop del stale commit).
+    // A3a/S6: invalidar el registry de save-retries ATÓMICAMENTE con la
+    // transición de lifecycle — entradas save-failed del ciclo actual no
+    // deben bloquear la próxima aprobación (Story A → Story B isolation).
+    pipeline.invalidateSaveRetries(activeIdentity);
     cancelPipeline();
     storyIdRef.current = null;
+    bumpDraftEpoch();
 
     try {
-      console.log('[CuentacuentoEditor] Deleting story and all associated images...');
+      console.log('[CuentacuentoEditor] Deleting story draft record (Storage preserved)...');
 
-      // 1. Eliminar imágenes del Storage y el draft
-      const success = await deleteStoryImages();
+      // 1. Borrar SOLO la fila del draft (cero storage.remove). El borrado va
+      //    serializado detrás de la cola de escrituras, así que un upsert en
+      //    vuelo no puede re-crear la fila después.
+      const success = await deleteDraftRecord();
 
       if (!success) {
-        throw new Error('No se pudieron eliminar las imágenes del cuento');
+        throw new Error('No se pudo eliminar el borrador del cuento');
       }
 
       // 2. Limpiar todo el estado local
@@ -1487,6 +2061,9 @@ Instrucciones críticas:
       setSelectedEnd(null);
       setEndIncludedCharacters([]);
       setStoryProps([]);
+      // Los avisos describían la generación del cuento que se acaba de borrar:
+      // sobrevivir a su ciclo de vida los volvería una afirmación falsa.
+      setWarnings([]);
       setCurrentStep('config');
       setShowForm(true);
       setConfirmed(false);
@@ -1510,136 +2087,65 @@ Instrucciones críticas:
       setIsDeleting(false);
       setShowDeleteDialog(false);
     }
-  }, [deleteStoryImages, onStoryDeleted, cancelPipeline]);
+  }, [deleteDraftRecord, onStoryDeleted, cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity, setStory]);
 
-  // Guardados serializados del pipeline: leen SIEMPRE los refs (estado más
-  // reciente) y reemplazan base64→URL en ref+estado al terminar, así los
-  // próximos guardados no re-suben imágenes ya persistidas.
-  const enqueueCharacterSave = useCallback((): Promise<void> => {
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({
-          currentStep: currentStepRef.current,
-          characterSheetOptions: characterSheetOptionsRef.current,
-          selectedCharacterSheets: selectedCharacterSheetsRef.current,
-        });
-        const uploaded = result.uploadedUrls?.characterSheetUrls;
-        if (uploaded) {
-          const swapped = swapOptionsWithUploadedUrls(characterSheetOptionsRef.current, uploaded);
-          characterSheetOptionsRef.current = swapped;
-          setCharacterSheetOptions(swapped);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (personajes):', err);
-      });
-    return saveQueueRef.current;
-  }, [saveDraftNow]);
+  // ===== Builders de tareas del pipeline A2 =====
+  // Cada builder devuelve un PipelineItemTask con tres fases:
+  //   provider → apply → persist
+  // El runner garantiza que apply y persist no corran si el token fue
+  // invalidado entre el invoke y su resolución. La guarda adicional en apply
+  // (storyId vs storyIdRef) protege de resucitar resultados de un story
+  // eliminado/reemplazado dentro de la misma corrida.
 
-  const enqueueSceneSave = useCallback((): Promise<void> => {
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({
-          currentStep: currentStepRef.current,
-          sceneImageOptions: sceneImageOptionsRef.current,
-          selectedSceneImages: selectedSceneImagesRef.current,
-          sceneReferenceModes: sceneReferenceModeRef.current,
-        });
-        const uploaded = result.uploadedUrls?.sceneImageUrls;
-        if (uploaded) {
-          const swapped = swapOptionsWithUploadedUrls(sceneImageOptionsRef.current, uploaded);
-          sceneImageOptionsRef.current = swapped;
-          setSceneImageOptions(swapped);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (escenas):', err);
-      });
-    return saveQueueRef.current;
-  }, [saveDraftNow]);
+  // Identidad de corrida actual: lee del getter estable del hook, que a su vez
+  // lee refs live (storyId + epoch). No captura valores del render — cada
+  // invocación devuelve la identidad viva en el instante exacto en que el
+  // runner arma `AppliedIdentity`.
+  const buildRunIdentity = useCallback((): RunIdentity => getDraftIdentity(), [getDraftIdentity]);
 
-  // Núcleo de generación de character sheet, compartido por el botón manual y
-  // el pipeline automático. Actualiza ref+estado y encola el guardado. Lanza
-  // en error para que el pipeline marque la tarea como fallida.
-  const generateCharacterSheetCore = useCallback(async (
+  // Builder: character sheet — delega en la factory de producción
+  // (`makeCharacterSheetTask`) para no repetir la construcción de la tarea.
+  const buildCharacterSheetTask = useCallback((
     character: StoryCharacter,
     customPrompt?: string,
     append = false
-  ): Promise<void> => {
+  ): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
-    const storyIdAtStart = story.id;
-
     const effectivePrompt = customPrompt ?? character.visualDescription;
     if (!effectivePrompt.trim()) throw new Error('El personaje no tiene descripción visual');
 
-    const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-      body: {
-        type: 'character',
-        styleId: story.illustrationStyle,
-        character: {
-          name: character.name,
-          description: character.description,
-          visualDescription: effectivePrompt,
-        },
-        count: 2,
-        modelTier: 'flash',
-      },
+    return makeCharacterSheetTask({
+      character,
+      effectivePrompt,
+      append,
+      illustrationStyle: story.illustrationStyle,
+      characterSheetOptionsRef,
+      selectedCharacterSheetsRef,
+      currentStepRef,
+      setCharacterSheetOptions,
+      setSelectedCharacterSheets,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
     });
-
-    if (fnError) throw await extractInvokeError(fnError);
-    if (!data?.success || !data.images?.length) {
-      throw new Error(data?.error || 'No se pudieron generar imágenes');
-    }
-
-    // Si el cuento cambió mientras generábamos (reset/regenerar/eliminar),
-    // descartar el resultado en vez de resucitar estado de un cuento botado.
-    if (storyIdRef.current !== storyIdAtStart) {
-      console.warn(`[CuentacuentoEditor] Descartando sheet de "${character.name}": el cuento cambió durante la generación`);
-      return;
-    }
-
-    // Actualizar ref (fuente de verdad para tareas concurrentes) y estado.
-    // En modo "append" se conservan las opciones existentes.
-    const base = characterSheetOptionsRef.current;
-    const existingOptions = append ? (base[character.id] || []) : [];
-    const merged = { ...base, [character.id]: [...existingOptions, ...data.images] };
-    characterSheetOptionsRef.current = merged;
-    setCharacterSheetOptions(merged);
-
-    // Al reemplazar todas las opciones, la selección anterior queda inválida.
-    if (!append && selectedCharacterSheetsRef.current[character.id] !== undefined) {
-      const nextSelection = { ...selectedCharacterSheetsRef.current };
-      delete nextSelection[character.id];
-      selectedCharacterSheetsRef.current = nextSelection;
-      setSelectedCharacterSheets(nextSelection);
-    }
-
-    // Si este personaje tenía un item fallido en el pipeline, queda resuelto.
-    markPipelineResolved(`sheet-${character.id}`);
-
-    await enqueueCharacterSave();
-  }, [story, enqueueCharacterSave, markPipelineResolved]);
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar character sheet para un personaje (botón manual)
   const handleGenerateCharacterSheet = useCallback(async (
     character: StoryCharacter,
-    index: number,
+    _index: number,
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
     if (!story) return;
-
-    setGeneratingCharacterIndex(index);
     setError(null);
-
     try {
-      await generateCharacterSheetCore(character, customPrompt, generateOptions?.append ?? false);
+      const task = buildCharacterSheetTask(character, customPrompt, generateOptions?.append ?? false);
+      await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando character sheet');
-    } finally {
-      setGeneratingCharacterIndex(null);
     }
-  }, [story, generateCharacterSheetCore]);
+  }, [story, buildCharacterSheetTask, buildRunIdentity, pipeline]);
 
   // ===== Lugares y objetos recurrentes (props) =====
   // Reemplaza base64 por URLs subidas dentro de los props del estado
@@ -1653,14 +2159,18 @@ Instrucciones críticas:
     });
     setStoryProps(prev => swapProps(prev));
     setStory(prev => prev ? { ...prev, props: swapProps(prev.props || []) } : prev);
-  }, []);
+  }, [setStory]);
 
   // Aplica una transformación a los props en storyProps + story.props y
   // persiste el story actualizado en el draft. El guardado pasa por la MISMA
-  // cola serializada que los guardados del pipeline para no pisarse con ellos.
+  // cola serializada (enqueueDraftWrite, en el hook) que los guardados del
+  // pipeline, así que nunca se pisa con ellos.
   const applyPropsUpdate = useCallback(async (updater: (props: StoryProp[]) => StoryProp[]) => {
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = updater(baseProps);
+    // D13 — Mutación editor-visible sobre `story.props`: bumpea contentRevision
+    // para que una aprobación/finalización en vuelo la detecte y quede stale.
+    bumpContentRevision();
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -1672,28 +2182,57 @@ Instrucciones críticas:
       setStory(nextStory);
     }
 
-    saveQueueRef.current = saveQueueRef.current
-      .then(async () => {
-        const result = await saveDraftNow({ story: nextStory });
-        // Base64 recién subido → URL, para no re-subir en cada guardado ni
-        // mandar megabytes de base64 a cada generación de escena.
-        if (result.uploadedUrls?.propImageUrls) {
-          applyPropUrlSwap(result.uploadedUrls.propImageUrls);
-        }
-      })
-      .catch((err) => {
-        console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
-      });
-    await saveQueueRef.current;
+    // F1 — El bump de arriba invalidaría cualquier patch de buffer editor
+    // pendiente en el debounce (queue-start CAS incluye contentRevision), y este
+    // sitio persiste con `enqueueDraftWrite` directo (no pasa por el merge del
+    // debounce). Disparamos un `saveDraft` para que el merge D14 RE-ESTAMPE el
+    // patch pendiente bajo la identidad fresca (mismo lifecycle) en vez de
+    // dejarlo huérfano.
+    //
+    // Finding 1 (re-revisión de c4f3b6b) — el re-estampado DEBE llevar la story
+    // que este handler acaba de producir. El merge D14 es `{...prev, ...data}`
+    // llaveado por {epoch,storyId,revision} SIN contentRevision, así que un
+    // `{story: S1}` pendiente (p.ej. del blur de descripción de otro prop)
+    // sobrevivía al merge y se re-estampaba bajo la identidad NUEVA: 2 s después
+    // el debounce persistía S1 — DESPUÉS del `enqueueDraftWrite({story: S2})` de
+    // abajo — resucitando el prop borrado. Mandar `story: nextStory` hace que la
+    // clave stale quede sobrescrita por la vigente en el propio merge.
+    // Ojo: este `saveDraft` NO reemplaza el `enqueueDraftWrite` de abajo, que es
+    // el que sube los base64 nuevos y aplica el URL swap en `onCommit`.
+    //
+    // Finding 3 (re-revisión de b5c01e1) — mandar `story` SIEMPRE dejaba en el
+    // buffer una story PRE-swap de URLs: 2 s después el debounce re-subía los
+    // mismos base64 y re-persistía el cuento entero en cada mutación de prop.
+    // Sólo hace falta re-estampar cuando hay realmente una `story` obsoleta
+    // pendiente (el caso del blur de descripción); si no la hay, basta con
+    // `currentStep` y la escritura directa de abajo es la única.
+    const pendingHasStory = getPendingDraftPatchKeys().includes('story');
+    saveDraft(pendingHasStory && nextStory ? { currentStep, story: nextStory } : { currentStep });
+
+    try {
+      await enqueueDraftWrite(
+        { story: nextStory },
+        {
+          // Base64 recién subido → URL, para no re-subir en cada guardado ni
+          // mandar megabytes de base64 a cada generación de escena. Aplica sólo
+          // si la identidad del draft aún coincide con la del write commiteado.
+          onCommit: (uploadedUrls) => {
+            if (uploadedUrls.propImageUrls) {
+              applyPropUrlSwap(uploadedUrls.propImageUrls);
+            }
+          },
+        },
+      );
+    } catch (err) {
+      console.error('[CuentacuentoEditor] Error en guardado encolado (props):', err);
+    }
     return nextProps;
-  }, [story, storyProps, saveDraftNow, applyPropUrlSwap]);
+  }, [story, storyProps, enqueueDraftWrite, applyPropUrlSwap, setStory, bumpContentRevision, saveDraft, currentStep, getPendingDraftPatchKeys]);
 
-  // Núcleo de generación de hoja de referencia de lugar/objeto. Igual patrón
-  // que los character sheets: candidatas a memoria (efímeras), elección humana.
-  const generatePropSheetCore = useCallback(async (prop: StoryProp): Promise<void> => {
+  // Builder: prop sheet (candidatas efímeras — apply retorna APPLY_EPHEMERAL,
+  // no se persisten). Delega en `makePropSheetTask`.
+  const buildPropSheetTask = useCallback((prop: StoryProp): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
-    const storyIdAtStart = story.id;
-
     if (!prop.visualDescription?.trim()) {
       throw new Error(`"${prop.name}" no tiene descripción visual`);
     }
@@ -1707,59 +2246,29 @@ Instrucciones críticas:
       .filter(img => !sessionCandidates.has(img))
       .slice(0, 2);
 
-    const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-      body: {
-        type: 'prop',
-        styleId: story.illustrationStyle,
-        prop: {
-          name: prop.name,
-          kind: prop.kind,
-          visualDescription: prop.visualDescription,
-          referenceImages: photoRefs.length > 0 ? photoRefs : undefined,
-        },
-        count: 2,
-        modelTier: 'flash',
-      },
+    return makePropSheetTask({
+      prop,
+      illustrationStyle: story.illustrationStyle,
+      photoRefs,
+      propSheetOptionsRef,
+      setPropSheetOptions,
+      setSelectedPropSheets,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
     });
-
-    if (fnError) throw await extractInvokeError(fnError);
-    if (!data?.success || !data.images?.length) {
-      throw new Error(data?.error || 'No se pudieron generar imágenes');
-    }
-
-    if (storyIdRef.current !== storyIdAtStart) {
-      console.warn(`[CuentacuentoEditor] Descartando hoja de "${prop.name}": el cuento cambió durante la generación`);
-      return;
-    }
-
-    const base = propSheetOptionsRef.current;
-    const merged = { ...base, [prop.id]: data.images as string[] };
-    propSheetOptionsRef.current = merged;
-    setPropSheetOptions(merged);
-
-    // Regenerar invalida la selección previa de candidata
-    setSelectedPropSheets(prev => {
-      if (prev[prop.id] === undefined) return prev;
-      const next = { ...prev };
-      delete next[prop.id];
-      return next;
-    });
-
-    markPipelineResolved(`prop-${prop.id}`);
-  }, [story, markPipelineResolved]);
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
     if (!story) return;
-    setGeneratingPropId(prop.id);
     setError(null);
     try {
-      await generatePropSheetCore(prop);
+      const task = buildPropSheetTask(prop);
+      await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando hoja de referencia');
-    } finally {
-      setGeneratingPropId(null);
     }
-  }, [story, generatePropSheetCore]);
+  }, [story, buildPropSheetTask, buildRunIdentity, pipeline]);
 
   // Elegir una candidata: pasa a ser la PRIMERA referenceImage del prop
   // (getPropsForScene la envía primero y el edge function la usa como
@@ -1822,6 +2331,10 @@ Instrucciones críticas:
     // perdería al recargar (el auto-save continuo está deshabilitado).
     const baseProps = (story?.props && story.props.length > 0) ? story.props : storyProps;
     const nextProps = baseProps.map(p => p.id === propId ? { ...p, visualDescription } : p);
+    // D13 — Mutación editor-visible: bumpea contentRevision para que una
+    // aprobación en vuelo la detecte (y el patch parcial pendiente ya no se
+    // descarta gracias a D14).
+    bumpContentRevision();
     setStoryProps(nextProps);
     let nextStory: Story | null = story;
     if (story) {
@@ -1829,18 +2342,15 @@ Instrucciones críticas:
       setStory(nextStory);
     }
     saveDraft({ story: nextStory });
-  }, [story, storyProps, saveDraft]);
+  }, [story, storyProps, saveDraft, setStory, bumpContentRevision]);
 
-  // Núcleo de generación de imagen de escena, compartido por el botón manual y
-  // el pipeline automático. Actualiza ref+estado y encola el guardado. Lanza
-  // en error para que el pipeline marque la tarea como fallida.
-  const generateSceneImageCore = useCallback(async (
+  // Builder: imagen de escena — delega en `makeSceneTask`.
+  const buildSceneTask = useCallback((
     scene: StoryScene,
     customPrompt?: string,
     append = false
-  ): Promise<void> => {
+  ): PipelineItemTask<ProviderResult> => {
     if (!story) throw new Error('No hay cuento activo');
-    const storyIdAtStart = story.id;
 
     // Obtener personajes excluidos e incluidos manualmente para esta escena
     const excludedIds = sceneExcludedCharacters[scene.number] || [];
@@ -1856,77 +2366,39 @@ Instrucciones críticas:
         referenceImage: c.referenceImage,
       }));
 
-    // Usar prompt personalizado si se proporciona
+    // Usar prompt personalizado si se proporciona; preservar landmarkVisible (A3/S4).
     const sceneData = customPrompt
-      ? { text: scene.text, visualDescription: customPrompt }
-      : { text: scene.text, visualDescription: scene.visualDescription };
+      ? {
+          text: scene.text,
+          visualDescription: customPrompt,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        }
+      : {
+          text: scene.text,
+          visualDescription: scene.visualDescription,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        };
 
-    const sceneRefImage = sceneReferenceImages[scene.number];
-    const propsForScene = getPropsForScene(scene);
-
-    console.log(`[CuentacuentoEditor] Generating scene ${scene.number}:`, {
-      hasSceneRefImage: !!sceneRefImage,
-      charactersCount: charactersWithReferences.length,
-      charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
-      propsCount: propsForScene.length,
-      propNames: propsForScene.map(p => p.name),
+    return makeSceneTask({
+      scene,
+      sceneData,
+      charactersWithReferences,
+      location: story.location,
+      sceneReferenceImage: sceneReferenceImages[scene.number],
+      propsForScene: getPropsForScene(scene),
+      illustrationStyle: story.illustrationStyle,
+      append,
+      sceneImageOptionsRef,
+      selectedSceneImagesRef,
+      sceneReferenceModeRef,
+      currentStepRef,
+      setSceneImageOptions,
+      setSelectedSceneImages,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
     });
-
-    const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-      body: {
-        type: 'scene',
-        styleId: story.illustrationStyle,
-        scene: sceneData,
-        characters: charactersWithReferences,
-        location: story.location,
-        sceneReferenceImage: sceneRefImage, // Imagen de referencia manual
-        sceneReferenceMode: sceneReferenceModeRef.current[scene.number] ?? 'style',
-        props: propsForScene.length > 0 ? propsForScene : undefined,
-        count: 2,
-        modelTier: 'flash',
-      },
-    });
-
-    console.log(`[CuentacuentoEditor] Response for scene ${scene.number}:`, {
-      success: data?.success,
-      imagesCount: data?.images?.length || 0,
-      referenceImagesCount: data?.referenceImagesCount,
-      error: data?.error,
-    });
-
-    if (fnError) throw await extractInvokeError(fnError);
-    if (!data?.success || !data.images?.length) {
-      throw new Error(data?.error || 'No se pudieron generar imágenes');
-    }
-
-    // Si el cuento cambió mientras generábamos (reset/regenerar/eliminar),
-    // descartar el resultado en vez de resucitar estado de un cuento botado.
-    if (storyIdRef.current !== storyIdAtStart) {
-      console.warn(`[CuentacuentoEditor] Descartando imagen de escena ${scene.number}: el cuento cambió durante la generación`);
-      return;
-    }
-
-    // Actualizar ref (fuente de verdad para tareas concurrentes) y estado.
-    // En modo "append" se conservan las opciones existentes.
-    const base = sceneImageOptionsRef.current;
-    const existingSceneOptions = append ? (base[scene.number] || []) : [];
-    const merged = { ...base, [scene.number]: [...existingSceneOptions, ...data.images] };
-    sceneImageOptionsRef.current = merged;
-    setSceneImageOptions(merged);
-
-    // Al reemplazar todas las opciones, la selección anterior queda inválida.
-    if (!append && selectedSceneImagesRef.current[scene.number] !== undefined) {
-      const nextSelection = { ...selectedSceneImagesRef.current };
-      delete nextSelection[scene.number];
-      selectedSceneImagesRef.current = nextSelection;
-      setSelectedSceneImages(nextSelection);
-    }
-
-    // Si esta escena tenía un item fallido en el pipeline, queda resuelta.
-    markPipelineResolved(`scene-${scene.number}`);
-
-    await enqueueSceneSave();
-  }, [story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, enqueueSceneSave, markPipelineResolved]);
+  }, [invokeSceneImagesWithFeedback, story, sceneExcludedCharacters, sceneIncludedCharacters, sceneReferenceImages, getCharactersWithReferences, getPropsForScene, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   // Generar imagen para una escena (botón manual)
   const handleGenerateSceneImage = useCallback(async (
@@ -1967,17 +2439,14 @@ Instrucciones críticas:
       });
     }
 
-    setGeneratingSceneIndex(scene.number);
     setError(null);
-
     try {
-      await generateSceneImageCore(scene, customPrompt, append);
+      const task = buildSceneTask(scene, customPrompt, append);
+      await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen de escena');
-    } finally {
-      setGeneratingSceneIndex(null);
     }
-  }, [story, editingSceneText, toast, generateSceneImageCore]);
+  }, [story, editingSceneText, toast, buildSceneTask, buildRunIdentity, pipeline, setStory]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
@@ -2026,98 +2495,72 @@ Instrucciones críticas:
 - Atmósfera cálida y acogedora`;
   }, [story, coverExcludedCharacters, editingCoverPrompt]);
 
+  // Builder: portada — delega en `makeCoverTask`.
+  const buildCoverTask = useCallback((customPrompt?: string, append = false): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    // Usar EXACTAMENTE la misma lógica que las escenas
+    const excludedIds = coverExcludedCharacters;
+    const charactersWithReferences = story.characters
+      .filter(c => !excludedIds.includes(c.id))
+      .map(c => {
+        const options = characterSheetOptions[c.id];
+        const selectedIdx = selectedCharacterSheets[c.id];
+        const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
+
+    const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
+
+    return makeCoverTask({
+      illustrationStyle: story.illustrationStyle,
+      title: story.title,
+      protagonistVisualDescription: protagonist?.visualDescription || 'A friendly child character',
+      location: story.location,
+      charactersWithReferences,
+      coverReferenceImage,
+      primaryProps: getPrimaryProps(),
+      customPrompt: customPrompt || editingCoverPrompt || undefined,
+      append,
+      coverOptionsRef,
+      selectedCoverRef,
+      setCoverOptions,
+      setSelectedCover,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps, getDraftIdentity, enqueueGeneratedSnapshot]);
+
   // Generar portada
-  const handleGenerateCover = useCallback(async (customPrompt?: string) => {
+  const handleGenerateCover = useCallback(async (
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
-    const storyIdAtStart = story.id;
-
-    setGeneratingCover(true);
+    // Finding 3 — Guarda imperativa: el `disabled` del botón es feedback
+    // visual, no una garantía. `deriveNextStory` lee `coverOptionsRef` VIVA
+    // dentro del tail, así que una regeneración iniciada durante el envelope
+    // publicaría una portada distinta de la mostrada.
+    //
+    // PH/G5 — `pipeline.isBusy()` es la consulta VIVA al runner, no el booleano
+    // de render `pipeline.isRunning` (que puede ir un render atrás) ni un
+    // `statusOf` de un solo id: `reserveRun` desplaza la corrida GLOBAL, así
+    // que tras arrancar la portada el ítem `end` sigue idle y una guarda por
+    // ítem dejaría pasar el clic que aborta el lote en vuelo.
+    if (isApprovingRef.current || pipeline.isBusy()) return;
     setError(null);
-
     try {
-      // Usar EXACTAMENTE la misma lógica que handleGenerateSceneImage
-      const excludedIds = coverExcludedCharacters;
-
-      // Construir personajes con referencias igual que en escenas
-      const charactersWithReferences = story.characters
-        .filter(c => !excludedIds.includes(c.id))
-        .map(c => {
-          const options = characterSheetOptions[c.id];
-          const selectedIdx = selectedCharacterSheets[c.id];
-          const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-          return {
-            name: c.name,
-            visualDescription: c.visualDescription,
-            referenceImage,
-          };
-        });
-
-      const protagonist = story.characters.find(c => c.role === 'protagonist') || story.characters[0];
-
-      // Para la portada incluimos solo los props con rol "primary"
-      const primaryProps = getPrimaryProps();
-
-      // Log para debug (igual que en escenas)
-      console.log(`[CuentacuentoEditor] Generating cover:`, {
-        hasCoverRefImage: !!coverReferenceImage,
-        coverRefImageLength: coverReferenceImage?.length || 0,
-        coverRefImagePrefix: coverReferenceImage?.slice(0, 50) || 'none',
-        charactersCount: charactersWithReferences.length,
-        charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
-        propsCount: primaryProps.length,
-        propNames: primaryProps.map(p => p.name),
-      });
-
-      // Enviar EXACTAMENTE igual que escenas: characters + sceneReferenceImage
-      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-        body: {
-          type: 'cover',
-          styleId: story.illustrationStyle,
-          title: story.title,
-          protagonist: {
-            visualDescription: protagonist?.visualDescription || 'A friendly child character',
-          },
-          location: story.location,
-          // IGUAL QUE ESCENAS: usar "characters" en lugar de "characterReferences"
-          characters: charactersWithReferences,
-          // IGUAL QUE ESCENAS: usar "sceneReferenceImage" en lugar de "referenceImage"
-          sceneReferenceImage: coverReferenceImage,
-          props: primaryProps.length > 0 ? primaryProps : undefined,
-          customPrompt: customPrompt || editingCoverPrompt || undefined,
-          count: 4,
-          modelTier: 'pro',
-        },
-      });
-
-      // Log de respuesta (igual que en escenas)
-      console.log(`[CuentacuentoEditor] Response for cover:`, {
-        success: data?.success,
-        imagesCount: data?.images?.length || 0,
-        referenceImagesCount: data?.referenceImagesCount,
-        error: data?.error,
-      });
-
-      if (fnError) throw await extractInvokeError(fnError);
-
-      if (!data?.success || !data.images?.length) {
-        throw new Error(data?.error || 'No se pudieron generar imágenes de portada');
-      }
-
-      // Mismo guard que los cores: si el cuento cambió (reset/regenerar/
-      // eliminar) mientras generábamos, descartar el resultado.
-      if (storyIdRef.current !== storyIdAtStart) {
-        console.warn('[CuentacuentoEditor] Descartando portada: el cuento cambió durante la generación');
-        return;
-      }
-
-      setCoverOptions(data.images);
-
+      const task = buildCoverTask(customPrompt, generateOptions?.append ?? false);
+      await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando portada');
-    } finally {
-      setGeneratingCover(false);
     }
-  }, [story, characterSheetOptions, selectedCharacterSheets, coverExcludedCharacters, coverReferenceImage, editingCoverPrompt, getPrimaryProps]);
+  }, [story, buildCoverTask, buildRunIdentity, pipeline]);
 
   // Construir el prompt de fin para preview
   const buildEndPromptPreview = useCallback((): string => {
@@ -2156,180 +2599,244 @@ Instrucciones críticas:
 - Puede ser abstracta o con elementos del cuento`;
   }, [story, editingEndPrompt, endIncludedCharacters]);
 
+  // Builder: imagen final — delega en `makeEndTask`.
+  const buildEndTask = useCallback((customPrompt?: string, append = false): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    // Opt-in characters for the end image: only those explicitly selected
+    const charactersWithReferences = story.characters
+      .filter(c => endIncludedCharacters.includes(c.id))
+      .map(c => {
+        const options = characterSheetOptions[c.id];
+        const selectedIdx = selectedCharacterSheets[c.id];
+        const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
+
+    return makeEndTask({
+      illustrationStyle: story.illustrationStyle,
+      endReferenceImage: endReferenceImage || undefined,
+      charactersWithReferences,
+      customPrompt: customPrompt || editingEndPrompt || undefined,
+      append,
+      endOptionsRef,
+      selectedEndRef,
+      setEndOptions,
+      setSelectedEnd,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets, getDraftIdentity, enqueueGeneratedSnapshot]);
+
   // Generar imagen final
-  const handleGenerateEnd = useCallback(async (customPrompt?: string) => {
+  const handleGenerateEnd = useCallback(async (
+    customPrompt?: string,
+    generateOptions?: { append?: boolean }
+  ) => {
     if (!story) return;
-    const storyIdAtStart = story.id;
-
-    setGeneratingEnd(true);
+    // Finding 3 + PH/G5 — misma guarda imperativa que `handleGenerateCover`,
+    // incluida la consulta VIVA al runner que cierra la carrera cover↔end.
+    if (isApprovingRef.current || pipeline.isBusy()) return;
     setError(null);
-
     try {
-      // Opt-in characters for the end image: only those explicitly selected
-      const charactersWithReferences = story.characters
-        .filter(c => endIncludedCharacters.includes(c.id))
-        .map(c => {
-          const options = characterSheetOptions[c.id];
-          const selectedIdx = selectedCharacterSheets[c.id];
-          const referenceImage = options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-          return {
-            name: c.name,
-            visualDescription: c.visualDescription,
-            referenceImage,
-          };
-        });
-
-      const requestBody = {
-        type: 'end',
-        styleId: story.illustrationStyle,
-        // Imagen de referencia manual (si existe)
-        referenceImage: endReferenceImage || undefined,
-        // Personajes opt-in (solo los seleccionados)
-        characters: charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
-        // Prompt personalizado
-        customPrompt: customPrompt || editingEndPrompt || undefined,
-        count: 4,
-        modelTier: 'pro',
-      };
-
-      console.log('[CuentacuentoEditor] End image generation request:', {
-        ...requestBody,
-        referenceImage: requestBody.referenceImage ? `${requestBody.referenceImage.slice(0, 50)}...` : undefined,
-        charactersCount: charactersWithReferences.length,
-        charactersWithRefs: charactersWithReferences.filter(c => c.referenceImage).map(c => c.name),
-      });
-
-      const { data, error: fnError } = await supabase.functions.invoke('generate-scene-images', {
-        body: requestBody,
-      });
-
-      if (fnError) throw await extractInvokeError(fnError);
-
-      if (!data?.success || !data.images?.length) {
-        throw new Error(data?.error || 'No se pudieron generar imágenes de fin');
-      }
-
-      // Mismo guard que los cores: si el cuento cambió (reset/regenerar/
-      // eliminar) mientras generábamos, descartar el resultado.
-      if (storyIdRef.current !== storyIdAtStart) {
-        console.warn('[CuentacuentoEditor] Descartando imagen final: el cuento cambió durante la generación');
-        return;
-      }
-
-      setEndOptions(data.images);
-
+      const task = buildEndTask(customPrompt, generateOptions?.append ?? false);
+      await pipeline.runItems([task], buildRunIdentity());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen final');
-    } finally {
-      setGeneratingEnd(false);
     }
-  }, [story, endReferenceImage, editingEndPrompt, endIncludedCharacters, characterSheetOptions, selectedCharacterSheets]);
+  }, [story, buildEndTask, buildRunIdentity, pipeline]);
 
   // ===== Generación automática por lotes (pipeline) =====
   // Solo genera lo FALTANTE: al retomar un borrador, lo ya generado se salta.
   // Devuelven true si el lote quedó corriendo (o no había nada pendiente);
   // false si el pipeline estaba ocupado y no se pudo arrancar.
-  const runCharacterSheetBatch = useCallback((): boolean => {
-    if (!story || pipeline.isBusy()) return false;
-
+  /**
+   * E/A9a — Lista de tareas pendientes del paso `characters`. Separada de la
+   * ejecución para que el auto-arranque pueda pasarla por `tryStart` (que
+   * RECHAZA si el runner está ocupado) en vez de por `runItems` (que desplaza
+   * la corrida en vuelo). `[]` significa "no hay nada que generar".
+   */
+  const collectCharacterSheetTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
     const pendingChars = story.characters.filter(
       c => !(characterSheetOptionsRef.current[c.id]?.length) && (editingCharacterPrompt[c.id] ?? c.visualDescription)?.trim()
     );
-
-    // Lugares/objetos sin referencia visual alguna: sin fotos del usuario,
-    // sin hoja generada pendiente de elegir → generarles candidatas.
     const activeProps = (story.props && story.props.length > 0) ? story.props : storyProps;
     const pendingProps = activeProps.filter(
       p => p.visualDescription?.trim()
         && (p.referenceImages?.length ?? 0) === 0
         && !(propSheetOptionsRef.current[p.id]?.length)
     );
-
-    if (pendingChars.length === 0 && pendingProps.length === 0) return true;
-
-    const tasks: PipelineTask[] = [
-      ...pendingChars.map((c): PipelineTask => ({
-        id: `sheet-${c.id}`,
-        kind: 'sheet',
-        label: c.name,
-        // Prompt leído del ref al EJECUTAR: retryFailed usa la versión vigente
-        run: () => generateCharacterSheetCore(c, editingCharacterPromptRef.current[c.id]),
-      })),
-      ...pendingProps.map((p): PipelineTask => ({
-        id: `prop-${p.id}`,
-        kind: 'prop',
-        label: p.name,
-        run: () => generatePropSheetCore(p),
-      })),
+    return [
+      ...pendingChars.map((c) => buildCharacterSheetTask(c, editingCharacterPromptRef.current[c.id])),
+      ...pendingProps.map((p) => buildPropSheetTask(p)),
     ];
-    void pipeline.runAll(tasks);
+  }, [story, storyProps, buildCharacterSheetTask, buildPropSheetTask, editingCharacterPrompt]);
+
+  const collectSceneTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
+    const pendingScenes = story.scenes.filter(s => !(sceneImageOptionsRef.current[s.number]?.length));
+    return pendingScenes.map((s) => buildSceneTask(s, editingScenePromptRef.current[s.number]));
+  }, [story, buildSceneTask]);
+
+  const collectCoverEndTasks = useCallback((): Array<PipelineItemTask<ProviderResult>> => {
+    if (!story) return [];
+    const busy = (id: string) => {
+      const st = pipeline.statusOf(id);
+      return st === 'running' || st === 'persisting';
+    };
+    const tasks: Array<PipelineItemTask<ProviderResult>> = [];
+    // PH/G4 — El colector sigue siendo SÓLO-VACÍO: nunca regenera ni re-ofrece
+    // un append. Por eso construye con intent de reemplazo explícito; con las
+    // options vacías, append y replace producen el mismo array, pero el intent
+    // queda declarado en vez de heredado del default.
+    if (coverOptions.length === 0 && !busy('cover')) tasks.push(buildCoverTask(undefined, false));
+    if (endOptions.length === 0 && !busy('end')) tasks.push(buildEndTask(undefined, false));
+    return tasks;
+  }, [story, coverOptions.length, endOptions.length, buildCoverTask, buildEndTask, pipeline]);
+
+
+
+
+  // Lotes manuales (botones "Generar…" del banner). Comparten los MISMOS
+  // colectores que el auto-arranque, para que el botón y el auto-kick no puedan
+  // discrepar sobre qué falta por generar — antes eran dos copias del mismo
+  // predicado, libres de divergir. A diferencia del auto-kick, estos usan
+  // `runItems` (el usuario pidió explícitamente arrancar) y devuelven `false`
+  // si el runner está ocupado.
+  const runCharacterSheetBatch = useCallback((): boolean => {
+    if (!story || pipeline.isBusy()) return false;
+    const tasks = collectCharacterSheetTasks();
+    if (tasks.length === 0) return true;
+    void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, storyProps, pipeline, generateCharacterSheetCore, generatePropSheetCore, editingCharacterPrompt]);
+  }, [story, pipeline, collectCharacterSheetTasks, buildRunIdentity]);
 
   const runSceneBatch = useCallback((): boolean => {
     if (!story || pipeline.isBusy()) return false;
-    const pendingScenes = story.scenes.filter(s => !(sceneImageOptionsRef.current[s.number]?.length));
-    if (pendingScenes.length === 0) return true;
-    const tasks: PipelineTask[] = pendingScenes.map((s) => ({
-      id: `scene-${s.number}`,
-      kind: 'scene',
-      label: `Escena ${s.number}`,
-      // Prompt leído del ref al EJECUTAR: retryFailed usa la versión vigente
-      run: () => generateSceneImageCore(s, editingScenePromptRef.current[s.number]),
-    }));
-    void pipeline.runAll(tasks);
+    const tasks = collectSceneTasks();
+    if (tasks.length === 0) return true;
+    void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, pipeline, generateSceneImageCore]);
+  }, [story, pipeline, collectSceneTasks, buildRunIdentity]);
 
-  const runCoverEndBatch = useCallback((): boolean => {
-    if (!story) return false;
-    // Portada y fin en paralelo; cada uno tiene su propio flag/spinner.
-    if (coverOptions.length === 0 && !generatingCover) void handleGenerateCover();
-    if (endOptions.length === 0 && !generatingEnd) void handleGenerateEnd();
-    return true;
-  }, [story, coverOptions.length, endOptions.length, generatingCover, generatingEnd, handleGenerateCover, handleGenerateEnd]);
+  // ===========================================================================
+  // E / A9a — Auto-arranque por INTENCIÓN EXPLÍCITA + aceptación atómica.
+  //
+  // Lo que había antes: un efecto INFERÍA el arranque de una transición de
+  // pasos (`prevStep→currentStep` dentro de una lista de avances válidos), con
+  // un gate `autoKicked` llaveado por `${story.id}:${currentStep}`. A9a prohíbe
+  // exactamente eso, por dos motivos:
+  //   - el MISMO par de pasos lo producen caminos que NO deben generar nada
+  //     (restaurar un borrador una posición más adelante, `handleEditStory`,
+  //     volver atrás y avanzar de nuevo): la señal no distingue intención de
+  //     coincidencia;
+  //   - se armaba con el cambio de paso, no con la persistencia de la
+  //     aprobación, así que un rerender podía perder o duplicar el disparo.
+  //
+  // Ahora: SÓLO la aprobación —dentro de su `onSuccess`, es decir después de
+  // que el commit autoritativo persistió— arma `pendingAutoKickRef = {step,
+  // epoch}`. Este efecto lo consume, y el runner decide con `tryStart` si la
+  // corrida realmente arrancó:
+  //   - `accepted:true`  ⇒ el intent se consume (una sola vez);
+  //   - `accepted:false` (runner ocupado) ⇒ el intent se CONSERVA y se
+  //     reintenta cuando el pipeline queda idle (de ahí `pipeline.isRunning`
+  //     en las dependencias);
+  //   - paso/época desalineados ⇒ el intent se descarta SIN disparar.
+  // La consumición ocurre en el mismo paso síncrono que la reserva del runner,
+  // así que un rerender no puede colar un segundo disparo.
+  // ===========================================================================
+  const pendingAutoKickRef = useRef<AutoKickIntent | null>(null);
 
-  // Auto-arranque SOLO en transiciones de avance del flujo (las aprobaciones):
-  // story→characters, characters→scenes, scenes→cover. Nunca al montar, al
-  // recuperar un borrador, al volver atrás ni al editar un cuento existente —
-  // esas rutas muestran el botón "Generar…" en el banner en su lugar.
-  // El gate por paso solo se marca si el lote realmente arrancó, para no
-  // perder el auto-arranque cuando otro lote seguía corriendo.
-  const prevStepRef = useRef<CreationStep | null>(null);
-  const autoKickedRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
-    const prevStep = prevStepRef.current;
-    prevStepRef.current = currentStep;
-    if (prevStep === null || prevStep === currentStep) return; // montaje o sin transición
+    const decision = shouldAutoKick(pendingAutoKickRef.current, {
+      step: currentStep as EditorCreationStep,
+      epoch: activeIdentity.epoch,
+    });
+    if (decision === 'none') return;
+    if (decision === 'clear') {
+      pendingAutoKickRef.current = null;
+      return;
+    }
     if (!story) return;
 
-    const isForwardTransition =
-      (prevStep === 'story' && currentStep === 'characters') ||
-      (prevStep === 'characters' && currentStep === 'scenes') ||
-      (prevStep === 'scenes' && currentStep === 'cover');
-    if (!isForwardTransition) return;
+    const tasks =
+      currentStep === 'characters' ? collectCharacterSheetTasks()
+      : currentStep === 'scenes' ? collectSceneTasks()
+      : currentStep === 'cover' ? collectCoverEndTasks()
+      : null;
 
-    const kickKey = `${story.id}:${currentStep}`;
-    if (autoKickedRef.current[kickKey]) return;
+    // Paso sin lote asociado (p.ej. `complete`): la intención no aplica.
+    if (tasks === null) {
+      pendingAutoKickRef.current = null;
+      return;
+    }
+    // No hay nada que generar: la intención está SATISFECHA, no pendiente.
+    if (tasks.length === 0) {
+      pendingAutoKickRef.current = null;
+      return;
+    }
 
-    let started = false;
-    if (currentStep === 'characters') {
-      started = runCharacterSheetBatch();
-    } else if (currentStep === 'scenes') {
-      started = runSceneBatch();
-    } else if (currentStep === 'cover') {
-      started = runCoverEndBatch();
+    const { accepted } = pipeline.tryStart(tasks, buildRunIdentity());
+    // Consumir SÓLO si el runner confirmó el arranque. Si estaba ocupado, el
+    // intent sobrevive y este efecto vuelve a correr al cambiar `isRunning`.
+    if (accepted) {
+      pendingAutoKickRef.current = null;
     }
-    if (started) {
-      autoKickedRef.current[kickKey] = true;
-    }
-  }, [currentStep, story, runCharacterSheetBatch, runSceneBatch, runCoverEndBatch]);
+  }, [
+    currentStep,
+    story,
+    activeIdentity.epoch,
+    pipeline,
+    pipeline.isRunning,
+    collectCharacterSheetTasks,
+    collectSceneTasks,
+    collectCoverEndTasks,
+    buildRunIdentity,
+  ]);
 
   // ===== Phase 7: refine handlers (character, scene, cover, end) =====
-  // Each refine mirrors its generate counterpart's request body and adds
-  // `refine: { sourceImage, feedback }`. On success the currently selected
-  // option in the relevant array is replaced in place; the selection index
-  // does not move. Cover/end refine never auto-fires sibling derivations.
+  // Each refine builds a PipelineItemTask with the SAME itemId as its generate
+  // counterpart (`sheet-${id}`, `scene-${n}`, `cover`, `end`). Sharing itemIds
+  // makes the runner's monotonic `generatedRevision` guard order refine/generate
+  // writes for the same asset: a stale invoke result cannot overwrite a newer
+  // revision. The request body preserves each counterpart's shape and only adds
+  // `refine: { sourceImage, feedback }` — no edge-function contract change.
+  // On successful refine the currently selected option is replaced in place;
+  // the selection index does not move and cover/end never auto-fire sibling
+  // derivations.
+
+  // Builder: refine character sheet — delega en `makeRefineCharacterSheetTask`.
+  const buildRefineCharacterSheetTask = useCallback((
+    character: StoryCharacter,
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+    const visualDescription =
+      editingCharacterPromptRef.current[character.id] ?? character.visualDescription;
+
+    return makeRefineCharacterSheetTask({
+      character,
+      illustrationStyle: story.illustrationStyle,
+      visualDescription,
+      sourceImage,
+      feedback,
+      characterSheetOptionsRef,
+      selectedCharacterSheetsRef,
+      currentStepRef,
+      setCharacterSheetOptions,
+      setSelectedCharacterSheets,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleRefineCharacterSheet = useCallback(
     async (characterId: string, sourceImage: string, feedback: string) => {
@@ -2341,56 +2848,14 @@ Instrucciones críticas:
       setRefiningCharId(characterId);
 
       try {
-        const visualDescription =
-          editingCharacterPrompt[characterId] ?? character.visualDescription;
-
-        const body: GenerateSceneImagesCharacterRequest = {
-          type: 'character',
-          styleId: story.illustrationStyle,
-          character: {
-            name: character.name,
-            description: character.description,
-            visualDescription,
-          },
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar el personaje');
-        }
-
-        const refined: string = data.images[0];
-
-        const existing = characterSheetOptions[characterId] || [];
-        const currentSelected = selectedCharacterSheets[characterId];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newOptions = { ...characterSheetOptions, [characterId]: updated };
-        const newSelection = { ...selectedCharacterSheets, [characterId]: slotIdx };
-        setCharacterSheetOptions(newOptions);
-        setSelectedCharacterSheets(newSelection);
-
-        const saveResult = await saveDraftNow({
-          currentStep,
-          characterSheetOptions: newOptions,
-          selectedCharacterSheets: newSelection,
-        });
-        const uploadedSheetUrls = saveResult.uploadedUrls?.characterSheetUrls;
-        if (uploadedSheetUrls) {
-          setCharacterSheetOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSheetUrls));
+        const task = buildRefineCharacterSheetTask(character, sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando personaje');
+          setCharRefineErrors((prev) => ({ ...prev, [characterId]: errMsg }));
         }
       } catch (err) {
         const message =
@@ -2400,15 +2865,71 @@ Instrucciones críticas:
         setRefiningCharId(null);
       }
     },
-    [
-      story,
-      editingCharacterPrompt,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      currentStep,
-      saveDraftNow,
-    ],
+    [story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
   );
+
+  // Builder: refine scene image — delega en `makeRefineSceneTask`.
+  const buildRefineSceneTask = useCallback((
+    scene: StoryScene,
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    const excludedIds = sceneExcludedCharacters[scene.number] || [];
+    const includedIds = sceneIncludedCharacters[scene.number] || [];
+    const charactersWithReferences = getCharactersWithReferences(scene, excludedIds, includedIds)
+      .filter((c) => !c.isExcluded)
+      .map((c) => ({
+        name: c.name,
+        visualDescription: c.visualDescription,
+        referenceImage: c.referenceImage,
+      }));
+
+    const overridePrompt = editingScenePromptRef.current[scene.number];
+    // Preserve landmarkVisible (A3/S4).
+    const sceneData = overridePrompt
+      ? {
+          text: scene.text,
+          visualDescription: overridePrompt,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        }
+      : {
+          text: scene.text,
+          visualDescription: scene.visualDescription,
+          ...(scene.landmarkVisible !== undefined ? { landmarkVisible: scene.landmarkVisible } : {}),
+        };
+
+    return makeRefineSceneTask({
+      scene,
+      sceneData,
+      charactersWithReferences,
+      location: story.location,
+      sceneReferenceImage: sceneReferenceImages[scene.number],
+      propsForScene: getPropsForScene(scene),
+      illustrationStyle: story.illustrationStyle,
+      sourceImage,
+      feedback,
+      sceneImageOptionsRef,
+      selectedSceneImagesRef,
+      sceneReferenceModeRef,
+      currentStepRef,
+      setSceneImageOptions,
+      setSelectedSceneImages,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, 
+    story,
+    sceneExcludedCharacters,
+    sceneIncludedCharacters,
+    sceneReferenceImages,
+    getCharactersWithReferences,
+    getPropsForScene,
+    getDraftIdentity,
+    enqueueGeneratedSnapshot,
+  ]);
 
   const handleRefineSceneImage = useCallback(
     async (sceneNumber: number, sourceImage: string, feedback: string) => {
@@ -2420,75 +2941,14 @@ Instrucciones críticas:
       setRefiningSceneNumber(sceneNumber);
 
       try {
-        const excludedIds = sceneExcludedCharacters[scene.number] || [];
-        const includedIds = sceneIncludedCharacters[scene.number] || [];
-        const charactersWithRefs = getCharactersWithReferences(scene, excludedIds, includedIds);
-        const charactersWithReferences = charactersWithRefs
-          .filter((c) => !c.isExcluded)
-          .map((c) => ({
-            name: c.name,
-            visualDescription: c.visualDescription,
-            referenceImage: c.referenceImage,
-          }));
-
-        const overridePrompt = editingScenePrompt[scene.number];
-        const sceneData = overridePrompt
-          ? { text: scene.text, visualDescription: overridePrompt }
-          : { text: scene.text, visualDescription: scene.visualDescription };
-
-        const sceneRefImage = sceneReferenceImages[scene.number];
-        const propsForScene = getPropsForScene(scene);
-
-        const body: GenerateSceneImagesSceneRequest = {
-          type: 'scene',
-          styleId: story.illustrationStyle,
-          scene: sceneData,
-          characters: charactersWithReferences,
-          location: story.location,
-          sceneReferenceImage: sceneRefImage,
-          // Edge function accepts 'pov' at runtime; shared type drift bridged here.
-          sceneReferenceMode: sceneReferenceMode[scene.number] ?? 'style',
-          props: propsForScene.length > 0 ? propsForScene : undefined,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la escena');
-        }
-
-        const refined: string = data.images[0];
-
-        const existing = sceneImageOptions[sceneNumber] || [];
-        const currentSelected = selectedSceneImages[sceneNumber];
-        const slotIdx =
-          typeof currentSelected === 'number' && existing[currentSelected] === sourceImage
-            ? currentSelected
-            : existing.findIndex((opt) => opt === sourceImage);
-        if (slotIdx < 0) return;
-
-        const updated = existing.slice();
-        updated[slotIdx] = refined;
-        const newSceneOptions = { ...sceneImageOptions, [sceneNumber]: updated };
-        const newSelection = { ...selectedSceneImages, [sceneNumber]: slotIdx };
-        setSceneImageOptions(newSceneOptions);
-        setSelectedSceneImages(newSelection);
-
-        const saveResult = await saveDraftNow({
-          currentStep,
-          sceneImageOptions: newSceneOptions,
-          selectedSceneImages: newSelection,
-          sceneReferenceModes: sceneReferenceMode,
-        });
-        const uploadedSceneUrls = saveResult.uploadedUrls?.sceneImageUrls;
-        if (uploadedSceneUrls) {
-          setSceneImageOptions(prev => swapOptionsWithUploadedUrls(prev, uploadedSceneUrls));
+        const task = buildRefineSceneTask(scene, sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando imagen de escena');
+          setSceneRefineErrors((prev) => ({ ...prev, [sceneNumber]: errMsg }));
         }
       } catch (err) {
         const message =
@@ -2498,88 +2958,77 @@ Instrucciones críticas:
         setRefiningSceneNumber(null);
       }
     },
-    [
-      story,
-      sceneExcludedCharacters,
-      sceneIncludedCharacters,
-      sceneReferenceImages,
-      sceneReferenceMode,
-      editingScenePrompt,
-      getCharactersWithReferences,
-      getPropsForScene,
-      sceneImageOptions,
-      selectedSceneImages,
-      currentStep,
-      saveDraftNow,
-    ],
+    [story, buildRefineSceneTask, buildRunIdentity, pipeline],
   );
+
+  // Builder: refine cover — delega en `makeRefineCoverTask`.
+  const buildRefineCoverTask = useCallback((
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    const excludedIds = coverExcludedCharacters;
+    const charactersWithReferences = story.characters
+      .filter((c) => !excludedIds.includes(c.id))
+      .map((c) => {
+        const options = characterSheetOptionsRef.current[c.id];
+        const selectedIdx = selectedCharacterSheetsRef.current[c.id];
+        const referenceImage =
+          options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
+
+    const protagonist =
+      story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
+
+    return makeRefineCoverTask({
+      illustrationStyle: story.illustrationStyle,
+      title: story.title,
+      protagonistVisualDescription: protagonist?.visualDescription || 'A friendly child character',
+      location: story.location,
+      charactersWithReferences,
+      coverReferenceImage: coverReferenceImage || undefined,
+      primaryProps: getPrimaryProps(),
+      customPrompt: editingCoverPrompt || undefined,
+      sourceImage,
+      feedback,
+      coverOptionsRef,
+      selectedCoverRef,
+      setCoverOptions,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, 
+    story,
+    coverExcludedCharacters,
+    coverReferenceImage,
+    editingCoverPrompt,
+    getPrimaryProps,
+    getDraftIdentity,
+    enqueueGeneratedSnapshot,
+  ]);
 
   const handleRefineCover = useCallback(
     async (sourceImage: string, feedback: string) => {
       if (!story) return;
-
       setRefineCoverError(null);
       setIsRefiningCover(true);
-
       try {
-        const excludedIds = coverExcludedCharacters;
-        const charactersWithReferences = story.characters
-          .filter((c) => !excludedIds.includes(c.id))
-          .map((c) => {
-            const options = characterSheetOptions[c.id];
-            const selectedIdx = selectedCharacterSheets[c.id];
-            const referenceImage =
-              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-            return {
-              name: c.name,
-              visualDescription: c.visualDescription,
-              referenceImage,
-            };
-          });
-
-        const protagonist =
-          story.characters.find((c) => c.role === 'protagonist') || story.characters[0];
-        const primaryProps = getPrimaryProps();
-
-        const body: GenerateSceneImagesCoverRequest = {
-          type: 'cover',
-          styleId: story.illustrationStyle,
-          title: story.title,
-          protagonist: {
-            visualDescription: protagonist?.visualDescription || 'A friendly child character',
-          },
-          location: story.location,
-          characters: charactersWithReferences,
-          sceneReferenceImage: coverReferenceImage || undefined,
-          props: primaryProps.length > 0 ? primaryProps : undefined,
-          customPrompt: editingCoverPrompt || undefined,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la portada');
+        const task = buildRefineCoverTask(sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando portada');
+          setRefineCoverError(errMsg);
         }
-
-        const refined: string = data.images[0];
-
-        setCoverOptions((prev) => {
-          const slotIdx =
-            typeof selectedCover === 'number' && prev[selectedCover] === sourceImage
-              ? selectedCover
-              : prev.findIndex((opt) => opt === sourceImage);
-          if (slotIdx < 0) return prev;
-          const next = prev.slice();
-          next[slotIdx] = refined;
-          return next;
-        });
-        // Selection index intentionally preserved; no sibling derivation triggered.
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando portada';
@@ -2588,74 +3037,68 @@ Instrucciones críticas:
         setIsRefiningCover(false);
       }
     },
-    [
-      story,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      coverExcludedCharacters,
-      coverReferenceImage,
-      editingCoverPrompt,
-      getPrimaryProps,
-      selectedCover,
-    ],
+    [story, buildRefineCoverTask, buildRunIdentity, pipeline],
   );
+
+  // Builder: refine end image — delega en `makeRefineEndTask`.
+  const buildRefineEndTask = useCallback((
+    sourceImage: string,
+    feedback: string,
+  ): PipelineItemTask<ProviderResult> => {
+    if (!story) throw new Error('No hay cuento activo');
+
+    const charactersWithReferences = story.characters
+      .filter((c) => endIncludedCharacters.includes(c.id))
+      .map((c) => {
+        const options = characterSheetOptionsRef.current[c.id];
+        const selectedIdx = selectedCharacterSheetsRef.current[c.id];
+        const referenceImage =
+          options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
+        return {
+          name: c.name,
+          visualDescription: c.visualDescription,
+          referenceImage,
+        };
+      });
+
+    return makeRefineEndTask({
+      illustrationStyle: story.illustrationStyle,
+      endReferenceImage: endReferenceImage || undefined,
+      charactersWithReferences,
+      customPrompt: editingEndPrompt || undefined,
+      sourceImage,
+      feedback,
+      endOptionsRef,
+      selectedEndRef,
+      setEndOptions,
+      invokeGenerateSceneImages: invokeSceneImagesWithFeedback,
+      getLiveIdentity: getDraftIdentity,
+      enqueueGeneratedSnapshot,
+    });
+  }, [invokeSceneImagesWithFeedback, 
+    story,
+    endReferenceImage,
+    editingEndPrompt,
+    endIncludedCharacters,
+    getDraftIdentity,
+    enqueueGeneratedSnapshot,
+  ]);
 
   const handleRefineEnd = useCallback(
     async (sourceImage: string, feedback: string) => {
       if (!story) return;
-
       setRefineEndError(null);
       setIsRefiningEnd(true);
-
       try {
-        const charactersWithReferences = story.characters
-          .filter((c) => endIncludedCharacters.includes(c.id))
-          .map((c) => {
-            const options = characterSheetOptions[c.id];
-            const selectedIdx = selectedCharacterSheets[c.id];
-            const referenceImage =
-              options && selectedIdx !== undefined ? options[selectedIdx] : c.characterSheetUrl;
-            return {
-              name: c.name,
-              visualDescription: c.visualDescription,
-              referenceImage,
-            };
-          });
-
-        const body: GenerateSceneImagesEndRequest = {
-          type: 'end',
-          styleId: story.illustrationStyle,
-          referenceImage: endReferenceImage || undefined,
-          characters:
-            charactersWithReferences.length > 0 ? charactersWithReferences : undefined,
-          customPrompt: editingEndPrompt || undefined,
-          modelTier: 'pro',
-          refine: { sourceImage, feedback },
-        };
-
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'generate-scene-images',
-          { body },
-        );
-
-        if (fnError) throw await extractInvokeError(fnError);
-        if (!data?.success || !data.images?.length) {
-          throw new Error(data?.error || 'No se pudo refinar la imagen final');
+        const task = buildRefineEndTask(sourceImage, feedback);
+        await pipeline.runItems([task], buildRunIdentity());
+        const status = pipeline.statusOf(task.id);
+        if (status === 'error' || status === 'save-failed') {
+          const errMsg =
+            pipeline.errorOf(task.id) ??
+            (status === 'save-failed' ? 'Error guardando refinamiento' : 'Error refinando imagen final');
+          setRefineEndError(errMsg);
         }
-
-        const refined: string = data.images[0];
-
-        setEndOptions((prev) => {
-          const slotIdx =
-            typeof selectedEnd === 'number' && prev[selectedEnd] === sourceImage
-              ? selectedEnd
-              : prev.findIndex((opt) => opt === sourceImage);
-          if (slotIdx < 0) return prev;
-          const next = prev.slice();
-          next[slotIdx] = refined;
-          return next;
-        });
-        // Selection index intentionally preserved; no sibling derivation triggered.
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Error refinando imagen final';
@@ -2664,15 +3107,7 @@ Instrucciones críticas:
         setIsRefiningEnd(false);
       }
     },
-    [
-      story,
-      endReferenceImage,
-      editingEndPrompt,
-      endIncludedCharacters,
-      characterSheetOptions,
-      selectedCharacterSheets,
-      selectedEnd,
-    ],
+    [story, buildRefineEndTask, buildRunIdentity, pipeline],
   );
 
   // Subir imagen de personaje manualmente
@@ -2764,28 +3199,17 @@ Instrucciones críticas:
       }
 
       // Subir solo la imagen seleccionada
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/characters/${characterId}_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — la subida inmutable vive en la primitiva compartida: nombre
+      // por contenido y `upsert:false`. El nombre posicional `_selected`
+      // desapareció porque el contenido ya identifica al objeto.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'characters',
+        key: characterId,
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Mantener SOLO la imagen guardada, eliminar las demás opciones
@@ -2849,17 +3273,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/scenes/scene${sceneNumber}_selected.${extension}`;
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'scenes',
+        key: `scene${sceneNumber}`,
+        data: selectedImage,
+      });
+      const path = uploaded.path;
 
       console.log('[handleSaveSceneImage] UPLOAD DETAILS:', {
         bucket: 'cuentacuentos-drafts',
@@ -2867,21 +3289,15 @@ Instrucciones críticas:
         userId: user.id,
         contextId: context.id,
         sceneNumber,
-        blobSize: blob.size,
-        mimeType,
+        contentType: uploaded.contentType,
+        hash32: uploaded.hash32,
       });
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
 
       console.log('[handleSaveSceneImage] UPLOAD RESULT:', {
-        success: !uploadError,
-        uploadData,
-        uploadError,
+        success: true,
+        path: uploaded.path,
+        deduplicated: uploaded.deduplicated,
       });
-
-      if (uploadError) throw uploadError;
 
       // VERIFICATION: Check if file actually exists in storage after upload
       console.log('[handleSaveSceneImage] VERIFYING file exists in storage...');
@@ -2947,6 +3363,9 @@ Instrucciones críticas:
   // Guardar portada seleccionada a Supabase
   const handleSaveCover = useCallback(async () => {
     if (selectedCover === null || !coverOptions[selectedCover]) return;
+    // Finding 3 — no escribir la selección mientras el envelope autoritativo
+    // está en vuelo: sería una escritura fuera del CAS de la transición.
+    if (isApprovingRef.current) return;
 
     setSavingCover(true);
     setSavedCoverMessage(null);
@@ -2966,28 +3385,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/cover/cover_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'cover',
+        key: 'cover',
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Add cache-busting timestamp to force browser to reload the image
@@ -3010,6 +3416,8 @@ Instrucciones críticas:
   // Guardar imagen final seleccionada a Supabase
   const handleSaveEnd = useCallback(async () => {
     if (selectedEnd === null || !endOptions[selectedEnd]) return;
+    // Finding 3 — misma guarda que `handleSaveCover`.
+    if (isApprovingRef.current) return;
 
     setSavingEnd(true);
     setSavedEndMessage(null);
@@ -3029,28 +3437,15 @@ Instrucciones críticas:
         return;
       }
 
-      const mimeType = selectedImage.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-      const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-      const byteCharacters = atob(selectedImage);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-
-      const path = `${user.id}/${context.id}/end/end_selected.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('cuentacuentos-drafts')
-        .upload(path, blob, { contentType: mimeType, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Obtener URL pública (el bucket es público, no expira)
-      const { data: urlData } = supabase.storage
-        .from('cuentacuentos-drafts')
-        .getPublicUrl(path);
+      // PB/G2 — subida inmutable por la primitiva compartida.
+      const uploaded = await uploadImmutableDraftImage({
+        userId: user.id,
+        liturgyId: context.id,
+        category: 'end',
+        key: 'end',
+        data: selectedImage,
+      });
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       if (urlData?.publicUrl) {
         // Add cache-busting timestamp to force browser to reload the image
@@ -3070,162 +3465,462 @@ Instrucciones críticas:
     }
   }, [endOptions, selectedEnd, context.id]);
 
-  // Aprobar cuento y avanzar a personajes
-  const handleApproveStory = useCallback(() => {
-    if (!story) return;
+  // A3/S6 — Gates transaccionales de aprobación / finalización.
+  //
+  // Toda ruta de aprobación primero persiste el snapshot autoritativo
+  // (nextStory + EditorStateV1 completo, computado por el hook desde el patch)
+  // vía la cola serializada `enqueueDraftWrite`. SÓLO tras una escritura viva
+  // (no `stale`, no rejected) aplica la transición local (setStory + step).
+  // Nunca "aprobamos en falso": un fallo de persistencia retiene story/step.
+  //
+  // Además, las 4 rutas están BLOQUEADAS mientras `pipeline.isSaving` sea true
+  // o `pipeline.saveFailedCount > 0` (imágenes con save pendiente/fallado).
+  // El banner en la cabecera y los botones deshabilitados le dan salida al
+  // usuario (Reintentar guardado) — este handler es la última defensa.
+  const gateWarning = 'Hay imágenes sin guardar; reintenta antes de aprobar';
 
-    setStory({
-      ...story,
-      metadata: {
-        ...story.metadata,
-        status: 'characters-pending',
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    setCurrentStep('characters');
-  }, [story]);
-
-  // Aprobar personajes y avanzar a escenas
-  const handleApproveCharacters = useCallback(() => {
-    if (!story) return;
-
-    // Actualizar story con character sheets seleccionados
-    const updatedCharacters = story.characters.map(char => {
-      const options = characterSheetOptions[char.id];
-      const selectedIdx = selectedCharacterSheets[char.id];
+  // A3a/S6 — Snapshot autoritativo. Construye UN patch que refleja el estado
+  // COMPLETO del editor en el momento de la transición (nextStory + nextStep +
+  // todo lo listado en el spec: edited prompts, referencias, selecciones,
+  // include/exclude, title, scene text, uploads/options, landmarkVisible).
+  // Los overlays y el visualDescription viven dentro de `nextStory`; los props
+  // referenceImages vienen de `nextStory.props`. `sceneReferenceModes` se lee
+  // desde ref (siempre live).
+  //
+  // Este patch se pasa a `enqueueDraftWrite` — es la única escritura que
+  // dispara la transición. El hook computa el EditorStateV1 canónico a partir
+  // de los campos del patch, e incrementa `recoveryRevision`.
+  // A3a/S7 — Fábrica del patch autoritativo. NO se invoca en el click: se
+  // pasa como thunk a `enqueueDraftWrite`, que la ejecuta DESPUÉS del CAS de
+  // queue-start (dentro del tail de la cola serializada). Lee EXCLUSIVAMENTE
+  // de refs vivas — cualquier campo capturado por closure quedaría stale si
+  // el usuario edita entre el click y el snapshot. `useCallback` sin deps es
+  // estable pero refleja siempre el valor actual porque las refs son mutables.
+  //
+  // D13 — Alcance del bump de contentRevision (detección de edición durante una
+  // aprobación en vuelo, invariante estrechada explícitamente):
+  //   BUMPEAN (mutaciones sobre `story` o estado persistido fuera de este
+  //   snapshot): overlays de texto (`updateTextOverlay`), props
+  //   (`applyPropsUpdate`, `handleUpdatePropDescription`), los toggles/remove de
+  //   `sceneReferenceModes` y el refinamiento de cuento (`handleRefineStory`,
+  //   que reemplaza title/summary/characters/scenes). Sin bump,
+  //   `setStory(committedStory)` revertiría la mutación al commitear una
+  //   aprobación que corrió en paralelo.
+  //   NO bumpean (cubiertas de otra forma): las SELECCIONES de opción
+  //   (`selectedCharacterSheets/SceneImages/Cover/End`), los `sceneReferenceModes`
+  //   ya reflejados, las imágenes de referencia y el `editingSceneText` — este
+  //   builder las lee de refs vivas ACÁ, así que un cambio anterior al tail ya
+  //   queda capturado en el snapshot autoritativo; el estado de selección no lo
+  //   revierte `setStory` (es state aparte) y el texto de escena además se
+  //   rehidrata del buffer (`editorStateV1`) al recargar.
+  const buildAuthoritativeDraftPatch = useCallback(
+    (nextStory: Story, nextStep: CreationStep): DraftPatch => {
+      const landmarkVisible: Record<number, boolean> = {};
+      for (const s of nextStory.scenes ?? []) {
+        if (typeof s.landmarkVisible === 'boolean') landmarkVisible[s.number] = s.landmarkVisible;
+      }
+      const propReferenceImages: Record<string, string[]> = {};
+      for (const p of nextStory.props ?? []) {
+        propReferenceImages[p.id] = [...(p.referenceImages ?? [])];
+      }
+      // F4 — Snapshot INMUTABLE: cada contenedor leído de refs vivas se copia
+      // (shallow) al armar el patch. Una edición posterior reemplaza el objeto
+      // del ref pero NUNCA muta un patch ya construido; la protección contra
+      // ediciones concurrentes es el CAS de contentRevision, no el aliasing.
       return {
-        ...char,
-        characterSheetOptions: options,
-        characterSheetUrl: options && selectedIdx !== undefined ? options[selectedIdx] : undefined,
+        currentStep: nextStep,
+        config: {
+          location: locationRef.current,
+          customLocation: customLocationRef.current,
+          characters: charactersRef.current,
+          style: styleRef.current,
+          illustrationStyle: illustrationStyleRef.current,
+          additionalNotes: additionalNotesRef.current,
+        },
+        story: nextStory,
+        // Uploads / options — every derived asset the editor holds live.
+        characterSheetOptions: { ...characterSheetOptionsRef.current },
+        sceneImageOptions: { ...sceneImageOptionsRef.current },
+        coverOptions: [...coverOptionsRef.current],
+        endOptions: [...endOptionsRef.current],
+        propReferenceImages,
+        // Selections.
+        selectedCharacterSheets: { ...selectedCharacterSheetsRef.current },
+        selectedSceneImages: { ...selectedSceneImagesRef.current },
+        selectedCover: selectedCoverRef.current,
+        selectedEnd: selectedEndRef.current,
+        sceneReferenceModes: { ...sceneReferenceModeRef.current },
+        // Editor buffers — LIVE refs copiados al instante del snapshot.
+        editingScenePrompt: { ...editingScenePromptRef.current },
+        editingCharacterPrompt: { ...editingCharacterPromptRef.current },
+        editingCoverPrompt: editingCoverPromptRef.current,
+        editingEndPrompt: editingEndPromptRef.current,
+        editingSceneText: { ...editingSceneTextRef.current },
+        editingTitle: editingTitleRef.current,
+        // Include / exclude — scoped by kind.
+        sceneIncludedCharacters: { ...sceneIncludedCharactersRef.current },
+        sceneExcludedCharacters: { ...sceneExcludedCharactersRef.current },
+        coverIncludedCharacters: [...coverIncludedCharactersRef.current],
+        coverExcludedCharacters: [...coverExcludedCharactersRef.current],
+        endIncludedCharacters: [...endIncludedCharactersRef.current],
+        endExcludedCharacters: [...endExcludedCharactersRef.current],
+        // Reference images (base64 or path).
+        sceneReferenceImages: { ...sceneReferenceImagesRef.current },
+        coverReferenceImage: coverReferenceImageRef.current,
+        endReferenceImage: endReferenceImageRef.current,
+        // Canonical EditorStateV1 slot for round-trip.
+        landmarkVisible,
       };
-    });
+    },
+    [],
+  );
 
-    setStory({
-      ...story,
-      characters: updatedCharacters,
-      metadata: {
-        ...story.metadata,
-        status: 'characters-approved',
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    setCurrentStep('scenes');
-  }, [story, characterSheetOptions, selectedCharacterSheets]);
+  // F4 — Persist-first envelope atómico. Contrato:
+  //   1) Captura la identidad de escritura COMPLETA {storyId, epoch, revision,
+  //      contentRevision} SÍNCRONAMENTE, antes del primer await.
+  //   2) Flushea el debounce pendiente y drena la cola serializada.
+  //   3) Re-compara CADA campo capturado contra las refs vivas inmediatamente
+  //      después del drain. Cualquier cambio (lifecycle O edición same-story,
+  //      detectada vía contentRevision) ⇒ stale: cero enqueue autoritativo,
+  //      cero transición, cero auto-kick, cero deleteDraft, cero callback al
+  //      padre. La edición más nueva conserva su debounce y persiste después.
+  //   4) Re-lee el gate (save-failed / persistencia en vuelo) tras el drain.
+  //   5) El patch autoritativo se construye DENTRO del tail de la cola con
+  //      `deriveNextStory(storyRef.current)` — story y DraftPatch salen de
+  //      refs VIVAS post-drain, nunca de closures pre-drain.
+  //   6) La escritura es `authoritative: true`: su CAS post-persistencia
+  //      incluye contentRevision — una edición de CONTENIDO (las que bumpean:
+  //      ver el alcance D13 sobre buildAuthoritativeDraftPatch) durante el upsert
+  //      en vuelo la vuelve stale (sin commit, sin bump, sin transición) y la
+  //      edición sobrevive. Sólo un commit VIVO bumpea contentRevision,
+  //      invalidando debounces armados antes del commit (no pueden pisar el step
+  //      nuevo). NOTA: los cambios de SELECCIÓN de opción NO bumpean, así que el
+  //      CAS no los detecta; para que una selección tardía no diverja de lo
+  //      publicado, los selectores se deshabilitan mientras `isApproving` (F4).
+  //   7) `onSuccess` consume EXCLUSIVAMENTE la story del snapshot COMMITEADO
+  //      (`result.committed.story`) — jamás un `nextStory` pre-drain.
+  const runAuthoritativeApproval = useCallback(
+    async (params: {
+      /**
+       * Deriva la story de transición desde la story VIVA. Se invoca dentro
+       * del tail de la cola (post-drain, post-CAS de queue-start); debe ser
+       * pura y leer sólo su argumento y refs vivas.
+       */
+      deriveNextStory: (liveStory: Story) => Story;
+      nextStep: CreationStep;
+      staleMessage: string;
+      errorMessage: string;
+      /**
+       * Transición local. Recibe la story EXACTA commiteada por la persistencia
+       * y, en `meta.updatedAt`, el instante de ESA escritura (RETURNING del
+       * upsert). B1 lo usa como testigo del compare-and-delete de la
+       * finalización; `null` ⇒ sin testigo ⇒ no se borra nada.
+       */
+      onSuccess: (committedStory: Story, meta: { updatedAt: string | null }) => void;
+    }) => {
+      const { deriveNextStory, nextStep, staleMessage, errorMessage, onSuccess } = params;
+      // B7 — Latch de re-entrancy SÍNCRONO: un segundo click (o disparo por
+      // teclado) mientras el envelope está en vuelo se descarta acá, antes de
+      // arrancar un segundo envelope concurrente que fallaría el drainStable
+      // tras el commit del primero y mostraría un "vuelve a intentar" falso.
+      if (isApprovingRef.current) return;
+      isApprovingRef.current = true;
+      setIsApproving(true);
+      try {
+        // B6 — Limpiar cualquier banner de error previo: stale-then-retry es el
+        // mainline diseñado, y sin esto un retry exitoso arrastra el rojo.
+        setError(null);
+        // 1) Captura síncrona ANTES de cualquier await.
+        const startIdentity = getDraftWriteIdentity();
+        // 2) Flush + drain — nunca descartar ediciones debounceadas.
+        await flushPendingDraftWrites();
+        // 3) Comparación campo a campo inmediatamente después del drain (vía el
+        //    comparador único). Un cambio (lifecycle O edición same-story) ⇒
+        //    stale ANTES de encolar: no hubo escritura autoritativa, así que no
+        //    hay fila que corregir — sólo retenemos step/story y avisamos.
+        const postDrain = getDraftWriteIdentity();
+        if (!draftIdentitiesEqual(startIdentity, postDrain)) {
+          setError(staleMessage);
+          return;
+        }
+        // 4) Re-leer gate DESPUÉS del drain. `postDrain` ya es la identidad viva
+        //    {storyId, epoch, …}; se reutiliza para scopear saveFailedCount.
+        const gateState = {
+          isSaving: pipeline.isBusySaving(),
+          saveFailedCount: pipeline.getSaveFailedCount(postDrain),
+        };
+        const outcome = await runApprovalTransaction<EnqueueDraftWriteResult | EnqueueDraftWriteStale>({
+          state: gateState,
+          // 5) Story y patch derivados de refs vivas DENTRO del tail, vía el
+          //    camino autoritativo de primera clase. Un resultado "persistió
+          //    pero sin commit vivo" (sin `committed`) se mapea a stale, de modo
+          //    que el outcome `'ok'` implique SIEMPRE un commit vivo.
+          enqueue: () =>
+            enqueueAuthoritativeWrite(() => {
+              const liveStory = storyRef.current;
+              if (!liveStory) {
+                throw new Error('runAuthoritativeApproval: no hay story activa');
+              }
+              return buildAuthoritativeDraftPatch(deriveNextStory(liveStory), nextStep);
+            }).then((r) =>
+              r.stale !== true && !r.committed ? ({ stale: true } as EnqueueDraftWriteStale) : r,
+            ),
+          // 7) Transicionar SÓLO con el snapshot commiteado por la persistencia.
+          onSuccess: (result) => {
+            const committedStory = result.stale !== true ? result.committed?.story ?? null : null;
+            const updatedAt = result.stale !== true ? result.updatedAt ?? null : null;
+            if (!committedStory) return;
+            onSuccess(committedStory, { updatedAt });
+            // E/A9a — ÚNICO sitio que arma la intención de auto-arranque, y sólo
+            // tras un commit VIVO (esta rama ya lo garantiza). Nunca desde un
+            // efecto de cambio de paso, nunca al restaurar, nunca en
+            // `handleEditStory`. Los pasos sin lote (`complete`) no arman nada.
+            if (nextStep === 'characters' || nextStep === 'scenes' || nextStep === 'cover') {
+              pendingAutoKickRef.current = { step: nextStep, epoch: activeIdentity.epoch };
+            }
+          },
+          onBlocked: () => setError(gateWarning),
+          onStale: () => setError(staleMessage),
+          onError: () => setError(errorMessage),
+        });
+        // B8 — Phantom-finalize: si el envelope quedó `'stale'`, la escritura
+        // autoritativa YA corrió su upsert (escribió el step de transición —
+        // p.ej. 'complete' en finalize — a la fila del draft) pero NO commiteó
+        // ni transicionó. Re-persistimos INMEDIATAMENTE el step VIVO
+        // (no-autoritativo: sin bump de contentRevision para no invalidar el
+        // debounce de la edición que causó el stale), deshaciendo la fila
+        // huérfana en vez de esperar ≤2s al debounce (una tab-close en esa
+        // ventana dejaba varada una historia finalizada, invisible al recovery).
+        if (outcome === 'stale' && storyRef.current) {
+          const recoverStory = storyRef.current;
+          const recoverStep = currentStepRef.current;
+          // F5 — No tragar el fallo en silencio. Si esta corrección falla (o la
+          // pestaña se cierra dentro de su RTT), la fila queda en 'complete'.
+          // NOTA (B1): el backstop que este comentario prometía —el scan de mount
+          // que borraba filas 'complete' huérfanas— YA NO EXISTE; bajo B1 una fila
+          // 'complete' es una finalización pendiente de confirmar y se OFRECE PARA
+          // RECUPERAR (ver checkForDraft). Esa recuperación es ahora el camino de
+          // salida. Aquí sólo registramos — sin loop de reintentos.
+          void enqueueDraftWrite(() => buildAuthoritativeDraftPatch(recoverStory, recoverStep)).catch(
+            (err) => {
+              console.error(
+                '[CuentacuentoEditor] Phantom-finalize corrective write failed; ' +
+                'the draft row may be stranded until the next mount-time cleanup:',
+                err,
+              );
+            },
+          );
+        }
+      } finally {
+        isApprovingRef.current = false;
+        setIsApproving(false);
+      }
+    },
+    [
+      getDraftWriteIdentity,
+      flushPendingDraftWrites,
+      pipeline,
+      buildAuthoritativeDraftPatch,
+      enqueueDraftWrite,
+      enqueueAuthoritativeWrite,
+      // E/A9a — la época viva se estampa en la intención de auto-arranque.
+      activeIdentity,
+    ],
+  );
 
-  // Aprobar escenas y avanzar a portada
-  const handleApproveScenes = useCallback(() => {
+  // Aprobar cuento y avanzar a personajes.
+  // F4 — `deriveNextStory` corre dentro del tail sobre la story VIVA; la
+  // transición consume la story COMMITEADA por la persistencia.
+  const handleApproveStory = useCallback(async () => {
     if (!story) return;
-
-    // Actualizar story con imágenes de escenas seleccionadas
-    const updatedScenes = story.scenes.map(scene => {
-      const options = sceneImageOptions[scene.number];
-      const selectedIdx = selectedSceneImages[scene.number];
-      return {
-        ...scene,
-        imageOptions: options,
-        selectedImageUrl: options && selectedIdx !== undefined ? options[selectedIdx] : undefined,
-      };
-    });
-
-    setStory({
-      ...story,
-      scenes: updatedScenes,
-      metadata: {
-        ...story.metadata,
-        status: 'scenes-pending',
-        updatedAt: new Date().toISOString(),
+    await runAuthoritativeApproval({
+      deriveNextStory: (liveStory) => withStatus(liveStory, 'characters-pending'),
+      nextStep: 'characters',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
+      onSuccess: (committedStory) => {
+        setStory(committedStory);
+        setCurrentStep('characters');
       },
     });
-    setCurrentStep('cover');
-  }, [story, sceneImageOptions, selectedSceneImages]);
+  }, [story, runAuthoritativeApproval, setStory]);
+
+  // Aprobar personajes y avanzar a escenas.
+  // F4 — opciones/selecciones se leen de refs VIVAS dentro de derive (no de
+  // closures de state del render del click).
+  const handleApproveCharacters = useCallback(async () => {
+    if (!story) return;
+    await runAuthoritativeApproval({
+      deriveNextStory: (liveStory) =>
+        withStatus(
+          {
+            ...liveStory,
+            characters: applyCharacterSelections(
+              liveStory.characters,
+              characterSheetOptionsRef.current,
+              selectedCharacterSheetsRef.current,
+              false,
+            ),
+          },
+          'characters-approved',
+        ),
+      nextStep: 'scenes',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
+      onSuccess: (committedStory) => {
+        setStory(committedStory);
+        setCurrentStep('scenes');
+      },
+    });
+  }, [story, runAuthoritativeApproval, setStory]);
+
+  // Aprobar escenas y avanzar a portada.
+  const handleApproveScenes = useCallback(async () => {
+    if (!story) return;
+    await runAuthoritativeApproval({
+      deriveNextStory: (liveStory) =>
+        withStatus(
+          {
+            ...liveStory,
+            scenes: applySceneSelections(
+              liveStory.scenes,
+              sceneImageOptionsRef.current,
+              selectedSceneImagesRef.current,
+              false,
+            ),
+          },
+          'scenes-pending',
+        ),
+      nextStep: 'cover',
+      staleMessage: 'El borrador cambió durante la aprobación; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de aprobar. Reintenta.',
+      onSuccess: (committedStory) => {
+        setStory(committedStory);
+        setCurrentStep('cover');
+      },
+    });
+  }, [story, runAuthoritativeApproval, setStory]);
 
   // Finalizar cuento
-  // NOTE: Images are kept as base64 here. Upload to storage happens in saveLiturgy
-  // when the user clicks "Guardar Liturgia". This follows the Portadas pattern.
-  const handleFinalize = useCallback(() => {
+  // A3/S6 — Igual que las aprobaciones: primero persiste, después transiciona.
+  // El gate `canApprove` bloquea cuando hay guardado en vuelo o entradas
+  // save-failed. `deleteDraft()` sólo corre tras un commit vivo (nunca en
+  // stale/rejected). Nota: Images are kept as base64 here; upload to storage
+  // happens in saveLiturgy when the user clicks "Guardar Liturgia".
+  const handleFinalize = useCallback(async () => {
     if (!story) return;
 
-    // Build final scenes with selected images (may be base64 or URL)
-    const finalScenes = story.scenes.map(scene => {
-      const options = sceneImageOptions[scene.number];
-      const selectedIdx = selectedSceneImages[scene.number];
-      const selectedImage = options && selectedIdx !== undefined ? options[selectedIdx] : scene.selectedImageUrl;
-      return {
-        ...scene,
-        imageOptions: options,
-        selectedImageUrl: selectedImage,
-      };
-    });
-
-    // Get selected cover and end images (may be base64 or URL)
-    const finalCoverImage = selectedCover !== null ? coverOptions[selectedCover] : undefined;
-    const finalEndImage = selectedEnd !== null ? endOptions[selectedEnd] : undefined;
-
-    // Debug log scene images
-    console.log('[CuentacuentoEditor] Finalizing story with scenes:', finalScenes.map(s => ({
-      number: s.number,
-      hasImage: !!s.selectedImageUrl,
-      isBase64: s.selectedImageUrl && !s.selectedImageUrl.startsWith('http'),
-    })));
-
-    // Build final story with character sheets included
-    const finalCharacters = story.characters.map(char => {
-      const charOptions = characterSheetOptions[char.id];
-      const selectedIdx = selectedCharacterSheets[char.id];
-      const selectedSheet = charOptions && selectedIdx !== undefined ? charOptions[selectedIdx] : char.characterSheetUrl;
-      return {
-        ...char,
-        characterSheetOptions: charOptions,
-        characterSheetUrl: selectedSheet,
-      };
-    });
-
-    // Props: solo referencias ya persistidas (URLs). saveLiturgy no sube base64
-    // de props, así que un base64 residual quedaría incrustado para siempre en
-    // el JSON de la liturgia guardada. Las URLs ya viven en Storage vía el draft.
-    const finalProps = story.props?.map(p => ({
-      ...p,
-      referenceImages: (p.referenceImages || []).filter(img => img.startsWith('http')),
-    }));
-
-    const finalStory: Story = {
-      ...story,
-      characters: finalCharacters,
-      scenes: finalScenes,
-      props: finalProps,
-      coverImageOptions: coverOptions,
-      coverImageUrl: finalCoverImage,
-      endImageOptions: endOptions,
-      endImageUrl: finalEndImage,
-      metadata: {
-        ...story.metadata,
-        status: 'ready',
-        updatedAt: new Date().toISOString(),
+    await runAuthoritativeApproval({
+      // F4 — TODO el armado del finalStory ocurre dentro del tail sobre la
+      // story y las opciones/selecciones VIVAS (refs), nunca sobre closures
+      // del render del click. `keepExisting: true` conserva el URL ya presente
+      // en el story cuando no hay selección (diferencia real vs aprobar).
+      deriveNextStory: (liveStory) => {
+        const liveCoverOptions = coverOptionsRef.current;
+        const liveSelectedCover = selectedCoverRef.current;
+        const liveEndOptions = endOptionsRef.current;
+        const liveSelectedEnd = selectedEndRef.current;
+        // Cover/end seleccionados (pueden ser base64 o URL).
+        const finalCoverImage = liveSelectedCover !== null ? liveCoverOptions[liveSelectedCover] : undefined;
+        const finalEndImage = liveSelectedEnd !== null ? liveEndOptions[liveSelectedEnd] : undefined;
+        // Props: solo referencias ya persistidas (URLs). saveLiturgy no sube base64
+        // de props, así que un base64 residual quedaría incrustado para siempre en
+        // el JSON de la liturgia guardada. Las URLs ya viven en Storage vía el draft.
+        const finalProps = liveStory.props?.map(p => ({
+          ...p,
+          referenceImages: (p.referenceImages || []).filter(img => img.startsWith('http')),
+        }));
+        return withStatus(
+          {
+            ...liveStory,
+            characters: applyCharacterSelections(
+              liveStory.characters,
+              characterSheetOptionsRef.current,
+              selectedCharacterSheetsRef.current,
+              true,
+            ),
+            scenes: applySceneSelections(
+              liveStory.scenes,
+              sceneImageOptionsRef.current,
+              selectedSceneImagesRef.current,
+              true,
+            ),
+            props: finalProps,
+            coverImageOptions: [...liveCoverOptions],
+            coverImageUrl: finalCoverImage,
+            endImageOptions: [...liveEndOptions],
+            endImageUrl: finalEndImage,
+          },
+          'ready',
+        );
       },
-    };
+      nextStep: 'complete',
+      staleMessage: 'El borrador cambió durante la finalización; vuelve a intentar.',
+      errorMessage: 'No se pudo guardar antes de finalizar. Reintenta.',
+      // F4 — El padre y deleteDraft SÓLO tras un commit vivo, consumiendo la
+      // story commiteada. En stale/rechazo/error este callback no corre:
+      // cero onStoryCreated, cero deleteDraft, cero transición.
+      onSuccess: (committedStory, { updatedAt }) => {
+        setStory(committedStory);
+        const slides = createPreviewSlideGroup(committedStory);
+        setPreviewSlides(slides as unknown as SlideGroup);
 
-    setStory(finalStory);
+        // B1 — NO se borra el borrador acá. Antes, `deleteDraft()` lo borraba
+        // apenas commiteaba la finalización, keyed sólo por (liturgia_id,
+        // user_id). Con UNIQUE(liturgia_id,user_id) esa fila es la MISMA para
+        // cualquier historia de la liturgia, así que un ack tardío de la
+        // historia A podía borrar el borrador de la historia B tras un
+        // remount, y una edición hecha después de finalizar se perdía sin
+        // rastro. Además el borrado ocurría ANTES de que la liturgia estuviera
+        // guardada: si el usuario no guardaba, el cuento finalizado
+        // desaparecía.
+        //
+        // Ahora la finalización se CONFIRMA desde el padre, después de que la
+        // liturgia se guardó, mediante este cierre de UN SOLO USO que ejecuta
+        // el compare-and-delete. Hasta entonces el borrador queda recuperable.
+        const finalizedStoryId = committedStory.id;
+        const usedRef = { used: false };
+        const confirmFinalization = async (): Promise<void> => {
+          // Un segundo llamado es un no-op: el testigo ya se consumió.
+          if (usedRef.used) return;
+          usedRef.used = true;
+          if (!updatedAt) {
+            // Sin testigo no hay borrado seguro posible: dejamos el borrador.
+            console.warn(
+              '[CuentacuentoEditor] Finalization has no updated_at witness; leaving the draft recoverable',
+            );
+            return;
+          }
+          await confirmFinalizationDelete({
+            storyId: finalizedStoryId,
+            expectedUpdatedAt: updatedAt,
+          });
+        };
 
-    // Generate final slides
-    const slides = createPreviewSlideGroup(finalStory);
-    setPreviewSlides(slides as unknown as SlideGroup);
-
-    // Pass story to parent - images will be uploaded when user clicks "Guardar Liturgia"
-    onStoryCreated(finalStory, slides as unknown as SlideGroup);
-    setConfirmed(true);
-    setCurrentStep('complete');
-
-    // Delete the draft since story is finalized
-    deleteDraft();
-    console.log('[CuentacuentoEditor] Story finalized. Images will be uploaded when liturgy is saved.');
-  }, [story, characterSheetOptions, selectedCharacterSheets, sceneImageOptions, selectedSceneImages, coverOptions, selectedCover, endOptions, selectedEnd, onStoryCreated, deleteDraft]);
+        onStoryCreated(committedStory, slides as unknown as SlideGroup, confirmFinalization);
+        setConfirmed(true);
+        setCurrentStep('complete');
+        // A3a/S6: purga el registry del ciclo que acabamos de cerrar (mismo
+        // lifecycle-boundary que delete/replace).
+        pipeline.invalidateSaveRetries(activeIdentity);
+        console.log('[CuentacuentoEditor] Story finalized. The draft stays recoverable until the liturgy is saved.');
+      },
+    });
+  }, [story, onStoryCreated, confirmFinalizationDelete, runAuthoritativeApproval, pipeline, activeIdentity, setStory]);
 
   // Regenerar todo
   const handleRegenerate = useCallback(() => {
     // Descartar el lote en curso: las tareas en vuelo se auto-descartan al
-    // ver que storyIdRef ya no coincide.
+    // ver que storyIdRef ya no coincide. El bump de epoch además hace que
+    // cualquier guardado encolado en el hook persista pero no commitee al
+    // estado (stale write drop) — nunca resucita estado del cuento viejo.
+    // A3a/S6: junto con el bump, purgar el registry del ciclo actual — sin
+    // esto, entradas save-failed sobrevivirían y bloquearían la aprobación
+    // del próximo cuento generado.
+    pipeline.invalidateSaveRetries(activeIdentity);
     cancelPipeline();
     storyIdRef.current = null;
+    bumpDraftEpoch();
     characterSheetOptionsRef.current = {};
     selectedCharacterSheetsRef.current = {};
     sceneImageOptionsRef.current = {};
@@ -3249,7 +3944,9 @@ Instrucciones críticas:
     setStoryProps([]);
     setPropSheetOptions({});
     setSelectedPropSheets({});
-  }, [cancelPipeline]);
+    // Ídem los avisos: hablan del intento abandonado, no del que viene.
+    setWarnings([]);
+  }, [cancelPipeline, bumpDraftEpoch, pipeline, activeIdentity, setStory]);
 
   // Editar cuento existente (sin borrar)
   const handleEditStory = useCallback(() => {
@@ -3776,8 +4473,18 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveStory}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors"
+            onClick={() => void handleApproveStory()}
+            disabled={isApproving || pipeline.isRunning || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
+            // Finding 5 — El gate `pipeline.isRunning` (F2) no tenía explicación:
+            // el usuario veía el botón gris sin saber por qué. Nombrar la causa.
+            title={
+              pipeline.isRunning
+                ? 'Espera a que termine la generación en curso'
+                : !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                  ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                  : undefined
+            }
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
             <Check size={18} />
@@ -3812,6 +4519,7 @@ Instrucciones críticas:
     const sheetItems = pipeline.items.filter(i => i.kind === 'sheet' || i.kind === 'prop');
     const sheetDone = sheetItems.filter(i => i.status === 'done').length;
     const sheetErrors = sheetItems.filter(i => i.status === 'error').length;
+    const sheetSaveFailed = sheetItems.filter(i => i.status === 'save-failed').length;
     const sheetBatchActive = pipeline.isRunning && sheetItems.length > 0;
 
     return (
@@ -3823,13 +4531,17 @@ Instrucciones críticas:
         </div>
 
         {/* Progreso del pipeline de hojas de personaje y props */}
-        {(sheetBatchActive || sheetErrors > 0 || pendingGenerationCount > 0 || awaitingSelectionCount > 0) && (
+        {(sheetBatchActive || sheetErrors > 0 || sheetSaveFailed > 0 || pendingGenerationCount > 0 || awaitingSelectionCount > 0) && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sheetBatchActive ? (
                 <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando referencias… {sheetDone} de {sheetItems.length} listas</>
-              ) : sheetErrors > 0 ? (
-                <span style={{ color: '#DC2626' }}>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</span>
+              ) : sheetErrors > 0 || sheetSaveFailed > 0 ? (
+                <span style={{ color: '#DC2626' }}>
+                  {sheetErrors > 0 && (<>{sheetErrors} {sheetErrors === 1 ? 'referencia falló' : 'referencias fallaron'}</>)}
+                  {sheetErrors > 0 && sheetSaveFailed > 0 && ' · '}
+                  {sheetSaveFailed > 0 && (<>{sheetSaveFailed} {sheetSaveFailed === 1 ? 'no se pudo guardar' : 'no se pudieron guardar'}</>)}
+                </span>
               ) : pendingGenerationCount > 0 ? (
                 <>{pendingGenerationCount} {pendingGenerationCount === 1 ? 'elemento sin imagen de referencia' : 'elementos sin imagen de referencia'}</>
               ) : (
@@ -3848,22 +4560,22 @@ Instrucciones críticas:
                 </button>
               ) : (
                 <>
-                  {sheetErrors > 0 && (
+                  {(sheetErrors > 0 || sheetSaveFailed > 0) && (
                     <button
                       type="button"
-                      onClick={() => void pipeline.retryFailed()}
-                      disabled={generatingCharacterIndex !== null || refiningCharId !== null}
+                      onClick={() => void pipeline.retryFailed(buildRunIdentity())}
+                      disabled={pipeline.isRunning || refiningCharId !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
                     >
-                      Reintentar fallidos ({sheetErrors})
+                      Reintentar fallidos ({sheetErrors + sheetSaveFailed})
                     </button>
                   )}
                   {pendingGenerationCount > 0 && (
                     <button
                       type="button"
                       onClick={runCharacterSheetBatch}
-                      disabled={generatingCharacterIndex !== null || refiningCharId !== null}
+                      disabled={pipeline.isRunning || refiningCharId !== null}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -3892,12 +4604,14 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                  disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  disabled={pipeline.isRunning || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
-                  {(generatingCharacterIndex === index || pipeline.statusOf(`sheet-${character.id}`) === 'running') ? (
+                  {phaseOf(`sheet-${character.id}`) === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf(`sheet-${character.id}`) === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : characterSheetOptions[character.id]?.length ? (
                     <><RefreshCw size={14} /> Regenerar</>
                   ) : (
@@ -3908,7 +4622,7 @@ Instrucciones críticas:
                   <button
                     type="button"
                     onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id], { append: true })}
-                    disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null}
+                    disabled={pipeline.isRunning || refiningCharId !== null}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
                     style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
                     title="Genera 2 opciones adicionales sin descartar las existentes"
@@ -3916,10 +4630,22 @@ Instrucciones críticas:
                     <Sparkles size={14} /> 2 más
                   </button>
                 )}
+                {pipeline.statusOf(`sheet-${character.id}`) === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem(`sheet-${character.id}`, buildRunIdentity())}
+                    disabled={pipeline.isRunning || refiningCharId !== null}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la imagen ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={(base64) => handleUploadCharacterImage(character.id, base64)}
                   label="imagen"
-                  disabled={pipeline.isRunning || generatingCharacterIndex !== null || refiningCharId !== null}
+                  disabled={pipeline.isRunning || refiningCharId !== null}
                 />
               </div>
             </div>
@@ -3974,19 +4700,20 @@ Instrucciones críticas:
                       options={characterSheetOptions[character.id]}
                       selectedIndex={selectedCharacterSheets[character.id] ?? null}
                       onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
+                      disabled={isApproving}
                       onSave={() => handleSaveCharacterImage(character.id)}
                       onRegenerate={() => {
                         if (refiningCharId !== null || pipeline.isRunning) return;
                         handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id]);
                       }}
-                      isGenerating={generatingCharacterIndex === index}
+                      phase={phaseOf(`sheet-${character.id}`)}
                       isSaving={savingCharacter === character.id}
                       savedMessage={savedCharacterMessage[character.id]}
                       label="character sheet"
                     />
                   </div>
                   {charSelectedImage && (
-                    <div className={(generatingCharacterIndex !== null || pipeline.isRunning) ? 'opacity-60 pointer-events-none' : ''}>
+                    <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                       <ImageRefineBox
                         onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
                         isRefining={isRefiningThisChar}
@@ -4006,7 +4733,6 @@ Instrucciones críticas:
           storyProps={activeProps}
           sheetOptions={propSheetOptions}
           selectedSheets={selectedPropSheets}
-          generatingPropId={generatingPropId}
           pipelineBusy={pipeline.isRunning}
           statusOf={pipeline.statusOf}
           onGenerate={handleGeneratePropSheet}
@@ -4038,9 +4764,22 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveCharacters}
-            disabled={pipeline.isRunning || !allCharactersHaveSheets || !allCharactersSelected || !allPropsResolved}
-            title={!allPropsResolved ? 'Cada lugar/objeto recurrente necesita una imagen de referencia elegida (o quítalo de la lista)' : undefined}
+            onClick={() => void handleApproveCharacters()}
+            disabled={
+              isApproving ||
+              pipeline.isRunning ||
+              !allCharactersHaveSheets ||
+              !allCharactersSelected ||
+              !allPropsResolved ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            title={
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                : !allPropsResolved
+                ? 'Cada lugar/objeto recurrente necesita una imagen de referencia elegida (o quítalo de la lista)'
+                : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -4146,6 +4885,7 @@ Instrucciones críticas:
     const sceneItems = pipeline.items.filter(i => i.kind === 'scene');
     const sceneDone = sceneItems.filter(i => i.status === 'done').length;
     const sceneErrorCount = sceneItems.filter(i => i.status === 'error').length;
+    const sceneSaveFailed = sceneItems.filter(i => i.status === 'save-failed').length;
     const sceneBatchActive = pipeline.isRunning && sceneItems.length > 0;
 
     return (
@@ -4157,13 +4897,17 @@ Instrucciones críticas:
         </div>
 
         {/* Progreso del pipeline de escenas */}
-        {(sceneBatchActive || sceneErrorCount > 0 || pendingSceneCount > 0) && (
+        {(sceneBatchActive || sceneErrorCount > 0 || sceneSaveFailed > 0 || pendingSceneCount > 0) && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
             <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
               {sceneBatchActive ? (
                 <><Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} /> Generando escenas… {sceneDone} de {sceneItems.length} listas</>
-              ) : sceneErrorCount > 0 ? (
-                <span style={{ color: '#DC2626' }}>{sceneErrorCount} {sceneErrorCount === 1 ? 'escena falló' : 'escenas fallaron'}</span>
+              ) : sceneErrorCount > 0 || sceneSaveFailed > 0 ? (
+                <span style={{ color: '#DC2626' }}>
+                  {sceneErrorCount > 0 && (<>{sceneErrorCount} {sceneErrorCount === 1 ? 'escena falló' : 'escenas fallaron'}</>)}
+                  {sceneErrorCount > 0 && sceneSaveFailed > 0 && ' · '}
+                  {sceneSaveFailed > 0 && (<>{sceneSaveFailed} {sceneSaveFailed === 1 ? 'no se guardó' : 'no se guardaron'}</>)}
+                </span>
               ) : (
                 <>{pendingSceneCount} {pendingSceneCount === 1 ? 'escena sin imágenes' : 'escenas sin imágenes'}</>
               )}
@@ -4180,22 +4924,22 @@ Instrucciones críticas:
                 </button>
               ) : (
                 <>
-                  {sceneErrorCount > 0 && (
+                  {(sceneErrorCount > 0 || sceneSaveFailed > 0) && (
                     <button
                       type="button"
-                      onClick={() => void pipeline.retryFailed()}
-                      disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
+                      onClick={() => void pipeline.retryFailed(buildRunIdentity())}
+                      disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       className="px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
                       style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber }}
                     >
-                      Reintentar fallidas ({sceneErrorCount})
+                      Reintentar fallidas ({sceneErrorCount + sceneSaveFailed})
                     </button>
                   )}
                   {pendingSceneCount > 0 && (
                     <button
                       type="button"
                       onClick={runSceneBatch}
-                      disabled={generatingSceneIndex !== null || refiningSceneNumber !== null}
+                      disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -4267,16 +5011,23 @@ Instrucciones críticas:
                           Error
                         </span>
                       )}
+                      {scenePipelineStatus === 'save-failed' && !pipeline.isRunning && (
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                          No se guardó
+                        </span>
+                      )}
                       {/* Botón generar */}
                       <button
                         type="button"
                         onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                        disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                        disabled={pipeline.isRunning || refiningSceneNumber !== null}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
-                        {(generatingSceneIndex === scene.number || scenePipelineStatus === 'running') ? (
+                        {scenePipelineStatus === 'running' ? (
                           <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                        ) : scenePipelineStatus === 'persisting' ? (
+                          <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                         ) : sceneImageOptions[scene.number]?.length ? (
                           <><RefreshCw size={14} /> Regenerar</>
                         ) : (
@@ -4288,7 +5039,7 @@ Instrucciones críticas:
                         <button
                           type="button"
                           onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number], { append: true })}
-                          disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                          disabled={pipeline.isRunning || refiningSceneNumber !== null}
                           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
                           style={{ borderColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.amber, backgroundColor: 'transparent' }}
                           title="Genera 2 opciones adicionales sin descartar las existentes"
@@ -4296,11 +5047,23 @@ Instrucciones críticas:
                           <Sparkles size={14} /> 2 más
                         </button>
                       )}
+                      {scenePipelineStatus === 'save-failed' && (
+                        <button
+                          type="button"
+                          onClick={() => void pipeline.retryItem(`scene-${scene.number}`, buildRunIdentity())}
+                          disabled={pipeline.isRunning || refiningSceneNumber !== null}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                          style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                          title="Reintenta guardar la imagen ya generada"
+                        >
+                          <RefreshCw size={14} /> Reintentar guardado
+                        </button>
+                      )}
                       {/* Botón subir imagen */}
                       <ImageUploadButton
                         onUpload={(base64) => handleUploadSceneImage(scene.number, base64)}
                         label="imagen"
-                        disabled={pipeline.isRunning || generatingSceneIndex !== null || refiningSceneNumber !== null}
+                        disabled={pipeline.isRunning || refiningSceneNumber !== null}
                       />
                     </div>
                   </div>
@@ -4344,11 +5107,16 @@ Instrucciones críticas:
                                     delete updated[scene.number];
                                     return updated;
                                   });
-                                  setSceneReferenceMode(prev => {
-                                    const updated = { ...prev };
-                                    delete updated[scene.number];
-                                    return updated;
-                                  });
+                                  // F7 — `sceneReferenceModes` NO está en el patch del
+                                  // auto-persist (sólo lo escriben los toggles), así que
+                                  // borrarlo aquí sólo del estado rehidrataría stale al
+                                  // recargar. Espejamos el patrón del toggle: computar el
+                                  // mapa nuevo, bump + saveDraft para persistirlo.
+                                  const nextModes = { ...sceneReferenceMode };
+                                  delete nextModes[scene.number];
+                                  setSceneReferenceMode(nextModes);
+                                  bumpContentRevision();
+                                  saveDraft({ sceneReferenceModes: nextModes });
                                 }}
                                 className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
                                 style={{ backgroundColor: CASA_BRAND.colors.primary.black }}
@@ -4371,6 +5139,8 @@ Instrucciones críticas:
                                       onClick={() => {
                                         const next = { ...sceneReferenceMode, [scene.number]: 'style' as const };
                                         setSceneReferenceMode(next);
+                                        // D13 — mutación editor-visible: bumpea contentRevision.
+                                        bumpContentRevision();
                                         saveDraft({ sceneReferenceModes: next });
                                       }}
                                       className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
@@ -4384,6 +5154,8 @@ Instrucciones críticas:
                                       onClick={() => {
                                         const next = { ...sceneReferenceMode, [scene.number]: 'pov' as const };
                                         setSceneReferenceMode(next);
+                                        // D13 — mutación editor-visible: bumpea contentRevision.
+                                        bumpContentRevision();
                                         saveDraft({ sceneReferenceModes: next });
                                       }}
                                       className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
@@ -4410,20 +5182,25 @@ Instrucciones críticas:
                               const input = document.createElement('input');
                               input.type = 'file';
                               input.accept = 'image/*';
-                              input.onchange = (e) => {
+                              input.onchange = async (e) => {
                                 const file = (e.target as HTMLInputElement).files?.[0];
                                 if (!file) return;
-                                if (file.size > 5 * 1024 * 1024) {
-                                  alert('La imagen es muy grande. Máximo 5MB');
+                                if (isReferenceImageTooLarge(file)) {
+                                  alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                                   return;
                                 }
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  const result = reader.result as string;
-                                  const base64 = result.split(',')[1];
+                                try {
+                                  const base64 = await readReferenceImageBase64(file);
+                                  // F6 — este commit cae en DefaultLane (no-discreto):
+                                  // el bump del auto-persist quedaría diferido y el CAS
+                                  // de una aprobación en vuelo podría perder esta
+                                  // edición. Bumpeamos pegado al set, en el mismo tick.
+                                  bumpContentRevision();
                                   setSceneReferenceImages(prev => ({ ...prev, [scene.number]: base64 }));
-                                };
-                                reader.readAsDataURL(file);
+                                } catch {
+                                  // El archivo no se pudo leer. No tocamos el estado,
+                                  // igual que antes cuando FileReader fallaba.
+                                }
                               };
                               input.click();
                             }}
@@ -4784,19 +5561,20 @@ Instrucciones críticas:
                           options={sceneImageOptions[scene.number]}
                           selectedIndex={selectedSceneImages[scene.number] ?? null}
                           onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
+                          disabled={isApproving}
                           onSave={() => handleSaveSceneImage(scene.number)}
                           onRegenerate={() => {
                             if (refiningSceneNumber !== null || pipeline.isRunning) return;
                             handleGenerateSceneImage(scene, editingScenePrompt[scene.number]);
                           }}
-                          isGenerating={generatingSceneIndex === scene.number}
+                          phase={phaseOf(`scene-${scene.number}`)}
                           isSaving={savingScene === scene.number}
                           savedMessage={savedSceneMessage[scene.number]}
                           label={`escena ${scene.number}`}
                         />
                       </div>
                       {sceneSelectedImage && (
-                        <div className={(generatingSceneIndex !== null || pipeline.isRunning) ? 'opacity-60 pointer-events-none' : ''}>
+                        <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                           <ImageRefineBox
                             onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
                             isRefining={isRefiningThisScene}
@@ -4833,8 +5611,18 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleApproveScenes}
-            disabled={pipeline.isRunning || scenesSelected < story.scenes.length}
+            onClick={() => void handleApproveScenes()}
+            disabled={
+              isApproving ||
+              pipeline.isRunning ||
+              scenesSelected < story.scenes.length ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            title={
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -4904,17 +5692,55 @@ Instrucciones críticas:
   ) => {
     const base = getOverlayOrDefault(which, defaultText, defaultPosition);
     const next: TextOverlay = { ...base, ...patch };
-    setStory(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
-        metadata: {
-          ...prev.metadata,
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    });
+    if (!story) return;
+    const nextStory: Story = {
+      ...story,
+      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+      metadata: {
+        ...story.metadata,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    // D13 — Mutación editor-visible sobre `story`: bumpea contentRevision para
+    // que una aprobación/finalización en vuelo la detecte (CAS post-persistencia)
+    // y quede stale en vez de que `setStory(committedStory)` la revierta.
+    bumpContentRevision();
+    // Finding 6 — Volver al updater FUNCIONAL. `setStory(nextStory)` pisaba el
+    // objeto story COMPLETO con una foto del render; el updater sólo toca el
+    // overlay y respeta cualquier story más nueva que haya commiteado un
+    // continuation de promesa (aprobación o refine). Hoy no hay un caller
+    // no-discreto que gane la carrera, pero la forma defensiva es gratis.
+    // Finding 4 + F1 — Fusionamos sobre la story VIVA (`storyRef.current`), no
+    // sobre la foto del render, y persistimos EXACTAMENTE el objeto que
+    // seteamos.
+    //
+    // El intento anterior capturaba el resultado desde dentro de un updater
+    // funcional (`setStory(prev => { persisted = merged; ... })`). Eso sólo
+    // funciona cuando React evalúa el updater de forma ANSIOSA, cosa que hace
+    // únicamente si la fiber no tiene lanes pendientes; con cualquier otro
+    // setState encolado en el mismo batch, el updater se difiere a la fase de
+    // render, `persisted` seguía en null y el `?? nextStory` restauraba en
+    // silencio justo el comportamiento que el arreglo debía eliminar.
+    // `storyRef` se sincroniza con cada commit, así que leerlo acá da la story
+    // más nueva sin depender de la heurística de React.
+    const liveStory = storyRef.current ?? story;
+    if (!liveStory) return;
+    const merged: Story = {
+      ...liveStory,
+      ...(which === 'cover' ? { coverTextOverlay: next } : { endTextOverlay: next }),
+      metadata: { ...liveStory.metadata, updatedAt: nextStory.metadata.updatedAt },
+    };
+    setStory(merged);
+    // F1 — Persistir vía `saveDraft` (debounce). Dos motivos:
+    //   1) El overlay ahora se GUARDA: antes vivía sólo en React state (no había
+    //      ni saveDraft ni enqueueDraftWrite) y se perdía al recargar.
+    //   2) El bump de arriba invalidaría cualquier patch de buffer pendiente en
+    //      el debounce (queue-start CAS incluye contentRevision). Pasar por
+    //      saveDraft dispara el merge D14 (llavea {epoch,storyId,revision},
+    //      excluye contentRevision), que RE-ESTAMPA el patch pendiente bajo la
+    //      identidad fresca en vez de dejarlo huérfano — mismo patrón que los
+    //      toggles de `sceneReferenceModes` y `handleUpdatePropDescription`.
+    saveDraft({ story: merged });
   };
 
   const renderTextOverlayControls = (
@@ -5068,6 +5894,16 @@ Instrucciones críticas:
   const renderCoverStep = () => {
     if (!story) return null;
 
+    // PG/G6 — Este paso no exponía ningún control de cancelación (la asimetría
+    // que documentaba el Finding 5), así que una corrida de portada/fin sólo
+    // podía esperarse. La condición replica la de los banners de hojas y
+    // escenas —`isRunning` + hay ítems de este paso— para que el botón siga
+    // disponible durante stagger, backoff y llamada en vuelo, y no sólo
+    // mientras UNA tarjeta reporte `running`. Cancelar nunca interrumpe una
+    // persistencia: el runner excluye `persisting` de su normalización.
+    const coverEndItems = pipeline.items.filter(i => i.kind === 'cover' || i.kind === 'end');
+    const coverEndBatchActive = pipeline.isRunning && coverEndItems.length > 0;
+
     return (
       <div className="space-y-4">
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
@@ -5075,6 +5911,25 @@ Instrucciones críticas:
             Genera la portada del cuento y la imagen final de "Fin".
           </p>
         </div>
+
+        {coverEndBatchActive && (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg border" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
+            <div className="flex items-center gap-2 text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+              <Loader2 size={16} className="animate-spin" style={{ color: CASA_BRAND.colors.primary.amber }} />
+              Generando portada y fin…
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={pipeline.cancel}
+                className="px-3 py-1.5 rounded-lg text-sm border transition-colors"
+                style={{ borderColor: CASA_BRAND.colors.secondary.grayLight, color: CASA_BRAND.colors.secondary.grayDark }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Portada */}
         <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: CASA_BRAND.colors.primary.white, borderColor: CASA_BRAND.colors.secondary.grayLight }}>
@@ -5143,23 +5998,45 @@ Instrucciones críticas:
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleGenerateCover()}
-                  disabled={generatingCover}
+                  // PH/G3 — Con options ya generadas, este botón AGREGA: no
+                  // queda ninguna superficie de reemplazo de lote para portada.
+                  onClick={() => handleGenerateCover(undefined, { append: coverOptions.length > 0 })}
+                  // PH/G5 [B1-PM] — El estado visual sigue a la guarda, que es
+                  // GLOBAL: durante la corrida del hermano (o el envelope) este
+                  // botón no despacha, así que tampoco puede verse habilitado.
+                  // `pipeline.isRunning` es el booleano de render y acá basta:
+                  // esto es el pre-filtro; la garantía vive en el handler.
+                  disabled={isItemBusy('cover') || isRefiningCover || isApproving || pipeline.isRunning}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                  title={coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
-                  {generatingCover ? (
+                  {phaseOf('cover') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf('cover') === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : coverOptions.length > 0 ? (
-                    <><RefreshCw size={14} /> Regenerar</>
+                    <><Sparkles size={14} /> 2 más</>
                   ) : (
                     <><Camera size={14} /> Generar portada</>
                   )}
                 </button>
+                {pipeline.statusOf('cover') === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem('cover', buildRunIdentity())}
+                    disabled={isItemBusy('cover') || isRefiningCover}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la portada ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={handleUploadCover}
                   label="portada"
-                  disabled={generatingCover}
+                  disabled={isItemBusy('cover') || isRefiningCover}
                 />
               </div>
             </div>
@@ -5205,20 +6082,22 @@ Instrucciones críticas:
                           const input = document.createElement('input');
                           input.type = 'file';
                           input.accept = 'image/*';
-                          input.onchange = (e) => {
+                          input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert('La imagen es muy grande. Máximo 5MB');
+                            if (isReferenceImageTooLarge(file)) {
+                              alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                               return;
                             }
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                              const result = reader.result as string;
-                              const base64 = result.split(',')[1];
+                            try {
+                              const base64 = await readReferenceImageBase64(file);
+                              // F6 — commit no-discreto (DefaultLane): bump pegado al
+                              // set para que una aprobación en vuelo no pierda la edición.
+                              bumpContentRevision();
                               setCoverReferenceImage(base64);
-                            };
-                            reader.readAsDataURL(file);
+                            } catch {
+                              // El archivo no se pudo leer; no tocamos el estado.
+                            }
                           };
                           input.click();
                         }}
@@ -5408,9 +6287,18 @@ Instrucciones críticas:
                     options={coverOptions}
                     selectedIndex={selectedCover}
                     onSelect={setSelectedCover}
+                    disabled={isApproving}
                     onSave={handleSaveCover}
-                    onRegenerate={() => handleGenerateCover()}
-                    isGenerating={generatingCover}
+                    // PH/G3+G5 — Pre-filtro VISUAL, igual que sheets/scenes; la
+                    // garantía imperativa vive en el handler (`pipeline.isBusy()`).
+                    onRegenerate={() => {
+                      if (isRefiningCover || pipeline.isRunning) return;
+                      handleGenerateCover(undefined, { append: true });
+                    }}
+                    // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
+                    regenerateDisabled={isRefiningCover || pipeline.isRunning}
+                    regenerateLabel="Generar 2 opciones adicionales"
+                    phase={phaseOf('cover')}
                     isSaving={savingCover}
                     savedMessage={savedCoverMessage}
                     label="portada"
@@ -5467,23 +6355,41 @@ Instrucciones críticas:
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleGenerateEnd()}
-                  disabled={generatingEnd}
+                  // PH/G3 — Igual que la portada: con options ya generadas, agrega.
+                  onClick={() => handleGenerateEnd(undefined, { append: endOptions.length > 0 })}
+                  // PH/G5 [B1-PM] — Espejo de la portada: el pre-filtro visual
+                  // cubre la corrida global y el envelope, no sólo este ítem.
+                  disabled={isItemBusy('end') || isRefiningEnd || isApproving || pipeline.isRunning}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
+                  title={endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
-                  {generatingEnd ? (
+                  {phaseOf('end') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
+                  ) : phaseOf('end') === 'saving' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Guardando...</>
                   ) : endOptions.length > 0 ? (
-                    <><RefreshCw size={14} /> Regenerar</>
+                    <><Sparkles size={14} /> 2 más</>
                   ) : (
                     <><Camera size={14} /> Generar "Fin"</>
                   )}
                 </button>
+                {pipeline.statusOf('end') === 'save-failed' && (
+                  <button
+                    type="button"
+                    onClick={() => void pipeline.retryItem('end', buildRunIdentity())}
+                    disabled={isItemBusy('end') || isRefiningEnd}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50 border"
+                    style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+                    title="Reintenta guardar la imagen ya generada"
+                  >
+                    <RefreshCw size={14} /> Reintentar guardado
+                  </button>
+                )}
                 <ImageUploadButton
                   onUpload={handleUploadEnd}
                   label="imagen"
-                  disabled={generatingEnd}
+                  disabled={isItemBusy('end') || isRefiningEnd}
                 />
               </div>
             </div>
@@ -5529,20 +6435,22 @@ Instrucciones críticas:
                           const input = document.createElement('input');
                           input.type = 'file';
                           input.accept = 'image/*';
-                          input.onchange = (e) => {
+                          input.onchange = async (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
                             if (!file) return;
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert('La imagen es muy grande. Máximo 5MB');
+                            if (isReferenceImageTooLarge(file)) {
+                              alert(REFERENCE_IMAGE_TOO_LARGE_MESSAGE);
                               return;
                             }
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                              const result = reader.result as string;
-                              const base64 = result.split(',')[1];
+                            try {
+                              const base64 = await readReferenceImageBase64(file);
+                              // F6 — commit no-discreto (DefaultLane): bump pegado al
+                              // set para que una aprobación en vuelo no pierda la edición.
+                              bumpContentRevision();
                               setEndReferenceImage(base64);
-                            };
-                            reader.readAsDataURL(file);
+                            } catch {
+                              // El archivo no se pudo leer; no tocamos el estado.
+                            }
                           };
                           input.click();
                         }}
@@ -5735,9 +6643,17 @@ Instrucciones críticas:
                     options={endOptions}
                     selectedIndex={selectedEnd}
                     onSelect={setSelectedEnd}
+                    disabled={isApproving}
                     onSave={handleSaveEnd}
-                    onRegenerate={() => handleGenerateEnd()}
-                    isGenerating={generatingEnd}
+                    // PH/G3+G5 — ver el equivalente de portada.
+                    onRegenerate={() => {
+                      if (isRefiningEnd || pipeline.isRunning) return;
+                      handleGenerateEnd(undefined, { append: true });
+                    }}
+                    // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
+                    regenerateDisabled={isRefiningEnd || pipeline.isRunning}
+                    regenerateLabel="Generar 2 opciones adicionales"
+                    phase={phaseOf('end')}
                     isSaving={savingEnd}
                     savedMessage={savedEndMessage}
                     label="imagen final"
@@ -5782,8 +6698,26 @@ Instrucciones críticas:
           </button>
           <button
             type="button"
-            onClick={handleFinalize}
-            disabled={selectedCover === null || selectedEnd === null}
+            onClick={() => void handleFinalize()}
+            disabled={
+              isApproving ||
+              pipeline.isRunning ||
+              selectedCover === null ||
+              selectedEnd === null ||
+              !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+            }
+            // Finding 5 — Explicitar cada causa del gate. Sin esto, con una
+            // generación en curso el botón quedaba gris y mudo (y este paso no
+            // expone un botón de cancelar el pipeline).
+            title={
+              pipeline.isRunning
+                ? 'Espera a que termine la generación en curso'
+                : selectedCover === null || selectedEnd === null
+                  ? 'Selecciona portada y fin antes de finalizar'
+                  : !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })
+                    ? 'Hay imágenes sin guardar; reintenta antes de aprobar'
+                    : undefined
+            }
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: CASA_BRAND.colors.primary.white, fontWeight: 500 }}
           >
@@ -5883,7 +6817,83 @@ Instrucciones críticas:
   return (
     <div className="space-y-6">
       {/* Modal de recuperación de borrador - no mostrar si el cuento ya está completo */}
-      {showRecoveryPrompt && draft && !confirmed && (
+      {/* A6 — Borrador ROTO: paso avanzado sin historia utilizable. Se ofrece
+          una salida explícita en vez de restaurar a un callejón sin salida. */}
+      {showRecoveryPrompt && draft && draft.storyMissing && !confirmed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: '#FEE2E2' }}
+              >
+                <AlertCircle size={20} style={{ color: '#DC2626' }} />
+              </div>
+              <div>
+                <h4
+                  className="font-semibold mb-1"
+                  style={{ color: CASA_BRAND.colors.primary.black, fontFamily: CASA_BRAND.fonts.heading }}
+                >
+                  Borrador incompleto
+                </h4>
+                <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                  Se encontró un borrador guardado en el paso
+                  {' '}<strong>{
+                    draft.currentStep === 'story' ? 'revisión del cuento' :
+                    draft.currentStep === 'characters' ? 'generación de personajes' :
+                    draft.currentStep === 'scenes' ? 'generación de escenas' :
+                    draft.currentStep === 'cover' ? 'selección de portada' :
+                    draft.currentStep
+                  }</strong>, pero el cuento en sí no se guardó, así que no se
+                  puede continuar desde ahí.
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="p-3 rounded-lg mb-4"
+              style={{ backgroundColor: CASA_BRAND.colors.secondary.grayLight + '30' }}
+            >
+              <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
+                <strong>Reparar</strong> conserva la configuración que ya habías
+                cargado (lugar, personajes, estilo) y te lleva al inicio para
+                volver a generar el cuento. <strong>Descartar</strong> elimina el
+                borrador y empieza de cero.
+              </p>
+              <p className="text-xs mt-2" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                Guardado: {formatSavedAt(draft.savedAt)}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleDeclineRecovery}
+                className="flex-1 px-4 py-2 rounded-lg border transition-colors"
+                style={{
+                  borderColor: CASA_BRAND.colors.secondary.grayLight,
+                  color: CASA_BRAND.colors.secondary.grayDark,
+                }}
+              >
+                Descartar borrador
+              </button>
+              <button
+                type="button"
+                onClick={handleRepairRecovery}
+                className="flex-1 px-4 py-2 rounded-lg transition-colors font-medium"
+                style={{
+                  backgroundColor: CASA_BRAND.colors.primary.amber,
+                  color: 'white',
+                }}
+              >
+                Reparar borrador
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRecoveryPrompt && draft && !draft.storyMissing && !confirmed && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={handleDeclineRecovery}
@@ -5925,6 +6935,7 @@ Instrucciones críticas:
                   draft.currentStep === 'characters' ? 'Generando personajes' :
                   draft.currentStep === 'scenes' ? 'Generando escenas' :
                   draft.currentStep === 'cover' ? 'Seleccionando portada' :
+                  draft.currentStep === 'complete' ? 'Cuento finalizado (pendiente de guardar la liturgia)' :
                   draft.currentStep
                 }</p>
                 {draft.story?.scenes && (
@@ -5963,6 +6974,37 @@ Instrucciones críticas:
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* A3/S6 — Banner de reintentar guardado. Se muestra cuando hay entradas
+          save-failed en el registry: bloquea las aprobaciones y expone el CTA
+          `Reintentar guardado (N)` que llama a `pipeline.retrySaves(...)` — que
+          reencola SÓLO persistencia (cero llamadas al provider). */}
+      {pipeline.saveFailedCount > 0 && (
+        <div
+          data-testid="save-retry-banner"
+          role="alert"
+          className="flex items-start gap-3 p-3 rounded-lg border"
+          style={{ backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }}
+        >
+          <AlertCircle size={18} style={{ color: '#DC2626', flexShrink: 0, marginTop: 2 }} />
+          <div className="flex-1 text-sm" style={{ color: '#991B1B' }}>
+            <div className="font-medium">Hay imágenes sin guardar; reintenta antes de aprobar</div>
+            <div className="text-xs" style={{ color: '#B91C1C' }}>
+              El pipeline sólo reintenta guardar — no vuelve a generar imágenes.
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="save-retry-button"
+            onClick={() => void pipeline.retrySaves(buildRunIdentity())}
+            disabled={pipeline.isSaving}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50"
+            style={{ borderColor: '#DC2626', color: '#DC2626', backgroundColor: 'transparent' }}
+          >
+            <RefreshCw size={14} /> Reintentar guardado ({pipeline.saveFailedCount})
+          </button>
         </div>
       )}
 
@@ -6060,12 +7102,19 @@ Instrucciones críticas:
                       color: CASA_BRAND.colors.secondary.grayMedium,
                     }}
                   >
-                    Esta acción eliminará permanentemente:
+                    {/* A4/A4a — El copy decía que se borraban "todas las
+                        imágenes generadas". Ya no es cierto (ni debe serlo):
+                        el editor nunca borra bytes de Storage, porque una
+                        liturgia guardada puede referenciarlos. */}
+                    Esta acción eliminará:
                     <ul className="list-disc list-inside mt-2 space-y-1">
                       <li>La historia "{story?.title || initialStory?.title || 'Sin título'}"</li>
-                      <li>Todas las imágenes generadas (personajes, escenas, portada)</li>
                       <li>El borrador guardado en Supabase</li>
                     </ul>
+                    <p className="mt-3" style={{ color: CASA_BRAND.colors.secondary.grayMedium }}>
+                      Las imágenes ya generadas se conservan: una liturgia guardada
+                      puede estar usándolas.
+                    </p>
                     <p className="mt-3 font-medium" style={{ color: '#DC2626' }}>
                       Esta acción no se puede deshacer.
                     </p>
@@ -6124,6 +7173,84 @@ Instrucciones críticas:
       {/* Indicador de pasos (solo si ya hay un cuento) */}
       {currentStep !== 'config' && (
         <StepIndicator currentStep={currentStep} storyStatus={story?.metadata.status || 'draft'} />
+      )}
+
+      {/* Referencias que el backend descartó. Informativo, no bloqueante: la
+          generación siguió adelante sin ellas.
+
+          Vive acá, fuera del paso actual, y no dentro del paso de configuración:
+          las referencias que se caen en `generate-scene-images` (hojas de
+          personaje, props, estilo) se descartan en los pasos de personajes,
+          escenas y portada. Montado sólo en configuración, el aviso existía
+          justo donde esas respuestas nunca llegan. */}
+      {skippedImages.length > 0 && (
+        <div
+          className="p-3 rounded-lg flex items-start gap-2"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="flex-1">
+            <div style={{ fontWeight: 600 }}>
+              {skippedImages.length === 1
+                ? 'Una foto de referencia no se usó'
+                : `${skippedImages.length} fotos de referencia no se usaron`}
+            </div>
+            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
+              {skippedImages.map((s) => (
+                <li key={`${s.field}:${s.code}`}>{describeSkippedImage(s)}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSkippedImages([])}
+            aria-label="Ocultar aviso"
+            style={{ color: '#92400E', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Investigación que se degradó (PC/PD). Hermano del aviso de fotos y con
+          la misma forma no bloqueante, pero estado propio: una foto descartada
+          y una investigación que falló son eventos distintos.
+
+          Vive acá, fuera del paso actual, por dos motivos: la vista previa se
+          abre en configuración y la generación termina en el paso del cuento —
+          montarlo dentro de un paso lo haría desaparecer justo cuando cambia—,
+          y así convive con la superficie roja de error sin reemplazarla.
+
+          Los mensajes son los que redactó el SERVIDOR y se muestran verbatim:
+          el cliente no tiene tabla de códigos, así que un código nuevo sigue
+          diciendo algo cierto. La key incluye el índice porque el borde emite
+          una entrada por resultado y dos fallos iguales son legales: dedupli-
+          carlos para fabricar unicidad borraría un fallo real. */}
+      {warnings.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="p-3 rounded-lg flex items-start gap-2"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontFamily: CASA_BRAND.fonts.body, fontSize: '13px' }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div className="flex-1">
+            <div style={{ fontWeight: 600 }}>Avisos de la generación</div>
+            <ul className="mt-1 space-y-0.5" style={{ listStyle: 'disc', paddingLeft: '18px' }}>
+              {warnings.map((w, i) => (
+                <li key={`${w.source}:${w.code}:${i}`}>{w.message}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWarnings([])}
+            aria-label="Ocultar avisos de la generación"
+            style={{ color: '#92400E', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
       )}
 
       {/* Contenido del paso actual */}
