@@ -244,7 +244,16 @@ const ImageSelector: React.FC<{
    * Portada y fin SÍ la pasan, porque ahí regenerar ya no descarta nada.
    */
   regenerateLabel?: string;
-}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled, regenerateLabel = 'No me gustan, generar otras opciones' }) => {
+  /**
+   * PH/G5 [B1-PM] — Pre-filtro VISUAL del botón de regenerar, y SÓLO de él:
+   * la guarda de lote es GLOBAL (`pipeline.isBusy()`), así que con el lote del
+   * hermano en vuelo este control no despacha nada. Sin esto se veía
+   * habilitado y no hacía nada. Aditiva y opcional: sheets/scenes no la pasan
+   * y su salida no cambia. `disabled` sigue siendo la del envelope y gobierna
+   * además la selección de opción — este flag no la toca.
+   */
+  regenerateDisabled?: boolean;
+}> = ({ options, selectedIndex, onSelect, onSave, onRegenerate, phase, isSaving, savedMessage, label, disabled, regenerateLabel = 'No me gustan, generar otras opciones', regenerateDisabled = false }) => {
   if (phase !== 'idle') {
     return (
       <div className="flex items-center justify-center p-8">
@@ -386,7 +395,7 @@ const ImageSelector: React.FC<{
           // usuario nunca eligió (o ninguna, si el índice queda fuera de rango).
           // Deshabilitar el thumbnail sin deshabilitar esto dejaba la puerta de
           // al lado abierta.
-          disabled={disabled}
+          disabled={disabled || regenerateDisabled}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: CASA_BRAND.colors.primary.white,
@@ -5992,7 +6001,12 @@ Instrucciones críticas:
                   // PH/G3 — Con options ya generadas, este botón AGREGA: no
                   // queda ninguna superficie de reemplazo de lote para portada.
                   onClick={() => handleGenerateCover(undefined, { append: coverOptions.length > 0 })}
-                  disabled={isItemBusy('cover') || isRefiningCover}
+                  // PH/G5 [B1-PM] — El estado visual sigue a la guarda, que es
+                  // GLOBAL: durante la corrida del hermano (o el envelope) este
+                  // botón no despacha, así que tampoco puede verse habilitado.
+                  // `pipeline.isRunning` es el booleano de render y acá basta:
+                  // esto es el pre-filtro; la garantía vive en el handler.
+                  disabled={isItemBusy('cover') || isRefiningCover || isApproving || pipeline.isRunning}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                   title={coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
@@ -6281,6 +6295,8 @@ Instrucciones críticas:
                       if (isRefiningCover || pipeline.isRunning) return;
                       handleGenerateCover(undefined, { append: true });
                     }}
+                    // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
+                    regenerateDisabled={isRefiningCover || pipeline.isRunning}
                     regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('cover')}
                     isSaving={savingCover}
@@ -6341,7 +6357,9 @@ Instrucciones críticas:
                   type="button"
                   // PH/G3 — Igual que la portada: con options ya generadas, agrega.
                   onClick={() => handleGenerateEnd(undefined, { append: endOptions.length > 0 })}
-                  disabled={isItemBusy('end') || isRefiningEnd}
+                  // PH/G5 [B1-PM] — Espejo de la portada: el pre-filtro visual
+                  // cubre la corrida global y el envelope, no sólo este ítem.
+                  disabled={isItemBusy('end') || isRefiningEnd || isApproving || pipeline.isRunning}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                   title={endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
@@ -6632,6 +6650,8 @@ Instrucciones críticas:
                       if (isRefiningEnd || pipeline.isRunning) return;
                       handleGenerateEnd(undefined, { append: true });
                     }}
+                    // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
+                    regenerateDisabled={isRefiningEnd || pipeline.isRunning}
                     regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('end')}
                     isSaving={savingEnd}

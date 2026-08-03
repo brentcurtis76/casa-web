@@ -263,6 +263,90 @@ describe('T-H.5 — las cuatro superficies quedan inaccesibles mientras hay trab
     await settle(400);
   }, 60000);
 
+  // ---------------------------------------------------------------------------
+  // [B1-PM] — La ventana del HERMANO y la del envelope.
+  //
+  // La guarda imperativa es GLOBAL (`pipeline.isBusy()`), así que mientras el
+  // lote de fin está en vuelo un clic en portada NO despacha. Si el estado
+  // visual sigue siendo por ítem (`isItemBusy(id) || isRefining*`), portada se
+  // ve HABILITADA y no hace nada: el control miente. G5 exige que las cuatro
+  // superficies queden deshabilitadas o inaccesibles durante running,
+  // persisting, refine y approval — el estado visual sigue a la guarda.
+  // ---------------------------------------------------------------------------
+
+  // NOTA: el `id` de la story viaja al encabezado `Cuento <id>`, así que no
+  // puede contener "portada" ni "fin" — `panelFor` busca por nombre accesible.
+  it.each([
+    { id: 'ph-b1-sib-1', propio: 'portada', hermano: 'fin', panelPropio: coverPanel, panelHermano: endPanel },
+    { id: 'ph-b1-sib-2', propio: 'fin', hermano: 'portada', panelPropio: endPanel, panelHermano: coverPanel },
+  ])(
+    'con el lote de $hermano en vuelo: el header y el regenerar de $propio quedan deshabilitados',
+    async ({ id, panelPropio, panelHermano }) => {
+      await renderWithFirstBatch(id);
+      parkProvider();
+
+      // El HERMANO arranca un lote pagado que queda en vuelo.
+      await act(async () => {
+        fireEvent.click(headerControl(panelHermano()));
+        await yields(40);
+      });
+      await settle(200);
+
+      // La categoría propia sigue OCIOSA (su `ImageSelector` no es spinner),
+      // pero la corrida global está viva: sus dos superficies mienten si
+      // siguen habilitadas. Se afirman JUNTAS para que la falla reporte el
+      // estado de ambas y no se esconda una detrás de la otra.
+      expect({
+        header: headerControl(panelPropio()).disabled,
+        selector: selectorControl(panelPropio()).disabled,
+      }).toEqual({ header: true, selector: true });
+    },
+    60000,
+  );
+
+  it('con el envelope de APROBACIÓN parqueado: los headers de portada y fin quedan deshabilitados', async () => {
+    await renderWithFirstBatch('ph-b1-approval');
+
+    // Elegir portada y fin habilita "Finalizar".
+    for (const panel of [coverPanel(), endPanel()]) {
+      const opciones = within(panel).getAllByRole('img', { name: /^Opción \d+$/ });
+      await act(async () => {
+        fireEvent.click(opciones[0].closest('button')!);
+        await yields(20);
+      });
+    }
+
+    // La escritura AUTORITATIVA del envelope queda parqueada: `isApproving`
+    // se mantiene en true mientras dura el gesto.
+    const gate = deferred<void>();
+    ctl.upsertGate = (call: UpsertCall) =>
+      call.table === 'cuentacuentos_drafts' ? gate.promise : undefined;
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Finalizar cuento$/ }));
+      await yields(60);
+    });
+    await settle(400);
+
+    // Los cuatro controles de lote, juntos. El regenerar del `ImageSelector`
+    // ya viajaba por `disabled={isApproving}` desde F4 (verde en base); los
+    // dos headers son los que hoy mienten.
+    expect({
+      headerPortada: headerControl(coverPanel()).disabled,
+      headerFin: headerControl(endPanel()).disabled,
+      selectorPortada: selectorControl(coverPanel()).disabled,
+      selectorFin: selectorControl(endPanel()).disabled,
+    }).toEqual({
+      headerPortada: true,
+      headerFin: true,
+      selectorPortada: true,
+      selectorFin: true,
+    });
+
+    gate.resolve();
+    await settle(400);
+  }, 60000);
+
   it('con un REFINE en vuelo: el header queda deshabilitado y el panel de opciones no acepta clics', async () => {
     await renderWithFirstBatch('ph-h5-refine');
 
