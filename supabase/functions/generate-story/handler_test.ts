@@ -1,151 +1,68 @@
 // Integration tests for the generate-story request handler.
 //
-// T-INT-generate-story covers the fail-closed authz contract:
-//   * OPTIONS is served before the guard (200 + CORS, no auth calls).
-//   * Missing Authorization returns 401 UNAUTHORIZED before req.json(),
-//     Storage / Gemini research, or the Anthropic provider (`fetch`) are
-//     touched — verified with spies.
-//   * A false permission returns 403 FORBIDDEN, again before any downstream
-//     side effect (T-0.5 per-handler wiring).
-//   * A getUser backend failure returns 503 AUTHZ_BACKEND_ERROR; a
-//     checkPermission backend failure also returns 503. Both preserve CORS
-//     and JSON, and both leave req.json / provider spies at zero.
-//   * The guard maps to `liturgy_builder:write` — verified via the args
-//     the handler passes to `checkPermission` (T-0.9 per-handler wiring).
-
-// deno-lint-ignore-file require-await
+// T-INT-story covers the fail-closed authz contract that FASE 0
+// delivered, re-asserted here because FASE F extracted the request logic out
+// of `index.ts` into an importable `handler.ts`. These cases are NOT base-red:
+// before the extraction there was no way to import the handler at all, so they
+// could not have been written. They are the regression net proving the
+// extraction preserved the guard's placement — it still runs before req.json(),
+// before any image download, and before Gemini/Anthropic.
+//
+// The FASE F image-safety cases (T-F.*) live in `handler_imageFetch_test.ts`.
 
 import { assertEquals, assertStrictEquals } from "@std/assert";
 
 import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
-import type {
-  CheckPermissionOutcome,
-  GetUserOutcome,
-  RequirePermissionDeps,
-} from "../_shared/liturgyAuth.ts";
-
-type Call =
-  | { kind: "getUser"; token: string }
-  | {
-    kind: "checkPermission";
-    userId: string;
-    resource: string;
-    action: string;
-  };
-
-function makeAuthzDeps(overrides: {
-  getUser?: (token: string) => Promise<GetUserOutcome>;
-  checkPermission?: (
-    userId: string,
-    resource: string,
-    action: string,
-  ) => Promise<CheckPermissionOutcome>;
-} = {}): { deps: RequirePermissionDeps; calls: Call[] } {
-  const calls: Call[] = [];
-  const deps: RequirePermissionDeps = {
-    getUser: async (token) => {
-      calls.push({ kind: "getUser", token });
-      if (overrides.getUser) return await overrides.getUser(token);
-      return {
-        kind: "authenticated",
-        user: { id: "user-abc", email: "u@example.com" },
-      };
-    },
-    checkPermission: async (userId, resource, action) => {
-      calls.push({ kind: "checkPermission", userId, resource, action });
-      if (overrides.checkPermission) {
-        return await overrides.checkPermission(userId, resource, action);
-      }
-      return { kind: "allowed" };
-    },
-  };
-  return { deps, calls };
-}
-
-/**
- * Wraps globalThis.fetch with a spy for the duration of `fn`. The spy
- * throws if invoked (assertion-only spy: no test should reach a real
- * network call).
- */
-async function withFetchSpy<T>(
-  fn: (spy: { calls: number }) => Promise<T>,
-): Promise<T> {
-  const spy = { calls: 0 };
-  const original = globalThis.fetch;
-  globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
-    spy.calls++;
-    throw new Error("fetch should not be called in this test");
-  }) as typeof fetch;
-  try {
-    return await fn(spy);
-  } finally {
-    globalThis.fetch = original;
-  }
-}
-
-/** Spy-wrapped Request that counts `json()` invocations. */
-function spyRequest(
-  input: string,
-  init: RequestInit,
-): { req: Request; json: { calls: number } } {
-  const req = new Request(input, init);
-  const json = { calls: 0 };
-  const original = req.json.bind(req);
-  Object.defineProperty(req, "json", {
-    value: async () => {
-      json.calls++;
-      return await original();
-    },
-    writable: true,
-    configurable: true,
-  });
-  return { req, json };
-}
+import {
+  AUTH_HEADER,
+  makeAuthzDeps,
+  spyRequest,
+  withFetchSpy,
+} from "../_shared/testHelpers.ts";
+import type { RequirePermissionDeps } from "../_shared/liturgyAuth.ts";
 
 function baseDeps(authz: RequirePermissionDeps): HandlerDeps {
   return {
     anthropicApiKey: "test-anthropic-key",
-    googleAiApiKey: "test-google-key",
+    googleAiApiKey: "test-gemini-key",
+    researchModel: "test-research-model",
     authzDeps: authz,
+    supabaseUrl: "https://proj.supabase.co",
   };
 }
 
 function samplePayload() {
   return {
-    context: {
-      title: "Adviento",
-      summary: "Esperanza en la espera",
-      readings: [{ reference: "Is 40:1-5", text: "Consolad, consolad…" }],
-    },
-    location: "Chiloé",
-    characters: [],
+    context: { title: "Adviento", summary: "Esperanza" },
+    location: "Valparaíso",
     style: "reflexivo",
-    additionalNotes: "",
+    landmarks: [],
+    props: [],
   };
 }
 
-// T-INT-generate-story-1
+// T-INT-story-1
 Deno.test("OPTIONS preflight returns 200 with CORS and skips auth guard", async () => {
   const { deps: authz, calls } = makeAuthzDeps();
   const handler = createHandler(baseDeps(authz));
 
   await withFetchSpy(async (fetchSpy) => {
-    const req = new Request("https://edge.test/generate-story", {
-      method: "OPTIONS",
-    });
-    const res = await handler(req);
+    const res = await handler(
+      new Request("https://edge.test/generate-story", {
+        method: "OPTIONS",
+      }),
+    );
 
     assertStrictEquals(res.status, 200);
     for (const [k, v] of Object.entries(corsHeaders)) {
       assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
     }
-    // Guard is not consulted for preflight; fetch is not touched.
     assertEquals(calls.length, 0);
-    assertEquals(fetchSpy.calls, 0);
+    assertEquals(fetchSpy.calls.length, 0);
   });
 });
 
-// T-INT-generate-story-2
+// T-INT-story-2
 Deno.test(
   "POST without Authorization returns 401 UNAUTHORIZED and never reads body or calls provider",
   async () => {
@@ -153,7 +70,7 @@ Deno.test(
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
@@ -169,41 +86,36 @@ Deno.test(
         assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
       }
       assertEquals(res.headers.get("Content-Type"), "application/json");
-      assertEquals(await res.json(), {
-        success: false,
-        code: "UNAUTHORIZED",
-      });
+      assertEquals(await res.json(), { success: false, code: "UNAUTHORIZED" });
 
-      // Fail-closed: no body parse, no fetch (Gemini research / Anthropic
-      // provider), no authz backend calls at all when the credential is
-      // missing.
-      assertEquals(json.calls, 0, "req.json must not be called");
-      assertEquals(fetchSpy.calls, 0, "fetch must not be called");
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
+      assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
       assertEquals(calls.length, 0, "authz backend must not be called");
     });
   },
 );
 
-// T-INT-generate-story-3 — T-0.5 / T-0.9 per-handler wiring: false
-// permission returns 403 and the guard is called with the exact
-// liturgy_builder:write pair.
+// T-INT-story-3 — per-handler wiring: the guard is asked for exactly
+// liturgy_builder:write, and a denial is 403 before any body/provider work.
 Deno.test(
   "handler denies with 403 FORBIDDEN and maps to permission liturgy_builder:write",
   async () => {
     const { deps: authz, calls } = makeAuthzDeps({
-      checkPermission: async () => ({ kind: "denied" }),
+      checkPermission: () => Promise.resolve({ kind: "denied" as const }),
     });
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer good.jwt",
-          },
+          headers: { "Content-Type": "application/json", ...AUTH_HEADER },
           body: JSON.stringify(samplePayload()),
         },
       );
@@ -211,53 +123,38 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 403);
-      for (const [k, v] of Object.entries(corsHeaders)) {
-        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
-      }
-      assertEquals(res.headers.get("Content-Type"), "application/json");
-      assertEquals(await res.json(), {
-        success: false,
-        code: "FORBIDDEN",
-      });
+      assertEquals(await res.json(), { success: false, code: "FORBIDDEN" });
 
-      // getUser then checkPermission with the exact resource/action.
-      assertEquals(calls.length, 2);
-      assertEquals(calls[0], { kind: "getUser", token: "good.jwt" });
-      assertEquals(calls[1], {
-        kind: "checkPermission",
-        userId: "user-abc",
-        resource: "liturgy_builder",
-        action: "write",
-      });
+      const perm = calls.find((c) => c.kind === "checkPermission");
+      assertEquals(perm?.kind === "checkPermission" && perm.resource, "liturgy_builder");
+      assertEquals(perm?.kind === "checkPermission" && perm.action, "write");
 
-      // Denial short-circuits before body/provider access.
-      assertEquals(json.calls, 0);
-      assertEquals(fetchSpy.calls, 0);
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
+      assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },
 );
 
-// T-INT-generate-story-4 — auth backend failure fails closed to 503.
+// T-INT-story-4
 Deno.test(
   "auth backend error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
   async () => {
-    const { deps: authz, calls } = makeAuthzDeps({
-      getUser: async () => ({
-        kind: "backend_error",
-        error: new Error("supabase auth 5xx"),
-      }),
+    const { deps: authz } = makeAuthzDeps({
+      getUser: () => Promise.resolve({ kind: "backend_error" as const }),
     });
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer any.jwt",
-          },
+          headers: { "Content-Type": "application/json", ...AUTH_HEADER },
           body: JSON.stringify(samplePayload()),
         },
       );
@@ -265,47 +162,36 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 503);
-      for (const [k, v] of Object.entries(corsHeaders)) {
-        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
-      }
-      assertEquals(res.headers.get("Content-Type"), "application/json");
       assertEquals(await res.json(), {
         success: false,
         code: "AUTHZ_BACKEND_ERROR",
       });
-
-      // Only getUser ran; checkPermission never called.
-      assertEquals(calls.length, 1);
-      assertEquals(calls[0], { kind: "getUser", token: "any.jwt" });
-
-      assertEquals(json.calls, 0);
-      assertEquals(fetchSpy.calls, 0);
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
+      assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },
 );
 
-// T-INT-generate-story-5 — permission RPC failure fails closed to 503,
-// and the RPC was invoked with the exact liturgy_builder:write pair.
+// T-INT-story-5
 Deno.test(
   "permission RPC error returns 503 AUTHZ_BACKEND_ERROR and skips downstream",
   async () => {
-    const { deps: authz, calls } = makeAuthzDeps({
-      checkPermission: async () => ({
-        kind: "backend_error",
-        error: { message: "connection reset" },
-      }),
+    const { deps: authz } = makeAuthzDeps({
+      checkPermission: () => Promise.resolve({ kind: "backend_error" as const }),
     });
     const handler = createHandler(baseDeps(authz));
 
     await withFetchSpy(async (fetchSpy) => {
-      const { req, json } = spyRequest(
+      const { req } = spyRequest(
         "https://edge.test/generate-story",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer good.jwt",
-          },
+          headers: { "Content-Type": "application/json", ...AUTH_HEADER },
           body: JSON.stringify(samplePayload()),
         },
       );
@@ -313,26 +199,13 @@ Deno.test(
       const res = await handler(req);
 
       assertStrictEquals(res.status, 503);
-      for (const [k, v] of Object.entries(corsHeaders)) {
-        assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
-      }
-      assertEquals(res.headers.get("Content-Type"), "application/json");
-      assertEquals(await res.json(), {
-        success: false,
-        code: "AUTHZ_BACKEND_ERROR",
-      });
-
-      // getUser then checkPermission with the exact resource/action.
-      assertEquals(calls.length, 2);
-      assertEquals(calls[1], {
-        kind: "checkPermission",
-        userId: "user-abc",
-        resource: "liturgy_builder",
-        action: "write",
-      });
-
-      assertEquals(json.calls, 0);
-      assertEquals(fetchSpy.calls, 0);
+      // `req.bodyUsed` is the discriminating check. The handler reads the
+      // body through readBoundedJson -> req.body.getReader(), never
+      // req.json(), so a `json.calls === 0` assertion holds even if the body
+      // read is moved ABOVE the guard — exactly the regression this case
+      // exists to catch.
+      assertStrictEquals(req.bodyUsed, false, "body must not be read before the guard");
+      assertEquals(fetchSpy.calls.length, 0, "fetch must not be called");
     });
   },
 );

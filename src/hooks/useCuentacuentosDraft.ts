@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Story } from '@/types/shared/story';
+import { runWithConcurrency } from '@/lib/cuentacuentos/concurrency';
 
 // Estructura del borrador guardado
 export interface CuentacuentosDraft {
@@ -42,11 +43,88 @@ export interface CuentacuentosDraftFull extends CuentacuentosDraft {
 
 const BUCKET_NAME = 'cuentacuentos-drafts';
 
+// URLs públicas correspondientes a las imágenes subidas/verificadas en un guardado,
+// alineadas por key para que el editor pueda reemplazar base64 en memoria por URLs.
+export interface DraftUploadedUrls {
+  characterSheetUrls: Record<string, string[]>;
+  sceneImageUrls: Record<number, string[]>;
+  coverUrls: string[];
+  endUrls: string[];
+  /** URLs públicas de las referencias de props subidas (por propId). */
+  propImageUrls: Record<string, string[]>;
+}
+
+export interface DraftSaveResult {
+  success: boolean;
+  uploadedUrls: DraftUploadedUrls | null;
+}
+
+// Cache de paths ya verificados/subidos en esta sesión: evita repetir un HEAD
+// request por archivo en cada guardado (era O(N²) al acumular escenas).
+const verifiedPaths = new Set<string>();
+
+/**
+ * Reemplaza en el draft las opciones base64 por las URLs públicas subidas en el
+ * último guardado (solo cuando la cantidad coincide, mismo orden por key).
+ * Así el draft retenido en memoria deja de arrastrar base64 y los guardados de
+ * OTRAS categorías no re-suben imágenes ya persistidas.
+ */
+function applyUploadedUrlsToDraft(
+  draft: CuentacuentosDraftFull,
+  uploaded: DraftUploadedUrls | null
+): CuentacuentosDraftFull {
+  if (!uploaded) return draft;
+
+  const swapRecord = <K extends string | number>(
+    current: Record<K, string[]>,
+    urls: Record<K, string[]>
+  ): Record<K, string[]> => {
+    const next = { ...current };
+    for (const [key, urlList] of Object.entries(urls) as Array<[K, string[]]>) {
+      const options = next[key];
+      if (Array.isArray(options) && Array.isArray(urlList) && urlList.length > 0 && urlList.length === options.length) {
+        next[key] = urlList;
+      }
+    }
+    return next;
+  };
+
+  // Referencias de props: viven dentro de story.props (por id), no en un
+  // Record aparte. Mismo criterio: solo si la cantidad coincide.
+  const swappedStory = draft.story && uploaded.propImageUrls
+    ? {
+        ...draft.story,
+        props: draft.story.props?.map(p => {
+          const urls = uploaded.propImageUrls[p.id];
+          return Array.isArray(urls) && urls.length > 0 && urls.length === (p.referenceImages || []).length
+            ? { ...p, referenceImages: urls }
+            : p;
+        }),
+      }
+    : draft.story;
+
+  return {
+    ...draft,
+    story: swappedStory,
+    characterSheetOptions: swapRecord(draft.characterSheetOptions || {}, uploaded.characterSheetUrls),
+    sceneImageOptions: swapRecord(draft.sceneImageOptions || {}, uploaded.sceneImageUrls),
+    coverOptions: uploaded.coverUrls.length > 0 && uploaded.coverUrls.length === (draft.coverOptions || []).length
+      ? uploaded.coverUrls
+      : draft.coverOptions,
+    endOptions: uploaded.endUrls.length > 0 && uploaded.endUrls.length === (draft.endOptions || []).length
+      ? uploaded.endUrls
+      : draft.endOptions,
+  };
+}
+
 /**
  * Verifica si un archivo existe en Storage usando HEAD request a la URL pública
  * Nota: download() no funciona bien con buckets públicos, así que usamos fetch HEAD
  */
 async function checkFileExists(path: string): Promise<boolean> {
+  if (verifiedPaths.has(path)) {
+    return true;
+  }
   try {
     // Construir la URL pública
     const { data } = supabase.storage
@@ -62,6 +140,9 @@ async function checkFileExists(path: string): Promise<boolean> {
     const response = await fetch(data.publicUrl, { method: 'HEAD' });
     const exists = response.ok;
     console.log(`[checkFileExists] Path: ${path}, URL: ${data.publicUrl.slice(0, 80)}..., exists: ${exists}, status: ${response.status}`);
+    if (exists) {
+      verifiedPaths.add(path);
+    }
     return exists;
   } catch (err) {
     console.error(`[checkFileExists] Error checking path ${path}:`, err);
@@ -164,6 +245,7 @@ async function uploadImage(
     }
 
     console.log(`[useCuentacuentosDraft] Upload SUCCESS: ${path}, response:`, data);
+    verifiedPaths.add(path);
     return path;
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error uploading image:', err);
@@ -240,61 +322,87 @@ async function saveImagesToStorage(
   const endPaths: string[] = [];
   const propImagePaths: Record<string, string[]> = {};
 
-  // Subir character sheets
+  // Todas las subidas se acumulan como tareas y corren en paralelo (límite 6),
+  // escribiendo en slots pre-asignados para preservar el orden por key.
+  const jobs: Array<() => Promise<void>> = [];
+  const finalize: Array<() => void> = [];
+
+  const queueGroup = (
+    options: string[],
+    upload: (index: number, data: string) => Promise<string | null>,
+    assign: (paths: string[]) => void
+  ) => {
+    const slots: (string | null)[] = new Array(options.length).fill(null);
+    options.forEach((imageData, i) => {
+      jobs.push(async () => {
+        slots[i] = await upload(i, imageData);
+      });
+    });
+    finalize.push(() => assign(slots.filter((p): p is string => !!p)));
+  };
+
   for (const [charId, options] of Object.entries(draft.characterSheetOptions || {})) {
-    characterSheetPaths[charId] = [];
-    for (let i = 0; i < options.length; i++) {
-      const path = await uploadImage(userId, liturgyId, 'characters', charId, i, options[i]);
-      if (path) characterSheetPaths[charId].push(path);
-    }
+    queueGroup(
+      options,
+      (i, data) => uploadImage(userId, liturgyId, 'characters', charId, i, data),
+      (paths) => { characterSheetPaths[charId] = paths; }
+    );
   }
 
-  // Subir scene images
   for (const [sceneNum, options] of Object.entries(draft.sceneImageOptions || {})) {
     const num = Number(sceneNum);
-    sceneImagePaths[num] = [];
-    for (let i = 0; i < options.length; i++) {
-      const path = await uploadImage(userId, liturgyId, 'scenes', `scene${sceneNum}`, i, options[i]);
-      if (path) {
-        sceneImagePaths[num].push(path);
-      } else {
-        console.log(`[useCuentacuentosDraft] Could not process scene ${sceneNum} image ${i}, URL: ${options[i]?.slice(0, 80)}...`);
+    queueGroup(
+      options,
+      (i, data) => uploadImage(userId, liturgyId, 'scenes', `scene${sceneNum}`, i, data),
+      (paths) => {
+        sceneImagePaths[num] = paths;
+        console.log(`[useCuentacuentosDraft] Scene ${sceneNum}: ${paths.length} paths saved`);
       }
-    }
-    console.log(`[useCuentacuentosDraft] Scene ${sceneNum}: ${sceneImagePaths[num].length} paths saved`);
+    );
   }
 
-  // Subir cover options
-  for (let i = 0; i < (draft.coverOptions || []).length; i++) {
-    const path = await uploadImage(userId, liturgyId, 'cover', 'cover', i, draft.coverOptions[i]);
-    if (path) coverPaths.push(path);
-  }
+  queueGroup(
+    draft.coverOptions || [],
+    (i, data) => uploadImage(userId, liturgyId, 'cover', 'cover', i, data),
+    (paths) => { coverPaths.push(...paths); }
+  );
 
-  // Subir end options
-  for (let i = 0; i < (draft.endOptions || []).length; i++) {
-    const path = await uploadImage(userId, liturgyId, 'end', 'end', i, draft.endOptions[i]);
-    if (path) endPaths.push(path);
-  }
+  queueGroup(
+    draft.endOptions || [],
+    (i, data) => uploadImage(userId, liturgyId, 'end', 'end', i, data),
+    (paths) => { endPaths.push(...paths); }
+  );
 
   // Subir imágenes de referencia de props
-  // Fuente primaria: draft.propReferenceImages (indexado por propId)
-  // Fuente secundaria: draft.story.props[].referenceImages (si el story ya fue generado)
-  const propSources: Record<string, string[]> = { ...(draft.propReferenceImages || {}) };
+  // Fuente primaria: draft.story.props[].referenceImages — es el estado VIVO que
+  // el editor actualiza al elegir hojas generadas o subir fotos nuevas.
+  // Fuente secundaria: draft.propReferenceImages (poblado al cargar el draft);
+  // si tuviera precedencia, taparía los cambios post-recarga y la referencia
+  // de un prop quedaría congelada para siempre en su primer valor persistido.
+  const propSources: Record<string, string[]> = {};
   if (draft.story?.props) {
     for (const prop of draft.story.props) {
-      if (prop?.id && !propSources[prop.id] && Array.isArray(prop.referenceImages)) {
+      if (prop?.id && Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
         propSources[prop.id] = prop.referenceImages;
       }
     }
   }
-
-  for (const [propId, images] of Object.entries(propSources)) {
-    propImagePaths[propId] = [];
-    for (let i = 0; i < images.length; i++) {
-      const path = await uploadImage(userId, liturgyId, 'props', propId, i, images[i]);
-      if (path) propImagePaths[propId].push(path);
+  for (const [propId, images] of Object.entries(draft.propReferenceImages || {})) {
+    if (!propSources[propId] && Array.isArray(images) && images.length > 0) {
+      propSources[propId] = images;
     }
   }
+
+  for (const [propId, images] of Object.entries(propSources)) {
+    queueGroup(
+      images,
+      (i, data) => uploadImage(userId, liturgyId, 'props', propId, i, data),
+      (paths) => { propImagePaths[propId] = paths; }
+    );
+  }
+
+  await runWithConcurrency(jobs, 6);
+  finalize.forEach((fn) => fn());
 
   return { characterSheetPaths, sceneImagePaths, coverPaths, endPaths, propImagePaths };
 }
@@ -384,7 +492,7 @@ async function saveDraftToSupabase(
   userId: string,
   liturgyId: string,
   draft: CuentacuentosDraftFull
-): Promise<boolean> {
+): Promise<DraftSaveResult> {
   try {
     console.log(`[useCuentacuentosDraft] Saving draft to Supabase, step: ${draft.currentStep}`);
     console.log(`[useCuentacuentosDraft] Draft has ${Object.keys(draft.sceneImageOptions || {}).length} scene image sets`);
@@ -512,6 +620,8 @@ async function saveDraftToSupabase(
             removeError
           );
         } else {
+          // Invalidar el cache de existencia: estos paths ya no existen
+          orphanedPropStoragePaths.forEach((p) => verifiedPaths.delete(p));
           console.log(
             `[useCuentacuentosDraft] Deleted ${orphanedPropStoragePaths.length} orphaned prop file(s) from storage`
           );
@@ -535,6 +645,17 @@ async function saveDraftToSupabase(
         ...s,
         selectedImageUrl: undefined,
         imageOptions: undefined,
+      })),
+      // Las imágenes de props ya se subieron a Storage (propImagePaths) y se
+      // restauran desde ahí al cargar: no inflar el JSON del story con base64.
+      props: draft.story.props?.map(p => ({
+        ...p,
+        referenceImages: (p.referenceImages || []).filter(
+          img => typeof img === 'string' && img.startsWith('http')
+        ),
+        selectedReferenceUrl: p.selectedReferenceUrl?.startsWith('http')
+          ? p.selectedReferenceUrl
+          : undefined,
       })),
       coverImageUrl: undefined,
       coverImageOptions: undefined,
@@ -563,14 +684,31 @@ async function saveDraftToSupabase(
 
     if (error) {
       console.error('[useCuentacuentosDraft] Error saving draft:', error);
-      return false;
+      return { success: false, uploadedUrls: null };
     }
 
     console.log(`[useCuentacuentosDraft] Draft saved successfully, total scene paths: ${Object.keys(mergedPaths.sceneImagePaths).length}`);
-    return true;
+
+    // URLs públicas de lo subido/verificado en ESTE guardado, para que el editor
+    // reemplace base64 en memoria por URLs y los próximos guardados no re-suban nada.
+    const uploadedUrls: DraftUploadedUrls = {
+      characterSheetUrls: Object.fromEntries(
+        Object.entries(newImagePaths.characterSheetPaths).map(([key, paths]) => [key, paths.map(getPublicUrl)])
+      ),
+      sceneImageUrls: Object.fromEntries(
+        Object.entries(newImagePaths.sceneImagePaths).map(([key, paths]) => [key, paths.map(getPublicUrl)])
+      ) as Record<number, string[]>,
+      coverUrls: newImagePaths.coverPaths.map(getPublicUrl),
+      endUrls: newImagePaths.endPaths.map(getPublicUrl),
+      propImageUrls: Object.fromEntries(
+        Object.entries(newImagePaths.propImagePaths).map(([key, paths]) => [key, paths.map(getPublicUrl)])
+      ),
+    };
+
+    return { success: true, uploadedUrls };
   } catch (err) {
     console.error('[useCuentacuentosDraft] Error saving draft:', err);
-    return false;
+    return { success: false, uploadedUrls: null };
   }
 }
 
@@ -647,13 +785,38 @@ async function loadDraftFromSupabase(
       }));
     }
 
+    // Sanitizar índices de selección: si una subida parcial dejó menos paths
+    // que opciones, un índice persistido puede quedar fuera de rango y la
+    // "selección" apuntaría a nada (escena/personaje sin imagen al finalizar).
+    const sanitizeSelections = <K extends string | number>(
+      selections: Record<K, number>,
+      options: Record<K, string[]>
+    ): Record<K, number> => {
+      const next = {} as Record<K, number>;
+      for (const [key, idx] of Object.entries(selections) as Array<[K, number]>) {
+        const opts = options[key];
+        if (typeof idx === 'number' && Array.isArray(opts) && idx >= 0 && idx < opts.length) {
+          next[key] = idx;
+        } else {
+          console.warn(`[useCuentacuentosDraft] Selección fuera de rango descartada: key=${String(key)}, idx=${idx}, opciones=${opts?.length ?? 0}`);
+        }
+      }
+      return next;
+    };
+
     const draft: CuentacuentosDraftFull = {
       liturgyId,
       currentStep: data.current_step as CuentacuentosDraft['currentStep'],
       config: data.config as CuentacuentosDraft['config'],
       story,
-      selectedCharacterSheets: (data.selected_character_sheets as Record<string, number>) || {},
-      selectedSceneImages: (data.selected_scene_images as Record<number, number>) || {},
+      selectedCharacterSheets: sanitizeSelections(
+        (data.selected_character_sheets as Record<string, number>) || {},
+        imageOptions.characterSheetOptions
+      ),
+      selectedSceneImages: sanitizeSelections(
+        (data.selected_scene_images as Record<number, number>) || {},
+        imageOptions.sceneImageOptions
+      ),
       selectedCover: data.selected_cover as number | null,
       selectedEnd: data.selected_end as number | null,
       sceneReferenceModes,
@@ -712,7 +875,7 @@ export interface UseCuentacuentosDraftReturn {
   isLoading: boolean;
   isSaving: boolean;
   saveDraft: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => void;
-  saveDraftNow: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => Promise<boolean>;
+  saveDraftNow: (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>) => Promise<DraftSaveResult>;
   loadDraft: () => Promise<CuentacuentosDraftFull | null>;
   deleteDraft: () => void;
   deleteStoryImages: () => Promise<boolean>;
@@ -857,10 +1020,10 @@ export function useCuentacuentosDraft({
 
         try {
           console.log(`[useCuentacuentosDraft] Starting saveDraftToSupabase...`);
-          const success = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
+          const { success, uploadedUrls } = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
           console.log(`[useCuentacuentosDraft] saveDraftToSupabase returned: ${success}`);
           if (success) {
-            setDraft(fullDraft);
+            setDraft(applyUploadedUrlsToDraft(fullDraft, uploadedUrls));
             setLastSavedAt(fullDraft.savedAt);
           }
         } catch (err) {
@@ -875,7 +1038,7 @@ export function useCuentacuentosDraft({
   }, []); // Sin dependencias - usa refs para valores actuales
 
   // Guardar borrador INMEDIATAMENTE sin debounce - usar cuando sea crítico guardar (ej: después de generar imágenes)
-  const saveDraftNow = useCallback(async (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>): Promise<boolean> => {
+  const saveDraftNow = useCallback(async (data: Partial<Omit<CuentacuentosDraftFull, 'liturgyId' | 'savedAt' | 'version'>>): Promise<DraftSaveResult> => {
     const currentUserId = userIdRef.current;
     const currentLiturgyId = liturgyIdRef.current;
     const currentDraft = draftRef.current;
@@ -884,7 +1047,7 @@ export function useCuentacuentosDraft({
 
     if (!currentUserId) {
       console.warn('[useCuentacuentosDraft] saveDraftNow: No userId available, skipping save');
-      return false;
+      return { success: false, uploadedUrls: null };
     }
 
     // Cancelar cualquier debounce pendiente
@@ -932,17 +1095,17 @@ export function useCuentacuentosDraft({
 
     try {
       console.log(`[useCuentacuentosDraft] saveDraftNow: Starting immediate save...`);
-      const success = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
-      console.log(`[useCuentacuentosDraft] saveDraftNow: Save completed, success: ${success}`);
+      const result = await saveDraftToSupabase(currentUserId, currentLiturgyId, fullDraft);
+      console.log(`[useCuentacuentosDraft] saveDraftNow: Save completed, success: ${result.success}`);
 
-      if (success) {
-        setDraft(fullDraft);
+      if (result.success) {
+        setDraft(applyUploadedUrlsToDraft(fullDraft, result.uploadedUrls));
         setLastSavedAt(fullDraft.savedAt);
       }
-      return success;
+      return result;
     } catch (err) {
       console.error('[useCuentacuentosDraft] saveDraftNow: Failed to save draft:', err);
-      return false;
+      return { success: false, uploadedUrls: null };
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
@@ -1009,6 +1172,9 @@ export function useCuentacuentosDraft({
 
           if (deleteError) {
             console.error('[useCuentacuentosDraft] Error deleting files:', deleteError);
+          } else {
+            // Invalidar el cache de existencia: estos paths ya no existen
+            allPaths.forEach((p) => verifiedPaths.delete(p));
           }
         }
       }

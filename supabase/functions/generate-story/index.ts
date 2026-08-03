@@ -1,26 +1,32 @@
 /**
  * CASA Story Generator Edge Function
  * Genera cuentos para niños usando Claude Opus 4.5
+ * Basado en el contexto litúrgico y parámetros del usuario
  *
  * This file is the production entrypoint: it reads env vars, builds
  * dependencies, and starts the HTTP server. All request logic lives in
  * `handler.ts` so tests can import the handler without side effects.
  */
 
-import { serve } from "std/http/server.ts";
-import { createClient } from "@supabase/supabase-js";
+import { serve } from 'std/http/server.ts';
+import { createClient } from '@supabase/supabase-js';
 
-import { createSupabaseAuthzDeps } from "../_shared/liturgyAuth.ts";
-import { createHandler } from "./handler.ts";
+import { createSupabaseAuthzDeps } from '../_shared/liturgyAuth.ts';
+import { createHandler } from './handler.ts';
 
-const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-const googleAiApiKey = Deno.env.get("GOOGLE_AI_API_KEY") ?? "";
-const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
+const googleAiApiKey = Deno.env.get('GOOGLE_AI_API_KEY') ?? '';
+// Override por env var para poder cambiar de modelo de investigación sin
+// redesplegar clientes (mismo patrón que generate-scene-images). El handler no
+// lee el entorno (D2), así que este es el único lugar donde vive el default.
+const researchModel = Deno.env.get('GEMINI_RESEARCH_MODEL') ?? 'gemini-3.5-flash';
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 const authzDeps = createSupabaseAuthzDeps(supabaseAdmin);
 
-serve(createHandler({ anthropicApiKey, googleAiApiKey, authzDeps }));
+serve(createHandler({ anthropicApiKey, googleAiApiKey, researchModel, authzDeps, supabaseUrl }));

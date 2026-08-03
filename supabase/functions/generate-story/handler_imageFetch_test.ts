@@ -1,0 +1,940 @@
+// FASE F — T-F.* image-safety suite for generate-story, through the
+// PRODUCTION handler.
+//
+// generate-story is the second consumer of `_shared/imageFetch.ts`. Its
+// exposure is different from generate-scene-images': it never downloaded
+// anything itself, but it passed client-supplied strings straight into Gemini
+// as `inlineData` with a client-declared MIME type, and it ran an unmetered
+// location-research call to Gemini alongside the image analysis.
+//
+// That makes T-F.9 sharper here: pass 1 has to abort BEFORE `researchLocation`
+// fires, which is a paid Gemini call that has nothing to do with images.
+//
+// Base-red evidence per case is in FASE_F_WRITEUP.md §3, measured against
+// b241eaf (the refactor-only commit). Cases marked "D" were added after the
+// independent review and are base-red against the FIRST FASE F implementation.
+
+import { assert, assertEquals, assertStrictEquals } from "@std/assert";
+
+import { corsHeaders, createHandler, type HandlerDeps } from "./handler.ts";
+import {
+  collectStoryImageRefs,
+  DEFAULT_IMAGE_LIMITS,
+  type ImageLimits,
+} from "../_shared/imageFetch.ts";
+import {
+  AUTH_HEADER,
+  BUCKET_PREFIX,
+  dataUrl,
+  GIF_B64,
+  HEIC_B64,
+  JPEG_B64,
+  makeAuthzDeps,
+  PNG_B64,
+  PNG_BYTES,
+  streamingResponse,
+  TEST_SUPABASE_URL,
+  WEBP_B64,
+  withCapturedLogs,
+  withFetchSpy,
+} from "../_shared/testHelpers.ts";
+
+const TEST_LIMITS: ImageLimits = {
+  maxBodyBytes: 20_000,
+  maxImageBytes: 2_000,
+  maxTotalImageBytes: 5_000,
+  maxImagesPerField: 4,
+  maxImagesPerRequest: 24,
+  maxImageSlots: 64,
+  fetchTimeoutMs: 20_000,
+  fetchConcurrency: 4,
+};
+
+function deps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
+  return {
+    anthropicApiKey: "test-anthropic-key",
+    googleAiApiKey: "test-gemini-key",
+    researchModel: "test-research-model",
+    authzDeps: makeAuthzDeps().deps,
+    supabaseUrl: TEST_SUPABASE_URL,
+    imageLimits: TEST_LIMITS,
+    ...overrides,
+  };
+}
+
+function storyPayload(extra: Record<string, unknown> = {}) {
+  return {
+    context: { title: "Adviento", summary: "Esperanza" },
+    location: "Valparaíso",
+    style: "reflexivo",
+    characters: [],
+    landmarks: [],
+    props: [],
+    // Stops before Anthropic: the image phase is the subject here.
+    previewPromptOnly: true,
+    ...extra,
+  };
+}
+
+function post(body: unknown): Request {
+  return new Request("https://edge.test/generate-story", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...AUTH_HEADER },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  return await res.json() as Record<string, unknown>;
+}
+
+/**
+ * A SUCCESSFUL Gemini research answer.
+ *
+ * `finishReason` was added in PC and is not decoration: the API always reports
+ * why a candidate stopped (its absence on `MAX_TOKENS` was filed as a provider
+ * bug, not a normal shape), and PC's result contract makes `STOP` the condition
+ * for using the text at all. Without it this stub described a response the
+ * provider does not produce, and every case below would have silently exercised
+ * the degraded path — including the log-hygiene cases whose whole subject is
+ * the provider's returned text.
+ *
+ * The missing-`finishReason` shape is not lost: it is asserted deliberately in
+ * `handler_research_test.ts` (PC3), where it belongs.
+ */
+function geminiTextResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      candidates: [{ finishReason: "STOP", content: { parts: [{ text: "descripción" }] } }],
+    }),
+    { status: 200 },
+  );
+}
+
+/** Every inline image the handler sent to Gemini, across all analysis calls. */
+function providerImages(
+  calls: Array<{ init?: RequestInit }>,
+): Array<{ mimeType: string; data: string }> {
+  const out: Array<{ mimeType: string; data: string }> = [];
+  for (const call of calls) {
+    if (!call.init?.body) continue;
+    const parsed = JSON.parse(String(call.init.body)) as {
+      contents?: Array<{ parts: Array<{ inlineData?: { mimeType: string; data: string } }> }>;
+    };
+    for (const part of parsed.contents?.[0]?.parts ?? []) {
+      if (part.inlineData) out.push(part.inlineData);
+    }
+  }
+  return out;
+}
+
+async function expectRejection(
+  payload: unknown,
+  expected: { status: number; code: string },
+): Promise<Record<string, unknown>> {
+  return await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(post(payload));
+    const body = await readJson(res);
+
+    // Fetch counts are asserted FIRST: "nothing was fetched" is the property
+    // FASE F adds, and it is what fails against the pre-change handler. A
+    // status assertion ahead of it would mask the real defect behind a 500.
+    assertEquals(spy.calls.length, 0, "pass 1 must reject before any fetch");
+    assertEquals(spy.providerCalls.length, 0, "no provider call");
+    assertStrictEquals(res.status, expected.status, `status (body=${JSON.stringify(body)})`);
+    assertStrictEquals(body.code, expected.code, "error code");
+    for (const [k, v] of Object.entries(corsHeaders)) {
+      assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+    }
+    return body;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// T-F.0-story — production constants for the second consumer
+// ---------------------------------------------------------------------------
+
+// The sibling suite pins DEFAULT_IMAGE_LIMITS by value. This asserts the
+// property that matters for THIS handler: it uses the same shared limits, so
+// a change here cannot silently diverge between the two consumers.
+Deno.test("T-F.0-story the shared production limits apply to this consumer too", () => {
+  assertStrictEquals(DEFAULT_IMAGE_LIMITS.maxImagesPerField, 4);
+  assertStrictEquals(DEFAULT_IMAGE_LIMITS.maxImagesPerRequest, 64);
+  assert(
+    DEFAULT_IMAGE_LIMITS.maxTotalImageBytes < DEFAULT_IMAGE_LIMITS.maxBodyBytes * 3 / 4,
+    "aggregate budget must be reachable by inline input within the body cap",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T-F.9-story — the load-bearing one
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 8 fetches, 0
+// expected. Base ran `researchLocation` and both image analyses in one
+// Promise.all with no prevalidation at all, so the forbidden entry stopped
+// nothing; every one of those 8 calls went to Gemini.
+Deno.test(
+  "T-F.9-story a forbidden entry aborts before researchLocation and every Gemini analysis",
+  async () => {
+    const body = await expectRejection(
+      storyPayload({
+        landmarks: [{
+          name: "Faro",
+          narrativeRole: "guía",
+          referenceImages: [PNG_B64(), "https://evil.example.com/steal.png"],
+        }],
+        props: [{ id: "p1", name: "Farol", referenceImages: [JPEG_B64()] }],
+      }),
+      { status: 422, code: "FORBIDDEN_ORIGIN" },
+    );
+    assertStrictEquals(body.field, "landmarks[0].referenceImages[1]");
+  },
+);
+
+// `characters[].referenceImage` is never analysed by this function, so pass 2
+// skips it — but pass 1 must still catch a forbidden URL parked there.
+Deno.test("T-F.9b-story a forbidden URL in a never-analysed field still aborts", async () => {
+  const body = await expectRejection(
+    storyPayload({
+      characters: [{ name: "Ana", referenceImage: "https://evil.example.com/x.png" }],
+    }),
+    { status: 422, code: "FORBIDDEN_ORIGIN" },
+  );
+  assertStrictEquals(body.field, "characters[0].referenceImage");
+});
+
+// ---------------------------------------------------------------------------
+// FATAL — provenance, size, ceiling
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 6 fetches, 0
+// expected. Base passed the raw string to Gemini as inlineData, unvalidated.
+Deno.test("T-F.1-story a URL on another origin is rejected with zero fetches", async () => {
+  await expectRejection(
+    storyPayload({
+      props: [{ id: "p1", name: "Farol", referenceImages: ["https://evil.example.com/x.png"] }],
+    }),
+    { status: 422, code: "FORBIDDEN_ORIGIN" },
+  );
+});
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 6, 0 expected.
+// Base had no scheme check.
+Deno.test("T-F.4-story plain http is rejected", async () => {
+  await expectRejection(
+    storyPayload({
+      landmarks: [{
+        name: "Faro",
+        narrativeRole: "guía",
+        referenceImages: [
+          "http://proj.supabase.co/storage/v1/object/public/cuentacuentos-drafts/x.png",
+        ],
+      }],
+    }),
+    { status: 422, code: "INSECURE_SCHEME" },
+  );
+});
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 6, 0 expected.
+// Base had NO size guard here at all (the char cap existed only in
+// generate-scene-images), so an arbitrarily large string went to Gemini.
+Deno.test("T-F.10-story an oversized inline image is rejected on encoded length", async () => {
+  const huge = "A".repeat(TEST_LIMITS.maxImageBytes * 4);
+  await expectRejection(
+    storyPayload({ props: [{ id: "p1", name: "Farol", referenceImages: [huge] }] }),
+    { status: 413, code: "IMAGE_TOO_LARGE" },
+  );
+});
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 8, 0 expected.
+// Base had no aggregate budget; the payload was accepted in full.
+Deno.test("T-F.14-story inline images over the aggregate budget are a 413", async () => {
+  const chunk = PNG_B64(TEST_LIMITS.maxImageBytes - 100);
+  await expectRejection(
+    storyPayload({
+      landmarks: [
+        { name: "A", narrativeRole: "r", referenceImages: [chunk, chunk] },
+        { name: "B", narrativeRole: "r", referenceImages: [chunk] },
+      ],
+    }),
+    { status: 413, code: "IMAGE_BUDGET_EXCEEDED" },
+  );
+});
+
+// BASE-RED @ b241eaf: "pass 1 must reject before any fetch" — 14, 0 expected.
+// Base had no ceiling; all images were sent for analysis.
+//
+// This is the DoS ceiling, not a per-story limit — see D1-story.
+Deno.test("T-F.11-story more images than the absolute request ceiling is a 422", async () => {
+  const landmarks = Array.from({ length: 9 }, (_, i) => ({
+    name: `L${i}`,
+    narrativeRole: "r",
+    referenceImages: [PNG_B64(), PNG_B64(), PNG_B64()],
+  }));
+  await expectRejection(storyPayload({ landmarks }), {
+    status: 422,
+    code: "TOO_MANY_IMAGES",
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-F.12-story — the body reader
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ b241eaf: status 500, expected 413. generate-story had NO body cap
+// whatsoever — not even the content-length check generate-scene-images had —
+// so JSON.parse ran on the whole body and the handler went on to Gemini.
+Deno.test("T-F.12-story an over-cap body is a 413 raised before JSON.parse", async () => {
+  const filler = "x".repeat(TEST_LIMITS.maxBodyBytes * 2);
+  const oversizedBody = JSON.stringify(storyPayload({ additionalNotes: filler }));
+
+  const originalParse = JSON.parse;
+  let parseCalls = 0;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parseCalls++;
+    return originalParse(...args);
+  }) as typeof JSON.parse;
+
+  try {
+    await withFetchSpy(async (spy) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(oversizedBody));
+          controller.close();
+        },
+      });
+      const req = new Request("https://edge.test/generate-story", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...AUTH_HEADER },
+        body: stream,
+        // @ts-expect-error: Deno requires this for a streaming request body.
+        duplex: "half",
+      });
+      assertStrictEquals(req.headers.get("content-length"), null);
+
+      const res = await createHandler(deps())(req);
+      const body = await readJson(res);
+
+      assertStrictEquals(res.status, 413);
+      assertStrictEquals(body.code, "BODY_TOO_LARGE");
+      assertStrictEquals(parseCalls, 0, "JSON.parse must not run on an over-cap body");
+      assertEquals(spy.calls.length, 0);
+    });
+  } finally {
+    JSON.parse = originalParse;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DEGRADED — the review's cases, second consumer
+// ---------------------------------------------------------------------------
+
+// D1-story (review B1). Several landmarks each with photos is an ordinary
+// payload. The per-field cap counted by field SHAPE, so the fifth photo across
+// ALL landmarks tripped a four-per-field limit.
+Deno.test("D1-story several landmarks with photos each are accepted", async () => {
+  await withFetchSpy(async (spy) => {
+    const landmarks = Array.from({ length: 5 }, (_, i) => ({
+      name: `L${i}`,
+      narrativeRole: "r",
+      referenceImages: [PNG_B64()],
+    }));
+    const res = await createHandler(deps())(post(storyPayload({ landmarks })));
+
+    assertStrictEquals(res.status, 200, "five landmarks with one photo each must be accepted");
+    assertEquals(providerImages(spy.providerCalls).length, 5, "all five analysed");
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// D2-story (review B3). A landmark photo deleted from the bucket must not
+// block story generation.
+Deno.test("D2-story a 404 on one photo drops it and the story still generates", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        landmarks: [{
+          name: "Faro",
+          narrativeRole: "guía",
+          referenceImages: [`${BUCKET_PREFIX}/gone.png`, `${BUCKET_PREFIX}/here.png`],
+        }],
+      })),
+    );
+    assertStrictEquals(res.status, 200);
+    assertEquals(providerImages(spy.providerCalls).length, 1, "the surviving photo is used");
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    if (url.includes("gone.png")) return Promise.resolve(new Response("nope", { status: 404 }));
+    return Promise.resolve(streamingResponse(PNG_BYTES(48)));
+  });
+});
+
+// D3-story (review B4). HEIC and GIF reach this function too.
+Deno.test("D3-story an unsupported format is dropped, not fatal", async () => {
+  for (const [label, image] of [["HEIC", HEIC_B64()], ["GIF", GIF_B64()]] as const) {
+    await withFetchSpy(async (spy) => {
+      const res = await createHandler(deps())(
+        post(storyPayload({
+          props: [{ id: "p1", name: "Farol", referenceImages: [image, PNG_B64()] }],
+        })),
+      );
+      assertStrictEquals(res.status, 200, `${label} must not fail the request`);
+      assertEquals(providerImages(spy.providerCalls).length, 1, `${label} dropped, PNG kept`);
+    }, () => Promise.resolve(geminiTextResponse()));
+  }
+});
+
+// D4-story (review B5). A rethrown non-ImageRefError used to escape into
+// `serve`'s CORS-less plain-text 500.
+Deno.test("D4-story a body-stream failure still answers JSON with CORS", async () => {
+  await withFetchSpy(async (spy) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"context":'));
+        controller.error(new TypeError("connection reset"));
+      },
+    });
+    const req = new Request("https://edge.test/generate-story", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...AUTH_HEADER },
+      body: stream,
+      // @ts-expect-error: Deno requires this for a streaming request body.
+      duplex: "half",
+    });
+
+    const res = await createHandler(deps())(req);
+
+    for (const [k, v] of Object.entries(corsHeaders)) {
+      assertEquals(res.headers.get(k), v, `missing CORS header ${k}`);
+    }
+    assertEquals(res.headers.get("Content-Type"), "application/json");
+    assertStrictEquals(res.status, 400);
+    const body = await readJson(res);
+    assertStrictEquals(body.success, false);
+    assertStrictEquals(body.code, "CLIENT_INPUT_INVALID");
+    assertEquals(spy.calls.length, 0);
+  });
+});
+
+// D5-story (review B6). This handler analyses at most 4 photos per entity, and
+// never analyses character photos at all — neither should be downloaded.
+Deno.test("D5-story photos the handler will not analyse are not downloaded", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        landmarks: [{
+          name: "Faro",
+          narrativeRole: "guía",
+          referenceImages: [
+            `${BUCKET_PREFIX}/a.png`,
+            `${BUCKET_PREFIX}/b.png`,
+            `${BUCKET_PREFIX}/c.png`,
+            `${BUCKET_PREFIX}/d.png`,
+          ],
+        }],
+        characters: [{ name: "Ana", referenceImage: `${BUCKET_PREFIX}/never.png` }],
+      })),
+    );
+    assertStrictEquals(res.status, 200);
+
+    const downloaded = spy.calls.filter((c) => !c.url.includes("generativelanguage"));
+    assert(
+      !downloaded.some((c) => c.url.includes("never.png")),
+      "character photos are never analysed and must not be downloaded",
+    );
+    assertEquals(downloaded.length, 4, "only the four analysed landmark photos are fetched");
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    return Promise.resolve(streamingResponse(PNG_BYTES(48)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Format handling
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ b241eaf: "MIME must come from the content, not from a client
+// claim" — base sent ["image/jpeg", "image/jpeg", "image/jpeg", "image/png"]:
+// it hard-defaulted every raw base64 payload to JPEG regardless of content,
+// and for the data URL it echoed back whatever the client declared.
+Deno.test(
+  "T-F.rec-story PNG/JPEG/WebP/data-URL are accepted and sent with the sniffed MIME",
+  async () => {
+    await withFetchSpy(async (spy) => {
+      const res = await createHandler(deps())(
+        post(storyPayload({
+          landmarks: [{
+            name: "Faro",
+            narrativeRole: "guía",
+            referenceImages: [
+              PNG_B64(),
+              JPEG_B64(),
+              WEBP_B64(),
+              dataUrl("image/png", PNG_B64()),
+            ],
+          }],
+        })),
+      );
+      assertStrictEquals(res.status, 200);
+
+      const sent = providerImages(spy.providerCalls);
+      assertEquals(sent.length, 4, "all four formats should reach the provider");
+      assertEquals(
+        sent.map((p) => p.mimeType),
+        ["image/png", "image/jpeg", "image/webp", "image/png"],
+        "MIME must come from the content, not from a client claim",
+      );
+      for (const part of sent) {
+        assert(!part.data.startsWith("data:"), "data-URL wrapper must be stripped");
+      }
+    }, () => Promise.resolve(geminiTextResponse()));
+  },
+);
+
+// A data URL whose declared media type contradicts its bytes is NOT an error:
+// browsers derive `File.type` from the extension, so a JPEG saved as `.png` is
+// routine (review L1). The sniffed type wins and the claim is discarded.
+//
+// BASE-RED @ b241eaf for the MIME value: base forwarded the client's claim
+// ("image/gif") over PNG bytes. Base-red against the FIRST FASE F
+// implementation for the status: it returned 422 NOT_IMAGE and failed the
+// whole request.
+Deno.test("T-F.8-story a data URL that misdeclares its type is accepted with the sniffed MIME", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        props: [{
+          id: "p1",
+          name: "Farol",
+          referenceImages: [dataUrl("image/gif", PNG_B64())],
+        }],
+      })),
+    );
+    assertStrictEquals(res.status, 200);
+
+    const sent = providerImages(spy.providerCalls);
+    assertEquals(sent.length, 1);
+    assertStrictEquals(sent[0].mimeType, "image/png", "the sniffed type wins over the claim");
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// ---------------------------------------------------------------------------
+// T-F.13-story — log hygiene
+// ---------------------------------------------------------------------------
+
+// NOT base-red at b241eaf: unlike generate-scene-images, generate-story never
+// logged a URL or a base64 prefix to begin with, so the original version of
+// this case passed before and after.
+//
+// It IS base-red against the FIRST FASE F implementation for the API-key
+// assertion: the key travelled in the query string, and the provider-error
+// catch logged the raw message including that URL. The stub therefore REJECTS
+// here — an always-resolving stub never runs that catch.
+Deno.test("T-F.13-story logs carry no URL, query string, base64, or API key", async () => {
+  const token = "SIGNEDTOKEN123";
+  const inline = PNG_B64(48);
+
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(
+        post(storyPayload({
+          landmarks: [{
+            name: "Faro",
+            narrativeRole: "guía",
+            referenceImages: [`${BUCKET_PREFIX}/faro.png?token=${token}`, inline],
+          }],
+        })),
+      );
+      await res.body?.cancel();
+    }, (url) => {
+      if (url.includes("generativelanguage")) {
+        return Promise.reject(new TypeError(`error sending request for url (${url}): dns error`));
+      }
+      return Promise.resolve(streamingResponse(PNG_BYTES(48)));
+    });
+
+    const joined = lines.join("\n");
+    assert(!joined.includes(token), "log leaked a query-string token");
+    assert(!joined.includes("?token="), "log leaked a query string");
+    assert(!joined.includes(BUCKET_PREFIX), "log leaked a bucket URL");
+    assert(!joined.includes("https://"), "log leaked a URL");
+    assert(!joined.includes("test-gemini-key"), "log leaked the provider API key");
+    assert(!joined.includes(inline.slice(0, 24)), "log leaked a base64 prefix");
+    assert(!joined.includes("iVBORw0KGgo"), "log leaked a base64 PNG prefix");
+  });
+});
+
+// T-F.13b-story (review B10). The key must not be in the URL at all.
+Deno.test("T-F.13b-story the provider key is sent as a header, never in the URL", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        landmarks: [{ name: "Faro", narrativeRole: "guía", referenceImages: [PNG_B64()] }],
+      })),
+    );
+    await res.body?.cancel();
+
+    assert(spy.providerCalls.length > 0, "provider should have been called");
+    for (const call of spy.providerCalls) {
+      assert(!call.url.includes("test-gemini-key"), "key must not be in the URL");
+      assert(!call.url.includes("key="), "key must not be a query parameter");
+      assertStrictEquals(
+        new Headers(call.init?.headers).get("x-goog-api-key"),
+        "test-gemini-key",
+      );
+    }
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// ---------------------------------------------------------------------------
+// R-* — review round 2. Base-red against 5e60e1c.
+// ---------------------------------------------------------------------------
+
+// R3 — `takeImages` was driven by `referenceImages.length` taken straight from
+// client JSON. `{"length": 5000000}` is not an array, so the collector emitted
+// no slots and pass 1 saw nothing to reject — but the handler still spun the
+// loop five million times per entity. The base code was accidentally safe:
+// it called `.slice()`, which a non-array does not have.
+//
+// Bounded either way: at 5e60e1c this takes seconds, here it is immediate.
+Deno.test("R3 a client-controlled length cannot drive an unbounded loop", async () => {
+  await withFetchSpy(async () => {
+    const started = Date.now();
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        landmarks: [{
+          name: "Faro",
+          narrativeRole: "guía",
+          referenceImages: { length: 5_000_000 },
+        }],
+        props: [{ id: "p1", name: "Farol", referenceImages: { length: 5_000_000 } }],
+      })),
+    );
+    const elapsed = Date.now() - started;
+
+    assertStrictEquals(res.status, 200);
+    assert(
+      elapsed < 1_000,
+      `handler spent ${elapsed}ms on a fabricated length — the loop is unbounded`,
+    );
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R1-story — the aggregate budget was charged for `characters[].referenceImage`,
+// which this function never analyses. A story whose characters carry large
+// photos 413'd even though not one of those bytes would be sent anywhere.
+Deno.test("R1-story character photos this function never analyses are not charged", async () => {
+  await withFetchSpy(async (spy) => {
+    const big = PNG_B64(TEST_LIMITS.maxImageBytes - 100);
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        // Five big character photos: far over the aggregate, none analysed.
+        characters: Array.from({ length: 5 }, (_, i) => ({
+          name: `C${i}`,
+          referenceImage: big,
+        })),
+        landmarks: [{ name: "Faro", narrativeRole: "guía", referenceImages: [PNG_B64()] }],
+      })),
+    );
+    assertStrictEquals(res.status, 200, "unanalysed character photos must not exhaust the budget");
+    assertEquals(providerImages(spy.providerCalls).length, 1, "only the landmark photo is analysed");
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R8-story — dropped photos are reported to the client, not only logged.
+Deno.test("R8-story dropped photos are reported in the response", async () => {
+  await withFetchSpy(async (spy) => {
+    const res = await createHandler(deps())(
+      post(storyPayload({
+        props: [{ id: "p1", name: "Farol", referenceImages: [HEIC_B64(), PNG_B64()] }],
+      })),
+    );
+    const body = await readJson(res);
+
+    assertStrictEquals(res.status, 200);
+    const skipped = body.skippedImages as Array<{ field: string; code: string }>;
+    assert(Array.isArray(skipped), "response must carry skippedImages");
+    const heic = skipped.find((s) => s.field === "props[0].referenceImages[0]");
+    assert(heic, `the dropped HEIC must be reported, got ${JSON.stringify(skipped)}`);
+    assertStrictEquals(heic.code, "NOT_IMAGE");
+    assertEquals(providerImages(spy.providerCalls).length, 1);
+  }, () => Promise.resolve(geminiTextResponse()));
+});
+
+// R10-story — the outer catch logged the raw thrown error. The Anthropic call
+// is the path where that error carries the request URL in its message.
+Deno.test("R10-story the outer catch redacts URLs from what it logs", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(
+        post(storyPayload({ previewPromptOnly: false })),
+      );
+      assertStrictEquals(res.status, 500);
+      await res.body?.cancel();
+    }, (url) => {
+      if (url.includes("api.anthropic.com")) {
+        // How a runtime reports a failed request: the URL is in the message.
+        return Promise.reject(
+          new TypeError(`error sending request for url (${url}): dns error`),
+        );
+      }
+      return Promise.resolve(geminiTextResponse());
+    });
+
+    const joined = lines.join("\n");
+    assert(!joined.includes("https://"), "outer catch leaked a URL");
+    assert(!joined.includes("api.anthropic.com"), "outer catch leaked the provider host");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PF [B1] — the consumption plan, story side
+//
+// generate-story has no request `type`: one code path analyses landmark and
+// prop photos, and nothing reads `characters[].referenceImage`. The audit that
+// found the scene collector type-blind found this side already correct, so
+// these are coverage + wiring cases, not defect cases — pinned by mutation per
+// D7 rather than claimed base-red.
+// ---------------------------------------------------------------------------
+
+/** Path -> field shape. Local by design; see the scene suite for why. */
+function fieldShapeOf(path: string): string {
+  return path.replace(/\[\d+\]/g, "[]").replace(/\[\]$/, "");
+}
+
+function consumedFields(payload: Record<string, unknown>): string[] {
+  return [
+    ...new Set(
+      collectStoryImageRefs(payload).filter((s) => s.consumed).map((s) => fieldShapeOf(s.path)),
+    ),
+  ].sort();
+}
+
+function collectedFields(payload: Record<string, unknown>): string[] {
+  return [...new Set(collectStoryImageRefs(payload).map((s) => fieldShapeOf(s.path)))].sort();
+}
+
+function everyStoryField() {
+  return storyPayload({
+    landmarks: [{ name: "Faro", referenceImages: [PNG_B64()] }],
+    props: [{ id: "p1", name: "Farol", referenceImages: [PNG_B64()] }],
+    characters: [{ name: "Ana", referenceImage: PNG_B64() }],
+  });
+}
+
+// MUTATION PROOF (D7), recorded in the report: adding
+// `{ field: "characters[].referenceImage" }` to `STORY_READ_RULES` in
+// `_shared/imageFetch.ts` fails this AND `R1-story` — the two halves of the
+// same claim, collector and handler path.
+Deno.test("PLAN-story analysis reads landmark and prop photos, never character photos", () => {
+  assertEquals(consumedFields(everyStoryField()), [
+    "landmarks[].referenceImages",
+    "props[].referenceImages",
+  ]);
+});
+
+// The boundary, story side: not consuming character photos must not mean not
+// CHECKING them. T-F.9b-story asserts the rejection; this asserts the
+// collection that makes the rejection possible.
+Deno.test("PLAN-story-2 character photos are still collected, just never consumed", () => {
+  assertEquals(collectedFields(everyStoryField()), [
+    "characters[].referenceImage",
+    "landmarks[].referenceImages",
+    "props[].referenceImages",
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// PF [B3] — the text channels, story side
+//
+// T-F.13-story covered the image and provider-URL paths. `context.title`, the
+// location, prop names, the provider's research/analysis text, the Anthropic
+// error body and the raw fallback text were all logged verbatim.
+// ---------------------------------------------------------------------------
+
+const PLANTED_URL = "https://secret.example/photo.png?token=SIGNEDTOKEN123";
+
+function assertNoPlantedSecret(lines: string[]) {
+  const joined = lines.join("\n");
+  assert(!joined.includes("SIGNEDTOKEN123"), "log leaked the signed token");
+  assert(!joined.includes(PLANTED_URL), "log leaked the planted URL");
+  assert(!joined.includes("secret.example"), "log leaked the planted host");
+  assert(!joined.includes("https://"), "log leaked a URL");
+  assert(!joined.includes("?token="), "log leaked a query string");
+}
+
+// BASE-RED @ 7d32182: "log leaked the signed token" — the line was
+// `[generate-story] Generando cuento para:
+// "https://secret.example/photo.png?token=SIGNEDTOKEN123"`.
+Deno.test("T-F.13c-story a URL planted in context.title never reaches the log", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(storyPayload({
+        context: { title: PLANTED_URL, summary: "Esperanza", readings: [] },
+      })));
+      await res.body?.cancel();
+    }, () => Promise.resolve(geminiTextResponse()));
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The other text channels of this handler: location (logged twice and used as
+// a retry label), prop names (analysis logs + retry label), and the provider's
+// own research/analysis text.
+Deno.test("T-F.13d-story location, prop names and provider text are logged as shapes", async () => {
+  await withCapturedLogs(async (lines) => {
+    await withFetchSpy(async () => {
+      const res = await createHandler(deps())(post(storyPayload({
+        // The default payload stops at `previewPromptOnly`; the Anthropic leg
+        // has to run for the story-generation logs to exist at all.
+        previewPromptOnly: false,
+        location: PLANTED_URL,
+        props: [{
+          id: "p1",
+          kind: "prop",
+          name: PLANTED_URL,
+          narrativeRole: PLANTED_URL,
+          referenceImages: [PNG_B64()],
+        }],
+      })));
+      await res.body?.cancel();
+    }, (url) => {
+      if (url.includes("generativelanguage")) {
+        // The provider quotes the request back — the analysis/research text
+        // channel. `finishReason: STOP` for the same reason as
+        // `geminiTextResponse`: without it PC discards the text as a degraded
+        // answer, and this case would assert hygiene on a channel that never
+        // carried anything.
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              candidates: [{
+                finishReason: "STOP",
+                content: { parts: [{ text: `visual: ${PLANTED_URL}` }] },
+              }],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                title: "El faro",
+                summary: "s",
+                characters: [{ name: "Ana", description: "d", visualDescription: "v" }],
+                scenes: [{ number: 1, text: "t", visualDescription: "v" }],
+                spiritualConnection: "c",
+              }),
+            }],
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    assert(lines.length > 0, "the handler must actually have logged something");
+    assertNoPlantedSecret(lines);
+  });
+});
+
+// The Anthropic error body and the raw-text fallback path — `Error de API:`
+// logged the body, and `No se encontró JSON en:` logged 500 characters of it.
+Deno.test("T-F.13e-story the Anthropic error body and fallback text are shapes", async () => {
+  for (
+    const [label, anthropic] of [
+      ["error body", new Response(`rejected: ${PLANTED_URL}`, { status: 400 })],
+      [
+        "unparseable fallback text",
+        new Response(
+          JSON.stringify({ content: [{ type: "text", text: `sorry — ${PLANTED_URL}` }] }),
+          { status: 200 },
+        ),
+      ],
+    ] as Array<[string, Response]>
+  ) {
+    await withCapturedLogs(async (lines) => {
+      await withFetchSpy(async () => {
+        const res = await createHandler(deps())(
+          // `previewPromptOnly` (the default) returns before Anthropic is
+          // called at all — without this the case asserts on logs that were
+          // never written.
+          post(storyPayload({ previewPromptOnly: false })),
+        );
+        await res.body?.cancel();
+      }, (url) =>
+        Promise.resolve(
+          url.includes("generativelanguage") ? geminiTextResponse() : anthropic.clone(),
+        ));
+
+      assert(
+        lines.some((l) => l.includes("[generate-story]") && !l.includes("Investigando")),
+        `${label}: the Anthropic leg must have run and logged`,
+      );
+      assertNoPlantedSecret(lines);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PF [B4] — a drop report survives a later failure
+//
+// `skippedImages` was built inside the try, so the outer catch could not see
+// it. A HEIC prop photo was dropped, the request carried on, Anthropic
+// answered 400, and the client received `{success, error}` — no trace that a
+// photo the user had uploaded was never analysed. PFE consumes this field.
+// ---------------------------------------------------------------------------
+
+// BASE-RED @ 7d32182: "the 500 must still report the drop" — the body was
+// `{"success":false,"error":"Error de Claude API: 400"}`, keys
+// ["success","error"].
+Deno.test("R11-story a drop recorded before a provider failure survives into the 500", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post(storyPayload({
+      previewPromptOnly: false,
+      props: [{
+        id: "p1",
+        kind: "prop",
+        name: "Farol",
+        narrativeRole: "guía",
+        // An iPhone photo: sniffed, unsupported, dropped — not fatal.
+        referenceImages: [HEIC_B64()],
+      }],
+    })));
+    const body = await res.json() as Record<string, unknown>;
+
+    assertStrictEquals(res.status, 500);
+    assertStrictEquals(body.success, false);
+    // Unchanged: the existing fields keep their values and their meaning.
+    assertStrictEquals(body.error, "Error de Claude API: 400");
+    assertEquals(
+      body.skippedImages,
+      [{ field: "props[0].referenceImages[0]", code: "NOT_IMAGE" }],
+      "the 500 must still report the drop",
+    );
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    return Promise.resolve(new Response("provider rejected", { status: 400 }));
+  });
+});
+
+// The additive half of the same claim: a failure with NO drops must produce
+// exactly the body it produced before. Adding a field unconditionally would
+// have been a contract change for every existing error path.
+Deno.test("R11b-story an error with no drops is byte-identical to before", async () => {
+  await withFetchSpy(async () => {
+    const res = await createHandler(deps())(post(storyPayload({ previewPromptOnly: false })));
+    const body = await res.json() as Record<string, unknown>;
+
+    assertStrictEquals(res.status, 500);
+    assertEquals(Object.keys(body).sort(), ["error", "success"]);
+  }, (url) => {
+    if (url.includes("generativelanguage")) return Promise.resolve(geminiTextResponse());
+    return Promise.resolve(new Response("provider rejected", { status: 400 }));
+  });
+});

@@ -38,6 +38,12 @@ export interface StoryProp {
   selectedReferenceUrl?: string;    // URL de la imagen de referencia procesada
   role: PropRole;
   sceneNumbers?: number[];          // Escenas en las que aparece el prop
+  /**
+   * true cuando referenceImages[0] es una hoja de referencia GENERADA (no una
+   * foto del usuario): al re-elegir otra hoja, la anterior se reemplaza en vez
+   * de acumularse junto a la nueva.
+   */
+  sheetGenerated?: boolean;
 }
 
 /**
@@ -276,6 +282,13 @@ export interface GenerateSceneImagesPropRef {
   referenceImages: string[];
 }
 
+/**
+ * Modelo de imagen a usar en `generate-scene-images`:
+ * 'flash' (default) = rápido/barato para borradores y escenas;
+ * 'pro' = mayor calidad para portada, fin y refinamientos.
+ */
+export type GenerateSceneImagesModelTier = 'flash' | 'pro';
+
 /** Petición para regenerar el character sheet de un personaje. */
 export interface GenerateSceneImagesCharacterRequest {
   type: 'character';
@@ -286,6 +299,26 @@ export interface GenerateSceneImagesCharacterRequest {
     visualDescription: string;
   };
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
+  refine?: GenerateSceneImagesRefine;
+}
+
+/**
+ * Petición para generar la hoja de referencia canónica de un lugar u objeto
+ * recurrente (análoga al character sheet): lugares → establishing shot,
+ * objetos → toma de producto. Acepta fotos reales opcionales como referencia.
+ */
+export interface GenerateSceneImagesPropSheetRequest {
+  type: 'prop';
+  styleId: string;
+  prop: {
+    name: string;
+    kind: PropKind;
+    visualDescription: string;
+    referenceImages?: string[];
+  };
+  count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -301,10 +334,16 @@ export interface GenerateSceneImagesSceneRequest {
   characters?: GenerateSceneImagesCharacterRef[];
   location: LocationInfo;
   sceneReferenceImage?: string;
-  sceneReferenceMode?: 'style' | 'composition';
+  /**
+   * 'style' = referencia de estilo visual; 'pov' = misma locación desde otro
+   * ángulo de cámara. (Debe coincidir con los valores del edge function y de
+   * la persistencia del draft.)
+   */
+  sceneReferenceMode?: 'style' | 'pov';
   landmarks?: GenerateSceneImagesLandmarkRef[];
   props?: GenerateSceneImagesPropRef[];
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -323,6 +362,7 @@ export interface GenerateSceneImagesCoverRequest {
   sceneReferenceImage?: string;
   customPrompt?: string;
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -339,6 +379,7 @@ export interface GenerateSceneImagesEndRequest {
    */
   referenceImage?: string;
   count?: number;
+  modelTier?: GenerateSceneImagesModelTier;
   refine?: GenerateSceneImagesRefine;
 }
 
@@ -350,9 +391,23 @@ export interface GenerateSceneImagesEndRequest {
  */
 export type GenerateSceneImagesRequest =
   | GenerateSceneImagesCharacterRequest
+  | GenerateSceneImagesPropSheetRequest
   | GenerateSceneImagesSceneRequest
   | GenerateSceneImagesCoverRequest
   | GenerateSceneImagesEndRequest;
+
+/**
+ * Lugar u objeto recurrente propuesto por el modelo al generar el cuento
+ * (campo `suggestedProps` de la respuesta de generate-story). El cliente lo
+ * convierte en StoryProp con id propio y le genera una hoja de referencia.
+ */
+export interface SuggestedStoryProp {
+  name: string;
+  kind: PropKind;
+  narrativeRole: string;
+  visualDescription: string;
+  sceneNumbers: number[];
+}
 
 /**
  * Índice de cuentos guardados

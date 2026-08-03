@@ -1,58 +1,138 @@
 /**
  * CASA Scene Image Generator — request handler.
  *
- * Extracted from `index.ts` so it can be imported by tests without starting a
- * server, reading the environment, or hitting the network. `index.ts` is the
- * only place that constructs production dependencies and calls `serve()`.
+ * Genera imágenes para escenas de cuentos usando la familia Gemini Image:
+ *  - flash (default): gemini-3.1-flash-image (Nano Banana 2) — borradores/escenas
+ *  - pro: gemini-3-pro-image (Nano Banana Pro) — portada/fin/refinamientos
+ * Soporta imágenes de referencia para consistencia de personajes, lugares y objetos.
+ *
+ * Extracted from `index.ts` (FASE F) so it can be imported by tests without
+ * starting a server, reading the environment, or hitting the network.
+ * `index.ts` is the only place that constructs production dependencies and
+ * calls `serve()`.
  *
  * Auth: OPTIONS is handled before the guard for CORS preflight. Every other
  * method must pass `requireLiturgyWriter` BEFORE the handler reads the body,
- * touches storage, or calls the model provider. Fail-closed by design.
+ * downloads any image, or calls Gemini. Fail-closed by design.
  */
 
 import {
   requireLiturgyWriter,
   type RequirePermissionDeps,
-} from "../_shared/liturgyAuth.ts";
+} from '../_shared/liturgyAuth.ts';
+import {
+  bodyShape,
+  charCount,
+  collectSceneImageRefs,
+  DEFAULT_IMAGE_LIMITS,
+  imageErrorResponse,
+  describeError,
+  imageFieldOf,
+  ImageRefError,
+  type ImageLimits,
+  isRefineRequested,
+  isSceneRequestType,
+  listShape,
+  type MaterializedImage,
+  materializeImageRefs,
+  prevalidateImageRefs,
+  readBoundedJson,
+  sceneImageReadSet,
+  type SkippedImage,
+  UNAVAILABLE_CODES,
+} from '../_shared/imageFetch.ts';
 
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+export interface HandlerDeps {
+  /** GOOGLE_AI_API_KEY. Empty/absent => the handler reports a config error. */
+  apiKey: string;
+  /** Model id for the `flash` tier (env override at the entrypoint). */
+  flashModel: string;
+  /** Model id for the `pro` tier (env override at the entrypoint). */
+  proModel: string;
+  /** Injectable authz backend for the shared fail-closed guard. */
+  authzDeps: RequirePermissionDeps;
+  /** SUPABASE_URL — pins the one bucket origin image URLs may come from. */
+  supabaseUrl: string;
+  /** Overridable in tests; production uses `DEFAULT_IMAGE_LIMITS`. */
+  imageLimits?: ImageLimits;
+}
 
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+type ModelTier = 'flash' | 'pro';
+
+interface ModelConfig {
+  apiKey: string;
+  flashModel: string;
+  proModel: string;
+}
+
+function resolveModel(tier: ModelTier, config: ModelConfig): string {
+  return tier === 'pro' ? config.proModel : config.flashModel;
+}
+
+const MODEL_TIMEOUT_MS: Record<ModelTier, number> = {
+  flash: 60_000,
+  pro: 150_000,
 };
+
+/**
+ * Un intento de reintento en 429/5xx/timeout con backoff corto (respeta Retry-After).
+ */
+async function fetchGeminiWithRetry(
+  apiUrl: string,
+  apiKey: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if ((response.status === 429 || response.status >= 500) && attempt === 0) {
+        const retryAfter = Number(response.headers.get('retry-after'));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 15_000)
+          : 2_000 + Math.random() * 3_000;
+        console.warn(`[generate-scene-images] Gemini ${response.status}, reintentando en ${Math.round(delayMs)}ms`);
+        await response.body?.cancel();
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
+      return response;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 0) {
+        console.warn(`[generate-scene-images] Error de red/timeout, reintentando: ${describeError(err)}`);
+        await new Promise((r) => setTimeout(r, 2_000 + Math.random() * 3_000));
+        continue;
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 // Estilos de ilustración con sus prompts
 const ILLUSTRATION_STYLES: Record<string, string> = {
-  "ghibli":
-    "Studio Ghibli animation style, soft watercolor backgrounds, detailed natural environments, warm lighting, whimsical atmosphere, hand-drawn aesthetic",
-  "pixar":
-    "Pixar 3D animation style, expressive characters, vibrant colors, cinematic lighting, detailed textures, emotional storytelling",
-  "disney-classic":
-    "Classic Disney 2D animation style, golden age aesthetic, fluid lines, warm colors, fairytale atmosphere, hand-painted backgrounds",
-  "dreamworks":
-    "DreamWorks animation style, dynamic poses, bold colors, expressive faces, cinematic composition, playful energy",
-  "storybook":
-    "Children's storybook illustration style, soft pastel colors, gentle brushstrokes, cozy atmosphere, whimsical details, picture book aesthetic",
-  "watercolor":
-    "Children's watercolor illustration, soft washes, gentle colors, dreamy atmosphere, delicate lines, artistic and tender",
-  "eric-carle":
-    "Eric Carle collage illustration style, bold colors, textured paper cutouts, simple shapes, vibrant and playful, The Very Hungry Caterpillar aesthetic",
-  "quentin-blake":
-    "Quentin Blake illustration style, loose pen and ink drawings, energetic lines, splashes of watercolor, whimsical and expressive characters, Roald Dahl book aesthetic",
-  "papercut":
-    "Paper cut-out illustration style, layered paper effect, soft shadows, colorful shapes, handcrafted aesthetic, dimensional depth",
-  "claymation":
-    "Claymation stop-motion style, 3D clay figures, textured surfaces, warm lighting, handcrafted charm, Aardman animation aesthetic",
-  "folk-art":
-    "Latin American folk art style, vibrant colors, decorative patterns, naive art aesthetic, cultural motifs, warm and festive",
-  "anime-soft":
-    "Soft anime illustration style, big expressive eyes, pastel colors, gentle lighting, kawaii aesthetic, heartwarming atmosphere",
-  "cartoon-network":
-    "Modern cartoon style, bold outlines, flat colors, geometric shapes, playful proportions, Adventure Time / Steven Universe aesthetic",
-  "beatrix-potter":
-    "Beatrix Potter illustration style, detailed naturalistic animals, soft watercolors, English countryside aesthetic, gentle and refined, Peter Rabbit style",
+  'ghibli': 'Studio Ghibli animation style, soft watercolor backgrounds, detailed natural environments, warm lighting, whimsical atmosphere, hand-drawn aesthetic',
+  'pixar': 'Pixar 3D animation style, expressive characters, vibrant colors, cinematic lighting, detailed textures, emotional storytelling',
+  'disney-classic': 'Classic Disney 2D animation style, golden age aesthetic, fluid lines, warm colors, fairytale atmosphere, hand-painted backgrounds',
+  'dreamworks': 'DreamWorks animation style, dynamic poses, bold colors, expressive faces, cinematic composition, playful energy',
+  'storybook': "Children's storybook illustration style, soft pastel colors, gentle brushstrokes, cozy atmosphere, whimsical details, picture book aesthetic",
+  'watercolor': "Children's watercolor illustration, soft washes, gentle colors, dreamy atmosphere, delicate lines, artistic and tender",
+  'eric-carle': 'Eric Carle collage illustration style, bold colors, textured paper cutouts, simple shapes, vibrant and playful, The Very Hungry Caterpillar aesthetic',
+  'quentin-blake': 'Quentin Blake illustration style, loose pen and ink drawings, energetic lines, splashes of watercolor, whimsical and expressive characters, Roald Dahl book aesthetic',
+  'papercut': 'Paper cut-out illustration style, layered paper effect, soft shadows, colorful shapes, handcrafted aesthetic, dimensional depth',
+  'claymation': 'Claymation stop-motion style, 3D clay figures, textured surfaces, warm lighting, handcrafted charm, Aardman animation aesthetic',
+  'folk-art': 'Latin American folk art style, vibrant colors, decorative patterns, naive art aesthetic, cultural motifs, warm and festive',
+  'anime-soft': 'Soft anime illustration style, big expressive eyes, pastel colors, gentle lighting, kawaii aesthetic, heartwarming atmosphere',
+  'cartoon-network': 'Modern cartoon style, bold outlines, flat colors, geometric shapes, playful proportions, Adventure Time / Steven Universe aesthetic',
+  'beatrix-potter': 'Beatrix Potter illustration style, detailed naturalistic animals, soft watercolors, English countryside aesthetic, gentle and refined, Peter Rabbit style',
 };
 
 interface Character {
@@ -73,18 +153,18 @@ interface Refine {
 }
 
 const REFINE_INSTRUCTION_TEMPLATE =
-  "REFINE THE PROVIDED IMAGE according to this feedback: `{feedback}`. Preserve all unmentioned visual elements (composition, lighting, characters, style, color palette) exactly. The reference images that follow are character / landmark / prop references — keep them visually consistent with the source image.";
+  'REFINE THE PROVIDED IMAGE according to this feedback: `{feedback}`. Preserve all unmentioned visual elements (composition, lighting, characters, style, color palette) exactly. The reference images that follow are character / landmark / prop references — keep them visually consistent with the source image.';
 
 interface Landmark {
   name: string;
   visualDescription: string;
-  referenceImages: string[]; // base64 data URLs or URLs
+  referenceImages: string[];  // base64 data URLs or URLs
 }
 
 interface Prop {
   name: string;
   visualDescription: string;
-  referenceImages: string[]; // base64 data URLs or URLs
+  referenceImages: string[];  // base64 data URLs or URLs
 }
 
 interface Scene {
@@ -100,34 +180,34 @@ interface Location {
 
 function detectCharactersInScene(
   scene: Scene,
-  characters: Character[],
+  characters: Character[]
 ): Character[] {
   const sceneText = `${scene.text} ${scene.visualDescription}`.toLowerCase();
 
-  return characters.filter((character) => {
+  return characters.filter(character => {
     const charName = character.name.toLowerCase();
     const nameVariations = [
       charName,
-      charName.replace(/^el\s+/i, ""),
-      charName.replace(/^la\s+/i, ""),
-      charName.replace(/^los\s+/i, ""),
-      charName.replace(/^las\s+/i, ""),
-      charName.replace(/^un\s+/i, ""),
-      charName.replace(/^una\s+/i, ""),
+      charName.replace(/^el\s+/i, ''),
+      charName.replace(/^la\s+/i, ''),
+      charName.replace(/^los\s+/i, ''),
+      charName.replace(/^las\s+/i, ''),
+      charName.replace(/^un\s+/i, ''),
+      charName.replace(/^una\s+/i, ''),
     ];
 
-    return nameVariations.some((variation) =>
+    return nameVariations.some(variation =>
       variation.length > 2 && sceneText.includes(variation)
     );
   });
 }
 
 function buildPropReferenceLines(props: Prop[]): string {
-  if (!props || props.length === 0) return "";
-  const lines = props.map((p) =>
+  if (!props || props.length === 0) return '';
+  const lines = props.map(p =>
     `PROP REFERENCE — "${p.name}": ${p.visualDescription}. Render EXACTLY as shown in reference photos; architectural / structural / material details must match precisely.`
   );
-  return `\n\n${lines.join("\n")}`;
+  return `\n\n${lines.join('\n')}`;
 }
 
 function buildScenePrompt(
@@ -136,34 +216,26 @@ function buildScenePrompt(
   charactersInScene: Character[],
   location: Location,
   landmarks?: Landmark[],
-  props?: Prop[],
+  props?: Prop[]
 ): string {
-  const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-    ILLUSTRATION_STYLES["storybook"];
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
   const characterDescriptions = charactersInScene.length > 0
-    ? charactersInScene.map((c) => `- ${c.name}: ${c.visualDescription}`).join(
-      "\n",
-    )
-    : "No specific characters in this scene";
+    ? charactersInScene.map(c => `- ${c.name}: ${c.visualDescription}`).join('\n')
+    : 'No specific characters in this scene';
 
-  const referenceInstruction = charactersInScene.some((c) => c.referenceImage)
+  const referenceInstruction = charactersInScene.some(c => c.referenceImage)
     ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
-    : "";
+    : '';
 
   // Include landmark info if visible in this scene
-  const visibleLandmarks = (landmarks || []).filter((lm) =>
-    scene.landmarkVisible && lm.visualDescription
-  );
+  const visibleLandmarks = (landmarks || []).filter((lm) => scene.landmarkVisible && lm.visualDescription);
   const landmarkSection = visibleLandmarks.length > 0
     ? `\n\nLANDMARK/BUILDING visible in this scene (reference photos provided - render FAITHFULLY):
-${
-      visibleLandmarks.map((lm) => `- ${lm.name}: ${lm.visualDescription}`)
-        .join("\n")
-    }
+${visibleLandmarks.map(lm => `- ${lm.name}: ${lm.visualDescription}`).join('\n')}
 
 CRITICAL: The landmark/building MUST be rendered with EXACT architectural details matching the reference photos. Copy the shape, colors, materials, windows, doors, and all distinctive features precisely. The landmark should be immediately recognizable to someone who knows the real building.`
-    : "";
+    : '';
 
   const propSection = buildPropReferenceLines(props || []);
 
@@ -182,31 +254,23 @@ ${landmarkSection}${propSection}
 
 CRITICAL instructions:
 - ONLY show the characters listed above - no other characters should appear
+- Do NOT redesign any character, landmark or prop: match their canonical descriptions and reference images exactly, in every detail
 - Bright, well-lit scene (this will be projected in a room with natural light)
 - Child-friendly imagery appropriate for ages 5-10
 - **ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO NUMBERS, NO WRITING OF ANY KIND IN THE IMAGE** - This is extremely important, the image must be purely visual with zero text elements
 - Cinematic composition with good framing
 - Warm, inviting atmosphere
 - Focus on the emotional moment described in the scene
-- If reference images are provided, the characters MUST look exactly like their references${
-    visibleLandmarks.length > 0
-      ? "\n- The landmark/building MUST match the provided reference photos exactly"
-      : ""
-  }${
-    (props && props.length > 0)
-      ? "\n- Props listed above MUST match their reference photos exactly in shape, colors, materials, and distinctive details"
-      : ""
-  }
+- If reference images are provided, the characters MUST look exactly like their references${visibleLandmarks.length > 0 ? '\n- The landmark/building MUST match the provided reference photos exactly' : ''}${(props && props.length > 0) ? '\n- Props listed above MUST match their reference photos exactly in shape, colors, materials, and distinctive details' : ''}
 - Do not include any signs, labels, captions, titles, or any form of written text
 `.trim();
 }
 
 function buildCharacterSheetPrompt(
   styleId: string,
-  character: { name: string; description: string; visualDescription: string },
+  character: { name: string; description: string; visualDescription: string }
 ): string {
-  const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-    ILLUSTRATION_STYLES["storybook"];
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
   return `${stylePrompt}
 
@@ -226,14 +290,50 @@ Important:
 `.trim();
 }
 
+/**
+ * Hoja de referencia canónica para un lugar u objeto recurrente, análoga al
+ * character sheet: lugares → plano general (establishing shot); objetos →
+ * toma de producto sobre fondo neutro. Se genera en el estilo del cuento y
+ * luego se adjunta como referencia a cada escena donde aparece.
+ */
+function buildPropSheetPrompt(
+  styleId: string,
+  prop: { name: string; kind: 'location' | 'prop'; visualDescription: string }
+): string {
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+
+  const subjectInstructions = prop.kind === 'location'
+    ? `Establishing shot of a location, wide view showing the full place clearly.
+
+Location: ${prop.visualDescription}
+
+Show the location from a slightly elevated three-quarter view in neutral daylight, with all its distinctive architectural/natural features fully visible. No people, no animals, no characters — the location alone.`
+    : `Reference sheet of a single object, product-shot style.
+
+Object: ${prop.visualDescription}
+
+Show the object centered on a plain, light neutral background, three-quarter view, evenly lit, with all its distinctive details, colors and materials clearly visible. No people, no animals, no characters — the object alone.`;
+
+  return `${stylePrompt}
+
+${subjectInstructions}
+
+Important:
+- This image will be used as the canonical visual reference for "${prop.name}" across every illustration of a children's story — every distinctive detail must be clear and unambiguous
+- Bright, well-lit image
+- **ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO LABELS** - the image must contain zero text elements
+- Suitable for children ages 5-10
+- Pure visual illustration only
+`.trim();
+}
+
 function buildCoverPrompt(
   styleId: string,
   title: string,
   protagonist: { visualDescription: string },
-  location: Location,
+  location: Location
 ): string {
-  const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-    ILLUSTRATION_STYLES["storybook"];
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
   return `${stylePrompt}
 
@@ -256,8 +356,7 @@ Important:
 }
 
 function buildEndPrompt(styleId: string): string {
-  const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-    ILLUSTRATION_STYLES["storybook"];
+  const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
 
   return `${stylePrompt}
 
@@ -273,217 +372,72 @@ No characters, just the text and decorative elements.
 `.trim();
 }
 
+// Marcadores de referencias "de estilo/escenario" (no de personaje): guían
+// estilo, composición o locación en vez de la identidad de un personaje.
+const STYLE_REF_MARKERS = [
+  'SCENE STYLE REFERENCE',
+  'SAME-LOCATION REFERENCE',
+  'COVER STYLE REFERENCE',
+  'END STYLE REFERENCE',
+];
+
+function isStyleReferenceDesc(desc?: string): boolean {
+  return !!desc && STYLE_REF_MARKERS.some((marker) => desc.includes(marker));
+}
+
 function isValidImageBase64(base64: string): boolean {
-  if (!base64 || typeof base64 !== "string") return false;
-  return base64.startsWith("iVBORw0KGgo") || base64.startsWith("/9j/") ||
-    base64.startsWith("UklGR");
-}
-
-function isUrl(str: string): boolean {
-  return str?.startsWith("http://") || str?.startsWith("https://");
-}
-
-async function downloadImageToBase64(url: string): Promise<string> {
-  console.log(
-    `[generate-scene-images] downloadImageToBase64 START - URL: ${
-      url.slice(0, 150)
-    }`,
-  );
-
-  try {
-    const fetchUrl = url;
-    console.log(`[generate-scene-images] Fetching from: ${fetchUrl}`);
-
-    const response = await fetch(fetchUrl, {
-      headers: {
-        "Accept": "image/*",
-      },
-    });
-
-    console.log(
-      `[generate-scene-images] Fetch response: status=${response.status}, ok=${response.ok}, type=${
-        response.headers.get("content-type")
-      }`,
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() =>
-        "Could not read error body"
-      );
-      console.error(
-        `[generate-scene-images] Failed to download image: ${response.status} ${response.statusText}`,
-        errorText.slice(0, 200),
-      );
-      return "";
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("image")) {
-      console.error(
-        `[generate-scene-images] Response is not an image: ${contentType}`,
-      );
-      return "";
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    console.log(
-      `[generate-scene-images] Downloaded ${arrayBuffer.byteLength} bytes`,
-    );
-
-    if (arrayBuffer.byteLength === 0) {
-      console.error(`[generate-scene-images] Downloaded image is empty`);
-      return "";
-    }
-
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    let binary = "";
-    for (let i = 0; i < uint8Array.length; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
-    }
-    const base64 = btoa(binary);
-
-    console.log(
-      `[generate-scene-images] Converted to base64: length=${base64.length}, prefix=${
-        base64.slice(0, 30)
-      }`,
-    );
-
-    if (isValidImageBase64(base64)) {
-      console.log(
-        `[generate-scene-images] downloadImageToBase64 SUCCESS - valid base64 image`,
-      );
-      return base64;
-    } else {
-      console.error(
-        `[generate-scene-images] Downloaded image is not valid PNG/JPEG - prefix: ${
-          base64.slice(0, 50)
-        }`,
-      );
-      return "";
-    }
-  } catch (err) {
-    console.error(`[generate-scene-images] Error downloading image:`, err);
-    return "";
-  }
-}
-
-async function processReferenceImage(imageData: string): Promise<string> {
-  if (!imageData) {
-    console.log(
-      `[generate-scene-images] processReferenceImage: no imageData provided`,
-    );
-    return "";
-  }
-
-  console.log(
-    `[generate-scene-images] processReferenceImage: input type=${
-      isUrl(imageData) ? "URL" : "base64"
-    }, length=${imageData.length}, prefix=${imageData.slice(0, 60)}`,
-  );
-
-  if (isUrl(imageData)) {
-    const result = await downloadImageToBase64(imageData);
-    console.log(
-      `[generate-scene-images] processReferenceImage: URL download result length=${result.length}, valid=${
-        isValidImageBase64(result)
-      }`,
-    );
-    return result;
-  } else if (isValidImageBase64(imageData)) {
-    console.log(
-      `[generate-scene-images] processReferenceImage: already valid base64`,
-    );
-    return imageData;
-  } else if (imageData.startsWith("data:")) {
-    const parts = imageData.split(",");
-    if (parts.length > 1) {
-      const base64Part = parts[1];
-      if (isValidImageBase64(base64Part)) {
-        console.log(
-          `[generate-scene-images] processReferenceImage: extracted base64 from data URL`,
-        );
-        return base64Part;
-      }
-    }
-    console.log(
-      `[generate-scene-images] processReferenceImage: could not extract valid base64 from data URL`,
-    );
-    return "";
-  }
-
-  console.log(
-    `[generate-scene-images] processReferenceImage: invalid format, not URL or base64`,
-  );
-  return "";
+  if (!base64 || typeof base64 !== 'string') return false;
+  return base64.startsWith('iVBORw0KGgo') || base64.startsWith('/9j/') || base64.startsWith('UklGR');
 }
 
 async function generateImage(
-  apiKey: string,
   prompt: string,
   variation: number = 0,
   referenceImages: string[] = [],
   characterDescriptions: string[] = [],
-  refine?: Refine,
+  refine: Refine | undefined,
+  modelTier: ModelTier,
+  config: ModelConfig
 ): Promise<string> {
-  const apiUrl =
-    `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
+  const model = resolveModel(modelTier, config);
+  // The key travels in a header, not the query string: runtime network errors
+  // embed the request URL in their message, so `?key=` put the secret one
+  // console.error away from the logs.
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   try {
-    const parts: Array<
-      { text?: string; inlineData?: { mimeType: string; data: string } }
-    > = [];
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
-    console.log(
-      `[generateImage] Starting with ${referenceImages.length} reference images, variation ${variation}, refine=${!!refine}`,
-    );
+    console.log(`[generateImage] Starting with ${referenceImages.length} reference images, variation ${variation}, refine=${!!refine}`);
 
     let imagesAdded = 0;
 
     if (refine && isValidImageBase64(refine.sourceImage)) {
-      const refineMime = refine.sourceImage.startsWith("/9j/")
-        ? "image/jpeg"
-        : refine.sourceImage.startsWith("UklGR")
-        ? "image/webp"
-        : "image/png";
+      const refineMime = refine.sourceImage.startsWith('/9j/')
+        ? 'image/jpeg'
+        : refine.sourceImage.startsWith('UklGR')
+          ? 'image/webp'
+          : 'image/png';
       parts.push({
-        text:
-          "REFINE SOURCE IMAGE — This is the existing image to refine. It is provided as the FIRST inlineData part. Use it as the base; modify ONLY what the user feedback requests.",
+        text: 'REFINE SOURCE IMAGE — This is the existing image to refine. It is provided as the FIRST inlineData part. Use it as the base; modify ONLY what the user feedback requests.',
       });
-      parts.push({
-        inlineData: { mimeType: refineMime, data: refine.sourceImage },
-      });
+      parts.push({ inlineData: { mimeType: refineMime, data: refine.sourceImage } });
       imagesAdded++;
-      console.log(
-        `[generateImage] Added refine source image as slot 0 (${refineMime})`,
-      );
+      console.log(`[generateImage] Added refine source image as slot 0 (${refineMime})`);
     } else if (refine) {
-      console.warn(
-        "[generateImage] refine.sourceImage missing or invalid base64 — proceeding without refine source",
-      );
+      console.warn('[generateImage] refine.sourceImage missing or invalid base64 — proceeding without refine source');
     }
 
-    const hasSceneRef = characterDescriptions[0]?.includes(
-      "SCENE STYLE REFERENCE",
-    );
-    const hasLandmarkRef = characterDescriptions.some((d) =>
-      d?.includes("LANDMARK REFERENCE")
-    );
+    const hasSceneRef = isStyleReferenceDesc(characterDescriptions[0]);
+    const hasLandmarkRef = characterDescriptions.some(d => d?.includes('LANDMARK REFERENCE'));
 
     if (referenceImages.length > 0) {
+
       let refInstruction: string;
       if (hasSceneRef) {
         refInstruction = `CRITICAL REFERENCE IMAGES:
 The FIRST image is a SCENE STYLE REFERENCE - use it to guide the visual style, composition, lighting, colors, and atmosphere of the generated scene.
-${
-          referenceImages.length > 1
-            ? `The remaining ${
-              referenceImages.length - 1
-            } image(s) show the EXACT appearance of characters${
-              hasLandmarkRef ? " and/or landmarks/buildings" : ""
-            }.`
-            : ""
-        }
+${referenceImages.length > 1 ? `The remaining ${referenceImages.length - 1} image(s) show the EXACT appearance of characters${hasLandmarkRef ? ' and/or landmarks/buildings' : ''}.` : ''}
 
 For character references, you MUST copy these visual details EXACTLY:
 - Face shape, features, and expression style
@@ -491,32 +445,20 @@ For character references, you MUST copy these visual details EXACTLY:
 - Skin tone and body proportions
 - Clothing colors, patterns, and style
 - Any distinctive accessories or features
-${
-          hasLandmarkRef
-            ? `
+${hasLandmarkRef ? `
 For LANDMARK/BUILDING references, you MUST copy these architectural details EXACTLY:
 - Overall shape, proportions, and structure
 - Colors of walls, roof, doors, windows
 - Distinctive architectural features (towers, arches, columns, etc.)
 - Materials and textures
-- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building`
-            : ""
-        }
+- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building` : ''}
 
 Study each reference carefully before generating.`;
       } else {
-        const charCount = characterDescriptions.filter((d) =>
-          !d?.includes("LANDMARK REFERENCE")
-        ).length;
-        const landmarkCount = characterDescriptions.filter((d) =>
-          d?.includes("LANDMARK REFERENCE")
-        ).length;
+        const charCount = characterDescriptions.filter(d => !d?.includes('LANDMARK REFERENCE')).length;
+        const landmarkCount = characterDescriptions.filter(d => d?.includes('LANDMARK REFERENCE')).length;
         refInstruction = `CRITICAL REFERENCE IMAGES:
-The following ${referenceImages.length} image(s) show the EXACT appearance of ${
-          charCount > 0 ? `characters` : ""
-        }${charCount > 0 && landmarkCount > 0 ? " and " : ""}${
-          landmarkCount > 0 ? "landmarks/buildings" : ""
-        } that must appear in the generated scene.
+The following ${referenceImages.length} image(s) show the EXACT appearance of ${charCount > 0 ? `characters` : ''}${charCount > 0 && landmarkCount > 0 ? ' and ' : ''}${landmarkCount > 0 ? 'landmarks/buildings' : ''} that must appear in the generated scene.
 
 For CHARACTER references, you MUST copy these visual details EXACTLY:
 - Face shape, features, and expression style
@@ -524,17 +466,13 @@ For CHARACTER references, you MUST copy these visual details EXACTLY:
 - Skin tone and body proportions
 - Clothing colors, patterns, and style
 - Any distinctive accessories or features
-${
-          hasLandmarkRef
-            ? `
+${hasLandmarkRef ? `
 For LANDMARK/BUILDING references, you MUST copy these architectural details EXACTLY:
 - Overall shape, proportions, and structure
 - Colors of walls, roof, doors, windows
 - Distinctive architectural features (towers, arches, columns, etc.)
 - Materials and textures
-- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building`
-            : ""
-        }
+- The landmark must be IMMEDIATELY RECOGNIZABLE to someone who knows the real building` : ''}
 
 Study each reference carefully before generating. All subjects in your output MUST be visually identical to their references.`;
       }
@@ -543,699 +481,609 @@ Study each reference carefully before generating. All subjects in your output MU
 
       for (let i = 0; i < referenceImages.length && i < 14; i++) {
         const imgData = referenceImages[i];
-        const imgPrefix = imgData?.slice(0, 30) || "empty";
-        const isSceneRef = characterDescriptions[i]?.includes(
-          "SCENE STYLE REFERENCE",
-        );
-        console.log(
-          `[generateImage] Reference image ${i + 1}: length=${
-            imgData?.length || 0
-          }, prefix="${imgPrefix}", isSceneRef=${isSceneRef}`,
-        );
+        const isSceneRef = isStyleReferenceDesc(characterDescriptions[i]);
+        // Size and role only — never a base64 prefix (invariant 11).
+        console.log(`[generateImage] Reference image ${i + 1}: length=${imgData?.length || 0}, isSceneRef=${isSceneRef}`);
 
         if (isValidImageBase64(imgData)) {
-          const mimeType = imgData.startsWith("/9j/")
-            ? "image/jpeg"
-            : imgData.startsWith("UklGR")
-            ? "image/webp"
-            : "image/png";
+          const mimeType = imgData.startsWith('/9j/') ? 'image/jpeg' : imgData.startsWith('UklGR') ? 'image/webp' : 'image/png';
 
           if (characterDescriptions[i]) {
-            const isLandmarkRef = characterDescriptions[i]?.includes(
-              "LANDMARK REFERENCE",
-            );
-            const isPropRef = characterDescriptions[i]?.includes(
-              "PROP REFERENCE",
-            );
+            const isLandmarkRef = characterDescriptions[i]?.includes('LANDMARK REFERENCE');
+            const isPropRef = characterDescriptions[i]?.includes('PROP REFERENCE');
             if (isSceneRef) {
-              parts.push({
-                text:
-                  `STYLE REFERENCE IMAGE - Copy the visual style, colors, lighting, and atmosphere from this image:`,
-              });
+              // La descripción trae la instrucción correcta según el tipo de
+              // referencia (estilo, misma locación/pov, portada, fin).
+              parts.push({ text: characterDescriptions[i] });
             } else if (isLandmarkRef) {
-              parts.push({
-                text:
-                  `LANDMARK/BUILDING REFERENCE IMAGE - Render this building EXACTLY as shown, copying all architectural details: ${
-                    characterDescriptions[i]
-                  }`,
-              });
+              parts.push({ text: `LANDMARK/BUILDING REFERENCE IMAGE - Render this building EXACTLY as shown, copying all architectural details: ${characterDescriptions[i]}` });
             } else if (isPropRef) {
-              parts.push({
-                text:
-                  `PROP REFERENCE IMAGE - Render this prop EXACTLY as shown, copying all structural and material details: ${
-                    characterDescriptions[i]
-                  }`,
-              });
+              parts.push({ text: `PROP REFERENCE IMAGE - Render this prop EXACTLY as shown, copying all structural and material details: ${characterDescriptions[i]}` });
             } else {
-              parts.push({
-                text: `Character reference ${i + 1} - ${
-                  characterDescriptions[i]
-                }:`,
-              });
+              parts.push({ text: `Character reference ${i + 1} - ${characterDescriptions[i]}:` });
             }
           }
 
           parts.push({
             inlineData: {
               mimeType,
-              data: imgData,
-            },
+              data: imgData
+            }
           });
           imagesAdded++;
-          console.log(
-            `[generateImage] Added reference image ${
-              i + 1
-            } as ${mimeType}, isSceneRef=${isSceneRef}`,
-          );
+          console.log(`[generateImage] Added reference image ${i + 1} as ${mimeType}, isSceneRef=${isSceneRef}`);
         } else {
-          console.log(
-            `[generateImage] Reference image ${
-              i + 1
-            } INVALID - not PNG/JPEG base64`,
-          );
+          console.log(`[generateImage] Reference image ${i + 1} INVALID - not PNG/JPEG base64`);
         }
       }
     }
 
-    console.log(
-      `[generateImage] Total images added to request: ${imagesAdded}`,
-    );
+    console.log(`[generateImage] Total images added to request: ${imagesAdded}`);
 
     let finalPrompt = prompt;
 
     if (imagesAdded > 0) {
       if (hasSceneRef) {
-        finalPrompt =
-          `CRITICAL: You MUST use the STYLE REFERENCE IMAGE above to match the visual style, color palette, lighting, and artistic atmosphere. Generate a scene that looks like it belongs in the same visual world as the reference.
+        finalPrompt = `CRITICAL: You MUST use the STYLE REFERENCE IMAGE above to match the visual style, color palette, lighting, and artistic atmosphere. Generate a scene that looks like it belongs in the same visual world as the reference.
 
 ${prompt}`;
       } else {
-        finalPrompt =
-          `REMEMBER: The characters MUST match the reference images provided above EXACTLY.
+        finalPrompt = `REMEMBER: The characters MUST match the reference images provided above EXACTLY.
 
 ${prompt}`;
       }
     }
 
     if (variation > 0) {
-      if (
-        imagesAdded > 0 &&
-        characterDescriptions[0]?.includes("SCENE STYLE REFERENCE")
-      ) {
-        finalPrompt +=
-          `\n\nGenerate variation ${variation} with slightly different composition and poses, but MAINTAIN THE SAME VISUAL STYLE as the reference image - same color palette, same lighting style, same artistic atmosphere.`;
+      if (imagesAdded > 0 && isStyleReferenceDesc(characterDescriptions[0])) {
+        finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition and poses, but MAINTAIN THE SAME VISUAL STYLE as the reference image - same color palette, same lighting style, same artistic atmosphere.`;
       } else {
-        finalPrompt +=
-          `\n\nGenerate variation ${variation} with slightly different composition, poses, and background details. However, the characters MUST remain VISUALLY IDENTICAL to their reference images - same face, same hair, same clothes, same colors.`;
+        finalPrompt += `\n\nGenerate variation ${variation} with slightly different composition, poses, and background details. However, the characters MUST remain VISUALLY IDENTICAL to their reference images - same face, same hair, same clothes, same colors.`;
       }
     }
 
     parts.push({ text: finalPrompt });
 
-    const textParts = parts.filter((p) => p.text).length;
-    const imageParts = parts.filter((p) => p.inlineData).length;
-    console.log(
-      `[generateImage] Sending request to Gemini with ${parts.length} total parts: ${textParts} text, ${imageParts} images`,
-    );
+    const textParts = parts.filter(p => p.text).length;
+    const imageParts = parts.filter(p => p.inlineData).length;
+    console.log(`[generateImage] Sending request to Gemini with ${parts.length} total parts: ${textParts} text, ${imageParts} images`);
 
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const response = await fetchGeminiWithRetry(
+      apiUrl,
+      config.apiKey,
+      {
         contents: [{
-          parts,
+          parts
         }],
         generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
+          responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
-            aspectRatio: "4:3",
+            aspectRatio: '4:3',
           },
         },
-      }),
-    });
+      },
+      MODEL_TIMEOUT_MS[modelTier]
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(
-        `[generate-scene-images] API Error (${response.status}):`,
-        errorText,
-      );
-      throw new Error(
-        `Gemini API error: ${response.status} - ${errorText.slice(0, 200)}`,
-      );
+      console.error(`[generate-scene-images] API Error (${response.status}): ${bodyShape(errorText)}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText.slice(0, 200)}`);
     }
 
     const data = await response.json();
 
-    console.log(
-      `[generate-scene-images] Full API response:`,
-      JSON.stringify(data, null, 2).slice(0, 3000),
-    );
+    // The raw response embeds inlineData base64; log its shape, not its bytes.
+    console.log(`[generate-scene-images] API response keys:`, Object.keys(data).join(', '));
 
     if (data.error) {
-      console.error(
-        `[generate-scene-images] API returned error:`,
-        JSON.stringify(data.error),
-      );
-      throw new Error(
-        `Gemini error: ${data.error.message || JSON.stringify(data.error)}`,
-      );
+      console.error(`[generate-scene-images] API returned error: ${bodyShape(JSON.stringify(data.error))}`);
+      throw new Error(`Gemini error: ${data.error.message || JSON.stringify(data.error)}`);
     }
 
     if (data.promptFeedback?.blockReason) {
-      console.error(
-        `[generate-scene-images] Content blocked:`,
-        data.promptFeedback.blockReason,
-      );
-      throw new Error(
-        `Content blocked by Gemini: ${data.promptFeedback.blockReason}`,
-      );
+      console.error(`[generate-scene-images] Content blocked: ${charCount(data.promptFeedback.blockReason)}`);
+      throw new Error(`Content blocked by Gemini: ${data.promptFeedback.blockReason}`);
     }
 
     if (data.candidates && data.candidates[0]?.content?.parts) {
-      console.log(
-        `[generate-scene-images] Found ${
-          data.candidates[0].content.parts.length
-        } parts in response`,
-      );
+      console.log(`[generate-scene-images] Found ${data.candidates[0].content.parts.length} parts in response`);
       for (const part of data.candidates[0].content.parts) {
         if (part.inlineData?.data) {
           const base64 = part.inlineData.data;
-          console.log(
-            `[generate-scene-images] Found inlineData, length: ${base64.length}, starts with: ${
-              base64.slice(0, 20)
-            }`,
-          );
+          console.log(`[generate-scene-images] Found inlineData, length: ${base64.length}`);
           if (isValidImageBase64(base64)) {
             return base64;
           } else {
             console.log(`[generate-scene-images] Invalid base64 format`);
           }
         } else if (part.text) {
-          console.log(
-            `[generate-scene-images] Found text part: ${
-              part.text.slice(0, 200)
-            }`,
-          );
+          console.log(`[generate-scene-images] Found text part: ${charCount(part.text)}`);
         }
       }
     } else {
-      console.log(
-        `[generate-scene-images] No candidates or parts found. Data keys:`,
-        Object.keys(data),
-      );
+      console.log(`[generate-scene-images] No candidates or parts found. Data keys:`, Object.keys(data));
       if (data.candidates) {
-        console.log(
-          `[generate-scene-images] Candidates:`,
-          JSON.stringify(data.candidates, null, 2).slice(0, 1000),
-        );
+        console.log(`[generate-scene-images] Candidate count:`, data.candidates.length);
       }
     }
 
     console.log(`[generate-scene-images] No valid image found in response`);
-    return "";
+    return '';
   } catch (err) {
-    console.error(`[generate-scene-images] Error in generateImage:`, err);
+    console.error(`[generate-scene-images] Error in generateImage: ${describeError(err)}`);
     throw err;
   }
 }
 
-export interface HandlerDeps {
-  /** Google AI API key. Read from env in production; injected in tests. */
-  apiKey: string;
-  /** Authz dependencies for `requireLiturgyWriter`. */
-  authzDeps: RequirePermissionDeps;
-}
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
-/**
- * Factory that returns the actual request handler. Building the handler
- * does not touch env, network, or storage — all side effects happen when
- * the returned function is invoked with a Request.
- */
 export function createHandler(
   deps: HandlerDeps,
 ): (req: Request) => Promise<Response> {
-  const { apiKey, authzDeps } = deps;
+  const config: ModelConfig = {
+    apiKey: deps.apiKey,
+    flashModel: deps.flashModel,
+    proModel: deps.proModel,
+  };
+  const limits: ImageLimits = deps.imageLimits ?? DEFAULT_IMAGE_LIMITS;
+  // Checked once here, not per-request after the downloads: the key is
+  // constant per deployment, and running pass 1/pass 2 first meant a
+  // misconfigured function burned Storage egress and then reported an
+  // image-level error instead of the real fault.
+  const missingApiKey = !deps.apiKey;
 
   return async function handler(req: Request): Promise<Response> {
-    // OPTIONS is handled before the auth guard so CORS preflight succeeds
-    // for browsers without a bearer token.
-    if (req.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
 
-    // Fail-closed authz. Runs BEFORE req.json(), Storage, or the provider.
-    const authz = await requireLiturgyWriter(req, authzDeps, corsHeaders);
-    if (!authz.ok) {
-      return authz.response;
-    }
+  // F0 fail-closed authz: runs BEFORE req.json(), any download, Storage, or the
+  // provider. Missing/invalid token => 401, denied => 403, backend error => 503.
+  const authz = await requireLiturgyWriter(req, deps.authzDeps, corsHeaders);
+  if (!authz.ok) {
+    return authz.response;
+  }
 
+  if (missingApiKey) {
+    console.error('[generate-scene-images] GOOGLE_AI_API_KEY no está configurada');
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: 'El servicio de imágenes no está configurado.',
+        images: [],
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  // FASE F pass 1 + pass 2. Both run before the first Gemini call: a single
+  // untrusted image entry anywhere in the request means zero Storage fetches
+  // and zero provider spend (T-F.9).
+  //
+  // This whole block sits INSIDE the try that produces the JSON+CORS error
+  // response. An earlier shape rethrew non-ImageRefError failures from a catch
+  // that sat outside it, so a client disconnecting mid-upload escaped the
+  // handler entirely and `serve` answered with CORS-less plain text.
+  //
+  // `skippedImages` is declared OUTSIDE that try for the same reason the story
+  // handler does it: drops are recorded during the image phase and reported by
+  // a response written much later, so an escalating failure in between used to
+  // discard the report. The scene envelope had the identical hole.
+  let skippedImages: Array<{ field: string; code: string }> = [];
+
+  try {
+    // Client JSON. The pre-FASE-F `await req.json()` typed this `any` and the
+    // switch below relies on that; keeping the same shape confines this change
+    // to the image path rather than cascading into every unrelated field.
+    // deno-lint-ignore no-explicit-any
+    let requestData: any;
+    let sourceImages: Map<string, MaterializedImage>;
+    let skipped: SkippedImage[];
     try {
-      if (!apiKey) {
-        throw new Error("GOOGLE_AI_API_KEY no está configurada");
+      requestData = await readBoundedJson(req, limits);
+
+      // `limits` reaches the collector too: the slot ceiling is enforced
+      // DURING traversal, so a pathological array is cut off instead of being
+      // copied in full and rejected afterwards.
+      const prevalidated = prevalidateImageRefs(collectSceneImageRefs(requestData, limits), {
+        limits,
+        supabaseUrl: deps.supabaseUrl,
+      });
+      const result = await materializeImageRefs(prevalidated, { limits });
+      sourceImages = result.images;
+      skipped = result.skipped;
+    } catch (err) {
+      if (err instanceof ImageRefError) {
+        console.warn(
+          `[generate-scene-images] request rejected: ${err.code} at ${err.path}`,
+        );
+        return imageErrorResponse(err, corsHeaders, { images: [] });
       }
+      throw err;
+    }
 
-      const requestData = await req.json();
-      const { type, styleId, count = 4 } = requestData;
-      const refine: Refine | undefined =
-        requestData.refine && typeof requestData.refine === "object" &&
-          typeof requestData.refine.sourceImage === "string" &&
-          typeof requestData.refine.feedback === "string"
-          ? {
-            sourceImage: requestData.refine.sourceImage,
-            feedback: requestData.refine.feedback,
-          }
-          : undefined;
-      // Refine requests always produce exactly one image; slot 0 of inlineData is the source.
-      const effectiveCount = refine ? 1 : count;
-
-      console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
-      console.log(
-        `[generate-scene-images] Type: ${type}, Style: ${styleId}, Count: ${count}, refine=${!!refine}, effectiveCount=${effectiveCount}`,
+    // Unusable individual images do not fail the request: the entry is dropped
+    // and generation continues, which is what the pre-FASE-F code did by
+    // returning '' and filtering. Provenance and size failures never reach
+    // here — those threw above.
+    if (skipped.length > 0) {
+      console.warn(
+        `[generate-scene-images] ${skipped.length} image(s) skipped: ` +
+          skipped.map((s) => `${s.path}=${s.code}`).join(', '),
       );
+    }
+    // Reported to the client, not just the log: a reference silently missing
+    // from the generation is indistinguishable from one that was used.
+    skippedImages = skipped.map((s) => ({ field: s.path, code: s.code }));
 
-      if (type === "scene") {
-        const {
-          sceneReferenceImage,
-          sceneReferenceMode = "style",
-          characters,
-        } = requestData;
-        console.log(
-          `[generate-scene-images] scene reference mode: ${sceneReferenceMode}`,
+    // The SAME consumption plan pass 1 used. Reading through it is what keeps
+    // the collector's `consumed` flag from being parallel bookkeeping: a field
+    // this request type does not read is not collected as consumed, not
+    // fetched, not charged — and not readable here either. Severing one entry
+    // of the plan therefore breaks the collector and this branch together,
+    // which is the only way "these two agree" is a testable claim.
+    const reads = sceneImageReadSet(requestData);
+
+    /** The request type for logs: the branch name, or `desconocido`. */
+    const safeType = (value: unknown): string =>
+      isSceneRequestType(value) ? value : 'desconocido';
+
+    /**
+     * The scene-reference mode for logs: the enum value, or `desconocido`.
+     * The field's domain is `'style' | 'pov'` (the only value the consumer
+     * at the scene-ref instruction checks is `'pov'`; everything else is
+     * treated as style — logging keeps that tolerance, it just stops
+     * quoting the raw value).
+     */
+    const safeMode = (value: unknown): string =>
+      value === 'style' || value === 'pov' ? value : 'desconocido';
+
+    /** Base64 for a validated slot, or '' when absent, skipped, or unread. */
+    const takeImage = (path: string): string => {
+      const field = imageFieldOf(path);
+      if (!reads.has(field)) {
+        // Fail closed and say so in shape terms. Reaching this means a branch
+        // reads a field the plan does not list — a drift the plan exists to
+        // make loud rather than silently expensive.
+        console.warn(
+          `[generate-scene-images] field not in the consumption plan for this request; ignored`,
+          { field, type: safeType(requestData?.type) },
         );
-        console.log(
-          `[generate-scene-images] REQUEST CHECK - sceneReferenceImage exists: ${!!sceneReferenceImage}`,
-        );
-        if (sceneReferenceImage) {
-          console.log(
-            `[generate-scene-images] REQUEST CHECK - sceneReferenceImage length: ${sceneReferenceImage.length}`,
-          );
-          console.log(
-            `[generate-scene-images] REQUEST CHECK - sceneReferenceImage prefix: ${
-              sceneReferenceImage.slice(0, 50)
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] REQUEST CHECK - isURL: ${
-              sceneReferenceImage.startsWith("http")
-            }`,
-          );
-        }
-        console.log(
-          `[generate-scene-images] REQUEST CHECK - characters count: ${
-            characters?.length || 0
-          }`,
-        );
-        console.log(
-          `[generate-scene-images] REQUEST CHECK - characters with refs: ${
-            characters?.filter((c: { referenceImage?: unknown }) =>
-              c.referenceImage
-            )?.length || 0
-          }`,
-        );
+        return '';
       }
+      return sourceImages.get(path)?.base64 ?? '';
+    };
 
-      let prompt: string;
-      let referenceImages: string[] = [];
-      let characterDescriptions: string[] = [];
+    const { type, styleId, count = 2 } = requestData;
+    const modelTier: ModelTier = requestData.modelTier === 'pro' ? 'pro' : 'flash';
+    const rawRefine = requestData.refine;
+    const refineRequested = isRefineRequested(requestData);
+    const refine: Refine | undefined =
+      refineRequested && typeof rawRefine.sourceImage === 'string'
+        ? { sourceImage: rawRefine.sourceImage, feedback: rawRefine.feedback }
+        : undefined;
 
-      switch (type) {
-        case "scene": {
-          const {
-            scene,
-            characters,
-            location,
-            sceneReferenceImage,
-            sceneReferenceMode = "style",
-            landmarks,
-            props,
-          } = requestData;
-          if (!scene || !location) {
-            throw new Error("Se requiere scene y location para generar escena");
-          }
+    // Fail closed on a refine whose source is not even a string. Falling
+    // through with `refine === undefined` turned the request into a full
+    // regeneration from scratch — silently discarding the image the user
+    // asked to refine, which is the exact failure invariant 11 forbids.
+    if (refineRequested && !refine) {
+      console.warn('[generate-scene-images] refine source is not a string — refusing');
+      return imageErrorResponse(
+        new ImageRefError(
+          'REFINE_SOURCE_UNAVAILABLE',
+          'refine.sourceImage',
+          'La imagen a refinar no está disponible.',
+        ),
+        corsHeaders,
+        { images: [], skippedImages },
+      );
+    }
 
-          const charactersInScene: Character[] = characters || [];
-          const landmarksInScene: Landmark[] = landmarks || [];
-          const propsInScene: Prop[] = props || [];
-
-          console.log(
-            `[generate-scene-images] Scene text: "${
-              scene.text.slice(0, 100)
-            }..."`,
+    // Refine fail-closed (invariant 11): the editor swaps base64→URL after every
+    // save, so the image to refine usually arrives as a bucket URL. If it cannot
+    // be materialised we refuse the request instead of silently regenerating
+    // from scratch — the client preserves the selection and can say so.
+    if (refine) {
+      const source = takeImage('refine.sourceImage');
+      if (!source) {
+        // Report WHY. A source that was too large to download is a size
+        // problem the user can act on; only a genuinely unproducible object
+        // is "unavailable". Collapsing both into REFINE_SOURCE_UNAVAILABLE
+        // told someone with an oversized cover to check its availability.
+        const reason = skipped.find((s) => s.path === 'refine.sourceImage');
+        if (reason && !UNAVAILABLE_CODES.has(reason.code)) {
+          const precise = new ImageRefError(
+            reason.code,
+            'refine.sourceImage',
+            reason.code === 'NOT_IMAGE'
+              ? 'El formato de la imagen a refinar no es compatible (usa PNG, JPEG o WebP).'
+              : 'La imagen a refinar supera el tamaño permitido.',
           );
-          console.log(
-            `[generate-scene-images] Characters for this scene (from frontend): ${
-              charactersInScene.map((c) => c.name).join(", ") || "none"
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] Landmarks for this scene: ${
-              landmarksInScene.map((l) => l.name).join(", ") || "none"
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] Props for this scene: ${
-              propsInScene.map((p) => p.name).join(", ") || "none"
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] Landmark visible in scene: ${
-              scene.landmarkVisible || false
-            }`,
-          );
+          console.warn(`[generate-scene-images] refine source rejected: ${reason.code}`);
+          return imageErrorResponse(precise, corsHeaders, { images: [], skippedImages });
+        }
+        const err = new ImageRefError(
+          'REFINE_SOURCE_UNAVAILABLE',
+          'refine.sourceImage',
+          'La imagen a refinar no está disponible.',
+        );
+        console.warn('[generate-scene-images] refine source unavailable — refusing');
+        return imageErrorResponse(err, corsHeaders, { images: [], skippedImages });
+      }
+      refine.sourceImage = source;
+    }
 
-          const charactersWithImages = charactersInScene.filter((c) =>
-            c.referenceImage
-          );
-          console.log(
-            `[generate-scene-images] Characters with reference images: ${
-              charactersWithImages.map((c) =>
-                `${c.name} (${isUrl(c.referenceImage!) ? "URL" : "base64"})`
-              ).join(", ") || "none"
-            }`,
-          );
+    // Refine requests always produce exactly one image; slot 0 of inlineData is the source.
+    const effectiveCount = refine ? 1 : count;
 
-          console.log(
-            `[generate-scene-images] Characters with reference images to process:`,
-          );
-          charactersWithImages.forEach((c, i) => {
-            console.log(
-              `  ${i + 1}. ${c.name}: type=${
-                isUrl(c.referenceImage!) ? "URL" : "base64"
-              }, length=${c.referenceImage!.length}, prefix=${
-                c.referenceImage!.slice(0, 80)
-              }`,
-            );
-          });
+    console.log(`[generate-scene-images] ========== NEW REQUEST ==========`);
+    // `Number(...)`: the coerced numeric the variation loop actually uses,
+    // never the raw request scalar. `modelTier` is already the narrowed
+    // `'pro' | 'flash'` local, not `requestData.modelTier`.
+    console.log(`[generate-scene-images] Type: ${safeType(type)}, Style: ${charCount(styleId)}, Count: ${Number(count)}, refine=${!!refine}, effectiveCount=${Number(effectiveCount)}, modelTier=${modelTier}, model=${resolveModel(modelTier, config)}`);
 
-          const processedResults = await Promise.all(
-            charactersWithImages.map(async (c) => {
-              console.log(
-                `[generate-scene-images] Processing reference for ${c.name}...`,
-              );
-              const image = await processReferenceImage(c.referenceImage!);
-              console.log(
-                `[generate-scene-images] Processed ${c.name}: result length=${image.length}, valid=${
-                  isValidImageBase64(image)
-                }`,
-              );
-              return {
-                image,
-                description: `${c.name}: ${c.visualDescription}`,
-              };
-            }),
-          );
+    if (type === 'scene') {
+      const { sceneReferenceMode = 'style' } = requestData;
+      // Counts only: URLs, query strings, and base64 prefixes are never logged.
+      console.log(
+        `[generate-scene-images] REQUEST CHECK - mode=${safeMode(sceneReferenceMode)}, images validated=${sourceImages.size}`,
+      );
+    }
 
-          console.log(`[generate-scene-images] Processing complete. Results:`);
-          processedResults.forEach((r, i) => {
-            console.log(
-              `  ${i + 1}. ${
-                r.description.slice(0, 50)
-              }: image length=${r.image.length}, valid=${
-                isValidImageBase64(r.image)
-              }`,
-            );
-          });
+    let prompt: string;
+    let referenceImages: string[] = [];
+    let characterDescriptions: string[] = [];
 
-          const validResults = processedResults.filter((r) => r.image !== "");
-          referenceImages = validResults.map((r) => r.image);
-          characterDescriptions = validResults.map((r) => r.description);
+    switch (type) {
+      case 'scene': {
+        const { scene, characters, location, sceneReferenceImage, sceneReferenceMode = 'style', landmarks, props } = requestData;
+        if (!scene || !location) {
+          throw new Error('Se requiere scene y location para generar escena');
+        }
 
-          console.log(
-            `[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`,
-          );
-          console.log(
-            `[generate-scene-images] Character descriptions: ${
-              characterDescriptions.join(" | ") || "none"
-            }`,
-          );
+        const charactersInScene: Character[] = characters || [];
+        const landmarksInScene: Landmark[] = landmarks || [];
+        const propsInScene: Prop[] = props || [];
 
-          const landmarkRefImages: string[] = [];
-          const landmarkRefDescriptions: string[] = [];
+        console.log(`[generate-scene-images] Scene text: ${charCount(scene.text)}`);
+        console.log(`[generate-scene-images] Characters for this scene (from frontend): ${listShape(charactersInScene.map(c => c.name))}`);
+        console.log(`[generate-scene-images] Landmarks for this scene: ${listShape(landmarksInScene.map(l => l.name))}`);
+        console.log(`[generate-scene-images] Props for this scene: ${listShape(propsInScene.map(p => p.name))}`);
+        console.log(`[generate-scene-images] Landmark visible in scene: ${Boolean(scene.landmarkVisible)}`);
 
-          // Process landmark reference images if landmark is visible in this scene
-          if (scene.landmarkVisible && landmarksInScene.length > 0) {
-            for (const lm of landmarksInScene) {
-              if (lm.referenceImages && lm.referenceImages.length > 0) {
-                console.log(
-                  `[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for "${lm.name}"`,
-                );
-                // Cap at 2 reference images per landmark
-                for (const refImg of lm.referenceImages.slice(0, 2)) {
-                  const processedLandmarkRef = await processReferenceImage(
-                    refImg,
-                  );
-                  if (processedLandmarkRef) {
-                    landmarkRefImages.push(processedLandmarkRef);
-                    landmarkRefDescriptions.push(
-                      `LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`,
-                    );
-                    console.log(
-                      `[generate-scene-images] Landmark ref image for "${lm.name}" added.`,
-                    );
-                  }
+        // Index-preserving: the slot path is how a character maps to the image
+        // pass 1 validated and pass 2 materialised.
+        const charactersWithImages = charactersInScene
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
+        console.log(`[generate-scene-images] Characters with reference images: ${charactersWithImages.length}`);
+
+        const processedResults = charactersWithImages.map(({ c, i }) => ({
+          image: takeImage(`characters[${i}].referenceImage`),
+          description: `${c.name}: ${c.visualDescription}`,
+        }));
+
+        const validResults = processedResults.filter(r => r.image !== '');
+        referenceImages = validResults.map(r => r.image);
+        characterDescriptions = validResults.map(r => r.description);
+
+        console.log(`[generate-scene-images] Reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
+        console.log(`[generate-scene-images] Character descriptions: ${listShape(characterDescriptions)}`);
+
+        const landmarkRefImages: string[] = [];
+        const landmarkRefDescriptions: string[] = [];
+
+        // Process landmark reference images if landmark is visible in this scene
+        if (scene.landmarkVisible && landmarksInScene.length > 0) {
+          for (const [lmIndex, lm] of landmarksInScene.entries()) {
+            if (lm.referenceImages && lm.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${lm.referenceImages.length} landmark reference images for landmark ${lmIndex} (${charCount(lm.name)})`);
+              // Cap at 2 reference images per landmark
+              for (let j = 0; j < Math.min(lm.referenceImages.length, 2); j++) {
+                const processedLandmarkRef = takeImage(`landmarks[${lmIndex}].referenceImages[${j}]`);
+                if (processedLandmarkRef) {
+                  landmarkRefImages.push(processedLandmarkRef);
+                  landmarkRefDescriptions.push(`LANDMARK REFERENCE - ${lm.name}: ${lm.visualDescription}. Render this building/landmark EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Landmark ref image for landmark ${lmIndex} added.`);
                 }
               }
             }
           }
+        }
 
-          // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
-          const propRefImages: string[] = [];
-          const propRefDescriptions: string[] = [];
-          if (propsInScene.length > 0) {
-            for (const pr of propsInScene) {
-              if (pr.referenceImages && pr.referenceImages.length > 0) {
-                console.log(
-                  `[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for "${pr.name}"`,
-                );
-                // Cap at 2 reference images per prop
-                for (const refImg of pr.referenceImages.slice(0, 2)) {
-                  const processedPropRef = await processReferenceImage(refImg);
-                  if (processedPropRef) {
-                    propRefImages.push(processedPropRef);
-                    propRefDescriptions.push(
-                      `PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`,
-                    );
-                    console.log(
-                      `[generate-scene-images] Prop ref image for "${pr.name}" added.`,
-                    );
-                  }
+        // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
+        const propRefImages: string[] = [];
+        const propRefDescriptions: string[] = [];
+        if (propsInScene.length > 0) {
+          for (const [prIndex, pr] of propsInScene.entries()) {
+            if (pr.referenceImages && pr.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} prop reference images for prop ${prIndex} (${charCount(pr.name)})`);
+              // Cap at 2 reference images per prop
+              for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
+                const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
+                if (processedPropRef) {
+                  propRefImages.push(processedPropRef);
+                  propRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Prop ref image for prop ${prIndex} added.`);
                 }
               }
             }
           }
+        }
 
-          // Enforce scene-wide cap: characters + landmarks + props (+ scene-style + refine source) <= 12
-          // (Gemini 14-image ceiling, leave headroom for system parts).
-          // In refine mode, slot 0 is reserved for refine.sourceImage so the budget for everything
-          // else shrinks to 11. Trim order (lowest priority first):
-          // scene-style ref → props → landmarks → characters (characters trimmed only in refine
-          // mode, since the refine source already encodes their appearance; non-refine preserves
-          // the historical behavior of never dropping characters).
-          const HARD_CAP = 12;
-          const MAX_PROCESSED = refine ? HARD_CAP - 1 : HARD_CAP;
-          const willAddSceneRef = !!sceneReferenceImage;
-          const sceneRefBudgetCost = willAddSceneRef ? 1 : 0;
-          const initialTotal = referenceImages.length +
+        // Enforce scene-wide cap: characters + landmarks + props (+ scene-style + refine source) <= 12
+        // (Gemini 14-image ceiling, leave headroom for system parts).
+        // In refine mode, slot 0 is reserved for refine.sourceImage so the budget for everything
+        // else shrinks to 11. Trim order (lowest priority first):
+        // scene-style ref → props → landmarks → characters (characters trimmed only in refine
+        // mode, since the refine source already encodes their appearance; non-refine preserves
+        // the historical behavior of never dropping characters).
+        const HARD_CAP = 12;
+        const MAX_PROCESSED = refine ? HARD_CAP - 1 : HARD_CAP;
+        const willAddSceneRef = !!sceneReferenceImage;
+        const sceneRefBudgetCost = willAddSceneRef ? 1 : 0;
+        const initialTotal =
+          referenceImages.length +
+          landmarkRefImages.length +
+          propRefImages.length +
+          sceneRefBudgetCost;
+        let droppedSceneRef = false;
+        const droppedPropNames: string[] = [];
+        const droppedLandmarkNames: string[] = [];
+        const droppedCharacterNames: string[] = [];
+
+        if (initialTotal > MAX_PROCESSED) {
+          let overflow = initialTotal - MAX_PROCESSED;
+
+          if (overflow > 0 && willAddSceneRef) {
+            droppedSceneRef = true;
+            overflow -= 1;
+            console.warn(
+              `[generate-scene-images] Refine/cap pressure: dropping scene-style reference image (mode=${safeMode(sceneReferenceMode)}) to keep refine source in slot 0`
+            );
+          }
+
+          while (overflow > 0 && propRefImages.length > 0) {
+            propRefImages.pop();
+            const droppedDesc = propRefDescriptions.pop() ?? '';
+            const propName = droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ?? 'unknown prop';
+            droppedPropNames.push(propName);
+            overflow -= 1;
+          }
+
+          while (overflow > 0 && landmarkRefImages.length > 0) {
+            landmarkRefImages.pop();
+            const droppedDesc = landmarkRefDescriptions.pop() ?? '';
+            const lmName = droppedDesc.match(/LANDMARK REFERENCE - ([^:]+):/)?.[1] ?? 'unknown landmark';
+            droppedLandmarkNames.push(lmName);
+            overflow -= 1;
+          }
+
+          if (refine) {
+            while (overflow > 0 && referenceImages.length > 0) {
+              referenceImages.pop();
+              const droppedDesc = characterDescriptions.pop() ?? '';
+              const charName = droppedDesc.split(':')[0]?.trim() || 'unknown character';
+              droppedCharacterNames.push(charName);
+              overflow -= 1;
+            }
+          }
+
+          if (droppedPropNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedPropNames)}`
+            );
+          }
+          if (droppedLandmarkNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedLandmarkNames)}`
+            );
+          }
+          if (droppedCharacterNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed character reference image(s) (refine mode) to stay under ${MAX_PROCESSED}-image cap: ${listShape(droppedCharacterNames)}`
+            );
+          }
+
+          const finalCount =
+            referenceImages.length +
             landmarkRefImages.length +
             propRefImages.length +
-            sceneRefBudgetCost;
-          let droppedSceneRef = false;
-          const droppedPropNames: string[] = [];
-          const droppedLandmarkNames: string[] = [];
-          const droppedCharacterNames: string[] = [];
-
-          if (initialTotal > MAX_PROCESSED) {
-            let overflow = initialTotal - MAX_PROCESSED;
-
-            if (overflow > 0 && willAddSceneRef) {
-              droppedSceneRef = true;
-              overflow -= 1;
-              console.warn(
-                `[generate-scene-images] Refine/cap pressure: dropping scene-style reference image (mode=${sceneReferenceMode}) to keep refine source in slot 0`,
-              );
+            (willAddSceneRef && !droppedSceneRef ? 1 : 0);
+          console.warn(
+            `[generate-scene-images] Trimmed reference images to stay under ${MAX_PROCESSED}-image cap`,
+            {
+              initialTotal,
+              droppedSceneRef,
+              droppedProps: droppedPropNames.length,
+              droppedLandmarks: droppedLandmarkNames.length,
+              droppedCharacters: droppedCharacterNames.length,
+              finalCount,
+              refine: !!refine,
             }
-
-            while (overflow > 0 && propRefImages.length > 0) {
-              propRefImages.pop();
-              const droppedDesc = propRefDescriptions.pop() ?? "";
-              const propName =
-                droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ??
-                  "unknown prop";
-              droppedPropNames.push(propName);
-              overflow -= 1;
-            }
-
-            while (overflow > 0 && landmarkRefImages.length > 0) {
-              landmarkRefImages.pop();
-              const droppedDesc = landmarkRefDescriptions.pop() ?? "";
-              const lmName =
-                droppedDesc.match(/LANDMARK REFERENCE - ([^:]+):/)?.[1] ??
-                  "unknown landmark";
-              droppedLandmarkNames.push(lmName);
-              overflow -= 1;
-            }
-
-            if (refine) {
-              while (overflow > 0 && referenceImages.length > 0) {
-                referenceImages.pop();
-                const droppedDesc = characterDescriptions.pop() ?? "";
-                const charName = droppedDesc.split(":")[0]?.trim() ||
-                  "unknown character";
-                droppedCharacterNames.push(charName);
-                overflow -= 1;
-              }
-            }
-
-            if (droppedPropNames.length > 0) {
-              console.warn(
-                `[generate-scene-images] Trimmed prop reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${
-                  droppedPropNames.join(", ")
-                }`,
-              );
-            }
-            if (droppedLandmarkNames.length > 0) {
-              console.warn(
-                `[generate-scene-images] Trimmed landmark reference image(s) to stay under ${MAX_PROCESSED}-image cap: ${
-                  droppedLandmarkNames.join(", ")
-                }`,
-              );
-            }
-            if (droppedCharacterNames.length > 0) {
-              console.warn(
-                `[generate-scene-images] Trimmed character reference image(s) (refine mode) to stay under ${MAX_PROCESSED}-image cap: ${
-                  droppedCharacterNames.join(", ")
-                }`,
-              );
-            }
-
-            const finalCount = referenceImages.length +
-              landmarkRefImages.length +
-              propRefImages.length +
-              (willAddSceneRef && !droppedSceneRef ? 1 : 0);
-            console.warn(
-              `[generate-scene-images] Trimmed reference images to stay under ${MAX_PROCESSED}-image cap`,
-              {
-                initialTotal,
-                droppedSceneRef,
-                droppedProps: droppedPropNames.length,
-                droppedLandmarks: droppedLandmarkNames.length,
-                droppedCharacters: droppedCharacterNames.length,
-                finalCount,
-                refine: !!refine,
-              },
-            );
-          }
-
-          referenceImages.push(...landmarkRefImages, ...propRefImages);
-          characterDescriptions.push(
-            ...landmarkRefDescriptions,
-            ...propRefDescriptions,
           );
+        }
 
-          if (sceneReferenceImage && !droppedSceneRef) {
-            console.log(
-              `[generate-scene-images] Scene reference image received! Type: ${
-                isUrl(sceneReferenceImage) ? "URL" : "base64"
-              }, Length: ${sceneReferenceImage.length}, Prefix: ${
-                sceneReferenceImage.slice(0, 30)
-              }`,
-            );
-            const processedSceneRef = await processReferenceImage(
-              sceneReferenceImage,
-            );
-            if (processedSceneRef) {
-              const sceneRefInstruction = sceneReferenceMode === "pov"
-                ? "SAME-LOCATION REFERENCE — This image shows the exact setting for this scene. Render the SAME location, same buildings, same props, same lighting atmosphere, but from a DIFFERENT camera angle / point of view that matches the new scene description. Preserve spatial relationships, scale, and environment details. Do NOT change the location or its distinctive features."
-                : "SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere";
-              referenceImages.unshift(processedSceneRef);
-              characterDescriptions.unshift(sceneRefInstruction);
-              console.log(
-                `[generate-scene-images] Scene reference image added successfully (mode: ${sceneReferenceMode})! Total refs now: ${referenceImages.length}`,
-              );
-            } else {
-              console.log(
-                `[generate-scene-images] Scene reference image processing FAILED`,
-              );
-            }
+        referenceImages.push(...landmarkRefImages, ...propRefImages);
+        characterDescriptions.push(...landmarkRefDescriptions, ...propRefDescriptions);
+
+        if (sceneReferenceImage && !droppedSceneRef) {
+          const processedSceneRef = takeImage('sceneReferenceImage');
+          if (processedSceneRef) {
+            const sceneRefInstruction = sceneReferenceMode === 'pov'
+              ? 'SAME-LOCATION REFERENCE — This image shows the exact setting for this scene. Render the SAME location, same buildings, same props, same lighting atmosphere, but from a DIFFERENT camera angle / point of view that matches the new scene description. Preserve spatial relationships, scale, and environment details. Do NOT change the location or its distinctive features.'
+              : 'SCENE STYLE REFERENCE - Use this image as visual style reference for the entire scene composition, lighting, colors, and atmosphere';
+            referenceImages.unshift(processedSceneRef);
+            characterDescriptions.unshift(sceneRefInstruction);
+            console.log(`[generate-scene-images] Scene reference image added successfully (mode: ${safeMode(sceneReferenceMode)})! Total refs now: ${referenceImages.length}`);
           } else {
-            console.log(
-              `[generate-scene-images] No scene reference image provided`,
-            );
+            console.log(`[generate-scene-images] Scene reference image processing FAILED`);
           }
-
-          prompt = buildScenePrompt(
-            styleId,
-            scene,
-            charactersInScene,
-            location,
-            landmarksInScene,
-            propsInScene,
-          );
-          break;
+        } else {
+          console.log(`[generate-scene-images] No scene reference image provided`);
         }
 
-        case "character": {
-          const { character } = requestData;
-          if (!character) {
-            throw new Error(
-              "Se requiere character para generar character sheet",
-            );
+        prompt = buildScenePrompt(styleId, scene, charactersInScene, location, landmarksInScene, propsInScene);
+        break;
+      }
+
+      case 'character': {
+        const { character } = requestData;
+        if (!character) {
+          throw new Error('Se requiere character para generar character sheet');
+        }
+        prompt = buildCharacterSheetPrompt(styleId, character);
+        break;
+      }
+
+      case 'prop': {
+        const { prop } = requestData;
+        if (!prop?.name || !prop?.visualDescription) {
+          throw new Error('Se requiere prop {name, kind, visualDescription} para generar la hoja de referencia');
+        }
+        const propKind: 'location' | 'prop' = prop.kind === 'location' ? 'location' : 'prop';
+        prompt = buildPropSheetPrompt(styleId, { name: prop.name, kind: propKind, visualDescription: prop.visualDescription });
+
+        // Fotos reales opcionales del usuario como referencia adicional
+        if (Array.isArray(prop.referenceImages) && prop.referenceImages.length > 0) {
+          for (let j = 0; j < Math.min(prop.referenceImages.length, 2); j++) {
+            const processed = takeImage(`prop.referenceImages[${j}]`);
+            if (processed) {
+              referenceImages.push(processed);
+              characterDescriptions.push(`PROP REFERENCE - ${prop.name}: ${prop.visualDescription}. Render this ${propKind === 'location' ? 'place' : 'object'} EXACTLY as shown in this photo.`);
+            }
           }
-          prompt = buildCharacterSheetPrompt(styleId, character);
-          break;
+        }
+        break;
+      }
+
+      case 'cover': {
+        // IGUAL QUE SCENE: usar characters y sceneReferenceImage
+        const { title, protagonist, location, characters, sceneReferenceImage, customPrompt, props } = requestData;
+        if (!title || !protagonist || !location) {
+          throw new Error('Se requiere title, protagonist y location para generar portada');
         }
 
-        case "cover": {
-          // IGUAL QUE SCENE: usar characters y sceneReferenceImage
-          const {
-            title,
-            protagonist,
-            location,
-            characters,
-            sceneReferenceImage,
-            customPrompt,
-            props,
-          } = requestData;
-          if (!title || !protagonist || !location) {
-            throw new Error(
-              "Se requiere title, protagonist y location para generar portada",
-            );
-          }
+        const propsInCover: Prop[] = props || [];
 
-          const propsInCover: Prop[] = props || [];
+        console.log(
+          `[generate-scene-images] COVER - characters=${characters?.length || 0}, props=${propsInCover.length}, styleRef=${!!sceneReferenceImage}`,
+        );
 
-          console.log(
-            `[generate-scene-images] COVER - characters count: ${
-              characters?.length || 0
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] COVER - characters with refs: ${
-              characters?.filter((c: { referenceImage?: unknown }) =>
-                c.referenceImage
-              )?.length || 0
-            }`,
-          );
-          console.log(
-            `[generate-scene-images] COVER - props count: ${propsInCover.length}`,
-          );
-          console.log(
-            `[generate-scene-images] COVER - sceneReferenceImage exists: ${!!sceneReferenceImage}`,
-          );
+        const propPromptLines = buildPropReferenceLines(propsInCover);
 
-          const propPromptLines = buildPropReferenceLines(propsInCover);
-
-          if (customPrompt) {
-            const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-              ILLUSTRATION_STYLES["storybook"];
-            prompt = `${stylePrompt}
+        if (customPrompt) {
+          const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+          prompt = `${stylePrompt}
 
 PORTADA DEL CUENTO: "${title}"
 
-Ubicación: ${location.name}. ${location.description || ""}
+Ubicación: ${location.name}. ${location.description || ''}
 
 ${customPrompt}${propPromptLines}
 
@@ -1246,252 +1094,161 @@ Instrucciones críticas:
 - Escena brillante y bien iluminada
 - Imágenes apropiadas para niños 5-10 años
 - Atmósfera cálida y acogedora`;
-            console.log(`[generate-scene-images] Cover using custom prompt`);
-          } else {
-            prompt = buildCoverPrompt(styleId, title, protagonist, location) +
-              propPromptLines;
-          }
+          console.log(`[generate-scene-images] Cover using custom prompt`);
+        } else {
+          prompt = buildCoverPrompt(styleId, title, protagonist, location) + propPromptLines;
+        }
 
-          const charactersInCover: Character[] = characters || [];
-          const charactersWithImages = charactersInCover.filter((c) =>
-            c.referenceImage
-          );
+        const charactersInCover: Character[] = characters || [];
+        const charactersWithImages = charactersInCover
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
 
-          console.log(
-            `[generate-scene-images] Cover characters with reference images: ${
-              charactersWithImages.map((c) =>
-                `${c.name} (${isUrl(c.referenceImage!) ? "URL" : "base64"})`
-              ).join(", ") || "none"
-            }`,
-          );
+        console.log(`[generate-scene-images] Cover characters with reference images: ${charactersWithImages.length}`);
 
-          console.log(
-            `[generate-scene-images] Cover characters with reference images to process:`,
-          );
-          charactersWithImages.forEach((c, i) => {
-            console.log(
-              `  ${i + 1}. ${c.name}: type=${
-                isUrl(c.referenceImage!) ? "URL" : "base64"
-              }, length=${c.referenceImage!.length}, prefix=${
-                c.referenceImage!.slice(0, 80)
-              }`,
-            );
-          });
+        const processedResults = charactersWithImages.map(({ c, i }) => ({
+          image: takeImage(`characters[${i}].referenceImage`),
+          description: `${c.name}: ${c.visualDescription}`,
+        }));
 
-          const processedResults = await Promise.all(
-            charactersWithImages.map(async (c) => {
-              console.log(
-                `[generate-scene-images] Processing cover reference for ${c.name}...`,
-              );
-              const image = await processReferenceImage(c.referenceImage!);
-              console.log(
-                `[generate-scene-images] Processed cover ${c.name}: result length=${image.length}, valid=${
-                  isValidImageBase64(image)
-                }`,
-              );
-              return {
-                image,
-                description: `${c.name}: ${c.visualDescription}`,
-              };
-            }),
-          );
+        const validResults = processedResults.filter(r => r.image !== '');
+        referenceImages = validResults.map(r => r.image);
+        characterDescriptions = validResults.map(r => r.description);
 
-          console.log(
-            `[generate-scene-images] Cover processing complete. Results:`,
-          );
-          processedResults.forEach((r, i) => {
-            console.log(
-              `  ${i + 1}. ${
-                r.description.slice(0, 50)
-              }: image length=${r.image.length}, valid=${
-                isValidImageBase64(r.image)
-              }`,
-            );
-          });
+        console.log(`[generate-scene-images] Cover reference images processed: ${referenceImages.length}/${charactersWithImages.length}`);
 
-          const validResults = processedResults.filter((r) => r.image !== "");
-          referenceImages = validResults.map((r) => r.image);
-          characterDescriptions = validResults.map((r) => r.description);
-
-          console.log(
-            `[generate-scene-images] Cover reference images processed: ${referenceImages.length}/${charactersWithImages.length}`,
-          );
-
-          // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
-          const coverPropRefImages: string[] = [];
-          const coverPropRefDescriptions: string[] = [];
-          if (propsInCover.length > 0) {
-            for (const pr of propsInCover) {
-              if (pr.referenceImages && pr.referenceImages.length > 0) {
-                console.log(
-                  `[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for "${pr.name}"`,
-                );
-                for (const refImg of pr.referenceImages.slice(0, 2)) {
-                  const processedPropRef = await processReferenceImage(refImg);
-                  if (processedPropRef) {
-                    coverPropRefImages.push(processedPropRef);
-                    coverPropRefDescriptions.push(
-                      `PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`,
-                    );
-                    console.log(
-                      `[generate-scene-images] Cover prop ref image for "${pr.name}" added.`,
-                    );
-                  }
+        // Process prop reference images (reuses landmark processing branch, cap 2 per prop)
+        const coverPropRefImages: string[] = [];
+        const coverPropRefDescriptions: string[] = [];
+        if (propsInCover.length > 0) {
+          for (const [prIndex, pr] of propsInCover.entries()) {
+            if (pr.referenceImages && pr.referenceImages.length > 0) {
+              console.log(`[generate-scene-images] Processing ${pr.referenceImages.length} cover prop reference images for prop ${prIndex} (${charCount(pr.name)})`);
+              for (let j = 0; j < Math.min(pr.referenceImages.length, 2); j++) {
+                const processedPropRef = takeImage(`props[${prIndex}].referenceImages[${j}]`);
+                if (processedPropRef) {
+                  coverPropRefImages.push(processedPropRef);
+                  coverPropRefDescriptions.push(`PROP REFERENCE - ${pr.name}: ${pr.visualDescription}. Render this prop EXACTLY as shown in this photo.`);
+                  console.log(`[generate-scene-images] Cover prop ref image for prop ${prIndex} added.`);
                 }
               }
             }
           }
-
-          // Enforce cap: characters + props (+ cover-style + refine source) <= 12 (covers have no landmarks today).
-          // In refine mode, slot 0 is reserved for refine.sourceImage so the budget shrinks to 11.
-          // Trim order: cover-style ref → props → characters (characters trimmed only in refine
-          // mode, since the refine source already encodes their appearance; non-refine preserves
-          // the historical behavior of never dropping characters).
-          const COVER_HARD_CAP = 12;
-          const COVER_MAX_PROCESSED = refine
-            ? COVER_HARD_CAP - 1
-            : COVER_HARD_CAP;
-          const coverWillAddStyleRef = !!sceneReferenceImage;
-          const coverStyleRefBudgetCost = coverWillAddStyleRef ? 1 : 0;
-          const coverInitialTotal = referenceImages.length +
-            coverPropRefImages.length + coverStyleRefBudgetCost;
-          let coverDroppedStyleRef = false;
-          const coverDroppedPropNames: string[] = [];
-          const coverDroppedCharacterNames: string[] = [];
-
-          if (coverInitialTotal > COVER_MAX_PROCESSED) {
-            let overflow = coverInitialTotal - COVER_MAX_PROCESSED;
-
-            if (overflow > 0 && coverWillAddStyleRef) {
-              coverDroppedStyleRef = true;
-              overflow -= 1;
-              console.warn(
-                `[generate-scene-images] Refine/cap pressure: dropping cover style reference image to keep refine source in slot 0`,
-              );
-            }
-
-            while (overflow > 0 && coverPropRefImages.length > 0) {
-              coverPropRefImages.pop();
-              const droppedDesc = coverPropRefDescriptions.pop() ?? "";
-              const propName =
-                droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ??
-                  "unknown prop";
-              coverDroppedPropNames.push(propName);
-              overflow -= 1;
-            }
-
-            if (refine) {
-              while (overflow > 0 && referenceImages.length > 0) {
-                referenceImages.pop();
-                const droppedDesc = characterDescriptions.pop() ?? "";
-                const charName = droppedDesc.split(":")[0]?.trim() ||
-                  "unknown character";
-                coverDroppedCharacterNames.push(charName);
-                overflow -= 1;
-              }
-            }
-
-            if (coverDroppedPropNames.length > 0) {
-              console.warn(
-                `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${
-                  coverDroppedPropNames.join(", ")
-                }`,
-              );
-            }
-            if (coverDroppedCharacterNames.length > 0) {
-              console.warn(
-                `[generate-scene-images] Trimmed cover character reference image(s) (refine mode) to stay under ${COVER_MAX_PROCESSED}-image cap: ${
-                  coverDroppedCharacterNames.join(", ")
-                }`,
-              );
-            }
-
-            const finalCount = referenceImages.length +
-              coverPropRefImages.length +
-              (coverWillAddStyleRef && !coverDroppedStyleRef ? 1 : 0);
-            console.warn(
-              `[generate-scene-images] Trimmed cover reference images to stay under ${COVER_MAX_PROCESSED}-image cap`,
-              {
-                initialTotal: coverInitialTotal,
-                droppedStyleRef: coverDroppedStyleRef,
-                droppedProps: coverDroppedPropNames.length,
-                droppedCharacters: coverDroppedCharacterNames.length,
-                droppedLandmarks: 0,
-                finalCount,
-                refine: !!refine,
-              },
-            );
-          }
-
-          referenceImages.push(...coverPropRefImages);
-          characterDescriptions.push(...coverPropRefDescriptions);
-
-          if (sceneReferenceImage && !coverDroppedStyleRef) {
-            console.log(
-              `[generate-scene-images] Cover style reference image received! Type: ${
-                isUrl(sceneReferenceImage) ? "URL" : "base64"
-              }, Length: ${sceneReferenceImage.length}, Prefix: ${
-                sceneReferenceImage.slice(0, 30)
-              }`,
-            );
-            const processedSceneRef = await processReferenceImage(
-              sceneReferenceImage,
-            );
-            if (processedSceneRef) {
-              referenceImages.unshift(processedSceneRef);
-              characterDescriptions.unshift(
-                "COVER STYLE REFERENCE - Use this image as visual style reference for colors, lighting, composition, and atmosphere",
-              );
-              console.log(
-                `[generate-scene-images] Cover style reference image added successfully! Total refs now: ${referenceImages.length}`,
-              );
-            } else {
-              console.log(
-                `[generate-scene-images] Cover style reference image processing FAILED`,
-              );
-            }
-          } else {
-            console.log(
-              `[generate-scene-images] No cover style reference image provided`,
-            );
-          }
-          break;
         }
 
-        case "end": {
-          const {
-            referenceImage: endReferenceImage,
-            customPrompt: endCustomPrompt,
-            characters: endCharacters,
-          } = requestData;
+        // Enforce cap: characters + props (+ cover-style + refine source) <= 12 (covers have no landmarks today).
+        // In refine mode, slot 0 is reserved for refine.sourceImage so the budget shrinks to 11.
+        // Trim order: cover-style ref → props → characters (characters trimmed only in refine
+        // mode, since the refine source already encodes their appearance; non-refine preserves
+        // the historical behavior of never dropping characters).
+        const COVER_HARD_CAP = 12;
+        const COVER_MAX_PROCESSED = refine ? COVER_HARD_CAP - 1 : COVER_HARD_CAP;
+        const coverWillAddStyleRef = !!sceneReferenceImage;
+        const coverStyleRefBudgetCost = coverWillAddStyleRef ? 1 : 0;
+        const coverInitialTotal =
+          referenceImages.length + coverPropRefImages.length + coverStyleRefBudgetCost;
+        let coverDroppedStyleRef = false;
+        const coverDroppedPropNames: string[] = [];
+        const coverDroppedCharacterNames: string[] = [];
 
-          const charactersInEnd: Character[] = endCharacters || [];
-          const charactersWithImages = charactersInEnd.filter((c) =>
-            c.referenceImage
+        if (coverInitialTotal > COVER_MAX_PROCESSED) {
+          let overflow = coverInitialTotal - COVER_MAX_PROCESSED;
+
+          if (overflow > 0 && coverWillAddStyleRef) {
+            coverDroppedStyleRef = true;
+            overflow -= 1;
+            console.warn(
+              `[generate-scene-images] Refine/cap pressure: dropping cover style reference image to keep refine source in slot 0`
+            );
+          }
+
+          while (overflow > 0 && coverPropRefImages.length > 0) {
+            coverPropRefImages.pop();
+            const droppedDesc = coverPropRefDescriptions.pop() ?? '';
+            const propName = droppedDesc.match(/PROP REFERENCE - ([^:]+):/)?.[1] ?? 'unknown prop';
+            coverDroppedPropNames.push(propName);
+            overflow -= 1;
+          }
+
+          if (refine) {
+            while (overflow > 0 && referenceImages.length > 0) {
+              referenceImages.pop();
+              const droppedDesc = characterDescriptions.pop() ?? '';
+              const charName = droppedDesc.split(':')[0]?.trim() || 'unknown character';
+              coverDroppedCharacterNames.push(charName);
+              overflow -= 1;
+            }
+          }
+
+          if (coverDroppedPropNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed cover prop reference image(s) to stay under ${COVER_MAX_PROCESSED}-image cap: ${listShape(coverDroppedPropNames)}`
+            );
+          }
+          if (coverDroppedCharacterNames.length > 0) {
+            console.warn(
+              `[generate-scene-images] Trimmed cover character reference image(s) (refine mode) to stay under ${COVER_MAX_PROCESSED}-image cap: ${listShape(coverDroppedCharacterNames)}`
+            );
+          }
+
+          const finalCount =
+            referenceImages.length +
+            coverPropRefImages.length +
+            (coverWillAddStyleRef && !coverDroppedStyleRef ? 1 : 0);
+          console.warn(
+            `[generate-scene-images] Trimmed cover reference images to stay under ${COVER_MAX_PROCESSED}-image cap`,
+            {
+              initialTotal: coverInitialTotal,
+              droppedStyleRef: coverDroppedStyleRef,
+              droppedProps: coverDroppedPropNames.length,
+              droppedCharacters: coverDroppedCharacterNames.length,
+              droppedLandmarks: 0,
+              finalCount,
+              refine: !!refine,
+            }
           );
+        }
 
-          console.log(
-            `[generate-scene-images] END - characters count: ${charactersInEnd.length}`,
-          );
-          console.log(
-            `[generate-scene-images] END - characters with refs: ${charactersWithImages.length}`,
-          );
+        referenceImages.push(...coverPropRefImages);
+        characterDescriptions.push(...coverPropRefDescriptions);
 
-          const characterDescriptionsBlock = charactersInEnd.length > 0
-            ? `\n\nPersonajes en la imagen final:\n${
-              charactersInEnd.map((c) => `- ${c.name}: ${c.visualDescription}`)
-                .join("\n")
-            }`
-            : "";
+        if (sceneReferenceImage && !coverDroppedStyleRef) {
+          const processedSceneRef = takeImage('sceneReferenceImage');
+          if (processedSceneRef) {
+            referenceImages.unshift(processedSceneRef);
+            characterDescriptions.unshift('COVER STYLE REFERENCE - Use this image as visual style reference for colors, lighting, composition, and atmosphere');
+            console.log(`[generate-scene-images] Cover style reference image added successfully! Total refs now: ${referenceImages.length}`);
+          } else {
+            console.log(`[generate-scene-images] Cover style reference image processing FAILED`);
+          }
+        } else {
+          console.log(`[generate-scene-images] No cover style reference image provided`);
+        }
+        break;
+      }
 
-          const characterReferenceInstruction = charactersWithImages.length > 0
-            ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
-            : "";
+      case 'end': {
+        const { referenceImage: endReferenceImage, customPrompt: endCustomPrompt, characters: endCharacters } = requestData;
 
-          if (endCustomPrompt) {
-            const stylePrompt = ILLUSTRATION_STYLES[styleId] ||
-              ILLUSTRATION_STYLES["storybook"];
-            prompt = `${stylePrompt}
+        const charactersInEnd: Character[] = endCharacters || [];
+        const charactersWithImages = charactersInEnd
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.referenceImage);
+
+        console.log(`[generate-scene-images] END - characters count: ${charactersInEnd.length}`);
+        console.log(`[generate-scene-images] END - characters with refs: ${charactersWithImages.length}`);
+
+        const characterDescriptionsBlock = charactersInEnd.length > 0
+          ? `\n\nPersonajes en la imagen final:\n${charactersInEnd.map(c => `- ${c.name}: ${c.visualDescription}`).join('\n')}`
+          : '';
+
+        const characterReferenceInstruction = charactersWithImages.length > 0
+          ? `\n\nIMPORTANT: Use the reference images provided to maintain EXACT visual consistency for each character. The characters must look IDENTICAL to their reference images in terms of: clothing, hair color/style, facial features, body proportions, and any distinctive features.`
+          : '';
+
+        if (endCustomPrompt) {
+          const stylePrompt = ILLUSTRATION_STYLES[styleId] || ILLUSTRATION_STYLES['storybook'];
+          prompt = `${stylePrompt}
 
 IMAGEN FINAL "FIN" PARA CUENTO INFANTIL
 
@@ -1504,226 +1261,174 @@ Instrucciones críticas:
 - Imágenes apropiadas para niños 5-10 años
 - **ABSOLUTAMENTE SIN TEXTO, SIN PALABRAS, SIN LETRAS EN LA IMAGEN**
 - Puede ser abstracta o con elementos del cuento`;
-            console.log(`[generate-scene-images] End using custom prompt`);
-          } else {
-            prompt = buildEndPrompt(styleId) + characterDescriptionsBlock +
-              characterReferenceInstruction;
-          }
-
-          // Process character reference images for the end (mirrors the scene case pattern)
-          if (charactersWithImages.length > 0) {
-            const processedResults = await Promise.all(
-              charactersWithImages.map(async (c) => {
-                const image = await processReferenceImage(c.referenceImage!);
-                return {
-                  image,
-                  description: `${c.name}: ${c.visualDescription}`,
-                };
-              }),
-            );
-
-            const validResults = processedResults.filter((r) => r.image !== "");
-            let endCharRefImages = validResults.map((r) => r.image);
-            let endCharRefDescriptions = validResults.map((r) => r.description);
-
-            // Enforce 12-image cap on end character references (Gemini 14-image ceiling leaves
-            // headroom for system parts). In refine mode the cap shrinks to 11 to reserve slot 0
-            // for refine.sourceImage. Trim from the end (lowest priority) and emit a warn naming
-            // the dropped reference(s).
-            const END_HARD_CAP = 12;
-            const END_MAX_PROCESSED = refine ? END_HARD_CAP - 1 : END_HARD_CAP;
-            if (endCharRefImages.length > END_MAX_PROCESSED) {
-              const initialTotal = endCharRefImages.length;
-              const droppedNames = endCharRefDescriptions
-                .slice(END_MAX_PROCESSED)
-                .map((d) => d.split(":")[0] || "unknown character");
-              endCharRefImages = endCharRefImages.slice(0, END_MAX_PROCESSED);
-              endCharRefDescriptions = endCharRefDescriptions.slice(
-                0,
-                END_MAX_PROCESSED,
-              );
-              console.warn(
-                `[generate-scene-images] Trimmed end character reference image(s) to stay under ${END_MAX_PROCESSED}-image cap: ${
-                  droppedNames.join(", ")
-                }`,
-                {
-                  initialTotal,
-                  finalCount: endCharRefImages.length,
-                  dropped: initialTotal - endCharRefImages.length,
-                  refine: !!refine,
-                },
-              );
-            }
-
-            referenceImages.push(...endCharRefImages);
-            characterDescriptions.push(...endCharRefDescriptions);
-            console.log(
-              `[generate-scene-images] End character references added: ${endCharRefImages.length}`,
-            );
-          }
-
-          if (endReferenceImage) {
-            // In refine mode, drop the end-style reference if it would push us past the
-            // 11-slot budget for non-source refs (slot 0 reserved for refine.sourceImage).
-            const endNonSourceBudget = refine ? 11 : 12;
-            if (referenceImages.length >= endNonSourceBudget) {
-              console.warn(
-                `[generate-scene-images] Dropping end style reference image to stay under ${
-                  endNonSourceBudget + (refine ? 1 : 0)
-                }-image cap (refine=${!!refine})`,
-              );
-            } else {
-              console.log(
-                `[generate-scene-images] End reference image type: ${
-                  isUrl(endReferenceImage) ? "URL" : "base64"
-                }`,
-              );
-              const processedImage = await processReferenceImage(
-                endReferenceImage,
-              );
-              if (processedImage) {
-                referenceImages.push(processedImage);
-                characterDescriptions.push(
-                  "END STYLE REFERENCE - Use this image as visual style reference for the final image",
-                );
-                console.log(
-                  `[generate-scene-images] End reference image processed successfully`,
-                );
-              }
-            }
-          }
-          break;
-        }
-
-        default:
-          throw new Error(
-            `Tipo no válido: ${type}. Use: scene, character, cover, end`,
-          );
-      }
-
-      if (refine) {
-        prompt = `${prompt}\n\n${
-          REFINE_INSTRUCTION_TEMPLATE.replace("{feedback}", refine.feedback)
-        }`;
-      }
-
-      console.log(
-        `[generate-scene-images] Prompt (${type}):`,
-        prompt.slice(0, 300) + "...",
-      );
-      console.log(
-        `[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${effectiveCount})`,
-      );
-      console.log(
-        `[generate-scene-images] FINAL STATE - Character descriptions: ${
-          characterDescriptions.join(" | ") || "none"
-        }`,
-      );
-      referenceImages.forEach((img, idx) => {
-        console.log(
-          `[generate-scene-images] FINAL ref image ${idx}: length=${
-            img?.length || 0
-          }, isValid=${isValidImageBase64(img)}, prefix=${
-            img?.slice(0, 20) || "empty"
-          }`,
-        );
-      });
-
-      const promises = [];
-      for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
-        promises.push(
-          generateImage(
-            apiKey,
-            prompt,
-            i,
-            referenceImages,
-            characterDescriptions,
-            refine,
-          ),
-        );
-      }
-
-      const settledResults = await Promise.allSettled(promises);
-
-      const images: string[] = [];
-      const errors: string[] = [];
-
-      settledResults.forEach((result, i) => {
-        if (result.status === "fulfilled" && isValidImageBase64(result.value)) {
-          images.push(result.value);
-        } else if (result.status === "rejected") {
-          console.error(
-            `[generate-scene-images] Variation ${i} failed:`,
-            result.reason?.message || result.reason,
-          );
-          errors.push(result.reason?.message || String(result.reason));
+          console.log(`[generate-scene-images] End using custom prompt`);
         } else {
-          console.log(
-            `[generate-scene-images] Variation ${i} returned empty image`,
-          );
+          prompt = buildEndPrompt(styleId) + characterDescriptionsBlock + characterReferenceInstruction;
         }
-      });
 
-      console.log(
-        `[generate-scene-images] ${images.length}/${count} imágenes válidas generadas`,
-      );
-      if (errors.length > 0) {
-        console.log(`[generate-scene-images] Errors: ${errors.join(" | ")}`);
+        // Process character reference images for the end (mirrors the scene case pattern)
+        if (charactersWithImages.length > 0) {
+          const processedResults = charactersWithImages.map(({ c, i }) => ({
+            image: takeImage(`characters[${i}].referenceImage`),
+            description: `${c.name}: ${c.visualDescription}`,
+          }));
+
+          const validResults = processedResults.filter(r => r.image !== '');
+          let endCharRefImages = validResults.map(r => r.image);
+          let endCharRefDescriptions = validResults.map(r => r.description);
+
+          // Enforce 12-image cap on end character references (Gemini 14-image ceiling leaves
+          // headroom for system parts). In refine mode the cap shrinks to 11 to reserve slot 0
+          // for refine.sourceImage. Trim from the end (lowest priority) and emit a warn naming
+          // the dropped reference(s).
+          const END_HARD_CAP = 12;
+          const END_MAX_PROCESSED = refine ? END_HARD_CAP - 1 : END_HARD_CAP;
+          if (endCharRefImages.length > END_MAX_PROCESSED) {
+            const initialTotal = endCharRefImages.length;
+            const droppedNames = endCharRefDescriptions
+              .slice(END_MAX_PROCESSED)
+              .map(d => d.split(':')[0] || 'unknown character');
+            endCharRefImages = endCharRefImages.slice(0, END_MAX_PROCESSED);
+            endCharRefDescriptions = endCharRefDescriptions.slice(0, END_MAX_PROCESSED);
+            console.warn(
+              `[generate-scene-images] Trimmed end character reference image(s) to stay under ${END_MAX_PROCESSED}-image cap: ${listShape(droppedNames)}`,
+              {
+                initialTotal,
+                finalCount: endCharRefImages.length,
+                dropped: initialTotal - endCharRefImages.length,
+                refine: !!refine,
+              }
+            );
+          }
+
+          referenceImages.push(...endCharRefImages);
+          characterDescriptions.push(...endCharRefDescriptions);
+          console.log(`[generate-scene-images] End character references added: ${endCharRefImages.length}`);
+        }
+
+        if (endReferenceImage) {
+          // In refine mode, drop the end-style reference if it would push us past the
+          // 11-slot budget for non-source refs (slot 0 reserved for refine.sourceImage).
+          const endNonSourceBudget = refine ? 11 : 12;
+          if (referenceImages.length >= endNonSourceBudget) {
+            console.warn(
+              `[generate-scene-images] Dropping end style reference image to stay under ${endNonSourceBudget + (refine ? 1 : 0)}-image cap (refine=${!!refine})`
+            );
+          } else {
+            const processedImage = takeImage('referenceImage');
+            if (processedImage) {
+              referenceImages.push(processedImage);
+              characterDescriptions.push('END STYLE REFERENCE - Use this image as visual style reference for the final image');
+              console.log(`[generate-scene-images] End reference image processed successfully`);
+            }
+          }
+        }
+        break;
       }
 
-      if (images.length === 0 && errors.length > 0) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: errors[0],
-            errors,
-            images: [],
-            referenceImagesCount: referenceImages.length,
-          }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
-        );
+      default:
+        throw new Error(`Tipo no válido: ${type}. Use: scene, character, prop, cover, end`);
+    }
+
+    if (refine) {
+      // Replacement FUNCTION, not string: `$&`, `$'` and `` $` `` in user
+      // feedback are otherwise interpreted as substitution patterns and
+      // silently garble the refine instruction.
+      prompt = `${prompt}\n\n${REFINE_INSTRUCTION_TEMPLATE.replace('{feedback}', () => refine.feedback)}`;
+    }
+
+    console.log(`[generate-scene-images] Prompt (${safeType(type)}): ${charCount(prompt)}`);
+    console.log(`[generate-scene-images] FINAL STATE - Passing ${referenceImages.length} reference images to Gemini (refine=${!!refine}, effectiveCount=${Number(effectiveCount)})`);
+
+    const promises = [];
+    for (let i = 0; i < Math.min(effectiveCount, 4); i++) {
+      promises.push(generateImage(prompt, i, referenceImages, characterDescriptions, refine, modelTier, config));
+    }
+
+    const settledResults = await Promise.allSettled(promises);
+
+    const images: string[] = [];
+    const errors: string[] = [];
+
+    settledResults.forEach((result, i) => {
+      if (result.status === 'fulfilled' && isValidImageBase64(result.value)) {
+        images.push(result.value);
+      } else if (result.status === 'rejected') {
+        // Redacted for the log; the client-facing `errors` array keeps the
+        // original message, which never leaves the JSON response body.
+        console.error(`[generate-scene-images] Variation ${i} failed: ${describeError(result.reason)}`);
+        errors.push(result.reason?.message || String(result.reason));
+      } else {
+        console.log(`[generate-scene-images] Variation ${i} returned empty image`);
       }
+    });
 
-      return new Response(
-        JSON.stringify({
-          success: images.length > 0,
-          images,
-          validCount: images.length,
-          requestedCount: count,
-          prompt: prompt.slice(0, 500),
-          referenceImagesCount: referenceImages.length,
-          errors: errors.length > 0 ? errors : undefined,
-          charactersDetected: type === "scene"
-            ? (requestData.characters || [])
-              .filter((c: Character) =>
-                detectCharactersInScene(requestData.scene, [c]).length > 0
-              )
-              .map((c: Character) => c.name)
-            : undefined,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    } catch (error: unknown) {
-      console.error("[generate-scene-images] Error:", error);
+    console.log(`[generate-scene-images] ${images.length}/${Number(count)} imágenes válidas generadas`);
+    if (errors.length > 0) {
+      // Redacted: provider errors quote the request URL. The unredacted text
+      // still goes to the client in the JSON body, which is not a log sink.
+      console.log(`[generate-scene-images] Errors: ${listShape(errors)}`);
+    }
 
+    if (images.length === 0 && errors.length > 0) {
+      // Propagar rate-limit como 429 para que el cliente pueda bajar su concurrencia
+      const isRateLimited = errors.some((e) => e.includes('429') || /rate.?limit/i.test(e));
       return new Response(
         JSON.stringify({
           success: false,
-          error: error instanceof Error
-            ? error.message
-            : "Error generando imágenes",
+          error: errors[0],
+          errors,
           images: [],
+          skippedImages,
+          referenceImagesCount: referenceImages.length,
         }),
         {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+          status: isRateLimited ? 429 : 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
       );
     }
+
+    return new Response(
+      JSON.stringify({
+        success: images.length > 0,
+        images,
+        skippedImages,
+        validCount: images.length,
+        requestedCount: count,
+        model: resolveModel(modelTier, config),
+        modelTier,
+        prompt: prompt.slice(0, 500),
+        referenceImagesCount: referenceImages.length,
+        errors: errors.length > 0 ? errors : undefined,
+        charactersDetected: type === 'scene' ?
+          (requestData.characters || [])
+            .filter((c: Character) => detectCharactersInScene(requestData.scene, [c]).length > 0)
+            .map((c: Character) => c.name)
+          : undefined,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+
+  } catch (error: unknown) {
+    console.error(`[generate-scene-images] Error: ${describeError(error)}`);
+
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Error generando imágenes',
+        images: [],
+        // Additive, and only when there is something to report — see the story
+        // handler. Existing fields, codes and semantics unchanged.
+        ...(skippedImages.length > 0 ? { skippedImages } : {}),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
   };
 }
