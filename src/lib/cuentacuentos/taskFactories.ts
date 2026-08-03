@@ -516,7 +516,14 @@ export function makeCoverTask(
         setSelectedCover(null);
       }
 
-      return { coverOptions: nextOptions };
+      // PH/G6 — El patch lleva la selección JUNTO al array completo. La cola
+      // mergea por presencia de clave sobre el snapshot generado anterior, que
+      // no puede enterarse de una selección que cambió por su cuenta: sin esta
+      // clave, persistir el append reescribe el `selectedCover` viejo (todavía
+      // `null`) y la recuperación devuelve las cuatro opciones sin ninguna
+      // elegida. Se lee la ref DESPUÉS de la limpieza, así que el append lleva
+      // la selección válida que sobrevivió y el reemplazo lleva `null`.
+      return { coverOptions: nextOptions, selectedCover: selectedCoverRef.current };
     },
     getLiveIdentity,
     enqueueGeneratedSnapshot,
@@ -587,7 +594,8 @@ export function makeEndTask(
         setSelectedEnd(null);
       }
 
-      return { endOptions: nextOptions };
+      // PH/G6 — Simétrico a `makeCoverTask`; ver el comentario de allá.
+      return { endOptions: nextOptions, selectedEnd: selectedEndRef.current };
     },
     getLiveIdentity,
     enqueueGeneratedSnapshot,
