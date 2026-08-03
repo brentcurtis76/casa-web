@@ -9,16 +9,22 @@
  *     → escritura del hook de producción      (observada en el upsert)
  *     → DESMONTAJE y REMONTAJE reales
  *     → recuperación real del borrador        (SIN atajo `initialStory`)
- *     → las cuatro opciones se leen en pantalla, en orden.
+ *     → las cuatro opciones se leen en pantalla, en orden, y la que el
+ *       usuario había elegido sigue ELEGIDA.
  *
- * ALCANCE de la selección: dentro de la sesión viva, el append la preserva y
- * eso se afirma acá (índice 1 antes y después de agregar). A TRAVÉS de la
- * recarga lo que se afirma es que el ORDEN se conservó de punta a punta —la
- * entrada i de la fila es la opción i en pantalla, y las dos primeras son las
- * del lote inicial—, así que el índice elegido sigue denotando la misma
- * imagen. La columna `selected_cover` sólo la escriben "sus propios sitios"
- * (el envelope autoritativo / el guardado manual), no el acto de elegir: es
- * diseño PREEXISTENTE, ajeno a PH, y PH no lo toca.
+ * ALCANCE de la selección: se afirma en los DOS tramos. Dentro de la sesión
+ * viva el append la preserva (índice 1 antes y después de agregar). A TRAVÉS
+ * de la recarga se afirma que la MISMA opción sigue seleccionada en la
+ * pantalla recuperada: el patch generado que persiste el array completo lleva
+ * también la selección viva, así que la fila la guarda y la recuperación la
+ * restituye. Que la imagen siga estando en el mismo índice del array NO
+ * sustituye a esa aserción —el orden se conserva aunque el cableado de la
+ * selección se corte, así que por sí solo es una aserción que no puede fallar
+ * (D7)—; por eso se afirman las dos cosas.
+ *
+ * Lo que sigue FUERA de alcance (PH-F2, preexistente): elegir una opción y no
+ * hacer nada más no encola persistencia. Acá la secuencia es elegir → agregar,
+ * y el append sí encola el snapshot generado.
  *
  * La fila que se recarga NO la redacta este test: `ctl.persistDraftRow` hace
  * que el borde guarde el payload que escribió producción y lo devuelva clonado
@@ -31,6 +37,11 @@
  *
  * BASE-RED en `8ceec7c`: allá el segundo lote REEMPLAZA, así que se persisten
  * y se recuperan dos opciones, no cuatro.
+ *
+ * BASE-RED en `9d96c41`: allá el patch generado sólo lleva `coverOptions`, así
+ * que la cola mergea la selección del snapshot anterior —todavía `null`— y la
+ * pantalla recuperada muestra las cuatro opciones con NINGUNA elegida
+ * (`selectedIndex()` da -1).
  */
 
 import React from 'react';
@@ -140,7 +151,7 @@ function selectedIndex(): number {
 }
 
 describe('T-H.7 — el append persiste y sobrevive a una recarga real', () => {
-  it('2 → 4 opciones: el hook escribe el array COMPLETO —las viejas primero— y el remontaje sin `initialStory` las recupera en orden', async () => {
+  it('2 → 4 opciones: el hook escribe el array COMPLETO —las viejas primero— y la selección viva, y el remontaje sin `initialStory` recupera las cuatro en orden con la misma opción elegida', async () => {
     const first = render(
       <CuentacuentoEditor
         context={CONTEXT}
@@ -191,6 +202,9 @@ describe('T-H.7 — el append persiste y sobrevive a una recarga real', () => {
     expect(persistidas.slice(0, 2)).toEqual(pathsAntes);
     // Contrato PB: nada viaja inline.
     for (const v of persistidas) expect(v.startsWith('data:')).toBe(false);
+    // La fila guardó también la SELECCIÓN viva. Sin esto la cola mergearía el
+    // `selected_cover` del snapshot previo, que sigue en `null`.
+    expect(persistedDraft()?.selected_cover).toBe(1);
 
     // --- Desmontaje REAL: se pierde todo el estado en memoria ---------------
     first.unmount();
@@ -222,6 +236,10 @@ describe('T-H.7 — el append persiste y sobrevive a una recarga real', () => {
     // La imagen que el usuario tenía elegida (índice 1) sigue estando en el
     // índice 1: agregar por la derecha no reindexó nada a través de la recarga.
     expect(recargadas[1].endsWith(pathsAntes[1])).toBe(true);
+    // Y —lo que el orden NO puede probar— esa misma opción sigue ELEGIDA en la
+    // pantalla recuperada. Si el patch generado no llevara la selección viva,
+    // acá no habría ninguna marcada y esto daría -1.
+    expect(selectedIndex()).toBe(1);
 
     // Recargar no re-generó nada: cero invocaciones al borde pagado.
     expect(invokes.filter((c) => c.fn === 'generate-scene-images')).toHaveLength(0);

@@ -1,6 +1,7 @@
 /**
- * PH / G2 + G4 — Contrato de las fábricas cover/end: `count:2 pro` y la matriz
- * append/replace (T-H.1, T-H.2, parte de T-H.6).
+ * PH / G2 + G4 + G6 — Contrato de las fábricas cover/end: `count:2 pro`, la
+ * matriz append/replace y el patch generado COMPLETO —array más selección—
+ * tanto al devolverlo como al encolarlo (T-H.1, T-H.2, parte de T-H.6).
  *
  * Estas pruebas ejercen las FÁBRICAS DE PRODUCCIÓN importadas, no una copia de
  * su semántica. El único doble es el provider inyectado (`invokeGenerateSceneImages`),
@@ -11,6 +12,9 @@
  * nunca toca la ref ni la selección. Un `append: true` de más se ignora en
  * runtime (esbuild borra tipos), así que cada aserción de acumulación observa
  * el reemplazo real, no un error de compilación.
+ *
+ * BASE-RED en `9d96c41` para las aserciones de patch COMPLETO: allá el patch
+ * es `{coverOptions}` / `{endOptions}` a secas, sin la clave de selección.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -53,6 +57,7 @@ function buildCover(
   st: ReturnType<typeof coverState>,
   append: boolean,
   invoke: ReturnType<typeof providerReturning>,
+  enqueue: ReturnType<typeof enqueueSpy> = enqueueSpy(),
 ) {
   return makeCoverTask({
     illustrationStyle: 'ghibli',
@@ -70,7 +75,7 @@ function buildCover(
     setSelectedCover: st.setSelected,
     invokeGenerateSceneImages: invoke,
     getLiveIdentity: () => LIVE_IDENTITY,
-    enqueueGeneratedSnapshot: enqueueSpy(),
+    enqueueGeneratedSnapshot: enqueue,
   });
 }
 
@@ -78,6 +83,7 @@ function buildEnd(
   st: ReturnType<typeof coverState>,
   append: boolean,
   invoke: ReturnType<typeof providerReturning>,
+  enqueue: ReturnType<typeof enqueueSpy> = enqueueSpy(),
 ) {
   return makeEndTask({
     illustrationStyle: 'ghibli',
@@ -91,14 +97,24 @@ function buildEnd(
     setSelectedEnd: st.setSelected,
     invokeGenerateSceneImages: invoke,
     getLiveIdentity: () => LIVE_IDENTITY,
-    enqueueGeneratedSnapshot: enqueueSpy(),
+    enqueueGeneratedSnapshot: enqueue,
   });
 }
 
 /** La matriz cover/end: mismo contrato, dos fábricas. */
 const KINDS = [
-  { kind: 'cover' as const, build: buildCover, patchKey: 'coverOptions' as const },
-  { kind: 'end' as const, build: buildEnd, patchKey: 'endOptions' as const },
+  {
+    kind: 'cover' as const,
+    build: buildCover,
+    patchKey: 'coverOptions' as const,
+    selectedKey: 'selectedCover' as const,
+  },
+  {
+    kind: 'end' as const,
+    build: buildEnd,
+    patchKey: 'endOptions' as const,
+    selectedKey: 'selectedEnd' as const,
+  },
 ];
 
 // =============================================================================
@@ -136,7 +152,7 @@ describe('T-H.1 — el generate de portada/fin pide 2 imágenes pro', () => {
 describe('T-H.2 — append preserva options y selección; replace limpia la selección stale', () => {
   it.each(KINDS)(
     '$kind append: las viejas van primero, las nuevas en orden, y la selección sobrevive',
-    async ({ kind, build, patchKey }) => {
+    async ({ kind, build, patchKey, selectedKey }) => {
       const st = coverState(['a.png', 'b.png'], 1);
       const invoke = providerReturning('n1.png', 'n2.png');
       const task = build(st, true, invoke);
@@ -154,12 +170,21 @@ describe('T-H.2 — append preserva options y selección; replace limpia la sele
       expect(st.selectedRef.current).toBe(1);
       expect(st.setSelected).not.toHaveBeenCalled();
       expect((patch[patchKey] as string[])[1]).toBe('b.png');
+
+      // El patch COMPLETO —no sólo la clave del array—: preservar la selección
+      // en memoria no sirve de nada si el snapshot que se persiste la omite,
+      // porque la cola mergea por presencia de clave y el snapshot anterior
+      // todavía dice `null`.
+      expect(patch).toEqual({
+        [patchKey]: ['a.png', 'b.png', 'n1.png', 'n2.png'],
+        [selectedKey]: 1,
+      });
     },
   );
 
   it.each(KINDS)(
     '$kind replace: reemplaza el array y limpia la selección stale (ref y estado)',
-    async ({ kind, build, patchKey }) => {
+    async ({ kind, build, patchKey, selectedKey }) => {
       const st = coverState(['a.png', 'b.png'], 1);
       const invoke = providerReturning('n1.png', 'n2.png');
       const task = build(st, false, invoke);
@@ -173,6 +198,11 @@ describe('T-H.2 — append preserva options y selección; replace limpia la sele
       // que el usuario nunca eligió.
       expect(st.selectedRef.current).toBeNull();
       expect(st.setSelected).toHaveBeenCalledWith(null);
+
+      // El patch COMPLETO lleva la limpieza EXPLÍCITA: `null` presente, no la
+      // clave ausente. Ausente dejaría el índice viejo en la fila apuntando a
+      // una imagen que el usuario nunca eligió.
+      expect(patch).toEqual({ [patchKey]: ['n1.png', 'n2.png'], [selectedKey]: null });
     },
   );
 
@@ -216,7 +246,7 @@ describe('T-H.2 — append preserva options y selección; replace limpia la sele
 
   it.each(KINDS)(
     '$kind replace sin selección previa: no se inventa una limpieza de selección',
-    async ({ kind, build, patchKey }) => {
+    async ({ kind, build, patchKey, selectedKey }) => {
       const st = coverState([], null);
       const invoke = providerReturning('n1.png', 'n2.png');
       const task = build(st, false, invoke);
@@ -227,6 +257,9 @@ describe('T-H.2 — append preserva options y selección; replace limpia la sele
       expect(patch[patchKey]).toEqual(['n1.png', 'n2.png']);
       expect(st.selectedRef.current).toBeNull();
       expect(st.setSelected).not.toHaveBeenCalled();
+      // No hubo setter, pero el patch igual afirma `null`: el valor persistido
+      // no depende de si hacía falta limpiar.
+      expect(patch).toEqual({ [patchKey]: ['n1.png', 'n2.png'], [selectedKey]: null });
     },
   );
 
@@ -242,6 +275,56 @@ describe('T-H.2 — append preserva options y selección; replace limpia la sele
     // usuario; deduplicar movería los índices bajo la selección.
     expect(patch[patchKey]).toEqual(['a.png', 'a.png', 'n2.png']);
   });
+});
+
+// =============================================================================
+// T-H.2 + G6 — lo que realmente llega a la cola de persistencia
+// =============================================================================
+
+/**
+ * `apply` devuelve el patch, pero quien lo persiste es `persist`, y es ahí
+ * donde el contrato de G6 se juega: el snapshot que la cola mergea tiene que
+ * traer la selección, porque la cola no puede inferirla del snapshot anterior.
+ * Se ejercita el `persist` de producción (`buildSnapshotTask`), no una copia.
+ */
+describe('G6 — el snapshot encolado lleva el array completo Y la selección', () => {
+  it.each(KINDS)(
+    '$kind append: la cola recibe la selección preservada',
+    async ({ kind, build, patchKey, selectedKey }) => {
+      const enqueue = enqueueSpy();
+      const st = coverState(['a.png', 'b.png'], 1);
+      const task = build(st, true, providerReturning('n1.png', 'n2.png'), enqueue);
+
+      const result = await task.provider!({ signal: new AbortController().signal } as never);
+      const patch = task.apply!(result, appliedFor(kind)) as DraftPatch;
+      await task.persist!(patch, appliedFor(kind));
+
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(enqueue.mock.calls[0][0].patch).toEqual({
+        [patchKey]: ['a.png', 'b.png', 'n1.png', 'n2.png'],
+        [selectedKey]: 1,
+      });
+    },
+  );
+
+  it.each(KINDS)(
+    '$kind replace: la cola recibe la selección en null',
+    async ({ kind, build, patchKey, selectedKey }) => {
+      const enqueue = enqueueSpy();
+      const st = coverState(['a.png', 'b.png'], 1);
+      const task = build(st, false, providerReturning('n1.png', 'n2.png'), enqueue);
+
+      const result = await task.provider!({ signal: new AbortController().signal } as never);
+      const patch = task.apply!(result, appliedFor(kind)) as DraftPatch;
+      await task.persist!(patch, appliedFor(kind));
+
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(enqueue.mock.calls[0][0].patch).toEqual({
+        [patchKey]: ['n1.png', 'n2.png'],
+        [selectedKey]: null,
+      });
+    },
+  );
 });
 
 // =============================================================================
