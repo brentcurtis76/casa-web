@@ -1,0 +1,187 @@
+# LÍNEA BASE POR FICHERO — gate D8 (UPGRADE / P0)
+#
+# SHA de la base:  1732bee  (fix(icons): usar el logotipo real de TikTok)
+# Worktree limpio: git worktree add /tmp/upgrade-base 1732bee
+#                  ln -s /Users/brentcurtis/dev/casa-web/node_modules /tmp/upgrade-base/node_modules
+#                  cp scripts/gates/changed-files-diagnostics.sh /tmp/upgrade-base/scripts/gates/
+#
+# Comando exacto (ejecutado con cwd = /tmp/upgrade-base):
+#
+#   bash scripts/gates/changed-files-diagnostics.sh \
+#     src/integrations/supabase/types.ts \
+#     src/components/mesa-abierta/MesaAbiertaAdmin.tsx \
+#     src/components/mesa-abierta/MesaAbiertaDashboard.tsx \
+#     src/components/mesa-abierta/MesaAbiertaSignup.tsx \
+#     src/components/mesa-abierta/EditParticipantDialog.tsx \
+#     src/components/mesa-abierta/AddParticipantDialog.tsx \
+#     src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx \
+#     supabase/functions/create-mesa-matches/index.ts \
+#     supabase/functions/admin-add-participant/index.ts \
+#     supabase/functions/send-mesa-notifications/index.ts \
+#     supabase/functions/send-mesa-whatsapp/index.ts
+#
+# Herramientas: Node v22.22.0 · TypeScript 5.9.2 · ESLint 9.39.2 · Deno 2.7.11
+# Dos ejecuciones consecutivas de este mismo comando dieron salida byte-idéntica (Z4).
+#
+# Estos 11 ficheros son los de las fases P1–P8 que YA EXISTEN en 1732bee. El resto de
+# ficheros de esas fases los crea su propia fase y no tienen línea base.
+#
+# Cómo se usa: D8 compara contra la FASE PADRE INMEDIATA, no siempre contra este
+# fichero. Ver scripts/gates/README.md.
+=== src/integrations/supabase/types.ts
+--- tsc (0)
+--- eslint (0)
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/MesaAbiertaAdmin.tsx
+--- tsc (12)
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(1689,57): error TS2339: Property 'hostsConvertedToGuests' does not exist on type '{ totalMatches: number; totalParticipants: number; hostsUsed: number; hostsConverted: number; guestsAssigned: number; guestsUnassigned: number; newConnectionsCreated: boolean; matchDetails: { ...; }[]; unassignedGuests?: string[]; }'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(254,39): error TS2339: Property 'user_id' does not exist on type 'SelectQueryError<"column 'email' does not exist on 'mesa_abierta_participants'.">'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(255,46): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'email' does not exist on 'mesa_abierta_participants'.">'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(270,60): error TS2339: Property 'user_id' does not exist on type 'SelectQueryError<"column 'email' does not exist on 'mesa_abierta_participants'.">'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(271,88): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'email' does not exist on 'mesa_abierta_participants'.">'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(273,11): error TS2698: Spread types may only be created from object types.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(376,39): error TS2339: Property 'host_food_assignment' does not exist on type '{ id: string; month_id: string; host_participant_id: string; dinner_date: string; dinner_time: string; guest_count: number; created_at: string; updated_at: string; }'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(785,19): error TS2322: Type 'PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, { Tables: { events: { Row: { created_at: string; date: string; description: string; id: string; location: string; time: string; title: string; }; Insert: { created_at?: string; ... 5 more ...; title: string; }; Update: { ...; }; Relationships: []; }; ... 15 more .....' is not assignable to type 'number'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(785,45): error TS2345: Argument of type '"decrement"' is not assignable to parameter of type '"is_mesa_admin" | "set_music_track_as_default"'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(843,19): error TS2322: Type 'string' is not assignable to type '"none" | "main_course" | "salad" | "drinks" | "dessert"'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(882,19): error TS2353: Object literal may only specify known properties, and 'host_food_assignment' does not exist in type '{ id?: string; month_id?: string; host_participant_id?: string; dinner_date?: string; dinner_time?: string; guest_count?: number; created_at?: string; updated_at?: string; }'.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(950,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: { id?: string; match_id: string; guest_participant_id: string; food_assignment?: "none" | "main_course" | "salad" | "drinks" | "dessert"; notification_sent?: boolean; notification_sent_at?: string; created_at?: string; updated_at?: string; }, options?: { ...; }): PostgrestFilterBuilder<...>', gave the following error.
+    Type 'string' is not assignable to type '"none" | "main_course" | "salad" | "drinks" | "dessert"'.
+  Overload 2 of 2, '(values: { id?: string; match_id: string; guest_participant_id: string; food_assignment?: "none" | "main_course" | "salad" | "drinks" | "dessert"; notification_sent?: boolean; notification_sent_at?: string; created_at?: string; updated_at?: string; }[], options?: { ...; }): PostgrestFilterBuilder<...>', gave the following error.
+    Object literal may only specify known properties, and 'match_id' does not exist in type '{ id?: string; match_id: string; guest_participant_id: string; food_assignment?: "none" | "main_course" | "salad" | "drinks" | "dessert"; notification_sent?: boolean; notification_sent_at?: string; created_at?: string; updated_at?: string; }[]'.
+--- eslint (14)
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(1036,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(1090,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(192,6): warning react-hooks/exhaustive-deps: React Hook useEffect has a missing dependency: 'fetchMonths'. Either include it or remove the dependency array.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(204,6): warning react-hooks/exhaustive-deps: React Hook useEffect has a missing dependency: 'fetchParticipants'. Either include it or remove the dependency array.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(279,50): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(462,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(551,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(632,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(668,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(735,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(822,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(861,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(899,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaAdmin.tsx(979,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/MesaAbiertaDashboard.tsx
+--- tsc (1)
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(127,68): error TS2589: Type instantiation is excessively deep and possibly infinite.
+--- eslint (9)
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(106,35): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(111,49): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(112,49): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(153,49): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(155,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(186,41): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(187,103): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(223,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/MesaAbiertaDashboard.tsx(70,6): warning react-hooks/exhaustive-deps: React Hook useEffect has a missing dependency: 'fetchParticipantData'. Either include it or remove the dependency array.
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/MesaAbiertaSignup.tsx
+--- tsc (0)
+--- eslint (1)
+src/components/mesa-abierta/MesaAbiertaSignup.tsx(174,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/EditParticipantDialog.tsx
+--- tsc (1)
+src/components/mesa-abierta/EditParticipantDialog.tsx(100,11): error TS2322: Type 'string' is not assignable to type '"pending" | "confirmed" | "cancelled" | "waitlist"'.
+--- eslint (1)
+src/components/mesa-abierta/EditParticipantDialog.tsx(126,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/AddParticipantDialog.tsx
+--- tsc (1)
+src/components/mesa-abierta/AddParticipantDialog.tsx(71,49): error TS2589: Type instantiation is excessively deep and possibly infinite.
+--- eslint (1)
+src/components/mesa-abierta/AddParticipantDialog.tsx(148,21): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (0)
+--- deno check (0)
+=== src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx
+--- tsc (0)
+--- eslint (2)
+src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx(20,26): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx(21,27): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (0)
+--- deno check (0)
+=== supabase/functions/create-mesa-matches/index.ts
+--- tsc (0)
+--- eslint (0)
+--- deno lint (4)
+supabase/functions/create-mesa-matches/index.ts(1,22): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+supabase/functions/create-mesa-matches/index.ts(169,10): no-unused-vars: `TARGET_GUEST_SIDE_FOR_DINNER` is never used
+supabase/functions/create-mesa-matches/index.ts(2,29): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+supabase/functions/create-mesa-matches/index.ts(444,34): no-unused-vars: `count` is never used
+--- deno check (6)
+TS18046 [ERROR]: 'error' is of type 'unknown'.
+        error: error.message,
+               ~~~~~
+    at supabase/functions/create-mesa-matches/index.ts:497:16
+TS7006 [ERROR]: Parameter 'g' implicitly has an 'any' type.
+            smallHost.assignedGuests = smallHost.assignedGuests.filter(g => g.id !== guest.id);
+                                                                       ^
+    at supabase/functions/create-mesa-matches/index.ts:310:72
+TS7006 [ERROR]: Parameter 'g' implicitly has an 'any' type.
+          guests: host.assignedGuests.map(g => g.id),
+                                          ^
+    at supabase/functions/create-mesa-matches/index.ts:396:43
+TS7006 [ERROR]: Parameter 'g' implicitly has an 'any' type.
+      const assignedGuestIds = hostStatus.flatMap(h => h.assignedGuests.map(g => g.id));
+                                                                            ^
+    at supabase/functions/create-mesa-matches/index.ts:418:77
+TS7006 [ERROR]: Parameter 'guest' implicitly has an 'any' type.
+        const assignmentsToInsert = host.assignedGuests.map((guest, j) => ({
+                                                             ~~~~~
+    at supabase/functions/create-mesa-matches/index.ts:377:62
+TS7006 [ERROR]: Parameter 'j' implicitly has an 'any' type.
+        const assignmentsToInsert = host.assignedGuests.map((guest, j) => ({
+                                                                    ^
+    at supabase/functions/create-mesa-matches/index.ts:377:69
+=== supabase/functions/admin-add-participant/index.ts
+--- tsc (0)
+--- eslint (0)
+--- deno lint (2)
+supabase/functions/admin-add-participant/index.ts(1,22): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+supabase/functions/admin-add-participant/index.ts(2,29): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+--- deno check (1)
+TS18046 [ERROR]: 'error' is of type 'unknown'.
+        error: error.message,
+               ~~~~~
+    at supabase/functions/admin-add-participant/index.ts:234:16
+=== supabase/functions/send-mesa-notifications/index.ts
+--- tsc (0)
+--- eslint (4)
+supabase/functions/send-mesa-notifications/index.ts(166,22): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+supabase/functions/send-mesa-notifications/index.ts(202,59): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+supabase/functions/send-mesa-notifications/index.ts(332,19): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+supabase/functions/send-mesa-notifications/index.ts(374,19): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (9)
+supabase/functions/send-mesa-notifications/index.ts(166,10): no-unused-vars: `emailLogs` is never used
+supabase/functions/send-mesa-notifications/index.ts(166,21): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-notifications/index.ts(202,58): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-notifications/index.ts(332,18): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-notifications/index.ts(374,18): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-notifications/index.ts(380,0): require-await: Async function 'sendHostEmail' has no 'await' expression or 'await using' declaration.
+supabase/functions/send-mesa-notifications/index.ts(464,0): require-await: Async function 'sendGuestEmail' has no 'await' expression or 'await using' declaration.
+supabase/functions/send-mesa-notifications/index.ts(5,22): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+supabase/functions/send-mesa-notifications/index.ts(6,29): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+--- deno check (0)
+=== supabase/functions/send-mesa-whatsapp/index.ts
+--- tsc (0)
+--- eslint (3)
+supabase/functions/send-mesa-whatsapp/index.ts(187,59): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+supabase/functions/send-mesa-whatsapp/index.ts(290,19): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+supabase/functions/send-mesa-whatsapp/index.ts(333,19): error @typescript-eslint/no-explicit-any: Unexpected any. Specify a different type.
+--- deno lint (5)
+supabase/functions/send-mesa-whatsapp/index.ts(187,58): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-whatsapp/index.ts(290,18): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-whatsapp/index.ts(333,18): no-explicit-any: `any` type is not allowed
+supabase/functions/send-mesa-whatsapp/index.ts(5,22): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+supabase/functions/send-mesa-whatsapp/index.ts(6,29): no-import-prefix: Inline 'npm:', 'jsr:' or 'https:' dependency not allowed
+--- deno check (0)
