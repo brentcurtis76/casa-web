@@ -267,3 +267,45 @@
 - FINDINGS RAISED: (n/a)
 - DECISIONS: ninguna nueva. El prompt no relaja ningún criterio del plan congelado.
 - OPEN AFTER THIS ROUND: ejecución de P0 r1 en sesión fresca.
+
+### 2026-08-06 — P0 round 1 — Ejecutor (Opus)
+- SESSION: UPGRADE · P0 · r1 · EXEC
+- BRANCH: `feat/mesa-md-gates` (desde `19c44aa`) · COMMIT: `bc48eee`
+- ACTION: Implementado el gate D8. Tres ficheros nuevos, cero código de producto:
+  `scripts/gates/changed-files-diagnostics.sh`, `scripts/gates/README.md`,
+  `docs/plan/upgrade/evidence/base-by-file.txt`.
+- IMPLEMENTACIÓN: cada herramienta se ejecuta **una vez** sobre todo el proyecto y su
+  salida se atribuye por ruta. Agrupación de diagnósticos multilínea: `tsc` por cabecera
+  en columna 0 + continuaciones indentadas (verificado: 1041 líneas de columna 0 = 1041
+  cabeceras, ninguna continuación contiene `error TS`); `deno check` desde
+  `TSxxxx [ERROR]:` hasta su primera línea `at file://…` (verificado: 46 bloques / 46
+  líneas `at`, correspondencia 1:1). Sin canonicalización, sin hashing, sin cubos.
+- ÚNICA NORMALIZACIÓN (documentada en el README): la línea `at file:///…` de `deno check`
+  trae la ruta **absoluta y percent-encoded** del checkout y se reescribe a ruta relativa
+  al repo. Sin esto la base tomada en `/tmp/upgrade-base` no sería comparable con nada
+  medido en el checkout normal y **los 46 diagnósticos de `deno check` parecerían nuevos**.
+  El texto del mensaje no se toca.
+- TESTS (verbatim en el informe del ejecutor):
+  - `npm run build` → `✓ built in 13.45s`.
+  - `npx vitest run --no-file-parallelism` → **1036 pass / 6 fail**, los 6 en
+    `MesaAbiertaDashboard.test.tsx` (Z7 cumplido). **Una ejecución previa dio 1035/7**: el
+    7º fallo fue `CuentacuentoEditor.ph.surfaces.test.tsx` por timeout de `waitFor`, no se
+    reprodujo, y esta rama no toca `src/`. Se registra como test inestable preexistente.
+  - `deno test --allow-all .` desde `supabase/functions/` → **409 passed | 0 failed**.
+  - Línea base sin tocar: `tsc` 1041, ESLint 160 (remedidos en la punta de la rama).
+- ACCEPTANCE: Z1 ✅ · Z2 ✅ (`grep -n 'npm run lint'` → 0 hits) · Z3 ✅ (worktree en
+  `1732bee`, `node_modules` enlazado, cabecera con SHA y comando, worktree eliminado) ·
+  Z4 ✅ (byte-idéntico sobre 2 ficheros y sobre el set completo de 11) · Z5a ✅ (canario de
+  adición en `create-mesa-matches/index.ts`: aparece el TS2322 nuevo y el resto son
+  desplazamientos de línea) · Z5b ✅ (canario de sustitución en `MesaAbiertaAdmin.tsx`:
+  recuento 12 y código TS2339 **idénticos**, y aun así el `diff` muestra el mensaje nuevo
+  y la desaparición del viejo — **el gate no es decorativo**) · Z6 ✅ (los 11 ficheros) ·
+  Z7 ✅. Ambos canarios revertidos; `git status` sin ficheros rastreados modificados.
+- FINDINGS RAISED: ninguno. Los cuatro formatos asumidos en los Risks de P0 resultaron
+  utilizables; el único riesgo real (`deno check` multilínea + ANSI + ruta absoluta) quedó
+  resuelto y documentado.
+- NOT DONE: `CuentacuentoEditor.ph.surfaces.test.tsx` es inestable (1 de 2 ejecuciones);
+  fuera del alcance de P0. `docs/plan/audio/` apareció sin rastrear durante la sesión y no
+  es de esta fase; se deja intacto.
+- OPEN AFTER THIS ROUND: verificación independiente del PM; después P1 (desbloqueada por
+  PR1/PR2) sobre esta rama.
