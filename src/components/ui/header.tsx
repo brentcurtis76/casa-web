@@ -32,7 +32,7 @@ function Header1() {
                 {/* Logo - links to home */}
                 <Link to="/" className="flex-shrink-0">
                     <img
-                        src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/public/images/Nuevo%20Logo%20Cuadrado%20-%20Negro%20con%20fondo%20blanco.png"
+                        src="/lovable-uploads/47301834-0831-465c-ae5e-47a978038312.png"
                         alt="CASA Logo"
                         className="h-14 w-14 object-contain"
                     />
