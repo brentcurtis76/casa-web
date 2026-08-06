@@ -365,3 +365,39 @@
   `deno check`) se **acepta**: es necesaria para que Z3 y Z4 sean compatibles entre sí, no
   toca el texto del mensaje, y la verificación cruzada entre checkouts la demuestra correcta.
 - OPEN AFTER THIS ROUND: P0 r2 — un único bloqueante, B1.
+
+### 2026-08-06 — P0 round 2 — EJECUTOR (Opus 5) — REMEDIACIÓN B1
+- SESSION: UPGRADE · P0 · r2 · EXEC
+- BRANCH: `feat/mesa-md-gates` (sobre `f776e56`, sin reescribir la ronda 1)
+- ACTION: cerrado el único bloqueante B1 — el gate ya no puede aprobar en silencio cuando
+  una herramienta no llega a ejecutarse. Dos ficheros tocados: el script y su README.
+- CAMBIOS:
+  - `changed-files-diagnostics.sh`: contador **global** por herramienta dentro de `put()`;
+    `readJson()` ahora registra el error de parseo en vez de tragárselo; tras emitir stdout
+    se escribe **por stderr** `[gates] totales del proyecto: tsc=… eslint=… deno-lint=…
+    deno-check=…` en toda ejecución; si alguna de las cuatro da **cero global** o JSON no
+    parseable, se nombra la herramienta, se vuelca su stderr capturado y se sale con
+    `exitCode = 1` (no `exit()`, que truncaría stdout en una tubería).
+  - `scripts/gates/README.md`: sección nueva "Detección de «la herramienta no corrió»" con
+    el modo de fallo reproducido, por qué los totales van por stderr y no por stdout, y el
+    supuesto declarado *un cero global significa que la herramienta no corrió*.
+- **stdout NO cambia.** La lógica de atribución, el orden, la agrupación de `deno check` y
+  la normalización de rutas quedan intactas; el diff contra `bc48eee` solo toca la firma de
+  `readJson`, una línea de contador en `put()` y el bloque nuevo posterior a la emisión.
+- EVIDENCIA:
+  - R1: ejecución sobre los 11 ficheros de la base → stderr
+    `[gates] totales del proyecto: tsc=1041 eslint=160 deno-lint=94 deno-check=46`, EXIT=0.
+  - R2: sonda del PM con `deno` fuera del `PATH` → **EXIT=1**, stderr nombra `deno-lint`
+    (JSON no parseable) y `deno-check` (cero global) e incluye su `deno: command not found`.
+  - R3: `diff` del stdout de los 11 ficheros contra `base-by-file.txt` sin cabecera `#` →
+    **vacío** (157 líneas ambos). La base commiteada sigue siendo válida; no se regeneró.
+  - R4: dos ejecuciones consecutivas → `cmp` sin diferencias (Z4 se mantiene).
+  - R5: `git diff bc48eee -- scripts/gates/changed-files-diagnostics.sh` muestra la ruta de
+    atribución/emisión sin modificar, luego el mecanismo del canario Z5b sigue intacto.
+  - R7: `npm run build` OK (13.29s) · `npx vitest run --no-file-parallelism` → **1036 pass /
+    6 fail**, los seis en `MesaAbiertaDashboard.test.tsx` · `deno test --allow-all .` →
+    **409 passed / 0 failed**. El intermitente de `CuentacuentoEditor.ph.surfaces` no saltó.
+- FUERA DE ALCANCE, RESPETADO: ningún diagnóstico arreglado (la base sigue en
+  1041/160/94/46), nada bajo `src/`, `supabase/`, `package.json`, configs, `PLAN.md` ni
+  `base-by-file.txt`. `docs/plan/audio/` sigue sin rastrear e intacto.
+- OPEN AFTER THIS ROUND: verificación independiente del PM sobre B1; después P1.

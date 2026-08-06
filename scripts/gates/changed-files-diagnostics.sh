@@ -52,12 +52,21 @@ const [root, work, ...files] = process.argv.slice(1);
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 const read = (f) => { try { return stripAnsi(fs.readFileSync(path.join(work, f), "utf8")); } catch { return ""; } };
-const readJson = (f) => { try { return JSON.parse(read(f)); } catch { return null; } };
 const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+
+// Recuento GLOBAL por herramienta (todo el proyecto, no solo los ficheros pedidos)
+// y errores de parseo. Se usan para detectar que una herramienta no llegó a correr.
+const totals = { "tsc": 0, "eslint": 0, "deno lint": 0, "deno check": 0 };
+const parseErrors = new Map();
+const readJson = (f, tool) => {
+  try { return JSON.parse(read(f)); }
+  catch (e) { parseErrors.set(tool, e.message); return null; }
+};
 
 // buckets: rel path -> tool -> [diagnostic (array of lines)]
 const buckets = new Map();
 const put = (file, tool, lines) => {
+  totals[tool] += 1;
   if (!buckets.has(file)) buckets.set(file, {});
   const b = buckets.get(file);
   (b[tool] = b[tool] || []).push(lines);
@@ -80,7 +89,7 @@ const put = (file, tool, lines) => {
 
 // --- ESLint: JSON, filePath ABSOLUTO -> relativizar
 {
-  const results = readJson("eslint.json") || [];
+  const results = readJson("eslint.json", "eslint") || [];
   for (const r of results) {
     const f = rel(r.filePath);
     for (const m of r.messages) {
@@ -94,7 +103,7 @@ const put = (file, tool, lines) => {
 
 // --- deno lint: JSON, filename es una URL file://
 {
-  const data = readJson("deno-lint.json");
+  const data = readJson("deno-lint.json", "deno lint");
   for (const d of (data && data.diagnostics) || []) {
     const f = rel(fileURLToPath(d.filename));
     const msg = String(d.message).replace(/\s*\n\s*/g, " ");
@@ -138,4 +147,40 @@ for (const f of files) {
   }
 }
 process.stdout.write(out.join("\n") + "\n");
+
+// --- observación D8 punto 5: recuentos globales, SIEMPRE por stderr ---------------
+// stdout es el artefacto que se difea entre el commit padre y la punta de la rama:
+// meter los totales ahí inyectaría una línea de ruido en cada comparación e
+// invalidaría la base ya commiteada. Por stderr son exactamente lo que pide D8: una
+// observación para detectar sorpresas, no un criterio de aprobación.
+const LABEL = { "tsc": "tsc", "eslint": "eslint", "deno lint": "deno-lint", "deno check": "deno-check" };
+const ERRSRC = { "tsc": "tsc.txt", "eslint": "eslint.err", "deno lint": "deno-lint.err", "deno check": "deno-check.txt" };
+process.stderr.write("[gates] totales del proyecto: " + TOOLS.map((t) => LABEL[t] + "=" + totals[t]).join(" ") + "\n");
+
+// --- la herramienta no corrió ------------------------------------------------------
+// Las cuatro tienen una base grande y distinta de cero en este repo, y arreglarla es un
+// no-objetivo declarado del workstream. Un cero GLOBAL no significa que el repo se
+// limpió: significa que la herramienta no llegó a producir diagnósticos. Sin esto el
+// gate devuelve todo ceros y "cero diagnósticos nuevos" se cumple trivialmente.
+const failed = TOOLS.filter((t) => parseErrors.has(t) || totals[t] === 0);
+if (failed.length > 0) {
+  for (const t of failed) {
+    const why = parseErrors.has(t)
+      ? "salida no parseable (" + parseErrors.get(t) + ")"
+      : "cero diagnósticos en TODO el proyecto";
+    process.stderr.write("[gates] FALLO: " + LABEL[t] + " no produjo resultados utilizables — " + why + ".\n");
+    const captured = read(ERRSRC[t]).split("\n").filter((l) => l.trim() !== "");
+    const shown = captured.slice(0, 20);
+    if (shown.length === 0) process.stderr.write("[gates]   stderr de " + LABEL[t] + ": (vacío)\n");
+    for (const l of shown) process.stderr.write("[gates]   " + LABEL[t] + "> " + l + "\n");
+    if (captured.length > shown.length) {
+      process.stderr.write("[gates]   " + LABEL[t] + "> … (" + (captured.length - shown.length) + " líneas más)\n");
+    }
+  }
+  process.stderr.write("[gates] La línea base de este repo es tsc=1041 eslint=160 deno-lint=94 deno-check=46 y\n");
+  process.stderr.write("[gates] arreglarla es un no-objetivo del workstream UPGRADE: un cero global significa que\n");
+  process.stderr.write("[gates] la herramienta no corrió, nunca que el repo se limpió. Ver scripts/gates/README.md.\n");
+  // exitCode y no exit(): stdout puede ser una tubería y exit() la truncaría.
+  process.exitCode = 1;
+}
 ' "$ROOT" "$WORK" "$@"

@@ -135,6 +135,54 @@ paréntesis cuenta **diagnósticos**, no líneas.
 Las líneas de progreso `Check <ruta>` de `deno check` se descartan (dependen de la caché
 de Deno) y también el resumen final `Found N errors.` / `error: Type checking failed.`.
 
+## Detección de "la herramienta no corrió" — por qué existe
+
+**El modo de fallo que esto cierra.** Hasta la ronda 1 el script se tragaba el fallo de
+cualquier herramienta. `readJson()` capturaba todo error de parseo y devolvía `null`, que
+acababa en `[]`; si `tsc` no arrancaba, `tsc.txt` simplemente no traía cabeceras y daba
+cero diagnósticos. No se escribía nada por stderr y el código de salida seguía siendo 0.
+Con `deno` fuera del `PATH`, la salida era esta:
+
+```
+$ env PATH="$(dirname $(which node)):/usr/bin:/bin" \
+    bash scripts/gates/changed-files-diagnostics.sh supabase/functions/create-mesa-matches/index.ts
+EXIT=0
+=== supabase/functions/create-mesa-matches/index.ts
+--- tsc (0)
+--- eslint (0)
+--- deno lint (0)
+--- deno check (0)
+```
+
+La base real de ese fichero es `deno lint (4)` y `deno check (6)`.
+
+Un gate que puede devolver cero en silencio es **peor que no tener gate**. El criterio de
+D8 es "cero diagnósticos **nuevos**": una ejecución que emite todos ceros lo cumple
+trivialmente, así que una cadena de herramientas rota no falla el gate — lo **aprueba**,
+en silencio, para todas las fases. Sin gate, al menos nadie cree estar cubierto.
+
+**Los recuentos globales van SIEMPRE por stderr.** Cada ejecución emite:
+
+```
+[gates] totales del proyecto: tsc=1041 eslint=160 deno-lint=94 deno-check=46
+```
+
+Es exactamente lo que pide `PLAN.md` D8 punto 5: una **observación** para detectar
+sorpresas, no un criterio de aprobación. Van por **stderr y no por stdout** porque stdout
+es el artefacto que se difea entre el commit padre y la punta de la rama: meter los
+totales ahí inyectaría una línea de ruido en cada comparación e invalidaría
+`docs/plan/upgrade/evidence/base-by-file.txt`.
+
+**Supuesto declarado: un cero global significa que la herramienta no corrió.** Si
+cualquiera de las cuatro no produce **ningún** diagnóstico atribuible en todo el proyecto,
+o su JSON no se puede parsear, el script escribe por stderr qué herramienta falló, incluye
+el stderr capturado de esa herramienta y **sale con código distinto de cero**. Las cuatro
+tienen en este repo una base grande y distinta de cero (1041 / 160 / 94 / 46) y arreglarla
+es un no-objetivo explícito del workstream: por construcción, un cero global nunca puede
+significar que el repo se limpió. Este supuesto se declara igual que la limitación de los
+bloques multiframe de `deno check`, y deja de valer el día en que arreglar la base sí sea
+un objetivo — ese día hay que revisar esta comprobación.
+
 ## Detalles de implementación que no son opcionales
 
 - **No hay `set -e`.** Las cuatro herramientas salen con código distinto de cero cuando
