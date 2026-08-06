@@ -1,9 +1,6 @@
 
-export const TikTokIcon = () => <svg viewBox="0 0 24 24" className="h-full w-full" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 12a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
-    <path d="M16 8v8" />
-    <path d="M8 16v-1a7 7 0 0 1 7-7h1" />
-    <line x1="12" y1="8" x2="12" y2="16" />
+export const TikTokIcon = () => <svg viewBox="0 0 24 24" className="h-full w-full" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true">
+    <path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.09v12.4a2.59 2.59 0 0 1-2.59 2.5 2.59 2.59 0 0 1-2.59-2.58 2.59 2.59 0 0 1 3.37-2.47V9.66a5.66 5.66 0 0 0-.78-.05A5.66 5.66 0 0 0 4.2 15.27a5.66 5.66 0 0 0 5.66 5.66 5.66 5.66 0 0 0 5.66-5.66V8.97a7.35 7.35 0 0 0 4.28 1.37V7.25a4.28 4.28 0 0 1-3.2-1.43z" />
   </svg>;
 export const InstagramIcon = () => <svg viewBox="0 0 24 24" className="h-full w-full" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
