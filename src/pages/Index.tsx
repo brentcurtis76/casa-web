@@ -2,7 +2,7 @@
 import { AuthProvider } from '@/components/auth/AuthContext';
 import { Footer } from '@/components/layout/Footer';
 import { Header1 } from '@/components/ui/header';
-import { LiturgicalHero } from '@/components/sections/LiturgicalHero';
+import { DiaDelNinoHero } from '@/components/sections/DiaDelNinoHero';
 import { Equipo } from '@/components/sections/Equipo';
 import { Eventos } from '@/components/sections/Eventos';
 import { InstagramFeed } from '@/components/sections/InstagramFeed';
@@ -20,7 +20,7 @@ const Index = () => {
       <div className="min-h-screen flex flex-col">
         <Header1 />
         <main className="pt-0">
-          <LiturgicalHero />
+          <DiaDelNinoHero />
           <Hero />
           <Proposito />
           <Equipo />
