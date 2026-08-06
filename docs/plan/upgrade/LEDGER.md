@@ -237,3 +237,33 @@
   planificación y no escribe código fuente (SOP §1.1). PR2 queda registrado y disponible
   para que P1 lo consuma.
 - OPEN AFTER THIS ROUND: bootstrap de PM para P0 (SOP §3.3).
+
+### 2026-08-06 — P0 round 1 — PM (Fable)
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Bootstrap de PM para P0 (SOP §3.3). Escrito el prompt de ejecutor
+  `docs/plan/upgrade/prompts/P0-r1.md` (SOP §3.4). P0 pasa a IN PROGRESS en el índice
+  de fases.
+- PM VERIFICATION (medido, no supuesto, en `19c44aa`):
+  - `npx eslint . -f json` produce JSON válido con `filePath` **absoluto** — el script
+    debe relativizar. `deno lint --json` produce JSON con `filename` como URL `file://`.
+    Ambos riesgos declarados en P0 quedan resueltos: el formato existe.
+  - `deno check .` **no** tiene modo JSON, emite escapes ANSI incluso por tubería, y sus
+    diagnósticos son multilínea (mensaje primero, `at file://…:línea:col` después). Es el
+    único riesgo real de la fase y así se le comunica al ejecutor.
+  - Los cuatro comandos salen con código distinto de cero; un `set -e` ingenuo mata el
+    script. Advertido explícitamente.
+  - `git diff --name-only 1732bee HEAD` → el único fichero **fuente** que cambió desde la
+    base es `src/components/ui/header.tsx`, que no está en la `F` de ninguna fase. La
+    línea base tomada en `1732bee` (Z3) sigue siendo válida para la lista de Z6.
+  - Desambiguación necesaria para Z5b: `MesaAbiertaAdmin.tsx` existe dos veces;
+    `src/pages/` es un re-export de 29 líneas y `src/components/mesa-abierta/` el real de
+    2227. Todas las referencias de línea del plan (`:226`, `:511`, `:785`, `:1350`,
+    `:1426`, `:1453`) resuelven contra el de `components/`. Igual para
+    `MesaAbiertaDashboard.tsx` (`:96`, `:139`). El prompt lo fija.
+  - Lista de Z6 derivada de los Scope de P1–P8: **11 ficheros existentes en `1732bee`**;
+    el resto de ficheros de esas fases los crea su propia fase y no tienen línea base.
+- COMMITS: (pendiente — el prompt se commitea con esta entrada)
+- TESTS: (n/a — ronda de preparación; no se ejecutó ningún gate nuevo)
+- FINDINGS RAISED: (n/a)
+- DECISIONS: ninguna nueva. El prompt no relaja ningún criterio del plan congelado.
+- OPEN AFTER THIS ROUND: ejecución de P0 r1 en sesión fresca.
