@@ -309,3 +309,59 @@
   es de esta fase; se deja intacto.
 - OPEN AFTER THIS ROUND: verificación independiente del PM; después P1 (desbloqueada por
   PR1/PR2) sobre esta rama.
+
+### 2026-08-06 — P0 round 1 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P0 r1 (`bc48eee`, `552a1ff`).
+  1 BLOCKING, 1 SHOULD-FIX, 1 NIT. Prompt de remediación en `prompts/P0-r2.md`.
+- LO QUE VERIFIQUÉ YO MISMO (no acepté ninguna afirmación del reporte):
+  - **Alcance**: `git diff --stat main..feat/mesa-md-gates` = 4 ficheros, +533/-0. Los 3 del
+    Scope más el ledger. **Cero ficheros bajo `src/` o `supabase/`.** `git worktree list`
+    muestra solo el checkout principal — el worktree de la base fue retirado.
+  - **Z4 (reproducibilidad)**: ejecuté el script dos veces sobre 4 ficheros; `diff` vacío.
+  - **Z1**: recuento + detalle por fichero en las cuatro herramientas; una ruta inexistente
+    (`src/lib/mesa-abierta/noExiste.ts`) emite `(0)`×4 sin romper. Comprobado que el `(0)`
+    de `types.ts` es real y no un fallo de filtrado (`tsc | grep -c types.ts` → 0).
+  - **Z3 + Z6 + la deriva `1732bee`↔`HEAD`, todo de una vez**: ejecuté el script sobre los
+    11 ficheros de la base en el checkout principal y lo comparé con el cuerpo de
+    `base-by-file.txt` (capturado en `/tmp/upgrade-base` a `1732bee`). **Diff vacío.** Esto
+    reproduce la base entre dos checkouts distintos y valida la única desviación del
+    ejecutor: la reescritura de la línea `at file://…` de `deno check` a ruta relativa. Sin
+    ella los 46 diagnósticos de `deno check` habrían parecido nuevos.
+  - **Z7**: `npm run build` ok (9.17s). `npx vitest run --no-file-parallelism` → **1036
+    pass / 6 fail**, y los 6 nombres son exactamente los seis de
+    `MesaAbiertaDashboard.test.tsx`. `deno test --allow-all .` → **409 passed / 0 failed**.
+  - **Z2**: `grep -n 'npm run lint'` sobre el script → 0; usa `npx eslint . -f json` (:36).
+  - Leí el script entero (141 líneas) y el README (163).
+- LO QUE **NO** VERIFIQUÉ POR MI CUENTA: los canarios Z5a/Z5b. Reproducirlos exige editar
+  fichero fuente, y el SOP §1.1 me lo prohíbe. Verifiqué en su lugar el **mecanismo**: el
+  script emite el mensaje crudo completo, y la línea base contiene
+  `MesaAbiertaAdmin.tsx(1689,57): error TS2339: Property 'hostsConvertedToGuests'…` — el
+  estado previo exacto del canario de sustitución. Una sustitución cambia el texto del
+  mensaje y por tanto el `diff`. El `diff` que pegó el ejecutor es consistente con eso.
+  **Codex debería reejecutar Z5b él mismo en la revisión final.**
+- FINDINGS RAISED:
+  - **[B1] BLOCKING — el gate pasa en silencio si una herramienta no llega a ejecutarse.**
+    `readJson()` traga todo error de parseo y devuelve `[]`; si `tsc` no arranca, su fichero
+    de salida no tiene cabeceras y da cero. Sin stderr, sin código de salida. Lo demostré:
+    con `deno` fuera del `PATH`, el script emite `(0)` en las cuatro herramientas para
+    `create-mesa-matches/index.ts` — cuya base real es `deno lint (4)` y `deno check (6)` —
+    y **sale con 0**. Como el criterio D8 es "cero diagnósticos **nuevos**", una cadena de
+    herramientas rota no falla el gate: lo **aprueba**, para P1–P8. Es la misma clase de
+    falso negativo que Z5b existe para excluir. Además el plan ya pedía la mitigación y el
+    script no la implementa: **D8 punto 5** exige registrar los recuentos globales
+    (1041/160/94/46) como observación para detectar sorpresas, y el script no emite ninguno.
+  - **[S1] SHOULD-FIX — test intermitente ajeno al workstream.** La primera pasada del
+    ejecutor dio 1035/7: un timeout de `waitFor` en
+    `src/components/liturgia-builder/editors/__tests__/CuentacuentoEditor.ph.surfaces.test.tsx`.
+    No reprodujo ni en su segunda pasada ni en la mía. Esta rama no toca `src/`, así que no
+    es causado por P0. **Backlog** — no se arregla en esta fase.
+  - **[N1] NIT — agrupación de `tsc`.** La rama `else if (cur) cur.push(line)` absorbe en el
+    diagnóstico anterior cualquier línea en columna 0 que no sea cabecera. Hoy no existe
+    ninguna (1041 líneas de columna 0 = 1041 cabeceras, verificado) y el README lo declara.
+    Solo lo registro.
+- BACKLOG ADDED: S1 (test intermitente de `CuentacuentoEditor.ph.surfaces`).
+- DECISIONS: la desviación del ejecutor (normalizar la ruta de la línea `at` de
+  `deno check`) se **acepta**: es necesaria para que Z3 y Z4 sean compatibles entre sí, no
+  toca el texto del mensaje, y la verificación cruzada entre checkouts la demuestra correcta.
+- OPEN AFTER THIS ROUND: P0 r2 — un único bloqueante, B1.
