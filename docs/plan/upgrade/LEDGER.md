@@ -211,3 +211,29 @@
 - DECISIONS: **PLAN CONGELADO 2026-08-06.** Enmendada la condición de congelación: el PASS
   congela el texto; PR1 y PR2 pasan a bloquear la ejecución de P1, no la congelación.
 - OPEN AFTER THIS ROUND: PR1 y PR2 (Brent). Después, bootstrap de PM para P0 (SOP §3.3).
+
+### 2026-08-06 — prerrequisitos PR1 y PR2 — PM (Fable) + Brent
+- SESSION: UPGRADE · plan · PM
+- ACTION: Auditoría de PR1 y concesión de ambos prerrequisitos. **P1 desbloqueada.**
+- HALLAZGOS DE LA AUDITORÍA (todos verificados, no supuestos):
+  - La premisa de `CLAUDE.md:77` es **cierta**: el proyecto `mulsqxfhxxdsadxsljss` aloja
+    11 tablas de Life OS (`goals`, `habits`, `habit_logs`, `health_logs`,
+    `journal_entries`, `life_areas`, `lifeos_calendar_events`, `lifeos_tasks`,
+    `meditation_logs`, `project_health`, `workout_logs`) junto al esquema de CASA.
+  - Open Brain es un proyecto **distinto** (`nnfwmjqrvyvtpfrxnkvz`): lo compartido es la
+    base de la aplicación, no el almacén de memoria.
+  - La regla literal estaba obsoleta: de 128 tablas solo 61 son `church_*`; CASA posee
+    además `music_*` (21), `mesa_*` (10), `casa_*` (3), `liturgia*`, `graphics_*`,
+    `cuentacuentos_*`, `sermon_*`, `presentation_*`, `financial_*`. Leída al pie de la
+    letra habría prohibido los esquemas de música, RBAC y finanzas, ya enviados.
+  - `mesa_abierta_*` sin enredos: 0 claves foráneas desde tablas ajenas (consulta sobre
+    `pg_constraint`), 0 vistas/reglas dependientes (consulta sobre `pg_depend`), y 0
+    referencias en el código de Life OS (la única coincidencia en SecondBrain es un
+    fixture de benchmark que describe una tarea de CASA).
+- DECISIONS: **PR1 concedido** por Brent. **PR2 concedido** por Brent. `CLAUDE.md:77`
+  reescrita para nombrar las 11 tablas de Life OS en vez de un prefijo, con nota de la
+  corrección y su fecha.
+- NOT DONE: la migración de P1 **no** existe todavía; la escribe P1. Esta sesión es de
+  planificación y no escribe código fuente (SOP §1.1). PR2 queda registrado y disponible
+  para que P1 lo consuma.
+- OPEN AFTER THIS ROUND: bootstrap de PM para P0 (SOP §3.3).

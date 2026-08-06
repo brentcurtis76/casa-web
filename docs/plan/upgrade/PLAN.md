@@ -10,9 +10,8 @@ META
 - **PLAN FROZEN: 2026-08-06** — `CODEX REVIEW (round 7)` = **PASS**, sin BLOCKING ni
   SHOULD-FIX. Los dos NIT quedan corregidos en esta misma revisión. A partir de aquí, todo
   cambio al plan requiere una entrada en el Decision Log.
-- **EJECUCIÓN BLOQUEADA** hasta que Brent resuelva PR1 y PR2. La congelación del plan y el
-  permiso para ejecutar son cosas distintas: el texto está cerrado; P1 no arranca sin
-  ambas autorizaciones. (Enmienda a la redacción anterior de este campo — ver Decision Log.)
+- **EJECUCIÓN DESBLOQUEADA: 2026-08-06.** Brent concedió PR1 y PR2. Todas las fases,
+  incluida P1, pueden ejecutarse.
 
 ## Por qué la revisión 6 retiró dos exigencias (contexto que sigue vigente)
 
@@ -811,8 +810,8 @@ rutas rotas del componente.
 | 2026-08-06 | **P8 consume la RPC por un adaptador local con una única conversión documentada y validación en runtime** | Codex r5 B4: una llamada sin tipar produce un TS2345 nuevo, así que no pasaba el gate de su propia fase | Codex Sol |
 | 2026-08-06 | Las seis declaraciones de `types.ts` se fijan literalmente (`string \| null`) | Codex r5 S3: usar el enum de comida produce un TS2322 nuevo | Codex Sol |
 | 2026-08-06 | **Plan congelado con `VERDICT: PASS` de Codex (ronda 7)**; se enmienda la condición de congelación: el PASS congela el **texto**, y PR1/PR2 pasan a bloquear la **ejecución de P1**, no la congelación | Eran dos cosas distintas mezcladas en un solo campo de META. Congelar el texto permite escribir los prompts de ejecutor mientras Brent resuelve las autorizaciones | PM |
-| _pendiente_ | PR1 — excepción de prefijo de tabla (bloquea P1) | — | — |
-| _pendiente_ | PR2 — autorización para aplicar la migración (bloquea P1) | — | — |
+| 2026-08-06 | **PR1 CONCEDIDO.** `mesa_abierta_*` y `mesa_abierta_matches` pueden alterarse | Auditoría del PM sobre las 128 tablas del proyecto: la premisa de base compartida es **cierta** (11 tablas de Life OS conviven ahí), pero la regla literal de `CLAUDE.md:77` estaba obsoleta — solo 61 de 128 tablas son `church_*`, y los esquemas de música, RBAC y finanzas ya habían enviado fuera de ese prefijo. Para `mesa_abierta_*` en concreto: **cero** claves foráneas desde tablas ajenas, **cero** vistas o reglas dependientes, y **cero** referencias en el código de Life OS. `CLAUDE.md:77` se reescribe para nombrar las 11 tablas de Life OS en vez de un prefijo | PM (auditoría), Brent (concesión) |
+| 2026-08-06 | **PR2 CONCEDIDO.** Autorización para aplicar la migración de P1 a la instancia compartida | Autorización explícita de Brent, distinta de cualquier aprobación de merge | Brent |
 
 ---
 
@@ -881,7 +880,6 @@ atacaban dos exigencias que el propio PM había inventado —equivalencia byte-i
 implementaciones y un esquema global de identidad de diagnósticos— y que nadie había
 pedido. Retirarlas, con autorización de Brent, fue lo que desbloqueó el plan.
 
-**Siguiente paso: PR1 y PR2.** Hasta entonces no arranca P1. P0, P2 y P3a **no** dependen
-de ellas y podrían ejecutarse antes si Brent lo prefiere; el orden de merge lineal sigue
-siendo P0 → P1 → …, así que adelantarlas solo tiene sentido si se acepta reordenar el
-merge, lo que exigiría una entrada en el Decision Log.
+**PR1 y PR2 concedidos el 2026-08-06.** No queda ningún bloqueo: el siguiente paso es el
+bootstrap de PM para **P0** (SOP §3.3), y a partir de ahí el orden de merge lineal
+P0 → P1 → P2 → P3a → P3b → P4 → P5a → P5b → P6 → P7 → P8.

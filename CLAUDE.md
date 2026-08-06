@@ -74,7 +74,20 @@ ALL must pass before any task is reported complete:
 
 ## Hard Rules
 
-- **Database is shared with Life OS** — only touch `church_*` prefixed tables. Verify table ownership before any schema change.
+- **Database is shared with Life OS** — the CASA Supabase project (`mulsqxfhxxdsadxsljss`)
+  holds both CASA's schema and Life OS's. **Never touch these 11 Life OS tables**, and
+  verify ownership before any schema change:
+  `goals`, `habits`, `habit_logs`, `health_logs`, `journal_entries`, `life_areas`,
+  `lifeos_calendar_events`, `lifeos_tasks`, `meditation_logs`, `project_health`,
+  `workout_logs`.
+  Everything else in that project is CASA-owned and created by migrations in this repo —
+  `church_*` (61 tables) plus `music_*`, `mesa_abierta_*`, `casa_*`, `liturgia*`,
+  `graphics_*`, `cuentacuentos_*`, `sermon_*`, `presentation_*`, `financial_*` and others.
+  (This rule previously read "only touch `church_*` prefixed tables". That was the naming
+  convention when it was written, not the actual boundary: the music planning, RBAC and
+  financial schemas all shipped outside `church_*`. Corrected 2026-08-06 after auditing
+  all 128 tables in the project. Open Brain is a **separate** project,
+  `nnfwmjqrvyvtpfrxnkvz`, and is not the shared one.)
 - **Only additive migrations** — no DROP, TRUNCATE, or destructive ALTER.
 - **Member PII is protected** — never in AI prompts, never in Open Brain. Use initials or role references.
 - **Synthetic data only** for dev/testing.
