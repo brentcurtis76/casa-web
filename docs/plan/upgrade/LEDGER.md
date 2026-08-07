@@ -535,3 +535,51 @@
   ESLint (>1 = fatal documentado). En `tsc`/`deno check` el exit lleva el peso.
 - OPEN AFTER THIS ROUND: **segunda y última revisión de Codex** sobre
   `feat/mesa-md-gates`@`9255764` (SOP §1.5: tope 2). P0 no es DONE hasta que Codex pase.
+
+### 2026-08-06 — P0 round 3 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P0 r3 (`9255764`, `6caa87d`).
+  **B1 de Codex cerrado. N1 cerrado. Cero hallazgos nuevos.** P0 vuelve a IN REVIEW.
+- LO QUE VERIFIQUÉ YO MISMO (reejecuté las cuatro sondas, no acepté el reporte):
+  - **C1 — el falso positivo de Codex, muerto.** Con las cuatro herramientas sustituidas por
+    stubs que salen con 0 y emiten salida válida y vacía (`[]`,
+    `{"version":1,"diagnostics":[]}`): **EXIT=0**, totales `tsc=0 eslint=0 deno-lint=0
+    deno-check=0` por stderr, **ninguna línea `FALLO`**. Antes de esta ronda ese mismo caso
+    salía con 1 marcando las cuatro herramientas como caídas.
+  - **C2 — lo que la ronda 2 sí resolvía sigue resuelto.** Con `deno` fuera del `PATH`:
+    **EXIT=1**, nombra `deno-check` (código 127 sin diagnósticos) y `deno-lint` (JSON no
+    parseable), con su `deno: command not found` capturado.
+  - **C3 — salida malformada.** Stub de ESLint que sale con 0 imprimiendo `not json`:
+    **EXIT=1**, nombra eslint con el error de parseo exacto.
+  - **C4** — toolchain real sobre los 11 ficheros: **EXIT=0** y totales
+    `tsc=1041 eslint=160 deno-lint=94 deno-check=46`. La línea base no se movió.
+  - **C5** — stdout comparado con el cuerpo de `base-by-file.txt`: **diff vacío**. El cuerpo
+    de la evidencia commiteada está intacto; solo cambió una línea `#` de la cabecera.
+  - **C6** — dos pasadas reales, `cmp` sin diferencias.
+  - **C9** — `npm run build` ok (7.38s); `npx vitest run --no-file-parallelism` → **1036
+    pass / 6 fail** con los seis nombres de siempre; `deno test --allow-all .` → **409/0**.
+  - **N1** — verificado en la cabecera de `base-by-file.txt` y en el README: la receta lleva
+    ahora `mkdir -p /tmp/upgrade-base/scripts/gates` con la razón anotada. Yo había
+    confirmado el defecto con `git ls-tree 1732bee scripts/`.
+  - **C8** — leí la sección reescrita del README: desaparecen el supuesto "cero global = no
+    corrió" y su caveat, y en su lugar está el discriminador por herramienta.
+  - **Alcance**: `git diff --stat 099c822..HEAD` = 4 ficheros, +125/-26. Cero bajo `src/` o
+    `supabase/`. Árbol limpio salvo lo preexistente sin trackear.
+  - Leí el diff completo del script (+71/-25): el epílogo de clasificación es lo único que
+    cambia de fondo; atribución, orden, agrupación de `deno check` y `rel()` siguen sin
+    tocarse, que es lo que permitió a Codex dar Z1–Z7 por buenos.
+- FINDINGS RAISED: ninguno. Las dos suposiciones del ejecutor son correctas: el 2 de ESLint
+  es fatal por convención documentada, y `Array.isArray(parsed)` en vez de `parsed || []`
+  evita que una forma inesperada reviente antes de llegar a la clasificación.
+- LÍMITE INHERENTE QUE CONVIENE NOMBRAR (no es hallazgo): para `tsc` y `deno check`, que no
+  tienen modo JSON, una herramienta que saliera con 0 **sin haber hecho nada** es
+  indistinguible de una ejecución limpia. Es exactamente el precio del arreglo que Codex
+  especificó y que C1 exige; la alternativa era el falso positivo que él mismo bloqueó.
+- TESTS: C1 EXIT=0 sin FALLO · C2 EXIT=1 · C3 EXIT=1 · C4 EXIT=0 con 1041/160/94/46 ·
+  C5 diff vacío · C6 byte-idéntico · build ok · vitest 1036/6 · deno test 409/0.
+- BACKLOG: S1 sigue abierto (flake de `CuentacuentoEditor.ph.surfaces`; no disparó en esta
+  ronda ni en mi pasada).
+- DECISIONS: ninguna nueva.
+- OPEN AFTER THIS ROUND: **segunda y última revisión de Codex** sobre
+  `feat/mesa-md-gates`@`6caa87d` (SOP §1.5, tope 2). Si no pasa, decide Brent: aceptar,
+  replanificar o backlog. P0 no se marca DONE hasta el PASS.
