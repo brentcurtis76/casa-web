@@ -401,3 +401,51 @@
   1041/160/94/46), nada bajo `src/`, `supabase/`, `package.json`, configs, `PLAN.md` ni
   `base-by-file.txt`. `docs/plan/audio/` sigue sin rastrear e intacto.
 - OPEN AFTER THIS ROUND: verificación independiente del PM sobre B1; después P1.
+
+### 2026-08-06 — P0 round 2 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P0 r2 (`5e01a3e`). **B1 cerrado.
+  Cero BLOCKING, cero SHOULD-FIX nuevos.** Fase limpia a mi juicio; P0 pasa a IN REVIEW.
+- LO QUE VERIFIQUÉ YO MISMO:
+  - **B1 cerrado, con mi sonda exacta de la ronda 1.** Con `deno` fuera del `PATH` el script
+    ahora **sale con 1**, nombra las dos herramientas caídas, distingue la causa (JSON no
+    parseable vs cero global) e incluye el stderr capturado
+    (`deno: command not found`). Antes: `EXIT=0`, stderr vacío.
+  - **R1**: en una ejecución sana, `EXIT=0` y por stderr
+    `[gates] totales del proyecto: tsc=1041 eslint=160 deno-lint=94 deno-check=46` — los
+    cuatro recuentos de la línea base, que es lo que pedía D8 punto 5.
+  - **R3, el criterio que protegía la base**: reejecuté el script sobre los 11 ficheros y
+    comparé stdout con el cuerpo de `base-by-file.txt`. **Diff vacío.** Los totales por
+    stderr no contaminan el artefacto que se difea; `base-by-file.txt` sigue válido sin
+    regenerarse.
+  - **R4**: dos ejecuciones consecutivas, `cmp` sin diferencias.
+  - **R5**: leí `git diff bc48eee..HEAD` del script (+49/-3). Toca **solo** la firma de
+    `readJson`, una línea de contador en `put()` y un bloque nuevo **después** de
+    `process.stdout.write`. El parser de `tsc`, la atribución de ESLint y `deno lint`, la
+    agrupación de `deno check`, `rel()`, el orden y la emisión quedan **sin modificar** —
+    el mecanismo de Z5b está intacto.
+  - **R7**: `npm run build` ok (20.10s); `npx vitest run --no-file-parallelism` → **1036
+    pass / 6 fail**, los seis nombres exactos de `MesaAbiertaDashboard.test.tsx`;
+    `deno test --allow-all .` → **409 passed / 0 failed**.
+  - **Alcance**: `git diff --stat f776e56..HEAD` = 3 ficheros (script, README, ledger),
+    +132/-3. Cero ficheros bajo `src/` o `supabase/`. `base-by-file.txt` sin tocar.
+  - Leí la sección nueva del README: documenta el modo de fallo con su reproducción, por qué
+    un gate que devuelve cero en silencio es peor que no tener gate, por qué los totales van
+    por stderr, y el supuesto declarado con **la condición en que deja de valer** (el día en
+    que arreglar la línea base sea un objetivo).
+  - Corrección de método: mi primer intento de R3 pasó los 11 ficheros como un solo argumento
+    (zsh no divide en palabras la expansión sin comillas). Fallo mío, no del script; repetido
+    con los argumentos explícitos, diff vacío.
+- LO QUE **NO** VERIFIQUÉ POR MI CUENTA: sigue siendo Z5a/Z5b — editar fuente me está vedado
+  (SOP §1.1). R5 establece que el camino de emisión no cambió respecto de la ronda 1, pero
+  **Codex debe reejecutar Z5b él mismo en la revisión final.**
+- FINDINGS RAISED: ninguno. Las dos suposiciones del ejecutor (truncar el stderr capturado a
+  20 líneas; `process.exitCode` en vez de `process.exit()` para no truncar una tubería) son
+  correctas y están justificadas.
+- TESTS: build ok · vitest 1036/6 (los 6 de base) · deno test 409/0 · gate sano EXIT=0 con
+  totales 1041/160/94/46 · gate roto EXIT=1 con diagnóstico.
+- BACKLOG: S1 sigue abierto (test intermitente de `CuentacuentoEditor.ph.surfaces.test.tsx`,
+  ajeno a este workstream; no disparó en ninguna de mis dos pasadas).
+- DECISIONS: ninguna nueva; no se relajó ningún criterio de P0.
+- OPEN AFTER THIS ROUND: **revisión final de Codex sobre `feat/mesa-md-gates`** (SOP §3.6).
+  P0 no se marca DONE hasta que Codex pase.
