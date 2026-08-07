@@ -136,6 +136,7 @@ export type Database = {
           whatsapp_enabled: boolean
           status: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason: string | null
+          can_bring_main_dish: boolean
           created_at: string
           updated_at: string
         }
@@ -154,6 +155,7 @@ export type Database = {
           whatsapp_enabled?: boolean
           status?: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason?: string | null
+          can_bring_main_dish?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -172,6 +174,7 @@ export type Database = {
           whatsapp_enabled?: boolean
           status?: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason?: string | null
+          can_bring_main_dish?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -229,6 +232,7 @@ export type Database = {
           dinner_date: string
           dinner_time: string
           guest_count: number
+          host_food_assignment: string | null
           created_at: string
           updated_at: string
         }
@@ -239,6 +243,7 @@ export type Database = {
           dinner_date: string
           dinner_time?: string
           guest_count?: number
+          host_food_assignment?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -249,6 +254,7 @@ export type Database = {
           dinner_date?: string
           dinner_time?: string
           guest_count?: number
+          host_food_assignment?: string | null
           created_at?: string
           updated_at?: string
         }
