@@ -449,3 +449,43 @@
 - DECISIONS: ninguna nueva; no se relajó ningún criterio de P0.
 - OPEN AFTER THIS ROUND: **revisión final de Codex sobre `feat/mesa-md-gates`** (SOP §3.6).
   P0 no se marca DONE hasta que Codex pase.
+
+### 2026-08-06 — P0 revisión final Codex (ronda 1 de 2) — Codex Sol (REVIEW)
+- SESSION: UPGRADE · P0 · REVIEW
+- ACTION: Revisión final de P0 sobre `feat/mesa-md-gates`@`a230749`.
+  **VERDICT: FAIL — 1 BLOCKING, 1 NIT.**
+- FINDINGS RAISED:
+  - **[B1] BLOCKING** — `changed-files-diagnostics.sh:165`: `parseErrors.has(t) || totals[t] === 0`
+    clasifica como "la herramienta no corrió" una ejecución **limpia y correcta**. Codex
+    reprodujo el falso positivo: ejecutó las cuatro fronteras de comando con salida válida,
+    parseable, con éxito y cero diagnósticos; **los cuatro comandos salieron con 0 y el gate
+    salió con 1** marcando las cuatro como caídas. Viola **D8 punto 5** (`PLAN.md:252`), que
+    declara los recuentos globales observación y **"no como criterio"**. Remediación exigida:
+    capturar el estado de salida de cada herramienta y distinguir tres casos — cero + éxito
+    = ejecución limpia legítima; cero + fallo o salida inválida = herramienta caída; salida
+    de diagnósticos esperada + diagnósticos utilizables = ejecución normal en rojo de base.
+  - **[N1] NIT** — la receta de reproducción de la base omite
+    `mkdir -p /tmp/upgrade-base/scripts/gates`; el directorio no existe en `1732bee`, así que
+    el `cp` documentado falla tal cual está escrito (`README.md:203`,
+    `base-by-file.txt:4`). Codex lo sorteó a mano y reprodujo la evidencia exactamente, así
+    que no invalida Z3.
+- CODEX CONFIRMA (verificación independiente, no del reporte): **Z1–Z7 MET**, incluida
+  **Z5b ejecutada por él mismo** — total del fichero 12 y TS2339 6 antes y después,
+  aparece el mensaje nuevo `z5bReplacementCanary` y desaparece `hostsConvertedToGuests`;
+  mutación revertida. Z3 reproducido en worktree fresco a `1732bee` con coincidencia exacta.
+  Z4 byte-idéntico incluidos los totales por stderr. Sin creep de código de producto. **D12
+  sin violación.** Las sondas de Deno ausente y de error de sintaxis fallan cerrando con
+  stderr accionable. Vio una vez el flake conocido de `CuentacuentoEditor.ph.surfaces`
+  (1035/7); su suite aislada pasó 15/15 y el reintento completo dio los 1036/6 exigidos.
+- PM TRIAGE: **acepto B1 sin reservas.** La inferencia "cero global ⇒ no corrió" es inválida
+  y convierte en criterio lo que D8 declara observación. El problema que la ronda 2 resolvía
+  sigue siendo real —la ronda 1 salía con 0 y todo ceros con `deno` ausente, aprobando el
+  gate con la cadena rota— así que lo que se corrige es el **discriminador**, no el objetivo.
+  Confirmé N1 yo mismo: `git ls-tree 1732bee scripts/` no lista `scripts/gates`.
+- DECISIONS: **N1 se arregla en esta ronda pese a ser NIT.** El SOP §1.4 dice registrar y no
+  actuar, pero una receta de reproducción que falla tal como está escrita, dentro de evidencia
+  commiteada, es una trampa real para quien reproduzca la base — el mismo criterio que aplicó
+  la ronda 7 de planificación a sus dos NIT. Además el ejecutor ya edita ambos ficheros.
+- OPEN AFTER THIS ROUND: **P0 r3 — ronda 3 de 3 del tope PM↔ejecutor (SOP §1.5).** Si no
+  queda limpia, toca propuesta de re-planificación, no una cuarta ronda. Después, segunda y
+  última revisión de Codex (§1.5: tope 2).
