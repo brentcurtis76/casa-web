@@ -7,8 +7,8 @@ META
 - BASE: `main`
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
-  **r10 → FAIL (6)**. Esta es la **revisión 11**. Ver §9 y §11–§17 para la trazabilidad
-  finding → cambio.
+  **r10 → FAIL (6)** · **r11 → FAIL (7)**. Esta es la **revisión 12**. Ver §9 y §11–§18 para la
+  trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -21,9 +21,11 @@ META
   en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
   conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **PENDIENTE DE REVIEW:** esta revisión 11 **no ha pasado por Codex**. Ninguna unidad arranca
-  hasta que lo haga. En la r10 Codex dijo que **congelaría el alcance y el comportamiento de E2**,
-  pero no su contrato de ejecución, por la estrategia de tipado. La r11 la congela.
+- **PENDIENTE DE REVIEW:** esta revisión 12 **no ha pasado por Codex**. En la r11 Codex
+  **validó con evidencia ejecutada** el alcance, el comportamiento, la estrategia de tipado y el
+  test plan de E2 —construyó el adaptador y lo midió: 0/0/0/0— y dijo que congelaría E2 en la
+  ronda siguiente con tres arreglos: **B1** (la línea base irreproducible), **S2** (acotar E2.1
+  por RLS) y **S3** (citar la regla de clasificación del README). **Los tres están aplicados.**
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -204,16 +206,25 @@ scripts/gates/selftest.sh
 
 No hay SHA del gate que fijar ni worktrees que montar: se ejecuta desde el árbol.
 
-**Línea base del repo, medida el 2026-08-07** con
-`bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts`:
+**Línea base del repo — remedida en la r12 sobre un worktree LIMPIO de `main`:**
 
 ```
-[gates] totales del proyecto: tsc=1039 eslint=160 deno-lint=94 deno-check=46
+$ git worktree add --detach ../wt-measure main   # main = 05dc4ca
+$ ln -s <repo>/node_modules ../wt-measure/node_modules
+$ bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts
+[gates] totales del proyecto: tsc=1041 eslint=160 deno-lint=94 deno-check=46
 ```
 
-*(La r10 y anteriores decían `tsc=1041`. Son **1039**; la cifra venía de la r1 y nadie la volvió
-a medir.)* Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que toqué no
-ganaron un diagnóstico nuevo".
+**Son 1041.** La r11 dijo `1039` "medido" y **era falso**: ejecuté el comando sobre
+`feat/mesa-md-schema` —la rama de P1 de UPGRADE, que arregla dos diagnósticos— y no sobre `main`.
+El comando era real; el árbol no era el que la afirmación nombraba. Ver §5, cuarta entrada.
+
+> **Regla, a raíz de esto:** los totales del proyecto se toman **en el SHA padre de la unidad**,
+> nunca en el checkout que el PM tenga debajo, y la medición se anota **con su SHA**. Un total
+> medido sin decir sobre qué árbol no es una medición.
+
+Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que toqué no ganaron un
+diagnóstico nuevo".
 
 **Procedimiento por fase:**
 
@@ -225,7 +236,14 @@ ganaron un diagnóstico nuevo".
 bash scripts/gates/changed-files-diagnostics.sh <fichero> [<fichero> ...]
 ```
 
-3. Medir igual en HEAD y comparar **mensajes crudos completos**, sin canonicalizar ni agrupar.
+3. Medir igual en HEAD y comparar **mensajes crudos completos**, sin canonicalizar ni agrupar,
+   **aplicando la regla de clasificación de `scripts/gates/README.md`**: *desplazamiento de línea*
+   —mismo mensaje, distinta línea— es **aceptable**; *diagnóstico nuevo* es **BLOQUEANTE**.
+   Esto importa en E2: sus 2 errores base viven en `(195,15)` y `(200,20)`, y **cualquier import
+   nuevo los desplaza**. Leída sin esta regla, la comparación daría un delta falso en la primera
+   pasada (Codex r11/S3).
+3b. Para capturar la base en el SHA padre, usar el patrón del README —worktree desechable más
+   symlink a `node_modules`— en vez de mover el checkout de trabajo.
 4. Además, verde absoluto (no delta):
 
 ```bash
@@ -245,13 +263,15 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 11, tras `CODEX REVIEW — plan r10` FAIL)
+## 5. Phase index — por olas (revisión 12, tras `CODEX REVIEW — plan r11` FAIL)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
 1. **UPGRADE P0 pasó Codex y se mergeó a `main`.** `scripts/gates/changed-files-diagnostics.sh`,
    `selftest.sh` y `README.md` están hoy en `main` (blob del gate
-   `51af6197e5186f0dfc36076512e5d887973d85f6`, idéntico al que Codex aprobó). **`E0-gates` se
+   `51af6197e5186f0dfc36076512e5d887973d85f6`, idéntico al que Codex aprobó —
+   `$ git rev-parse main:scripts/gates/changed-files-diagnostics.sh` → `51af6197…`).
+   **`E0-gates` se
    retira: no hay nada que incorporar ni que fijar.** D18 vuelve a funcionar tal como se escribió.
 2. **Mi afirmación de que había Postgres local disponible era falsa.** Ver la corrección abajo.
 
@@ -289,8 +309,9 @@ haya medido el entorno.
 
 ### Ola 4 — todavía no son unidades
 
-`E1-impl`, `E4-impl`, `E5` y `E6` siguen sin planificar y **sin contarse como aprobadas**. §5.1
-guarda lo que sabemos de su alcance.
+`E1-impl`, `E4-impl`, `E5` y `E6` siguen sin planificar y **sin contarse como aprobadas**.
+*(Codex r11/N3: la r10 y la r11 remitían a un "§5.1" que no existe — la sección se perdió al
+reensamblar el documento. El alcance corregido de E6 que guardaba está en §15, finding B6.)*
 
 **Este bloque no entrega las cuatro condiciones del Goal.** Congelar E2 entrega la carátula
 derivada de la liturgia, y nada más. Lo digo aquí para que no haya que deducirlo.
@@ -330,6 +351,13 @@ Tres, todas con la misma forma — una inferencia colocada dentro de una secció
 | r1 | "este entorno no alcanza `*.supabase.co`" | Falso; el feed respondía 200 (Codex CR-1) |
 | r2 | "`scripts/gates/changed-files-diagnostics.sh` existe en el repo" | Estaba en otra rama, no en `main` |
 | r9 | "Postgres local disponible — verificado" | `supabase status` falla; el puerto está ocupado |
+| r11 | "`tsc=1039`, medido el 2026-08-07" | Son **1041**. Ejecuté el comando sobre `feat/mesa-md-schema` (la rama de P1 de UPGRADE), no sobre `main` |
+
+**La cuarta es la más instructiva, porque rompe la regla que adopté para evitar las tres
+primeras.** En la r10 escribí que toda afirmación de estado del entorno llevaría su comando al
+lado. En la r11 lo hice — y la afirmación siguió siendo falsa, porque **nombré el comando pero no
+el árbol**. La regla, corregida: *comando, salida **y la identidad del árbol** sobre el que se
+ejecutó (rama o SHA)*. Un total sin árbol no es una medición; es un número con un comando al lado.
 
 Queda escrito aquí a propósito. Es el mismo defecto que este plan lleva seis rondas
 diagnosticando, cometido por el PM que lo diagnostica.
@@ -362,9 +390,16 @@ Supabase real y depende de su RLS; lo que no hace es tocar esquema ni necesitar 
 
 ```
 liturgia_elementos  WHERE liturgia_id = <ep.liturgy_id> AND tipo = 'portada-reflexion'
-  → slides.slides[0].content.imageUrl        (data URL)
+  → slides.slides[0].content.imageUrl        (data URL **o base64 crudo sin prefijo**)
   → base64ToSpotifyCover()                   (coverImageUtils.ts:17, recorte central en :32)
 ```
+
+**Forma real de los datos, medida por Codex r11 contra producción (SELECT de sólo lectura):**
+30 filas `portada-reflexion` — **14** con prefijo `data:image/png;base64,…`, **15** con base64
+crudo sin prefijo, **1** sin `slides`, **0** con URL HTTP. Y 12 de esas 14 declaran MIME `png`
+sobre un payload JPEG. `loadImage` (`coverImageUtils.ts:57`) acepta ambas formas por diseño, así
+que 29 de 30 son consumibles y la restante cae en E2.6(b). **Los cuatro casos de E2.6 quedan
+así confirmados contra los datos reales, no contra una hipótesis.**
 
 **Decisión de producto de Brent (2026-08-07):** sin portada de reflexión guardada, se cae a la
 ruta actual de Gemini y **se avisa**. *Promesa acotada tras Codex r10/N2: la ausencia de portada
@@ -391,9 +426,37 @@ nuevo y D18 lo bloquea**.
 
 **Lo que se construye:** un módulo nuevo y pequeño que (1) ensancha el cliente **una sola vez**
 y en **un solo sitio**, (2) declara explícitamente la forma de la fila que espera, y (3)
-**valida esa forma en runtime** antes de devolverla. La validación de runtime **es** el guardrail
+**valida esa forma en runtime** antes de devolverla.
+
+**El tipo ensanchado es privado del módulo y no usa `any`** (Codex r11/N1): la config extiende
+`tseslint.configs.recommended`, donde `no-explicit-any` es **error**, así que un
+`SupabaseClient<any, …>` añadiría 2 diagnósticos de ESLint y E2.7 lo rechazaría. El ensanchado
+estructural vía `unknown` mide cero — Codex lo demostró construyendo el prototipo y pasándole el
+gate real. La validación de runtime **es** el guardrail
 del cast: sin ella el cast sería una promesa; con ella, una aserción comprobada. Y no es trabajo
 extra — E2.6 ya la exige.
+
+### Asimetría de RLS entre `liturgias` y `liturgia_elementos` (Codex r11/S2)
+
+`20260108000000_fix_liturgia_rls_authenticated.sql` da a **`liturgias`** una policy de lectura
+para `is_liturgia_admin` (`:29`), pero en **`liturgia_elementos`** elimina los policies de admin
+y **no los recrea** (`:35-48`): ahí sólo lee el propietario.
+
+Consecuencia concreta: el selector de liturgias de `useQuickPublish.ts:195` puede mostrarle a un
+admin una liturgia **ajena**, y la portada de esa liturgia le será **invisible** — 0 filas, y el
+flujo emitirá "sin portada guardada" aunque la portada exista. Los tests, que van con mocks, no
+lo verían nunca.
+
+**Por eso E2.1 dice "legible por quien publica"** y no "guardada". La definición operativa de
+E2.6 distingue por tanto *no existe* de *existe pero es invisible*: ambas degradan a Gemini, y
+está bien que degraden, pero el plan no puede afirmar que la carátula será la portada cuando la
+RLS puede impedirlo.
+
+**Fuera de scope, explícitamente:** ampliar la lectura de `liturgia_elementos` sería un cambio de
+policies —es decir, de esquema— y E2 no toca esquema. Va al backlog.
+
+*Medido hoy: las 30 liturgias con `portada-reflexion` tienen un solo autor, así que el caso es
+**latente, no activo**. Por eso Codex lo clasificó SHOULD-FIX y no BLOCKING.*
 
 **Al backlog:** regenerar `types.ts` para las 128 tablas. Que cubra 16 es un defecto del repo que
 produce buena parte de los 1039 diagnósticos, y arreglarlo haría innecesario este adaptador.
@@ -414,7 +477,8 @@ no hay prompt que construir.
 cualquier cosa que toque base de datos o e2e.
 
 **Acceptance criteria:**
-- [ ] E2.1 Con liturgia vinculada y portada guardada, la carátula **es esa portada**.
+- [ ] E2.1 Con liturgia vinculada y portada guardada **y legible por quien publica**, la carátula
+      **es esa portada**. *Acotado en la r12 por Codex r11/S2 — ver la asimetría de RLS abajo.*
       *Mutación declarada: volver a `buildSermonCoverPrompt` pone el test rojo.*
 - [ ] E2.2 Con portada de liturgia válida, **no se llama a Gemini, ni se valida
       título/predicador, ni se carga el logo**. *Mutación: reintroducir la carga del logo debe
@@ -546,6 +610,14 @@ decisión a Brent — no apagar contenedores de otro proyecto por cuenta propia.
 ahora es `E-infra`, y dejó abiertos huecos reales en el contrato del slug (r9/B2) y en la
 semántica de paginación (r9/B5). Se conservan aquí porque el trabajo de trazado es válido y
 porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra` haya medido.**
+
+**OBSOLETO dentro de estos borradores (Codex r11/S1b), no aplicar:** toda mención a
+`E0-gates` —unidad **retirada en la r10**, el gate está en `main`—, incluidos los criterios
+`E3a.11` y `E3b.8` que piden "el SHA de E0-gates"; la línea *"Depende de: nada, ni siquiera de
+E0-gates. Es lo primero que puede arrancar"* que quedó huérfana entre E3b y E4-spike **y que
+contradice la tabla de olas: E3b depende de `E-infra`**; y la fila de la tabla del slug que dice
+*"CLI 2.110.0 y Docker verificados; puerto por defecto 54322"*, que es exactamente la
+verificación falsa que §5 retracta. **Nada de eso gobierna nada mientras el banner esté puesto.**
 
 **Huecos conocidos, pendientes de cerrar (§16):** base de 80 caracteres + sufijo `-2` viola el
 `CHECK`; título >80 sin guion no define truncado; "5 intentos" no dice si son 5 totales o 5
@@ -1506,6 +1578,11 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-07 | **r12: la línea base se corrige a `tsc=1041`** y se fija que los totales se miden **en el SHA padre**, en worktree limpio, anotando el SHA | Codex r11/B1. La r11 dijo `1039` "medido": el comando era real pero corrió sobre `feat/mesa-md-schema` (P1 de UPGRADE, que arregla dos diagnósticos), no sobre `main`. Remedido en worktree limpio de `main` (05dc4ca): **1041** | Codex r11/B1 |
+| 2026-08-07 | **r12: la regla de evidencia se endurece — comando, salida Y la identidad del árbol** | Es la cuarta verificación falsa mía, y la primera que rompe la regla adoptada para evitar las tres anteriores: nombré el comando pero no el árbol. Un total sin árbol es un número con un comando al lado | Codex r11/B1 |
+| 2026-08-07 | **r12: E2.1 se acota a "portada guardada **y legible por quien publica**"** | Codex r11/S2: `20260108000000_fix_liturgia_rls_authenticated.sql` da lectura de admin a `liturgias` (`:29`) pero **la elimina y no la recrea** en `liturgia_elementos` (`:35-48`). Un admin puede ver una liturgia ajena en el selector y no ver su portada → degrada a Gemini con "sin portada guardada" aunque exista. Ampliar esa lectura sería cambio de policies, fuera del scope de E2 | Codex r11/S2 |
+| 2026-08-07 | **r12: §4 cita la regla de clasificación del README** —desplazamiento de línea aceptable, diagnóstico nuevo bloqueante— y el patrón worktree+symlink | Codex r11/S3: los 2 errores base de E2 viven en `(195,15)` y `(200,20)`, y cualquier import nuevo los desplaza. Sin la regla, la comparación de E2.8 daría delta falso en la primera pasada | Codex r11/S3 |
+| 2026-08-07 | **r12: la estrategia de tipado prohíbe `any` explícitamente** | Codex r11/N1 lo demostró midiendo: `SupabaseClient<any,…>` añade 2 errores de `no-explicit-any` (es **error** en esta config); el ensanchado estructural vía `unknown` mide cero | Codex r11/N1 |
 | 2026-08-07 | **r11: E2 congela la estrategia de tipado — adaptador estrecho** con el cliente ensanchado en un solo sitio, la forma de fila declarada y **validación en runtime como guardrail del cast** | Codex r10/B1, medido: `types.ts` cubre ~16 de 128 tablas y no tiene `liturgias` ni `liturgia_elementos`; `useQuickPublish.ts` ya arrastra 2 errores `tsc` por eso, y un fichero nuevo parte de base cero, así que cualquier diagnóstico suyo bloquearía el gate. Regenerar `types.ts` es el arreglo de fondo pero es su propia unidad; reutilizar `loadLiturgy()` cargaría la liturgia entera para extraer una imagen | Codex r10/B1 |
 | 2026-08-07 | **r11: §4 se reescribe entera** — el gate se ejecuta desde `main`, sin SHA que fijar ni worktrees. Y la línea base pasa de `tsc=1041` a **`tsc=1039`**, medida | Codex r10/S1: §4 seguía afirmando que el script no existía en `main` y que P0 estaba en `FAIL 2/2`, ofreciendo un procedimiento incompatible con §5 justo para la decisión que gobierna E2. El 1041 venía de la r1 y nadie lo volvió a medir | Codex r10/S1 |
 | 2026-08-07 | **r11: E2.6 enumera sus cuatro fallos de lectura**, y esos cuatro casos son la definición operativa de "portada válida" | Codex r10/S2: el DoD exigía E2.6 y el test plan no lo cubría | Codex r10/S2 |
@@ -1550,10 +1627,14 @@ Riesgos vigentes de las unidades actuales:
 
 ## 10. Estado
 
-**PLAN POR OLAS — ola 1 congelable (4 unidades), ola 2 con 2 spikes, ola 3 sin planificar.**
-Trayectoria: 28 en el pico → 12 en la r6 → 5 en la r7 → 8 en la r8 → **4 congelables en la r9**.
+**PLAN POR OLAS — ola 1 = `E2`, y nada más.** `E1-spike` va en paralelo; `E-infra`, `E3a`, `E3b`
+y `E4-spike` no están congeladas; `E1-impl`, `E4-impl`, `E5` y `E6` no son unidades todavía.
+Trayectoria: 28 en el pico → 12 (r6) → 5 (r7) → 8 (r8) → 4 (r9) → **1 congelable desde la r10**.
 
-**Esta revisión 9 no ha pasado por Codex. Ninguna unidad arranca hasta que lo haga.**
+**Esta revisión 12 no ha pasado por Codex. Ninguna unidad arranca hasta que lo haga.**
+
+*(Codex r11/S1a: esta sección seguía describiendo la r9 —"ola 1 congelable (4 unidades)"— tres
+revisiones después. Es la misma enfermedad que r9/S4 y r10/S1 corrigieron en §7 y §4.)*
 
 **Por qué la r9 deja de intentar un contrato único.** Ocho rondas de plan, seis reviews, **cero
 líneas de código**. Las dos últimas rondas crecieron y cada crecimiento produjo más findings: la
@@ -1820,3 +1901,50 @@ estado lleva al lado el comando que la produjo"— no se cumplía literalmente, 
 carecía de comando sino que era **directamente falsa**. La distinción que propone queda adoptada:
 para hechos estáticos del código, `fichero:línea` basta; **para estado del entorno, hacen falta
 comando y salida**. §4 y §17 los llevan.
+
+
+---
+
+## 18. Trazabilidad de la review de Codex r11 (FAIL)
+
+**Veredicto:** FAIL — 1 BLOCKING, 3 SHOULD-FIX, 3 NIT. **Aceptados los siete.** Es la review más
+valiosa de las ocho, porque Codex **no argumentó: construyó**. Levantó un prototipo fiel del
+adaptador congelado en la r11 y le pasó el gate real:
+
+```
+$ bash scripts/gates/changed-files-diagnostics.sh src/lib/sermon-editor/liturgyCoverProto.ts …
+=== src/lib/sermon-editor/liturgyCoverProto.ts
+--- tsc (0)   --- eslint (0)   --- deno lint (0)   --- deno check (0)
+```
+
+**La estrategia de tipado de E2 queda validada con evidencia ejecutada, no con un argumento.**
+
+**Mi verificación de su BLOCKING**, que era sobre una medición mía:
+
+```
+$ git rev-parse --abbrev-ref HEAD                → feat/mesa-md-schema
+$ bash scripts/gates/…  src/hooks/useQuickPublish.ts
+  [gates] totales del proyecto: tsc=1039 …       ← lo que medí en la r11
+
+$ git worktree add --detach ../wt-measure main   # main = 05dc4ca, árbol limpio
+$ bash scripts/gates/…  src/hooks/useQuickPublish.ts
+  [gates] totales del proyecto: tsc=1041 …       ← lo correcto
+```
+
+Codex tiene razón: **son 1041**. Mi `1039` salió de la rama de P1 de UPGRADE, que arregla dos
+diagnósticos. No fue un árbol sucio — fue **el árbol equivocado**.
+
+| Finding | Clase | Resolución en la r12 |
+|---|---|---|
+| **B1** la base "medida" de §4 es irreproducible | BLOCKING | **Aceptado.** §4, §17 y el ledger corregidos a **1041**, con el comando, la salida **y el SHA** del árbol limpio. §4 fija además que los totales se toman en el SHA padre, no en el checkout del PM. Registrado en §5 como mi **cuarta** verificación falsa |
+| **S1** §4 es correcta pero no única | SHOULD-FIX | **Aceptado.** (a) §10 seguía describiendo la r9 — reescrita. (b) Los residuos de los borradores (`E0-gates` en E3a.11/E3b.8, la línea huérfana "ni siquiera de E0-gates", y la fila que reafirmaba la verificación falsa del Postgres) quedan marcados **OBSOLETO, no aplicar** en el banner |
+| **S2** E2.1 congela algo que la RLS puede falsear | SHOULD-FIX | **Aceptado.** E2.1 pasa a "portada guardada **y legible por quien publica**"; la asimetría `liturgias` / `liturgia_elementos` queda documentada con sus líneas de migración; ampliar la lectura se declara cambio de esquema y va al backlog |
+| **S3** §4 omite la regla de clasificación del README | SHOULD-FIX | **Aceptado.** §4.3 cita "desplazamiento de línea aceptable / diagnóstico nuevo bloqueante" y explica por qué E2 la necesita con certeza; §4.3b añade el patrón worktree+symlink |
+| **N1** la estrategia debería decir "sin `any`" | NIT | **Aceptado.** Cláusula añadida, con la medición de Codex que la respalda |
+| **N2** "(data URL)" es impreciso | NIT | **Aceptado.** "data URL **o base64 crudo**", con los 30 registros reales que Codex midió — y que **confirman empíricamente** los cuatro casos de E2.6 |
+| **N3** referencias colgantes y restos sin comando | NIT | **Aceptado.** El "§5.1" inexistente se sustituye por el puntero real (§15/B6); el blob del gate lleva su `git rev-parse`. Las tablas históricas de §0 quedan como históricas, anteriores a la regla |
+
+**Sobre la causa raíz, quinta lectura.** Las cuatro anteriores eran variantes de *afirmar sin
+medir*. Ésta es *medir mal*: puse el comando, como exige la regla que yo mismo adopté en la ronda
+anterior, y lo ejecuté sobre otro árbol. La regla no falló por floja sino por incompleta, y la
+corrección es de una palabra: **el árbol también es parte de la evidencia.**

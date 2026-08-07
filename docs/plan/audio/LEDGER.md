@@ -357,3 +357,40 @@
 - TESTS: n/a — ronda de planificación.
 - OPEN AFTER THIS ROUND: **review de Codex sobre E2 r11.** Si pasa, E2 arranca. `E1-spike` sigue
   arrancable en paralelo sin depender de esa review.
+
+### 2026-08-07 — plan round 12 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r11` (VERDICT **FAIL**: 1 BLOCKING, 3 SHOULD-FIX,
+  3 NIT). Aceptados los siete. **Codex no argumentó: construyó** un prototipo fiel del adaptador
+  congelado en la r11 y le pasó el gate real → `tsc(0) eslint(0) deno-lint(0) deno-check(0)`.
+  **La estrategia de tipado de E2 queda validada con evidencia ejecutada.**
+- **CUARTA VERIFICACIÓN FALSA MÍA, y la más instructiva.** La r11 afirmaba `tsc=1039` "medido".
+  Remedido por mí:
+  - En el checkout de trabajo (`feat/mesa-md-schema`, la rama de P1 de UPGRADE) → **1039**.
+  - En un worktree **limpio** de `main` (`05dc4ca`) → **1041**.
+  - Codex midió 1041 tres veces por vías independientes. Tiene razón.
+  - **El comando era real; el árbol era el equivocado.** En la r10 adopté la regla "toda
+    afirmación de estado del entorno lleva su comando al lado" — y la rompí en su primera prueba,
+    porque nombré el comando pero **no el árbol**. Regla corregida: **comando, salida y la
+    identidad del árbol (rama o SHA)**.
+- VERIFICACIÓN INDEPENDIENTE DEL RESTO: la asimetría de RLS de S2 confirmada en
+  `20260108000000_fix_liturgia_rls_authenticated.sql` — lectura de admin en `liturgias` (`:29`),
+  eliminada y no recreada en `liturgia_elementos` (`:35-48`). Residuos de S1b localizados en el
+  bloque de borradores (E3a.11, E3b.8, la línea huérfana "ni siquiera de E0-gates", y la fila que
+  reafirmaba la verificación falsa del Postgres). El "§5.1" que el plan citaba **no existe**: se
+  perdió al reensamblar el documento en la r10.
+- CAMBIOS: §4 corregida a **1041** con comando, salida y SHA, más la regla de medir en el SHA
+  padre · §4.3 cita la regla de clasificación del README (desplazamiento de línea aceptable /
+  diagnóstico nuevo bloqueante) y §4.3b el patrón worktree+symlink · **E2.1 acotada** a "legible
+  por quien publica", con la asimetría de RLS documentada · la estrategia de tipado **prohíbe
+  `any`** · "data URL **o base64 crudo**", con los 30 registros reales que midió Codex ·
+  §10 reescrita (seguía en la r9) · residuos de los borradores marcados **OBSOLETO, no aplicar** ·
+  referencias colgantes corregidas.
+- DATO ÚTIL QUE APORTA LA REVIEW: 30 filas `portada-reflexion` reales — 14 con prefijo data URL,
+  15 base64 crudo, 1 sin `slides`, 0 con URL HTTP. **Confirma los cuatro casos de E2.6 contra
+  datos reales**, no contra hipótesis.
+- BACKLOG ADDED: ampliar la lectura de `liturgia_elementos` para admins (cambio de policies,
+  fuera del scope de E2).
+- TESTS: n/a — ronda de planificación.
+- OPEN AFTER THIS ROUND: **review de Codex sobre E2 r12.** Codex declaró que congelaría E2 con
+  B1, S2 y S3 arreglados; los tres lo están. `E1-spike` sigue arrancable en paralelo.
