@@ -778,3 +778,40 @@
 - ESTADO: `feat/mesa-md-gates`@`5e05a73`. P0 IN REVIEW. Z1–Z7 verificados por Codex en su
   ronda 1; r1-B1, r1-N1 y r2-B1 cerrados y verificados por el PM.
 - OPEN AFTER THIS ROUND: revisión de Codex ronda 3.
+
+### 2026-08-07 — P0 revisión Codex (ronda 3, bajo override) — Codex Sol (REVIEW)
+- SESSION: UPGRADE · P0 · REVIEW
+- ACTION: Tercera revisión de P0 sobre `feat/mesa-md-gates`@`5e05a73`.
+  **VERDICT: FAIL — 0 BLOCKING, 1 SHOULD-FIX.**
+- FINDINGS RAISED:
+  - **[S1] SHOULD-FIX** — `selftest.sh:81`: `dir="$(make_stubs …)"` ejecuta `make_stubs` en
+    una **subshell**, así que su `STUBS+=("$dir")` muta una copia y el array del padre queda
+    vacío: el `trap EXIT` no borra nada. Los siete directorios de stubs se quedan. Contradice
+    la cabecera del propio fichero, el README y el requisito explícito de la ronda 4. Codex
+    lo señala como lo único que hace P1 más difícil de lo necesario.
+- **MUTATION TEST — lo que yo no podía verificar y era el hueco real de la fase.** Codex lo
+  hizo en un worktree desprendido en `5e05a73` y restauró byte a byte:
+  predicado commiteado **7/7 OK**; predicado de la ronda 3 restaurado → **fallan exactamente
+  los casos 4, 5 y 6**; predicado de la ronda 2 restaurado → **falla exactamente el caso 1**;
+  predicado restaurado → 7/7 OK. **El self-test fija de verdad las tres regresiones
+  históricas y no pasa en vacío.**
+- CODEX CONFIRMA además: sus dos sondas fallan cerrando y nombran la herramienta · ejecución
+  limpia sale con 0 sin FALLO · toolchain real 1041/160/94/46 · stdout 15.052 bytes con `cmp`
+  exit 0 contra el cuerpo de la base, **idéntico también al de la ronda 1** · atribución,
+  orden, agrupación multilínea y `rel()` sin tocar, así que la evidencia Z1–Z7 sigue
+  aplicando · build ok, vitest 1036/6, deno 409/0 · sin cambios de producto, Supabase,
+  package ni configuración de linters/TS · **el registro está completo y en orden lógico**,
+  `P0-r4.md` byte-idéntico a la copia extraviada, 27 entradas en `5e05a73` y 28 en `eae138e`.
+- MATIZ TÉCNICO DE CODEX (no es defecto): existe un caso real en que ESLint sale con 1 y cero
+  diagnósticos reportados — `--quiet --max-warnings 0` suprime la salida de warnings sin
+  cambiar el código. No es alcanzable bajo el contrato de P0, cuya invocación congelada es
+  `npx eslint . -f json` sin ninguna de las dos banderas. Queda anotado por si una fase futura
+  cambia la invocación. En Deno 2.7.11, un directorio vacío sale con 1 y stdout no-JSON, que
+  la regla de "salida no parseable" ya rechaza correctamente.
+- PM VERIFICATION: **reproduje S1 yo mismo.** 55 directorios temporales antes de la ejecución,
+  **62 después** — siete nuevos, uno por caso, cada uno con los stubs dentro (el del caso 2
+  solo con `npx`, coherente con que ese caso quita `deno` a propósito).
+- PM TRIAGE: el SOP §1.4 manda los SHOULD-FIX al backlog sin bloquear, pero **Codex emitió
+  FAIL y tiene la última palabra sobre el cierre**; Brent ha pedido terminar la fase bien, y
+  el arreglo es de tres líneas. Se arregla en una ronda r5 acotada en vez de arrastrarlo.
+- OPEN AFTER THIS ROUND: P0 r5 — un único SHOULD-FIX, sin tocar el gate.
