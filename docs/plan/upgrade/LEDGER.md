@@ -489,3 +489,49 @@
 - OPEN AFTER THIS ROUND: **P0 r3 — ronda 3 de 3 del tope PM↔ejecutor (SOP §1.5).** Si no
   queda limpia, toca propuesta de re-planificación, no una cuarta ronda. Después, segunda y
   última revisión de Codex (§1.5: tope 2).
+
+### 2026-08-07 — P0 r3 (ejecutor) — Claude Fable (EXEC)
+- SESSION: UPGRADE · P0 · r3 · EXEC
+- ACTION: Cierre de **[B1] BLOCKING** (una ejecución limpia se clasificaba como "la
+  herramienta no corrió") y de **[N1]** (la receta de reproducción de la base falla tal
+  como estaba escrita). Commit `9255764` sobre `feat/mesa-md-gates`, 3 ficheros
+  (+79/-26): el script, el README y la cabecera de `base-by-file.txt`.
+- CÓMO SE CERRÓ B1: el paso 1 del script captura ahora el **código de salida** de cada
+  frontera de comando (`$WORK/<tool>.exit`) y el paso 2 clasifica sobre (exit, validez de
+  la salida, recuento), nunca sobre el cero global a solas:
+  - `eslint` / `deno lint` (con modo JSON): caída ⟺ parseo fallido, forma inesperada
+    (no-array / sin `.diagnostics`), o exit > 1 en ESLint. `[]` y
+    `{"version":1,"diagnostics":[]}` son ejecuciones limpias legítimas.
+  - `tsc` / `deno check` (sin JSON): caída ⟺ exit ≠ 0 **y** cero diagnósticos
+    atribuidos. Exit 0 = limpio; exit ≠ 0 con diagnósticos = rojo de base normal.
+  Los totales globales siguen por stderr en toda ejecución (observación D8.5, intacta).
+  El epílogo de fallo ya no afirma "un cero global significa que la herramienta no
+  corrió"; el README reescribe la sección del discriminador y elimina el supuesto y su
+  caveat ("deja de valer el día en que…"), ambos ahora falsos.
+- EVIDENCIA (sondas ejecutadas, salida cruda en el reporte del ejecutor):
+  - **C1** — cuatro stubs con éxito y salida válida vacía: `EXIT=0`, totales
+    `tsc=0 eslint=0 deno-lint=0 deno-check=0` por stderr, **sin** línea `FALLO`.
+  - **C2** — PATH sin `deno`: `EXIT=1`, stderr nombra `deno-lint` (salida no parseable)
+    y `deno-check` (código 127) e incluye `deno: command not found` capturado.
+  - **C3** — stub de eslint imprimiendo `not json` con exit 0: `EXIT=1`, nombra eslint.
+  - **C4** — toolchain real: `EXIT=0`, totales `tsc=1041 eslint=160 deno-lint=94
+    deno-check=46`.
+  - **C5** — stdout sobre los 11 ficheros vs cuerpo de `base-by-file.txt` (sin `#`):
+    **diff vacío** — el cuerpo de la base no se tocó.
+  - **C6** — dos ejecuciones reales consecutivas: `cmp` byte-idéntico.
+  - **C7** — la receta corregida (con `mkdir -p /tmp/upgrade-base/scripts/gates`) se
+    ejecutó de punta a punta en worktree fresco a `1732bee`: EXIT=0, totales de base,
+    diff vacío contra el cuerpo commiteado; worktree retirado.
+  - **C9** — `npm run build` ok (9.6s); `npx vitest run --no-file-parallelism` →
+    **1036 pass / 6 fail**, único fichero rojo `MesaAbiertaDashboard.test.tsx`;
+    `deno test --allow-all .` → **409 passed / 0 failed**. El flake conocido de
+    `CuentacuentoEditor.ph.surfaces` no disparó.
+- ALCANCE: sin cambios en atribución, orden, agrupación de `deno check` ni normalización
+  `at file://` — el diff del bloque de parseo es solo la captura de forma (`shapeOk`) y
+  la firma local del resultado de `readJson`. Nada bajo `src/` ni `supabase/`.
+- FINDINGS RAISED: ninguno.
+- DECISIONS: para los dos tools JSON el discriminador primario es la forma del JSON (la
+  señal que el propio prompt señala como la más fuerte); el exit se usa además solo en
+  ESLint (>1 = fatal documentado). En `tsc`/`deno check` el exit lleva el peso.
+- OPEN AFTER THIS ROUND: **segunda y última revisión de Codex** sobre
+  `feat/mesa-md-gates`@`9255764` (SOP §1.5: tope 2). P0 no es DONE hasta que Codex pase.
