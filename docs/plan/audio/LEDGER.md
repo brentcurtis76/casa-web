@@ -248,3 +248,43 @@
   antes. Pendiente además una decisión de producto de Brent que **bloquea E2**: qué hacer cuando
   la liturgia existe pero no tiene portada de reflexión guardada — bloquear, permitir subida
   manual, o generar con la ruta actual de Gemini.
+
+### 2026-08-07 — plan round 9 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r8` (VERDICT **FAIL**: 6 BLOCKING, 4 SHOULD-FIX, 1 NIT)
+  y **reestructuración del plan por olas**. Aceptados los once findings, sin desacuerdo.
+- VERIFICACIÓN INDEPENDIENTE ANTES DE ACEPTAR:
+  - `SermonCard` recibe `spotifyLink`, no slug; `useSermonData` selecciona seis columnas y
+    **ninguna es `slug` ni `id`**; el CTA "Ver todas las reflexiones" de `Sermones.tsx` también es
+    `<a href={spotifyLink}>` → **B6 confirmado, y mi scope de E6 era insuficiente**.
+  - `vercel.json` — un solo rewrite `/(.*)` → `/index.html` → B3 confirmado.
+  - "roto en iOS" seguía en las líneas 63 y 1313 → S1 confirmado; lo había arreglado sólo en §5.
+  - `base64ToSpotifyCover` empieza en la **17**; la 57 es `loadImage` → **N1 confirmado, cita mía
+    errónea**.
+  - **No existe infraestructura de test contra Postgres en el repo** (`grep postgres://`,
+    `pg.Client`, `new Pool`, `DATABASE_URL` en tests → 0 resultados). Pero **sí hay Postgres local
+    disponible**: `supabase` CLI 2.110.0, Docker corriendo, `config.toml` con `project_id` y sin
+    `[db]` (puerto por defecto 54322). Eso es lo que hace especificable a E3a.
+  - Sexta review consecutiva en que Codex acierta en todo lo comprobable.
+- DIAGNÓSTICO DE CAUSA RAÍZ (tercera lectura): r1–r5 fallaron por especificar sin trazar el
+  código; la r7 por spikes sin implementación; la r8 por **escribir implementaciones que ningún
+  spike había acotado**. Las tres son escribir plan por delante del conocimiento. **8 rondas,
+  6 reviews, 0 líneas de código.**
+- DECISIONES DE BRENT (ambas respondidas antes de escribir):
+  - **Estructura por olas**: congelar sólo lo especificable y arrancar, en vez de enmendar otra
+    vez el documento completo.
+  - **E2 sin portada guardada → ruta Gemini con aviso.** Resuelve el BLOCKING B5.
+- CAMBIOS: **`E0-gates` nueva** (el gate se revisa dentro de AUDIO, no espera a UPGRADE P0) ·
+  **E3 partida en `E3a` + `E3b`**, con el HTTP 404 fuera y la circularidad eliminada ·
+  **contrato del slug congelado en el plan** (8 decisiones que la r8 delegaba) · **E1-impl,
+  E4-impl, E5 y E6 dejan de ser unidades** y pasan a la ola 3 sin planificar · §5.1 guarda el
+  alcance corregido de E6 · **D19 nueva** (origen canónico) · D5 retirada · D17 al backlog ·
+  residuos de "roto en iOS" y de backlog corregidos · precondiciones declaradas en ambos spikes.
+- EFECTO: 8 unidades → **4 congelables + 2 spikes + una ola 3 sin planificar**. El plan declara
+  explícitamente que **no entrega las cuatro condiciones del Goal**, que es lo que la r8 escondía.
+- TESTS: n/a — ronda de planificación.
+- BACKLOG ADDED: infraestructura de test automatizado contra Postgres (hoy no existe; E3a usa
+  `supabase db reset` + SQL, que es verificación real pero no suite de regresión).
+- OPEN AFTER THIS ROUND: **review de Codex sobre la ola 1 de la revisión 9.** Ninguna unidad
+  arranca antes, salvo que Brent decida que E1-spike puede ir en paralelo: no toca código que se
+  mergee, no depende de nada y no pasa por el gate.
