@@ -6,18 +6,21 @@ META
 - BRANCH CONVENTION: `phase/<id>-<slug>` (≤20 chars por DNS de Vercel — `phase/A1-feed`)
 - BASE: `main`
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
-  **r5 → PARTIAL PASS** · **r6 → re-alcance**. Esta es la **revisión 7**, que cambia el
-  objetivo del plan por decisión de Brent (2026-08-07). Ver §9, §11, §12 y §13 para la
-  trazabilidad finding → cambio de las revisiones anteriores.
+  **r5 → PARTIAL PASS** · **r6 → re-alcance** · **r7 → FAIL (5 BLOCKING, 4 SHOULD-FIX, 1 NIT)**.
+  Esta es la **revisión 8**, que aplica la review de la r7 entera. Ver §9, §11, §12, §13 y §14
+  para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
   automáticamente en página propia, y compartir el enlace en redes y WhatsApp. **Toda la pista
   de distribución (feed RSS, backfill, directorios, corte de Spotify) pasa al backlog.**
-- **Las unidades vigentes son E1–E5** (§5). Las `A*` quedan retiradas; sus cuerpos se conservan
-  al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **PENDIENTE DE REVIEW:** esta revisión 7 **no ha pasado por Codex**. Ninguna unidad B arranca
-  hasta que lo haga.
+- **Las unidades vigentes son las ocho `E*`** de §5. Las `A*` quedan retiradas; sus cuerpos se
+  conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
+- **PENDIENTE DE REVIEW:** esta revisión 8 **no ha pasado por Codex**. Ninguna unidad `E*`
+  arranca hasta que lo haga.
+- **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
+  dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
+  aprobación no sobrevive a eso. Se revisan de cero.
 - **ESTRATEGIA DESDE LA r5 (instrucción de Brent):** el objetivo es un plan **consensuado**, no
   un plan completo. Toda fase que Codex señale por especificar implementación sin trazar el
   código **se retira o se convierte en spike**, en vez de seguir puliéndose ronda tras ronda.
@@ -136,31 +139,53 @@ iVoox o cualquier directorio. Eso es distribución y viene después.
 
 ## 3. Frozen architectural decisions
 
+**Limpieza de la revisión 8 (Codex r7/S4).** Seis decisiones seguían describiendo el plan
+retirado. **D1 llegaba a decir "Es el objetivo entero", que ya era falso**, y D11 referenciaba
+fases que no existen. Salen del bloque activo al de distribución, donde vuelven a ser correctas:
+
+| Sale del bloque activo | Por qué |
+|---|---|
+| ~~**D1**~~ (el feed RSS es la fuente de verdad) | El feed no está en el alcance. Su razón — "es el objetivo entero" — describía el Goal anterior |
+| ~~**D4**~~ (identidad pública del feed en `www`) | No hay feed que publicar |
+| ~~**D6**~~ (correo institucional en `itunes:owner`) | `itunes:owner` sólo verifica propiedad ante directorios |
+| ~~**D7**~~ (no activar video en Spotify) | No se toca Spotify en este bloque |
+| ~~**D8**~~ (nunca borrar la cuenta de Spotify) | Ídem. **Sigue siendo una prohibición dura**, sólo que no es arquitectura de este plan |
+| ~~**D11**~~ (orden del corte: A6 antes que A13) | Referencia fases retiradas |
+
+**Todas siguen vigentes en §6 para quien retome la distribución.** Salir del bloque activo no es
+derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
+
 | ID | Decisión | Razón |
 |---|---|---|
-| **D1** | **El feed RSS propio es la fuente de verdad del catálogo.** Todo directorio, incluido Spotify, se alimenta de él. | Es el objetivo entero. |
+| ~~**D1**~~ | **Trasladada al bloque de distribución (§6)** en la r8. | Codex r7/S4. |
 | **D2** | **El audio y la portada viven en Supabase Storage (`podcast-media`), bucket público.** No se migra dentro de este plan. | Costo marginal bajo; una dependencia menos. |
 | ~~**D3**~~ | **Retirada como decisión congelada en la r6.** El disparador de migración de storage (egress > 150 GB/mes) requiere una medición que ninguna fase instala ya — A0.8/A0.9 se recortaron por no servir al Goal. Baja a **nota de backlog**: cuando el costo importe, primero se monta la medición y después se define el umbral. Congelar un disparador que no puede dispararse era teatro. | Codex r5. |
-| **D4** | **La identidad pública del feed es `https://www.anglicanasanandres.cl/podcast/feed.xml`** — con `www`, porque el apex responde **307 → www** y enviar el apex a los directorios los haría seguir un redirect permanente hacia una URL distinta de la registrada. Ningún directorio recibe jamás una URL `*.supabase.co` ni el apex. | Corrige CR-2 con medición: apex 307, `www` 200. Cambiar el dominio primario a apex sería otro plan con impacto SEO propio. |
-| **D5** | **Alcance honesto, acotado por Codex r5:** el `guid` y el `slug` **de una fila** son inmutables desde el INSERT, impuesto por trigger, y una fila con `slug` **no se puede borrar**. **D5 NO afirma que la identidad del episodio sea irreemplazable** — siguen existiendo dos caminos (borrar un borrador con guid ya asignado; despublicar y publicar otra fila para el mismo episodio). Esa garantía más amplia queda **abierta**, no congelada, hasta que A11-spike la resuelva. | CR-8 + r3/B4 + r5/§4: un `COMMENT` no es garantía; proteger el `UPDATE` deja el `DELETE`; y cerrar el `DELETE` todavía no cierra el reemplazo de identidad. Prefiero una garantía estrecha y cierta a una amplia y falsa. |
-| **D6** | **El correo del feed (`itunes:owner`) es institucional**, nunca personal. | Es público y es la llave de verificación de propiedad en cuatro plataformas. |
-| **D7** | **No se activa video en Spotify.** *Razón corregida:* la vía de video para shows externos existe, pero **sólo vía Distribution API desde hosts soportados** (Audioboom, Libsyn, Podigee, Podspace, Audiomeans) — que como autohospedados no somos ni seremos. La vía que sí nos aplicaría es reemplazar audio por video en Spotify for Creators, y **la documentación de Spotify no establece su reversibilidad**. Ante una decisión congelada y sin reversibilidad documentada: no se toca. | Enmienda parcial de CR-12. Codex tiene razón en que "catastrófico e irreversible" estaba mal fundado; la fuente que cita tampoco establece reversibilidad. La decisión se sostiene, la razón se corrige. |
-| **D8** | **Nunca borrar la cuenta de Spotify for Creators.** Mínimo 45 días de redirect activo; la recomendación es no borrarla nunca. | Se pierde la audiencia. |
+| ~~**D4**~~ | **Trasladada al bloque de distribución (§6)** en la r8. | Codex r7/S4. |
+| **D5** | **Partida en la r8 (Codex r7/S4).** Lo que sigue congelado y **activo** es sólo lo del `slug`, y está en D12: transición única `NULL → valor`, inmutable después, y republicar conserva el mismo. **La parte de GUID y la prohibición de `DELETE` sale al backlog** — no hay identidad de directorio que proteger sin distribución. Redactada así para que **no contradiga a E3**, que es lo que hacía en la r7. | Codex r7/B2 + S4. La r7 tenía una D5 amplia y una E3 que aceptaba slug mutable: dos afirmaciones incompatibles en el mismo documento. |
+| ~~**D6**~~ | **Trasladada al bloque de distribución (§6)** en la r8. Medido el 2026-08-07: `dig MX anglicanasanandres.cl` → **sin registros**; el buzón habría que crearlo. | Codex r7/S4. |
+| ~~**D7**~~ | **Trasladada al bloque de distribución (§6)** en la r8, con su razón corregida intacta. | Codex r7/S4. |
+| ~~**D8**~~ | **Trasladada al bloque de distribución (§6)** en la r8. **Sigue siendo prohibición dura**: nunca se borra la cuenta de Spotify for Creators. | Codex r7/S4. |
 | **D9** | **Sólo migraciones aditivas.** Nada de DROP/TRUNCATE/ALTER destructivo. | Regla dura del proyecto. |
-| **D10** | **El bitrate de exportación no baja de 96 kbps.** | `spotifyValidator.ts:9` documenta el mínimo de Spotify. |
-| **D11** | **Ninguna acción sobre Spotify (A13) ocurre antes de que A6 valide el feed y A12 tenga Apple aprobado.** | El orden es lo que hace que el corte no pierda audiencia. |
-| **D12** | **El slug es inmutable una vez publicado**, impuesto por trigger (igual que D5). | Es la URL canónica indexada y compartida. |
+| **D10** | **El bitrate de exportación no baja de 96 kbps.** *Razón rejustificada en la r8:* deja de sostenerse en el mínimo de Spotify — que ya no está en el alcance — y pasa a ser **piso de calidad de escucha** para la gente de CASA, que es quien va a oírlo. `quickProcessor.ts:161` produce hoy 128 kbps y lo satisface de sobra. | Codex r7/S4: una decisión cuya única razón era un requisito retirado, o se rejustifica o se va. |
+| ~~**D11**~~ | **Trasladada al bloque de distribución (§6)** en la r8. Referenciaba A6, A12 y A13, que ya no existen. | Codex r7/S4. |
+| **D12** | **El slug es inmutable**, impuesto por trigger: transición única `NULL → valor`, inmutable después, y **republicar conserva el mismo slug**. Además, `status = 'published'` ⇒ `slug IS NOT NULL`. *Ampliada en la r8* para ser la decisión autoritativa del slug, absorbiendo la mitad activa de D5. | **Restaurada tras Codex r7/B2.** La r7 la contradijo aceptando slug mutable, con el argumento de que un enlace de WhatsApp tolera el cambio "porque no está indexado". Es falso: un enlace ya compartido se rompe igual, y encima rompe la URL canónica, la caché y la previsualización social que E4 existe para construir. |
 | **D13** | **PII de miembros nunca en el feed, ni en prompts de IA, ni en Open Brain.** | Regla dura del proyecto. |
 | **D14** | **Todo texto de UI y de feed en español.** | Regla dura del proyecto. |
 | ~~**D15**~~ | **Trasladada al workstream `captura`** en la r6, junto con las fases A19/A20. Sigue vigente allí, palabra por palabra: la captura es 100 % web y agnóstica del dispositivo (Windows, macOS, Android, iOS), y donde una plataforma imponga un límite real se degrada de forma explícita y visible. **No se descarta el requisito de Brent; cambia de plan.** | Codex r5: la captura no sirve al Goal de AUDIO. |
 | ~~**D16**~~ | **Trasladada al workstream `captura`** en la r6, junto con D15. | Ídem. |
-| **D17** | **Ningún aviso automático (WhatsApp, correo) se envía sin una audiencia con consentimiento y baja, y sin una fila de entrega única por (episodio, canal, destinatario).** La idempotencia es una restricción de unicidad en la base, no una columna `announced_at`. **Ninguna fase de este plan implementa esto**: en la r3 se retiraron al backlog. D17 queda vigente como restricción para cuando se retomen — está aquí precisamente para que quien las retome no reinvente `announced_at`. | CR-11 + decisión de Brent (r3): hoy la distribución propia es pegar enlaces en redes; no hay audiencia que notificar. |
-| **D18b** | **La previsualización del enlace es la distribución.** Mientras el canal propio sea compartir manualmente en redes, `og:*` y `og:audio` por episodio no son "SEO opcional": son el producto que la gente ve antes de decidir si abre. A10 no se descarta por presupuesto. | Decisión de Brent (r3). |
+| **D17** | **Baja de arquitectura activa a guardrail de backlog en la r8** (Codex r7/S4). Ningún aviso automático (WhatsApp, correo) se envía sin audiencia con consentimiento y baja, y sin una fila de entrega única por (episodio, canal, destinatario) — la idempotencia es una restricción de unicidad en la base, no una columna `announced_at`. **Ninguna unidad de este plan envía nada**: E5 es un botón que una persona pulsa. D17 sigue escrita para que quien retome los avisos no reinvente `announced_at`. | CR-11 + Brent (r3) + Codex r7/S4. |
+| **D18b** | **La previsualización del enlace es la distribución.** *Endurecida en la r8:* el preview debe mostrar **título, portada, predicador y canonical** sobre una URL publicada de verdad — eso es el criterio. **`og:audio` deja de ser obligatorio por decreto**: sólo entra si E4-spike demuestra que algún canal real de CASA lo consume (E4s.6). | Brent (r3), endurecida por Codex r7/S4: exigir `og:audio` sin evidencia de que alguien lo use era fe, no diseño. |
 | **D18** | **Los gates se miden con `scripts/gates/changed-files-diagnostics.sh` sobre los ficheros que la fase toca, contra el SHA padre fijado de esa fase.** Sin esquemas de identidad globales. Build verde absoluto. Todo test nuevo con prueba base-red o de mutación. | CR-9: el gate correcto ya existe en el repo y documenta 62 colisiones del enfoque que yo proponía. |
 
 ---
 
 ## 4. Gates (D18)
+
+> **⚠ Leer primero el procedimiento corregido en §5** ("Gates (D18) — procedimiento corregido
+> tras Codex r7/B5"). El script que esta sección da por disponible **no existe en `main`**: vive
+> sólo en `feat/mesa-md-gates` (UPGRADE P0, `FAIL 2/2`). §5 fija el SHA aprobado del gate y lo
+> materializa en worktrees desechables. Lo de abajo sigue siendo el *contenido* del gate; §5 es
+> el *cómo se obtiene*.
 
 El repo arrastra **1041** diagnósticos `tsc`, **160** ESLint, **94** `deno lint` y **46**
 `deno check`. Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que
@@ -169,7 +194,8 @@ toqué no ganaron un diagnóstico nuevo".
 **Procedimiento por fase:**
 
 1. Fijar el **SHA padre** de la fase (el commit del que sale su branch) y anotarlo en el
-   ledger. No `git merge-base HEAD main` — en una fase dependiente eso no es su base.
+   ledger, **junto con el SHA aprobado del gate** (§5). No `git merge-base HEAD main` — en una
+   fase dependiente eso no es su base.
 2. Medir la base en ese SHA sobre la lista `F` de ficheros que la fase modifica o crea:
 
 ```bash
@@ -196,263 +222,478 @@ un defecto.
 
 ---
 
-## 5. Phase index — 5 unidades (revisión 7, re-alcance de Brent)
+## 5. Phase index — 8 unidades (revisión 8, tras `CODEX REVIEW — plan r7` FAIL)
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E1-spike | Grabar dentro del editor de audio | Spike | TODO | — |
-| E2-spike | Carátula derivada de la portada de la liturgia | Spike | TODO | — |
-| E3 | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código + DB | TODO | — |
-| E4-spike | Previsualización del enlace (`og:` por episodio) | Spike | TODO | E3 |
-| E5 | Compartir en redes y WhatsApp | Código | TODO | E3, E4-spike |
+| E1-spike | Grabación: sonda de compatibilidad real | Spike | TODO | — |
+| E2 | Carátula desde la portada de la liturgia | Código | TODO | — |
+| E3 | Páginas públicas + contrato de `slug` | Código + DB | TODO | — |
+| E4-spike | Previsualización: prototipo desplegado | Spike | TODO | E3 |
+| E1-impl | Grabar dentro del editor | Código | TODO | E1-spike |
+| E4-impl | Previsualización implementada | Código | TODO | E4-spike |
+| E5 | Compartir en redes y WhatsApp | Código | TODO | E3, E4-impl |
+| E6 | Cierre del bucle: URL al publicar + retirar Spotify | Código | TODO | E3, E5 |
 
 `Status` usa el vocabulario del SOP §2.1 — `TODO` / `IN PROGRESS` / `IN REVIEW` / `DONE` /
 `BLOCKED` — y es lo único que `/pm-boot` lee para elegir unidad.
 
-**Secuencia:** `(E1-spike ‖ E2-spike ‖ E3) → E4-spike → E5`. Las tres primeras son
-independientes entre sí.
+**Secuencia:** `(E1-spike ‖ E2 ‖ E3)` → `E4-spike` → `(E1-impl ‖ E4-impl)` → `E5` → `E6`.
 
-**Los tres spikes no preaprueban nada.** Cada uno entrega un bloque de plan revisable; ese
-bloque se revisa antes de ejecutarse. Es el remedio que Codex aplicó en la r5 a A11 y A20, y
-que funcionó: la causa raíz de cuatro FAIL seguidos fue especificar implementación sin trazar
-las firmas reales del código.
+**Cada spike va seguido de su implementación.** La r7 tenía tres spikes y ninguna
+implementación detrás: al completar las cinco unidades no habría habido ni grabación, ni
+carátula desde la liturgia, ni previsualización. **Un plan que no entrega su propio Goal es un
+plan roto**, y ése fue el B1 de Codex sobre la r7.
 
-### Estado verificado del código (medido el 2026-08-07, no asumido)
+**Un spike no preaprueba su implementación.** E1-spike y E4-spike entregan cada uno un bloque de
+plan revisable; ese bloque se revisa antes de que E1-impl y E4-impl se ejecuten, y puede
+cambiarles el alcance o retirarlas.
 
-Lo que este plan daba por construir **ya existe en buena parte**. Medido:
+### Qué puede arrancar hoy
+
+**E1-spike, E2 y E3** no tienen dependencias. De ellas, **E1-spike es la única que no toca
+código que se mergee** y por tanto la única inmune al bloqueo de gates descrito abajo.
+
+### Estado verificado del código (medido el 2026-08-07, corregido tras Codex r7)
 
 | Pieza | Estado real |
 |---|---|
 | Flujo de publicación rápida | **Existe**: `QuickPublishContainer.tsx`, stepper `Audio → Liturgia → Revisar → Publicar`, máquina de estados en `useQuickPublish.ts` |
 | Vínculo episodio ↔ liturgia | **Existe en el esquema**: `church_podcast_episodes.liturgy_id UUID REFERENCES liturgias(id)`; `QuickStepLiturgy.tsx` ya lo deja elegir |
-| Portada de reflexión desde la liturgia | **Existe**: `Portadas.tsx` genera portada MAIN y **REFLECTION** (recomposición imagen-a-imagen de la principal, con título de la liturgia y nombre del predicador) |
-| Imagen → carátula cuadrada | **Existe**: `coverImageUtils.ts` → `base64ToSpotifyCover()` |
+| Portada de reflexión desde la liturgia | **Existe**: `Portadas.tsx:162` genera MAIN y REFLECTION (recomposición imagen-a-imagen, con título de la liturgia y nombre del predicador) |
+| **Y es recuperable por `liturgy_id`** | `ConstructorLiturgias.tsx:1064` la guarda como elemento `portada-reflexion`; `liturgyService.ts` hace upsert en `liturgia_elementos` por `(liturgia_id, tipo)`. La imagen queda en `slides.slides[0].content.imageUrl` |
+| Imagen → carátula cuadrada | **Existe**: `coverImageUtils.ts:57` → `base64ToSpotifyCover()`, que acepta esa data URL directamente |
 | Codificación a MP3 | **Existe**: `mp3Encoder.ts` (lamejs) |
-| Grabador en navegador | Existe **en otro sitio**: `leadership/AudioRecorder.tsx` + ruta `/recorder`; **roto en iOS** (`RecorderPopupPage.tsx:67-68`, ambos mime son webm) |
+| Grabador en navegador | Existe **en otro sitio**: `leadership/AudioRecorder.tsx` + ruta `/recorder` |
 
-Y los huecos, también medidos:
+**Dos afirmaciones de la r7 que Codex desmintió y aquí quedan corregidas:**
+
+1. **La portada de reflexión SÍ es recuperable por `liturgy_id`.** La r7 decía que vivía "como
+   slide, no como imagen recuperable". Es falso, y la traza está en la tabla de arriba. **Por eso
+   E2 deja de ser spike y pasa a ser unidad de código.**
+2. **"El grabador está roto en iOS" no está medido.** El plan lo arrastraba desde la r1 sobre la
+   base de que ambos MIME son WebM (`RecorderPopupPage.tsx:67-68`), pero **Safari/iOS 18.4 añadió
+   WebM a `MediaRecorder`** — dato que este mismo plan ya registraba en su ledger de la r2 y que
+   contradecía la afirmación. Lo verificable es que **no hay fallback para iOS anterior a 18.4**.
+   Eso es lo que E1-spike tiene que medir, no dar por sabido.
+
+Y los huecos, medidos:
 
 - El paso 1 de Publicación Rápida es `AudioUploader` — **selector de ficheros, no grabador**.
-- `useQuickPublish.ts:376` llama a `buildSermonCoverPrompt` y **genera una ilustración nueva con
-  Gemini**; la portada de reflexión existente no se reutiliza. Además vive como *slide*
-  (`onSlidesGenerated`), no como imagen recuperable por `liturgy_id`.
+- `useQuickPublish.ts:376` genera una **ilustración nueva con Gemini** (`buildSermonCoverPrompt`);
+  la portada de reflexión existente no se reutiliza.
 - **No existe ruta `/reflexiones`** en `src/appRoutes.tsx`.
-- **`church_podcast_episodes` no tiene columna `slug`** — verificado en la migración.
-- No hay botón de compartir, y la SPA no emite `og:` por episodio.
+- **`church_podcast_episodes` no tiene columna `slug`**, y `src/integrations/supabase/types.ts`
+  no la contiene (`grep -c slug` → **0**).
+- `vercel.json` tiene **un solo rewrite `/(.*)` → `/index.html`**: la misma respuesta HTML para
+  todas las rutas. Ése es el problema arquitectónico que E4-spike existe para resolver.
+- **El bucle no cierra hoy**: `PublishResult` (`publishService.ts:44-51`) no devuelve slug ni URL
+  canónica; la pantalla de éxito dice *"Spotify lo detectará"* (`QuickPublishProgress.tsx:46`) y
+  ofrece "Ver feed RSS" (`:58`); el botón dice "Publicar en Spotify"
+  (`QuickStepReview.tsx:247`); y el CTA de la home abre Spotify (`SermonCard.tsx:45`). **Todo eso
+  apunta a lo que acabamos de sacar del alcance.** Es E6.
 
-### Advertencia sobre los gates (D18)
+### Gates (D18) — procedimiento corregido tras Codex r7/B5
 
-**D18 congela `scripts/gates/changed-files-diagnostics.sh` como gate de toda unidad de código, y
-ese script no existe en `main`.** Vive sólo en `feat/mesa-md-gates`, la rama del workstream
-UPGRADE, cuya fase P0 lleva `FAIL 2/2` de Codex y va por una cuarta ronda autorizada por
-override de Brent. **E3 y E5 son código y están atadas a que P0 aterrice en `main`.**
+**El problema:** D18 congela `scripts/gates/changed-files-diagnostics.sh`, que **no existe en
+`main`**. Vive sólo en `feat/mesa-md-gates`, del workstream UPGRADE, cuya fase P0 lleva
+`FAIL 2/2` de Codex.
 
-Salida posible, **no decidida — la decide Codex o Brent, no el PM**: ablandar D18 para este
-bloque a "sin diagnósticos nuevos en los ficheros tocados", medido con `tsc` y `eslint` acotados
-a mano, hasta que P0 llegue. Los spikes E1/E2/E4 no tocan código y no se ven afectados.
+**La salida, propuesta por Codex y adoptada aquí:** desacoplar el gate de la *entrega* de
+UPGRADE. No hace falta que P0 esté mergeado a `main`; basta con que su script esté **aprobado**.
+
+1. Fijar un **SHA aprobado del gate** y anotarlo en el ledger junto al SHA padre de la unidad.
+2. Materializar ese script en **worktrees desechables** del SHA padre y de HEAD.
+3. Ejecutarlo sobre ambos árboles y comparar mensajes crudos completos.
+4. Registrar ambos SHAs — el del gate y el base — en la entrada de ledger de la ronda.
+
+**Precondición que Codex no hace explícita y que sí lo es:** las dos salidas que propone
+(fijar un SHA, o una unidad `E0-gates` que incorpore los ficheros del gate) **requieren un SHA
+del gate ya revisado**, y hoy no existe: P0 sigue en `FAIL 2/2` con su r4 en curso. Así que
+esto no elimina la dependencia — la reduce de *"P0 mergeado a `main`"* a *"P0 aprobado por
+Codex"*, que es bastante más cerca.
+
+**Rechazado explícitamente:** medir con `tsc` y `eslint` "a mano". Sería un gate distinto y peor
+definido, y el repo arrastra 1041/160/94/46 diagnósticos que hacen inútil cualquier medición no
+acotada a ficheros.
+
+**Efecto sobre el arranque:** E2, E3, E1-impl, E4-impl, E5 y E6 son código y no pueden **cerrar**
+sin gate. **E1-spike no toca código que se mergee y puede ejecutarse ya.** El prototipo de
+E4-spike es desechable y no se mergea, así que tampoco pasa por el gate; el gate aplica a
+E4-impl.
 
 ---
 
-## Phase E1-spike — Grabar dentro del editor de audio
+## Phase E1-spike — Grabación: sonda de compatibilidad real
 
-**Tipo:** spike. Entrega un **bloque de plan revisable**, no implementación.
+**Tipo:** spike. Entrega un **bloque de plan revisable** más **evidencia medida en dispositivos
+reales**. Tras Codex r7/S2 y S3, esto ya no es un memo de lectura de código: el wiring ordinario
+está trazado y lo único que justifica un spike es la compatibilidad real de `MediaRecorder`.
 
-**Scope:** lectura de código y un documento. `evidence/E1-spike.md`.
+**Wiring ya trazado — el spike no tiene que descubrirlo:** el grabador debe producir un `File`;
+`handleFileSelected` (`useQuickPublish.ts`) lo decodifica; `quickProcessor` lo convierte a MP3.
+El bucket sólo acepta `audio/mpeg` (`20260610090001_podcast_media_storage.sql:15`).
 
-**Out of scope:** escribir el grabador; tocar `leadership/`; arreglar el defecto de iOS del
-grabador de liderazgo (está en el backlog y es de otro sistema); grabación larga o multipista.
+**Scope:** `evidence/E1-spike.md` y, si hace falta para medir, una página de sonda **desechable
+que no se mergea**.
+
+**Out of scope:** implementar el grabador (es E1-impl); tocar `leadership/`; grabación larga o
+multipista; arreglar `/recorder`.
 
 **Acceptance criteria:**
-- [ ] E1.1 Traza documentada de `leadership/AudioRecorder.tsx`, `recorderUploader.ts`,
-      `recorderSession.ts` y `RecorderPopupPage.tsx`: qué es reutilizable y qué está acoplado
-      a sesiones de liderazgo, con rutas y líneas.
-- [ ] E1.2 Traza de la entrada actual: `AudioUploader.tsx` → `handleFileSelected` en
-      `useQuickPublish.ts`, con la firma exacta que un grabador tendría que satisfacer.
-- [ ] E1.3 Camino declarado de grabación → MP3, citando `mp3Encoder.ts` y `quickProcessor.ts`.
-      El bucket **sólo acepta `audio/mpeg`** (`20260610090001_podcast_media_storage.sql:15`);
-      una grabación de navegador es webm/opus. El bloque debe decir dónde ocurre la conversión.
-- [ ] E1.4 Postura explícita sobre iOS: qué mime se negocia, cómo se degrada si falla, y qué se
-      promete y qué no. **No se aceptan `isTypeSupported` como prueba** — hay que construir el
-      `MediaRecorder` de verdad (lección de la ex-D16).
-- [ ] E1.5 Recomendación: reutilizar el grabador de liderazgo, extraerlo a un módulo común, o
-      escribir uno nuevo. Con el costo de cada opción.
-- [ ] E1.6 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
+- [ ] E1s.1 **Matriz de dispositivos y versiones** con resultado por celda: al menos iOS ≥ 18.4,
+      iOS < 18.4, Android Chrome, macOS Safari, Chrome de escritorio. Cada celda dice qué MIME se
+      negoció y si la grabación resultante se decodifica.
+- [ ] E1s.2 La medición **construye un `MediaRecorder` real y graba**. `isTypeSupported` no es
+      evidencia aceptable — sólo dice que el navegador *debería* poder.
+- [ ] E1s.3 Evidencia cruda por celda: salida, captura o log. Una celda sin evidencia se declara
+      **no medida**, no se infiere.
+- [ ] E1s.4 Postura declarada sobre iOS anterior a 18.4: qué MIME se negocia, cómo degrada, y
+      qué se promete. **Corrige la afirmación no medida de "roto en iOS"** que el plan arrastraba.
+- [ ] E1s.5 Recomendación con costo: reutilizar `leadership/AudioRecorder.tsx`, extraerlo a un
+      módulo común, o escribir uno nuevo.
+- [ ] E1s.6 Bloque de plan para **E1-impl**: scope, criterios de aceptación y test plan, en la
+      forma del SOP §2.1.
 
-**Test plan:** ninguno automatizado — es un spike. La verificación es que el bloque de plan
-resultante sea ejecutable sin volver a abrir el código. Lo declaro en vez de inventar criterios.
+**Test plan:** ninguno automatizado. La verificación es la matriz de E1s.1 con su evidencia
+cruda, que es comprobable por cualquiera releyendo el artefacto. Lo declaro en vez de inventar
+criterios.
 
-**Definition of done:** `evidence/E1-spike.md` commiteado, con el bloque de plan al final.
+**Definition of done:** `evidence/E1-spike.md` commiteado, con matriz, evidencia y el bloque de
+plan de E1-impl.
 
-**Risks / unknowns:** que el grabador de liderazgo resulte inseparable de su modelo de sesión.
-Si es así, el bloque debe decirlo y proponer uno nuevo, no forzar la reutilización.
+**Risks / unknowns:** que no haya dispositivos suficientes a mano para llenar la matriz. En ese
+caso las celdas van como **no medidas** y E1-impl declara el alcance reducido — no se rellenan
+por inferencia.
 
-**Rollback:** ninguno; no modifica el sistema.
+**Rollback:** ninguno; la página de sonda no se mergea.
+
+**Depende de:** nada. **Es la única unidad que puede arrancar hoy sin gate.**
+
+---
+
+## Phase E2 — Carátula desde la portada de la liturgia
+
+**Era spike en la r7; Codex r7/S2 demostró que ya es especificable** y pasa a unidad de código.
+Persistencia, consulta y conversión están determinadas:
+
+```
+liturgia_elementos  WHERE liturgia_id = <ep.liturgy_id> AND tipo = 'portada-reflexion'
+  → slides.slides[0].content.imageUrl   (data URL)
+  → base64ToSpotifyCover()              (coverImageUtils.ts:57, acepta data URL)
+```
+
+**Decisión de producto tomada por Brent (2026-08-07):** se reutiliza el sistema de generación de
+portadas que ya existe. **No se construye generación nueva.**
+
+**Scope:** `useQuickPublish.ts` (sustituir la ruta de `buildSermonCoverPrompt` cuando hay
+liturgia), un helper de lectura de la portada, y tests.
+
+**Out of scope:** rediseñar `Portadas.tsx`; cambiar los prompts de `coverPromptBuilder.ts`; tocar
+la generación de portadas de la liturgia; el recorte manual (`CoverCropTool`).
+
+**Acceptance criteria:**
+- [ ] E2.1 Con liturgia vinculada y portada de reflexión guardada, la carátula del episodio **es
+      esa portada**, no una ilustración nueva.
+- [ ] E2.2 La conversión 4:3 → cuadrada está declarada y probada: qué se recorta y desde dónde.
+- [ ] E2.3 **Liturgia vinculada pero sin portada de reflexión guardada:** comportamiento
+      declarado y probado — ver la decisión de producto pendiente abajo.
+- [ ] E2.4 **Sin liturgia vinculada** (`onContinueWithoutLiturgy`): se conserva la ruta actual de
+      generación con Gemini. No se rompe el flujo existente.
+- [ ] E2.5 Un fallo al leer la portada **no bloquea la publicación**: degrada a la ruta actual y
+      lo dice en la UI, en español.
+- [ ] E2.6 Gates + build (ver el procedimiento de D18 arriba).
+
+**Decisión de producto pendiente — la necesita E2.3 y la responde Brent antes de ejecutar:**
+cuando la liturgia existe pero **no tiene portada de reflexión guardada**, ¿se bloquea la
+publicación, se ofrece subir una a mano, o se genera con la ruta actual de Gemini?
+**Esta unidad no arranca sin esa respuesta.**
+
+**Test plan:** tests del helper de lectura (portada presente, ausente, liturgia inexistente) y
+del cableado en `useQuickPublish`. Prueba base-red o de mutación por test (D18): para E2.1, la
+mutación declarada es volver a `buildSermonCoverPrompt` y mostrar el test rojo.
+
+```bash
+npx vitest run --no-file-parallelism src/lib/sermon-editor src/hooks
+```
+
+**Definition of done:** tests verdes con evidencia base-red/mutación, criterios E2.1–E2.6, gates.
+
+**Risks / unknowns:** que el `SlideGroup` guardado tenga más de un slide o una forma distinta a
+`slides[0].content.imageUrl` en liturgias antiguas. El test de "portada ausente" cubre el caso
+degradado.
+
+**Rollback:** `git revert`. La ruta de Gemini sigue intacta debajo.
 
 **Depende de:** nada.
 
 ---
 
-## Phase E2-spike — Carátula derivada de la portada de la liturgia
+## Phase E3 — Páginas públicas + contrato de `slug`
 
-**Tipo:** spike. **Decisión de producto ya tomada por Brent (2026-08-07):** se reutiliza el
-sistema de generación de portadas que ya existe. No se construye generación nueva.
+**Reescrita entera tras Codex r7/B2 y B3.** La r7 aceptaba slug mutable y no especificaba cómo
+producirlo; ambas cosas eran defectos, no simplificaciones.
 
-**Scope:** lectura de código y un documento. `evidence/E2-spike.md`.
+**Por qué el slug vuelve a ser inmutable:** la r7 argumentaba que un enlace de WhatsApp tolera un
+slug cambiado "porque no está indexado". **Es falso.** Un enlace ya compartido se rompe igual, y
+además rompe la URL canónica, la caché y la previsualización social que E4 existe para construir.
+**D12 sigue vigente.** No se restaura todo el ex-A4-core: el trigger de GUID y la prohibición de
+`DELETE` siguen en el backlog.
 
-**Out of scope:** implementar el cableado; rediseñar `Portadas.tsx`; cambiar los prompts de
-`coverPromptBuilder.ts`; tocar la generación de portadas de la liturgia.
+**Scope:** migración aditiva (`slug` + trigger), `publishService.ts`, `src/appRoutes.tsx`, las
+dos páginas nuevas, tipos regenerados, y tests.
 
-**Acceptance criteria:**
-- [ ] E2.1 Respuesta documentada a **dónde queda persistida la portada de REFLECTION** de
-      `Portadas.tsx`: hoy sale por `onSlidesGenerated` como `SlideGroup` y vive en estado de
-      componente (`reflectionCover`, `:51`). Hay que decir en qué tabla/bucket acaba, si acaba.
-- [ ] E2.2 Respuesta a si es **recuperable por `liturgy_id`**, que es la FK que ya existe en
-      `church_podcast_episodes`. Con la consulta o el camino de código que lo hace.
-- [ ] E2.3 Decisión entre las dos formas de reutilización, con su costo:
-      **(a)** recuperar la portada de reflexión ya generada, o
-      **(b)** reinvocar el generador existente con el contexto de la liturgia.
-- [ ] E2.4 Camino de formato declarado: la portada de liturgia es **4:3 (1024x768)** y la
-      carátula del episodio es cuadrada. Decir si `base64ToSpotifyCover()` sirve tal cual y qué
-      se recorta.
-- [ ] E2.5 Qué pasa cuando **no hay liturgia vinculada** — `QuickStepLiturgy` permite
-      `onContinueWithoutLiturgy`. El bloque debe declarar el comportamiento de reserva.
-- [ ] E2.6 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
-
-**Test plan:** ninguno automatizado — es un spike, igual que E1.
-
-**Definition of done:** `evidence/E2-spike.md` commiteado, con el bloque de plan al final.
-
-**Risks / unknowns:** que la portada de reflexión no se persista en ningún sitio recuperable y
-sólo exista dentro del slide de la liturgia. En ese caso (b) es la única vía y el bloque tiene
-que decirlo sin adornos.
-
-**Rollback:** ninguno; no modifica el sistema.
-
-**Depende de:** nada.
-
----
-
-## Phase E3 — Páginas públicas `/reflexiones` y `/reflexiones/:slug`
-
-**Reutiliza la ex-A7**, que Codex aprobó tal cual en la r5. Su cuerpo se conserva al final del
-documento como referencia. Lo que cambia respecto de A7: **deja de depender de A4-core y
-A5-core**, que salen del plan.
-
-**Scope:** una migración aditiva (columna `slug`), `src/appRoutes.tsx`, las páginas nuevas,
-`publishService.ts` para asignar el slug al publicar, y sus tests.
-
-**Out of scope:** el **trigger de inmutabilidad** de slug y guid (era A4-core; va al backlog con
-la nota de abajo); enlace público a la liturgia (ya estaba retirado en A7.10 y sigue fuera:
-no hay ruta pública de liturgia ni RLS anon); buscador y filtros; reproductor avanzado.
+**Out of scope:** trigger de inmutabilidad del **GUID** y prohibición de `DELETE` (backlog);
+enlace público a la liturgia (no hay ruta pública de liturgia ni RLS anon); buscador y filtros;
+reproductor avanzado.
 
 **Acceptance criteria:**
-- [ ] E3.1 Migración aditiva añade `slug TEXT UNIQUE` a `church_podcast_episodes` (D9: sólo
-      aditivo, sin DROP ni ALTER destructivo).
-- [ ] E3.2 `publishService.ts` asigna el slug al publicar; episodios ya publicados sin slug no
-      rompen la página.
-- [ ] E3.3 Existe `/reflexiones` con el listado de episodios `published`, paginado.
-- [ ] E3.4 Existe `/reflexiones/:slug` con reproductor y descarga.
-- [ ] E3.5 Ambas rutas son accesibles **sin iniciar sesión** — la RLS pública ya expone sólo
-      `status = 'published'` (`20260610090000_church_podcast_episodes.sql:73`).
-- [ ] E3.6 Un slug inexistente da 404, no una página en blanco.
-- [ ] E3.7 Todo el texto en español (D14); sin PII de miembros (D13).
-- [ ] E3.8 Gates + build. **Ver la advertencia de D18 arriba.**
+- [ ] E3.1 Migración aditiva añade `slug TEXT UNIQUE` (D9: sin DROP ni ALTER destructivo).
+- [ ] E3.2 **Derivación especificada y probada**: normalización, longitud máxima, y qué pasa con
+      título vacío, no-ASCII y sólo-símbolos. Ningún caso produce slug vacío.
+- [ ] E3.3 **Colisiones resueltas de forma determinista contra la constraint**, no por azar ni
+      por reintento ciego. Dos episodios con el mismo título producen slugs distintos y estables.
+- [ ] E3.4 `publishService.ts:278-285` **distingue la violación de unicidad de `slug` de la de
+      `episode_number`**. Hoy el `while` reintenta cualquier `23505` con un número nuevo, lo que
+      ante una colisión de slug reintentaría inútilmente hasta agotarse.
+- [ ] E3.5 **Trigger:** transición única `NULL → valor`; una vez asignado, inmutable.
+- [ ] E3.6 **Republicar conserva el mismo slug.** `unpublishEpisode()` devuelve la fila a `draft`
+      conservándola (`publishService.ts:335`), así que la ruta de republicación existe y se prueba.
+- [ ] E3.7 **`status = 'published'` ⇒ `slug IS NOT NULL`**, impuesto en la base. `slug TEXT UNIQUE`
+      por sí solo admite filas publicadas con `slug NULL`, que no tendrían página.
+- [ ] E3.8 `PublishResult` devuelve el `slug`. Hoy no lo devuelve (`publishService.ts:44-51`).
+- [ ] E3.9 **Tipos regenerados**: `src/integrations/supabase/types.ts` contiene `slug`
+      (hoy `grep -c slug` → 0).
+- [ ] E3.10 Existe `/reflexiones` con listado de episodios `published`, con **tamaño de página,
+      orden estable y ausencia de solapes** declarados y probados.
+- [ ] E3.11 Existe `/reflexiones/:slug` con reproductor y descarga.
+- [ ] E3.12 **e2e anónimo**: ambas rutas cargan sin sesión, **y un episodio `draft` no es
+      accesible** por su ruta.
+- [ ] E3.13 Un slug inexistente devuelve **HTTP 404**, no un shell 200 con 404 visual.
+- [ ] E3.14 Español en todo el texto (D14); sin PII de miembros (D13).
+- [ ] E3.15 Gates + build (procedimiento de D18 arriba).
 
-**Test plan:** tests de las páginas nuevas y de la asignación de slug en `publishService`, con
-prueba base-red o de mutación por test (D18). Los nombres exactos los fija el prompt de
-ejecución; no los invento aquí sin haber trazado los ficheros de test existentes.
+**Episodios preexistentes:** la tabla está **vacía** (0 filas, verificado), así que no hay
+backfill que hacer. Si dejara de estarlo antes de ejecutar, E3.7 obliga a decidirlo entonces: el
+criterio no admite filas publicadas sin slug.
+
+**Test plan:** unitarios de derivación y colisión; **tests de trigger y constraint contra
+Postgres real**, no contra mocks — una garantía de base sólo se prueba en la base; e2e anónimo
+para E3.12 y E3.13. Prueba base-red o de mutación por test (D18).
 
 ```bash
 npx vitest run --no-file-parallelism
+npx playwright test
 ```
 
-**Definition of done:** tests verdes con evidencia base-red/mutación, criterios E3.1–E3.8,
-gates, y las dos rutas funcionando en preview.
+**Definition of done:** tests verdes con evidencia base-red/mutación, criterios E3.1–E3.15, gates.
 
 **Risks / unknowns:**
-- **Sin el trigger de inmutabilidad, un slug se puede cambiar y romper un enlace ya compartido.**
-  Es una degradación consciente respecto de A4-core/D5/D12. Aceptable mientras el enlace sólo
-  circule por redes y WhatsApp y no esté indexado por 15 directorios. **Cuando vuelva la
-  distribución, el trigger vuelve a ser obligatorio.**
-- La paginación sobre una tabla hoy **vacía** (0 filas, verificado) no se puede probar con datos
-  reales; hay que sembrar datos sintéticos (regla dura del proyecto: sólo datos sintéticos).
+- La paginación sobre una tabla vacía no se puede probar con datos reales; hay que sembrar
+  **datos sintéticos** (regla dura del proyecto).
+- E3.13 puede obligar a tocar el modelo de servido de la SPA, que es justo lo que E4-spike
+  investiga. Si E3 no puede dar un 404 real sin esa decisión, **E3.13 se declara bloqueado y pasa
+  a E4-impl** — no se cierra con un 200 disfrazado.
 
-**Rollback:** `git revert` del código. La columna `slug` queda (aditiva, inofensiva).
+**Rollback:** `git revert` del código. La columna y el trigger quedan (aditivos).
 
 **Depende de:** nada.
 
 ---
 
-## Phase E4-spike — Previsualización del enlace (`og:` por episodio)
+## Phase E4-spike — Previsualización: prototipo desplegado
 
-**Es la ex-A10a**, congelada y aprobada por Codex en la r5. Se conserva su planteamiento: la
-arquitectura base es **shell HTML enriquecido para todos, sin branching por user-agent** (evita
-cloaking), y cualquier alternativa hay que justificarla contra ella.
+**Reescrita tras Codex r7/B4.** La r7 la había vaciado a un documento y le prohibía tocar
+`index.html`; así no podía demostrar nada. La ex-A10a **sí** exigía prototipo desplegado, SPA
+funcional y medición, y eso se recupera.
 
-**Sigue siendo el corazón del alcance nuevo**, no un accesorio: por D18b, **la previsualización
-del enlace es la distribución** mientras el canal sea compartir a mano.
+**El problema es real y está medido:** `vercel.json` tiene un solo rewrite `/(.*)` →
+`/index.html`, así que hoy todas las rutas reciben el mismo HTML, con las 12 líneas genéricas de
+`og:`/`twitter:`/canonical/JSON-LD que ya trae `index.html`.
 
-**Scope:** lectura de código y un documento. `evidence/E4-spike.md`.
+**Arquitectura base heredada de A10a (aprobada por Codex r5):** shell HTML enriquecido **para
+todos**, sin branching por user-agent — el branching es cloaking y es frágil. Cualquier
+alternativa hay que justificarla contra ella.
 
-**Out of scope:** implementar el SEO (eran A10b/A10c, ya en el backlog); tocar `index.html`.
+**Scope:** un **prototipo desplegado en preview de Vercel** (rama desechable, no se mergea) y
+`evidence/E4-spike.md`.
+
+**Out of scope:** la implementación definitiva (es E4-impl); mergear el prototipo.
 
 **Acceptance criteria:**
-- [ ] E4.1 Camino declarado para emitir `og:title`, `og:image`, `og:description` y `og:audio`
-      **por episodio** en una SPA servida por Vercel, con la técnica nombrada.
-- [ ] E4.2 Cómo se **reemplazan** — no se duplican — las 12 líneas de `og:`/`twitter:`/
-      canonical/JSON-LD que `index.html` ya trae. Duplicarlas es el defecto que CR-13 señaló.
-- [ ] E4.3 Matriz de canales reales de CASA (WhatsApp, Instagram, Facebook) con qué lee cada
-      uno. **Sin asumir que `og:audio` reproduzca** en ninguno.
-- [ ] E4.4 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
+- [ ] E4s.1 Prototipo **desplegado y accesible** en una URL de preview de Vercel, con al menos un
+      episodio real o sintético.
+- [ ] E4s.2 Un crawler recibe **metadatos por episodio** — título, portada, predicador,
+      canonical — verificado con petición cruda (`curl`), no con la vista del navegador.
+- [ ] E4s.3 **La SPA arranca correctamente sobre el HTML enriquecido.** Un preview que rompa la
+      app es un fallo del spike, no un detalle.
+- [ ] E4s.4 Las 12 etiquetas genéricas de `index.html` quedan **reemplazadas, no duplicadas**
+      (defecto que CR-13 ya había señalado).
+- [ ] E4s.5 Comprobado sobre la URL desplegada con **al menos WhatsApp y Facebook**, con
+      evidencia. No basta una matriz teórica.
+- [ ] E4s.6 `og:audio` sólo se declara obligatorio **si E4s.5 demuestra que algún canal real lo
+      usa**. Si ninguno, se retira del alcance y se dice.
+- [ ] E4s.7 Bloque de plan para **E4-impl**: scope, criterios y test plan, con el costo declarado
+      si la técnica obliga a cambiar el modelo de despliegue.
 
-**Test plan:** ninguno automatizado — es un spike.
+**Test plan:** ninguno automatizado — la verificación es el prototipo desplegado y la evidencia
+cruda de E4s.2 y E4s.5.
 
-**Definition of done:** `evidence/E4-spike.md` commiteado, con el bloque de plan al final.
+**Definition of done:** `evidence/E4-spike.md` commiteado con la URL de preview, las salidas
+crudas y el bloque de plan de E4-impl. **El prototipo no se mergea**, así que no pasa por el gate.
 
-**Risks / unknowns:** que la técnica elegida obligue a cambiar el modelo de despliegue de la
-SPA. Si es así, el bloque debe declarar el costo en vez de esconderlo.
+**Risks / unknowns:** que la técnica obligue a cambiar el modelo de despliegue de la SPA. Si es
+así, el bloque lo declara con su costo en vez de esconderlo — y esa es información que vale el
+spike entero.
 
-**Depende de:** E3 — sin la ruta no hay nada que previsualizar.
+**Depende de:** E3 — sin la ruta y el slug no hay URL de episodio que previsualizar.
+
+---
+
+## Phase E1-impl — Grabar dentro del editor
+
+**Su alcance lo fija el bloque de plan que entregue E1-spike (E1s.6), y ese bloque se revisa
+antes de ejecutar esta unidad.** Lo que sigue es el marco que el bloque tiene que rellenar; no
+son criterios inventados sobre una implementación que aún no está decidida.
+
+**Marco fijo — el bloque de E1-spike no puede contradecirlo:**
+- La grabación entra al flujo existente produciendo un `File` que `handleFileSelected` acepta.
+- La conversión a MP3 ocurre antes de subir: el bucket sólo acepta `audio/mpeg`.
+- La degradación en plataformas no soportadas es **explícita y visible**, nunca silenciosa, y
+  siempre queda disponible la subida de fichero que ya funciona.
+- Texto en español (D14).
+- Gates + build (procedimiento de D18).
+
+**Out of scope:** grabación larga, multipista, monitoreo en vivo o control de mesa — eso es el
+workstream `captura`.
+
+**Test plan:** lo fija el bloque de E1-spike, con base-red o mutación por test (D18).
+
+**Definition of done:** criterios del bloque aprobado, tests verdes con evidencia, gates.
+
+**Risks / unknowns:** los que mida E1-spike. Si la matriz sale mal en las plataformas que CASA
+usa de verdad, **la salida correcta es reducir el alcance o retirar la unidad**, no forzarla.
+
+**Depende de:** E1-spike, y de la revisión de su bloque.
+
+---
+
+## Phase E4-impl — Previsualización implementada
+
+**Su alcance lo fija el bloque de plan que entregue E4-spike (E4s.7), revisado antes de ejecutar.**
+
+**Marco fijo:**
+- Shell HTML enriquecido para todos, **sin branching por user-agent**.
+- Las etiquetas genéricas de `index.html` se **reemplazan**, no se duplican.
+- La SPA sigue arrancando correctamente.
+- El preview real de al menos WhatsApp y Facebook muestra **título, portada y predicador**
+  sobre una URL publicada de verdad.
+- Gates + build (procedimiento de D18).
+
+**Test plan:** lo fija el bloque de E4-spike, con base-red o mutación por test (D18).
+
+**Definition of done:** criterios del bloque aprobado, tests verdes, evidencia de preview sobre
+URL real, gates.
+
+**Depende de:** E4-spike, y de la revisión de su bloque.
 
 ---
 
 ## Phase E5 — Compartir en redes y WhatsApp
 
-**Scope:** un botón de compartir en `/reflexiones/:slug` y en la tarjeta del listado, más sus
-tests.
+**Endurecida tras Codex r7/S3.** La r7 decía "compartir en redes" y sólo probaba WhatsApp.
+Aquí el alcance se declara honestamente en vez de prometer de más.
 
-**Out of scope:** **cualquier envío automático.** Nada de avisos, difusión ni notificaciones —
-**D17 sigue vigente** y prohíbe enviar sin audiencia con consentimiento y sin unicidad de
-entrega en la base. Esto es un botón que el usuario pulsa, no una campaña. Tampoco: audiograma
-para Instagram (backlog), ni acortador de enlaces.
+**Scope:** un componente de compartir usado en `/reflexiones/:slug` y en la tarjeta del listado,
+más sus tests.
+
+**Out of scope:** **cualquier envío automático** — nada de avisos, difusión ni notificaciones.
+**D17 sigue vigente**: sin audiencia con consentimiento y sin unicidad de entrega en la base no
+se envía nada. Esto es un botón que una persona pulsa. Tampoco: audiograma para Instagram
+(backlog), ni acortador de enlaces.
 
 **Acceptance criteria:**
-- [ ] E5.1 El botón comparte la URL canónica de `/reflexiones/:slug`.
-- [ ] E5.2 Compartir por WhatsApp funciona desde móvil y escritorio.
-- [ ] E5.3 Hay una vía de copiar el enlace al portapapeles, con confirmación visible.
-- [ ] E5.4 El texto compartido va en español (D14) y no incluye PII de miembros (D13).
-- [ ] E5.5 Gates + build. **Ver la advertencia de D18 arriba.**
+- [ ] E5.1 El botón comparte la **URL canónica** `/reflexiones/<slug>`.
+- [ ] E5.2 **WhatsApp**, con matriz móvil y escritorio: URL y texto esperados declarados y
+      probados, no "funciona".
+- [ ] E5.3 **Facebook**: comportamiento declarado y probado.
+- [ ] E5.4 **Instagram**: se declara explícitamente que **no admite compartir por URL desde web**
+      y qué se ofrece en su lugar (copiar enlace). Declararlo es el criterio; prometerlo, no.
+- [ ] E5.5 Copiar al portapapeles con confirmación visible — vía de reserva cuando
+      `navigator.share` no existe.
+- [ ] E5.6 Texto en español (D14); sin PII de miembros (D13).
+- [ ] E5.7 Gates + build (procedimiento de D18).
 
-**Test plan:** tests del componente de compartir. Nombres exactos en el prompt de ejecución.
+**Test plan:** tests del componente por canal, incluida la rama sin `navigator.share`. Base-red o
+mutación por test (D18).
 
 ```bash
 npx vitest run --no-file-parallelism
 ```
 
-**Definition of done:** tests verdes con base-red/mutación, criterios E5.1–E5.5, gates.
+**Definition of done:** tests verdes con evidencia, criterios E5.1–E5.7, gates.
 
-**Risks / unknowns:** la API de compartir del navegador (`navigator.share`) no está en todas
-partes; E5.3 es la vía de reserva y por eso es criterio, no adorno.
+**Risks / unknowns:** `navigator.share` no está en todas partes; por eso E5.5 es criterio y no
+adorno.
 
 **Rollback:** `git revert`.
 
-**Depende de:** E3 (la ruta) y E4-spike (que la previsualización esté resuelta antes de empujar
-a la gente a compartir un enlace sin preview).
+**Depende de:** E3 (la ruta) y E4-impl — empujar a la gente a compartir un enlace cuya
+previsualización todavía no funciona sería entregar el defecto, no el producto.
 
 ---
 
----
+## Phase E6 — Cierre del bucle: URL al publicar + retirar Spotify
 
+**Unidad nueva, exigida por Codex r7/B1 y confirmada por Brent (2026-08-07).** Sin ella, quien
+publica no llega a ver el enlace que todo este bloque existe para producir, y el editor y la home
+siguen apuntando a lo que acabamos de sacar del alcance.
+
+**Todo lo que sigue está medido en el código, no supuesto:**
+
+| Hoy | Dónde |
+|---|---|
+| `PublishResult` no devuelve slug ni URL canónica | `publishService.ts:44-51` |
+| La pantalla de éxito dice *"Spotify lo detectará"* | `QuickPublishProgress.tsx:46` |
+| …y ofrece "Ver feed RSS" | `QuickPublishProgress.tsx:58` |
+| El botón dice "Publicar en Spotify" | `QuickStepReview.tsx:247` |
+| El CTA público dice "Escuchar en Spotify" | `SermonCard.tsx:45` |
+
+**Scope:** `publishService.ts`, `QuickPublishProgress.tsx`, `QuickStepReview.tsx`,
+`SermonCard.tsx`, y tests.
+
+**Out of scope:** rediseñar la home (non-goal desde la r1 — sólo cambia el destino del CTA);
+borrar el código del feed RSS o de Spotify (eso es limpieza, está en el backlog, y D8 prohíbe
+tocar la cuenta).
+
+**Acceptance criteria:**
+- [ ] E6.1 `PublishResult` devuelve el **slug y la URL canónica** del episodio. *(Se solapa con
+      E3.8 a propósito: E3 lo introduce, E6 lo consume. Si E3 ya lo dejó hecho, E6.1 se verifica,
+      no se reimplementa.)*
+- [ ] E6.2 La pantalla de éxito muestra la URL `/reflexiones/<slug>` y permite **abrirla, copiarla
+      y compartirla**, reutilizando el componente de E5.
+- [ ] E6.3 Se retiran de la pantalla de éxito el mensaje de Spotify y el enlace al feed RSS.
+- [ ] E6.4 El botón de publicar deja de decir "Publicar en Spotify".
+- [ ] E6.5 El CTA público deja de abrir Spotify y **abre `/reflexiones/<slug>`**.
+- [ ] E6.6 Español en todo el texto (D14).
+- [ ] E6.7 Gates + build (procedimiento de D18).
+
+**Test plan:** test de que `publishService` devuelve slug y URL; tests de las tres superficies de
+UI. **Mutación declarada para E6.5**: devolver el CTA a Spotify debe romper el test — una
+afirmación de wiring sólo se prueba con una mutación que corte ese wiring (D18).
+
+```bash
+npx vitest run --no-file-parallelism
+```
+
+**Definition of done:** tests verdes con evidencia base-red/mutación, criterios E6.1–E6.7, gates.
+
+**Risks / unknowns:** ninguno significativo — es cableado sobre superficies ya medidas. El riesgo
+real sería ejecutarla antes que E3 y E5, y por eso depende de ambas.
+
+**Rollback:** `git revert`. Nada de esto toca datos.
+
+**Depende de:** E3 (slug y ruta) y E5 (el componente de compartir que E6.2 reutiliza).
 # ⛔ Unidades `A*` — RETIRADAS en la revisión 7
 
 **Nada de lo que sigue está vigente.** Son los cuerpos de las 12 unidades del plan de
@@ -462,7 +703,11 @@ error una vez: en la r6 borré sin querer los cuerpos de A12 y A13 al reemplazar
 
 **Los IDs `A*` no se reciclan.** El alcance vigente son las unidades `E*` de §5.
 
-Lo que se rescata de aquí ya está incorporado a las unidades E: **A7 → E3** y **A10a → E4-spike**.
+Lo que se rescata de aquí está incorporado a **E3** (que parte de A7) y a **E4-spike** (que
+recupera el prototipo desplegado que A10a exigía y que la r7 había vaciado).
+
+**Esas dos unidades NO heredan la aprobación de Codex r5** (r7/N1). La r7 les cambió scope,
+dependencias, e2e y pruebas de RLS; una aprobación no sobrevive a eso. Se revisan de cero.
 
 ---
 
@@ -1116,6 +1361,18 @@ distribución"). Se retoma como bloque, no pieza a pieza.
 | **Directorios + redirect de Spotify** | A-cutover-spike | Depende de todo lo anterior. D8 y D11 siguen vigentes cuando se retome |
 | **Reconocimiento** (conteos, estado en Spotify for Creators, auditoría musical) | A0-core | Cuatro de sus ocho criterios exigen consolas de Brent |
 
+**Decisiones trasladadas aquí en la r8 (Codex r7/S4).** Seguían en el bloque de arquitectura
+activa describiendo un plan que ya no existe. Aquí vuelven a ser correctas, palabra por palabra:
+
+| Decisión | Qué dice |
+|---|---|
+| **D1** | El feed RSS propio es la fuente de verdad del catálogo; todo directorio, incluido Spotify, se alimenta de él |
+| **D4** | La identidad pública del feed es `https://www.anglicanasanandres.cl/podcast/feed.xml` — con `www`, porque el apex responde 307 → www |
+| **D6** | El correo de `itunes:owner` es institucional, nunca personal. **Medido el 2026-08-07: el dominio no tiene MX; hay que provisionarlo antes que nada** |
+| **D7** | No se activa video en Spotify (razón corregida en la r4, conservada) |
+| **D8** | **Nunca borrar la cuenta de Spotify for Creators.** Prohibición dura, no preferencia |
+| **D11** | Ninguna acción sobre Spotify ocurre antes de validar el feed y tener Apple aprobado |
+
 **Decisiones que quedan vigentes aunque ninguna unidad las implemente:** D6 (correo
 institucional, nunca personal), D8 (no borrar la cuenta de Spotify), D11 (orden del corte),
 D12 (slug inmutable una vez publicado), D17 (nada de envíos automáticos sin outbox). Están
@@ -1216,6 +1473,15 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 | 2026-08-07 | **D6 y el correo institucional salen del camino crítico** | `itunes:owner` sólo sirve para verificar propiedad ante directorios, y no hay directorios en el alcance nuevo. Medido: `dig MX anglicanasanandres.cl` → **sin registros**; el dominio no puede recibir correo y ese buzón habría que crearlo. D6 sigue vigente para cuando vuelva la distribución | Brent + PM (evidencia) |
 | 2026-08-07 | **E3 acepta slug mutable**: se retira el trigger de inmutabilidad (ex-A4-core) del alcance | Degradación consciente frente a D5/D12. Con el enlace circulando sólo por redes y WhatsApp, el costo de un slug cambiado es un enlace roto; con 15 directorios indexando, es pérdida de identidad. **El trigger vuelve a ser obligatorio cuando vuelva la distribución**, y así está escrito en el riesgo de E3 | PM |
 | 2026-08-07 | **Se registra que D18 no es satisfacible hoy**: `scripts/gates/changed-files-diagnostics.sh` no existe en `main` | Verificado por rama: existe sólo en `feat/mesa-md-gates` (UPGRADE P0, `FAIL 2/2`, cuarta ronda por override). E3 y E5 son código y quedan atadas a que P0 aterrice. **Ablandar D18 es una decisión de Codex o Brent, no del PM** | PM |
+| 2026-08-07 | **r8: cada spike lleva su implementación detrás.** Se añaden `E1-impl`, `E4-impl` y `E6`; E5 pasa a depender de E4-impl, no de E4-spike. 5 → **8 unidades** | La r7 tenía tres spikes y ninguna implementación: al completarla no habría habido grabación, ni carátula desde la liturgia, ni previsualización. **Un plan que no entrega su propio Goal está roto** | Codex r7/B1, confirmado por Brent |
+| 2026-08-07 | **r8: E6 nueva — el bucle se cierra dentro de este bloque.** `PublishResult` devuelve slug y URL; la pantalla de éxito ofrece abrir/copiar/compartir; se retiran el mensaje de feed y el "Publicar en Spotify"; el CTA de la home apunta a `/reflexiones` | Medido: `publishService.ts:44-51` no devuelve slug; `QuickPublishProgress.tsx:46,58`; `QuickStepReview.tsx:247`; `SermonCard.tsx:45`. Todo el flujo seguía apuntando a lo que se acababa de sacar del alcance | Codex r7/B1 + Brent |
+| 2026-08-07 | **r8: se revierte el slug mutable. D12 se restaura y amplía**; E3 lleva contrato completo de slug (derivación, colisiones, republicación, `published ⇒ slug NOT NULL`, tipos regenerados) | **Error mío en la r7.** Argumenté que un enlace de WhatsApp tolera un slug cambiado "porque no está indexado". Un enlace compartido se rompe igual, y encima rompe canonical, caché y la previsualización que E4 construye. Además `publishService.ts:278-285` reintenta cualquier `23505` como colisión de `episode_number` | Codex r7/B2 + B3 |
+| 2026-08-07 | **r8: E2 deja de ser spike y pasa a unidad de código** | **Corrección de hecho.** La r7 afirmaba que la portada de reflexión no era recuperable por `liturgy_id`. Es falsa: `ConstructorLiturgias.tsx:1064` la guarda como `portada-reflexion` y `liturgyService.ts` la persiste en `liturgia_elementos`; `base64ToSpotifyCover()` acepta esa data URL | Codex r7/S1 y S2 |
+| 2026-08-07 | **r8: E4-spike recupera el prototipo desplegado** que A10a exigía y que la r7 había vaciado a un memo | Un spike que prohíbe tocar `index.html` no puede demostrar que las etiquetas genéricas se reemplazan, ni que la SPA arranca sobre el shell enriquecido, ni que WhatsApp lo consume | Codex r7/B4 |
+| 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
+| 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
+| 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-07 | **r8: E3 y E4-spike dejan de heredar la aprobación de Codex r5** a A7 y A10a | La r7 les cambió scope, dependencias, e2e y pruebas de RLS. Una aprobación no sobrevive a eso, y presentarla como heredada era vender revisión que no existe | Codex r7/N1 |
 
 ---
 
@@ -1241,10 +1507,17 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 
 ## 10. Estado
 
-**PLAN NO CONGELADO — 5 unidades** (`E1-spike`, `E2-spike`, `E3`, `E4-spike`, `E5`).
-Trayectoria: 28 unidades en el pico → 12 en la r6 → **5 en la r7**.
+**PLAN NO CONGELADO — 8 unidades** (`E1-spike`, `E2`, `E3`, `E4-spike`, `E1-impl`, `E4-impl`,
+`E5`, `E6`). Trayectoria: 28 en el pico → 12 en la r6 → 5 en la r7 → **8 en la r8**.
 
-**Esta revisión 7 no ha pasado por Codex. Ninguna unidad B arranca hasta que lo haga.**
+**Esta revisión 8 no ha pasado por Codex. Ninguna unidad `E*` arranca hasta que lo haga.**
+
+**La r8 crece, y eso merece explicación**, porque en apariencia contradice la regla de la r5
+("simplificar es salida válida; pulir no"). Codex r7/B1 demostró que las 5 unidades de la r7 no
+entregaban **ninguna** de las cuatro condiciones del Goal: tres eran spikes sin implementación
+detrás. La elección no era entre 5 y 8 unidades, sino entre **8 que entregan** y **5 que no**.
+Brent eligió las 8 y añadió E6 al alcance. Recortar sigue siendo salida válida; fingir que un
+plan entrega lo que no entrega, no.
 
 ### Por qué se re-alcanzó (el hallazgo que lo forzó)
 
@@ -1345,3 +1618,42 @@ y evita redactar dos fases que no conviene redactar todavía.
 de esta fila no se pueden mutar, y una fila con slug no se puede borrar". FAIL para "la
 identidad del episodio no se puede reemplazar". D5 ahora dice exactamente eso y nada más.
 
+
+---
+
+## 14. Trazabilidad de la review de Codex r7 (FAIL)
+
+**Veredicto:** FAIL — 5 BLOCKING, 4 SHOULD-FIX, 1 NIT. **Aceptados los diez.** Ningún
+desacuerdo. Quinta ronda consecutiva en que Codex acierta en todo lo comprobable.
+
+**Verificación independiente antes de aceptar** (el PM no tomó la review al pie de la letra):
+
+| Afirmación de Codex | Comprobación del PM | Resultado |
+|---|---|---|
+| `PublishResult` no devuelve slug ni URL | `publishService.ts:44-51` — sólo `episodeId, audioUrl, coverUrl, guid, episodeNumber, feedUrl` | confirmado |
+| El retry de `23505` confundiría una colisión de slug | `publishService.ts:278-285` — `while (result.error && isUniqueViolation(result.error))` reintenta con número nuevo | confirmado |
+| Existe despublicar → riesgo al republicar | `unpublishEpisode()` devuelve la fila a `draft` conservándola | confirmado |
+| La UI sigue apuntando a Spotify y al feed | `QuickPublishProgress.tsx:46,58`; `QuickStepReview.tsx:247`; `SermonCard.tsx:45` | confirmado |
+| `slug` no está en los tipos generados | `grep -c slug src/integrations/supabase/types.ts` → **0** | confirmado |
+| `vercel.json` sirve el mismo HTML a todas las rutas | un solo rewrite `/(.*)` → `/index.html`, framework `vite` | confirmado |
+| **La portada de reflexión SÍ es recuperable por `liturgy_id`** | `ConstructorLiturgias.tsx:1064` la guarda como `portada-reflexion`; `liturgyService.ts` la persiste en `liturgia_elementos` por `(liturgia_id, tipo)` | confirmado — **la r7 afirmaba lo contrario** |
+| Referencias obsoletas a "unidad B" | líneas 19 y 1247 de la r7 | confirmado |
+
+| Finding | Clase | Resolución en la r8 |
+|---|---|---|
+| **B1** el plan no implementa tres de las cuatro condiciones del Goal | BLOCKING | **Aceptado.** Se añaden `E1-impl`, `E4-impl` y `E6`; E5 pasa a depender de E4-impl. 5 → 8 unidades. Brent confirmó el alcance completo y metió el cierre del bucle dentro del bloque |
+| **B2** el slug mutable rompe el producto nuevo | BLOCKING | **Aceptado — error mío.** D12 restaurada y ampliada; E3 impone `NULL → valor`, inmutabilidad posterior y republicación con el mismo slug. El trigger de GUID y la prohibición de `DELETE` siguen en backlog, como Codex admite |
+| **B3** E3 no especifica cómo producir un slug correcto | BLOCKING | **Aceptado.** E3.2–E3.9: derivación, longitud, no-ASCII, colisión determinista contra la constraint, distinción del `23505`, `published ⇒ slug NOT NULL`, `PublishResult` con slug, tipos regenerados. Probado contra Postgres real |
+| **B4** el spike de previsualización no prueba nada | BLOCKING | **Aceptado.** E4-spike recupera el prototipo **desplegado** de A10a: E4s.1–E4s.6, con evidencia cruda sobre WhatsApp y Facebook, y `og:audio` sólo si se demuestra que alguien lo usa |
+| **B5** D18 bloquea E3/E5 y esperar el merge no es la única salida | BLOCKING | **Aceptado.** §5 fija el procedimiento: SHA aprobado del gate + worktrees desechables + ambos SHAs al ledger. **Rechazado** medir a mano, como Codex recomienda. **Matiz del PM:** ambas salidas requieren un SHA *aprobado*, y P0 sigue en `FAIL 2/2` — la dependencia baja de "mergeado" a "aprobado", no desaparece |
+| **S1** §5 contiene dos verificaciones falsas | SHOULD-FIX | **Aceptado.** Corregidas ambas en §5: la portada **sí** es recuperable, y "roto en iOS" pasa a "sin fallback para iOS < 18.4", que es lo que E1-spike debe medir |
+| **S2** clasificación de los spikes | SHOULD-FIX | **Aceptado.** E2 → unidad de código. E1-spike se acota a compatibilidad real con matriz de dispositivos y `MediaRecorder` construido de verdad. E4-spike → prototipo desplegado |
+| **S3** criterios vagos o autoevaluados | SHOULD-FIX | **Aceptado.** Endurecidos: matriz por dispositivo (E1s.1–E1s.3); paginación con tamaño, orden y solapes (E3.10); e2e anónimo y draft inaccesible (E3.12); HTTP 404 real (E3.13); WhatsApp con matriz y URL esperada (E5.2); Facebook e Instagram declarados por separado (E5.3, E5.4) |
+| **S4** las decisiones congeladas describen el plan retirado | SHOULD-FIX | **Aceptado.** D1, D4, D6, D7, D8 y D11 al bloque de distribución. D5 partida. D10 rejustificada como piso de calidad de escucha. D17 a guardrail de backlog. D18b endurecida |
+| **N1** referencias de estado obsoletas | NIT | **Aceptado.** Corregidas las "unidad B"; y E3/E4-spike **dejan de presentarse como herederas** de la aprobación de A7/A10a |
+
+**Sobre la causa raíz.** Las rondas 1–5 fallaron por especificar implementación sin trazar las
+firmas reales del código. La r7 falló por lo contrario: **spikes sin implementación detrás y
+criterios sin contrato**. Son la misma enfermedad en dos direcciones — plan escrito sin
+comprobar qué entrega. Por eso la r8 traza cada afirmación a `fichero:línea` y cada spike lleva
+su implementación con el marco que su bloque no puede contradecir.

@@ -205,3 +205,46 @@
 - TESTS: n/a — ronda de planificación.
 - OPEN AFTER THIS ROUND: **review de Codex sobre la revisión 7.** Ninguna unidad B arranca antes.
   Pendiente también la decisión sobre D18 (esperar a UPGRADE P0, o ablandar el gate para E3/E5).
+
+### 2026-08-07 — plan round 8 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r7` (VERDICT **FAIL**: 5 BLOCKING, 4 SHOULD-FIX, 1 NIT)
+  y enmienda a la revisión 8. **Aceptados los diez findings; ningún desacuerdo.**
+- VERIFICACIÓN INDEPENDIENTE ANTES DE ACEPTAR:
+  - `publishService.ts:44-51` — `PublishResult` no devuelve slug ni URL canónica → B1 confirmado.
+  - `publishService.ts:278-285` — el `while` reintenta **cualquier** `23505` con número nuevo;
+    una colisión de slug reintentaría inútilmente → B3 confirmado.
+  - `unpublishEpisode()` devuelve la fila a `draft` conservándola → la ruta de republicación
+    existe, B2 confirmado.
+  - `QuickPublishProgress.tsx:46,58` · `QuickStepReview.tsx:247` · `SermonCard.tsx:45` — toda la
+    UI sigue apuntando a Spotify y al feed RSS → B1 (segunda mitad) confirmado.
+  - `grep -c slug src/integrations/supabase/types.ts` → **0** → B3 confirmado.
+  - `vercel.json` — un solo rewrite `/(.*)` → `/index.html` → B4 confirmado.
+  - `ConstructorLiturgias.tsx:1064` + `liturgyService.ts` — **la portada de reflexión SÍ es
+    recuperable por `liturgy_id`**, vía `liturgia_elementos` por `(liturgia_id, tipo)` → S1
+    confirmado, y **la r7 afirmaba lo contrario**.
+  - Quinta ronda consecutiva en que Codex acierta en todo lo comprobable.
+- DIAGNÓSTICO DE CAUSA RAÍZ: las rondas 1–5 fallaron por especificar implementación sin trazar
+  el código; la r7 falló por lo opuesto — **spikes sin implementación detrás y criterios sin
+  contrato**. Misma enfermedad, dirección contraria: plan escrito sin comprobar qué entrega.
+- DECISIÓN DE BRENT (dos preguntas, ambas respondidas antes de escribir):
+  - **Alcance completo**, no recortado: se añaden las implementaciones en vez de sacar la
+    grabación al backlog.
+  - **El cierre del bucle entra en este bloque** (E6), en vez de dejarse para después.
+- CAMBIOS: **E1-impl, E4-impl y E6 nuevas** · E5 pasa a depender de E4-impl, no de E4-spike ·
+  **E2 deja de ser spike** y pasa a código (la portada es recuperable) · **E3 reescrita** con
+  contrato completo de slug y D12 restaurada · **E4-spike recupera el prototipo desplegado** de
+  A10a · **D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables** ·
+  D1/D4/D6/D7/D8/D11 al bloque de distribución · D5 partida · D10 rejustificada · D17 a
+  guardrail · D18b endurecida · se retira la afirmación no medida "roto en iOS".
+- EFECTO: 5 → **8 unidades**. §14 nueva con la trazabilidad de la r7.
+- FINDINGS RAISED: uno propio, sobre la propia review — las dos salidas que Codex propone para
+  D18 **requieren un SHA del gate ya aprobado**, y UPGRADE P0 sigue en `FAIL 2/2`. La
+  dependencia baja de "P0 mergeado a `main`" a "P0 aprobado", pero no desaparece.
+- TESTS: n/a — ronda de planificación.
+- BACKLOG ADDED: trigger de inmutabilidad del GUID y prohibición de `DELETE` (la mitad de D5 que
+  sale del alcance activo).
+- OPEN AFTER THIS ROUND: **review de Codex sobre la revisión 8.** Ninguna unidad `E*` arranca
+  antes. Pendiente además una decisión de producto de Brent que **bloquea E2**: qué hacer cuando
+  la liturgia existe pero no tiene portada de reflexión guardada — bloquear, permitir subida
+  manual, o generar con la ruta actual de Gemini.
