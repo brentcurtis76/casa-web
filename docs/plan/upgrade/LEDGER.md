@@ -583,3 +583,58 @@
 - OPEN AFTER THIS ROUND: **segunda y última revisión de Codex** sobre
   `feat/mesa-md-gates`@`6caa87d` (SOP §1.5, tope 2). Si no pasa, decide Brent: aceptar,
   replanificar o backlog. P0 no se marca DONE hasta el PASS.
+
+### 2026-08-07 — P0 r4 (ejecutor) — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P0 · r4 · EXEC — ronda **bajo override explícito de Brent** al tope de
+  3 rondas del SOP §1.5. Prompt: `docs/plan/upgrade/prompts/P0-r4.md`.
+- SCOPE: **3 ficheros de trabajo** — `scripts/gates/changed-files-diagnostics.sh`,
+  `scripts/gates/selftest.sh` (nuevo, 4º fichero de P0 por decisión del PM),
+  `scripts/gates/README.md` — más esta entrada. Cero cambios bajo `src/`, `supabase/`,
+  `package.json`, configuración de linters o `base-by-file.txt`.
+- **B1 (BLOCKING de Codex, ronda 2 de 2) — CERRADO.** El bucle de clasificación de
+  `["eslint", "deno lint"]` deja de dar prioridad a la forma del JSON sobre el código de
+  salida capturado. Las cuatro reglas rigen ahora para **ambas** herramientas: (1) no
+  parsea, (2) forma inesperada, (3) exit fuera de `{0,1}`, (4) exit `1` con **cero**
+  diagnósticos parseados. Exit `0` con cero diagnósticos sigue siendo ejecución limpia
+  legítima — el acierto de la ronda 3 no regresa. Antes: `exits["deno lint"]` se capturaba
+  y **nunca se consultaba**, y de ESLint solo se rechazaba `> 1`.
+- **Rama `tsc` / `deno check` intacta**, igual que atribución, orden, agrupación multilínea
+  de `deno check` y `rel()`. El diff del script es +11/-6 y vive entero en el epílogo.
+- **`selftest.sh` (nuevo).** Monta `npx` y `deno` de mentira en un directorio temporal, los
+  antepone al `PATH`, corre el gate sobre un fichero real y asserta **su código de salida**.
+  Ninguna herramienta real se ejecuta; los directorios se borran por `trap`. Los siete casos
+  fijan a la vez los tres defectos históricos: caso 1 el falso positivo de la ronda 2, caso
+  2 el silencio de la ronda 1, casos 4/5/6 el falso negativo de la ronda 3, más JSON no
+  parseable (3) y forma inesperada (7). No está registrado en Vitest ni en Deno y no tiene
+  script de npm: se corre por ruta.
+- TESTS: **S1** `bash scripts/gates/selftest.sh` → 7/7 OK, exit 0 · **S2** sonda manual
+  `deno lint` JSON válido vacío + exit 127 → gate EXIT=1, stderr nombra `deno-lint` ·
+  **S3** sonda manual ESLint `[]` + exit 1 → gate EXIT=1, stderr nombra `eslint` · **S4**
+  ejecución limpia por mano → EXIT=0 sin línea `FALLO` · **S5** binario `deno` ausente por
+  mano → EXIT=1 nombrando `deno-lint` y `deno-check` con su `command not found` capturado ·
+  **S6** toolchain real → EXIT=0 con `tsc=1041 eslint=160 deno-lint=94 deno-check=46`, la
+  base no se movió · **S7** stdout vs. cuerpo de `base-by-file.txt` (sin líneas `#`): `diff`
+  **vacío**, 15.052 bytes ambos · **S8** dos pasadas reales consecutivas: `diff` vacío ·
+  **S10** `npm run build` ok (7.37s), `npx vitest run --no-file-parallelism` → **1036 pass /
+  6 fail** (los seis en `MesaAbiertaDashboard.test.tsx`), `deno test --allow-all .` desde
+  `supabase/functions/` → **409 passed / 0 failed**.
+- **S9** — README: la viñeta de las herramientas JSON pasa a enunciar la convención de
+  salida (`0` nada que reportar, `1` problemas encontrados, cualquier otro código = fallo de
+  la herramienta) y las cuatro reglas numeradas, con `1` + cero diagnósticos declarado
+  autocontradictorio. El párrafo de `tsc` / `deno check` y su límite aceptado quedan como
+  estaban. Sección nueva para `selftest.sh` con la tabla de los siete casos y qué fija cada
+  uno.
+- FINDINGS RAISED: ninguno. No encontré ningún caso en que ESLint o `deno lint` salgan con
+  `1` legítimamente sin emitir diagnósticos; la regla del prompt se sostiene.
+- DESVIACIÓN DE ENTORNO (no es hallazgo, pero el PM debe saberlo): el prompt sitúa
+  `feat/mesa-md-gates` en `165d704`. No es así. `165d704` y `f6a8cdd` —que traen el prompt
+  de r4, la entrada de Codex r3 y la decisión de Brent— están en **`docs/plan-audio`**, que
+  divergió de `feat/mesa-md-gates` en `69d893a`. La punta real de la rama de trabajo era
+  `398a09d`. Trabajé sobre `398a09d`, que es donde vive el script. **Consecuencia: este
+  `LEDGER.md` no contiene la entrada del FAIL de Codex r3 ni la decisión de r4 del PM — están
+  en la copia de `docs/plan-audio`.** Las dos copias del ledger habrá que reconciliarlas
+  antes del merge; no lo hago yo porque el fichero es del PM y el SOP prohíbe reflowearlo.
+- BACKLOG: el flake de `CuentacuentoEditor.ph.surfaces` no disparó en esta ronda.
+- DECISIONS: ninguna nueva.
+- OPEN AFTER THIS ROUND: verificación del PM y, si Brent lo autoriza (el tope de Codex está
+  en 2 de 2), una tercera revisión de Codex. Reconciliación de las dos copias del ledger.

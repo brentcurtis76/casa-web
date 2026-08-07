@@ -178,13 +178,24 @@ solas no lo distingue — cero diagnósticos es un resultado legítimo — así 
 captura el **código de salida** de cada frontera de comando y clasifica cada herramienta
 sobre (código de salida, validez de la salida, recuento):
 
-- **ESLint y `deno lint`** tienen modo JSON, y ahí la señal fuerte de que la herramienta
-  corrió es que su salida **parsea a la forma esperada**: un array de resultados para
-  ESLint (una ejecución limpia imprime `[]`, que es JSON válido) y un objeto con
-  `.diagnostics` para `deno lint` (limpio: `{"version":1,"diagnostics":[]}`). Binario
-  ausente o crash dejan stdout vacío o con basura, y el parseo o la forma fallan. Un
-  código de salida `> 1` de ESLint (su convención reserva el 2 para errores fatales)
-  también cuenta como caída aunque hubiera JSON.
+- **ESLint y `deno lint`** tienen modo JSON **y** una convención de salida documentada:
+  **`0` = nada que reportar, `1` = encontré problemas**, y cualquier otro código es un
+  fallo de la propia herramienta (ESLint reserva el `2` para un error fatal de
+  configuración; `127` es binario ausente). Las dos señales se combinan, y **ninguna
+  suplanta a la otra**. Una de estas dos herramientas **no** corrió bien cuando:
+
+  1. su salida **no parsea**;
+  2. parsea pero **no tiene la forma esperada** — un array de resultados para ESLint (una
+     ejecución limpia imprime `[]`, que es JSON válido), un objeto con `.diagnostics` para
+     `deno lint` (limpio: `{"version":1,"diagnostics":[]}`);
+  3. su **código de salida está fuera de `{0, 1}`**; o
+  4. su código de salida es **`1`** —"encontré problemas"— mientras se parsearon **cero**
+     diagnósticos. Eso es **autocontradictorio**: la herramienta dice haber encontrado algo
+     y no lo entrega, así que su salida no es de fiar y **cuenta como fallo**.
+
+  Salir con **`0` y cero diagnósticos sí es una ejecución limpia legítima** y aprueba.
+  Las cuatro reglas rigen para **ambas** herramientas por igual: el código de salida de
+  `deno lint` pesa exactamente lo mismo que el de ESLint.
 - **`tsc` y `deno check`** no tienen modo JSON, así que el código de salida lleva más
   peso: salida `0` es una ejecución limpia; salida distinta de `0` **con** diagnósticos
   atribuidos es la ejecución normal en rojo de base (lo que hace toda ejecución real en
@@ -196,6 +207,35 @@ qué, incluye su stderr capturado y **sale con código distinto de cero**. Una e
 limpia de verdad — comandos con éxito y salida válida aunque vacía — sale con `0`: cero
 diagnósticos **no** es evidencia de fallo, y los recuentos globales siguen siendo solo la
 observación de D8 punto 5, nunca un criterio.
+
+## `selftest.sh` — el self-test de este bloque
+
+```bash
+bash scripts/gates/selftest.sh
+```
+
+No es un test de Vitest ni de Deno: no está registrado en ningún runner, no tiene script
+de npm y se ejecuta por ruta. Tarda unos segundos porque **ninguna herramienta real se
+ejecuta**: construye ejecutables `npx` y `deno` de mentira en un directorio temporal, los
+pone primero en `PATH`, corre el gate sobre un fichero real del repo y comprueba **su
+código de salida**. Cada directorio temporal se borra al salir (`trap`).
+
+Existe porque el bloque de clasificación de arriba regresó **tres rondas seguidas**, y
+cada regresión se detectó solo con sondas manuales ad hoc que nadie había commiteado.
+Estos siete casos son esas sondas:
+
+| # | Escenario | Exit | Qué fija |
+|---|---|---|---|
+| 1 | las cuatro herramientas con salida válida vacía (`[]`, `{"version":1,"diagnostics":[]}`) y exit 0 | **0** | una ejecución genuinamente limpia **no** es un fallo — el falso positivo de la ronda 2 |
+| 2 | el binario `deno` no existe | **1** | el silencio de la ronda 1: toolchain rota que aprobaba el gate |
+| 3 | ESLint imprime `not json`, exit 0 | **1** | regla 1 — salida no parseable |
+| 4 | `deno lint` con JSON válido vacío, exit 127 | **1** | regla 3 — el exit de `deno lint` no se consultaba (falso negativo de la ronda 3) |
+| 5 | ESLint con `[]`, exit 1 | **1** | regla 4 — solo se rechazaba `> 1` (falso negativo de la ronda 3) |
+| 6 | `deno lint` con JSON válido vacío, exit 1 | **1** | regla 4 aplicada también a `deno lint` |
+| 7 | ESLint con `{}` (JSON válido, forma incorrecta), exit 0 | **1** | regla 2 — forma inesperada |
+
+Imprime una línea `OK` / `FALLO` por caso y sale con código distinto de cero si alguno
+falla. **Cualquier cambio a la clasificación tiene que pasarlo antes de commitearse.**
 
 ## Detalles de implementación que no son opcionales
 

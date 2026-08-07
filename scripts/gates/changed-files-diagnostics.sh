@@ -182,10 +182,14 @@ process.stderr.write("[gates] totales del proyecto: " + TOOLS.map((t) => LABEL[t
 // recuento), NUNCA sobre el recuento global a solas: los totales son la observación de
 // D8 punto 5, no un criterio, y una ejecución limpia con cero diagnósticos es legítima.
 //
-// - eslint / deno lint tienen modo JSON: la señal fuerte de que corrieron es que su
-//   salida parsea a la forma esperada (array de resultados / objeto con .diagnostics).
-//   Una lista vacía es una ejecución limpia. Binario ausente o crash => stdout vacío o
-//   basura => el parseo o la forma fallan.
+// - eslint / deno lint tienen modo JSON Y una convención de salida documentada:
+//   0 = nada que reportar, 1 = encontré problemas, cualquier otro código = fallo de la
+//   propia herramienta (ESLint reserva 2 para error fatal de configuración; 127 es
+//   binario ausente). No corrió bien si: (1) su salida no parsea, (2) parsea pero no
+//   tiene la forma esperada (array de resultados / objeto con .diagnostics), (3) su
+//   código está fuera de {0,1}, o (4) es 1 —"encontré problemas"— con CERO diagnósticos
+//   parseados, que es autocontradictorio. Salir 0 con cero diagnósticos sí es una
+//   ejecución limpia legítima. Las cuatro reglas rigen para AMBAS herramientas.
 // - tsc / deno check no tienen modo JSON: salida 0 = limpio; salida != 0 con
 //   diagnósticos atribuidos = rojo de base normal; salida != 0 SIN ningún diagnóstico
 //   utilizable (127 binario ausente, crash, formato irreconocible) = caída.
@@ -200,8 +204,10 @@ for (const t of ["eslint", "deno lint"]) {
     failWhy.set(t, "salida no parseable (" + parseErrors.get(t) + ")");
   } else if (!shapeOk.get(t)) {
     failWhy.set(t, "JSON válido pero sin la forma esperada");
-  } else if (t === "eslint" && exits[t] > 1) {
-    failWhy.set(t, "salió con código " + exits[t] + " (fatal para ESLint, que usa 0/1)");
+  } else if (exits[t] !== 0 && exits[t] !== 1) {
+    failWhy.set(t, "salió con código " + exits[t] + ", fuera de la convención 0/1 de la herramienta");
+  } else if (exits[t] === 1 && totals[t] === 0) {
+    failWhy.set(t, "salió con código 1 (\"encontré problemas\") sin que se parseara ningún diagnóstico");
   }
 }
 if (failWhy.size > 0) {
