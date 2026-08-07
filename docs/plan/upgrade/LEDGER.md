@@ -267,3 +267,47 @@
 - FINDINGS RAISED: (n/a)
 - DECISIONS: ninguna nueva. El prompt no relaja ningún criterio del plan congelado.
 - OPEN AFTER THIS ROUND: ejecución de P0 r1 en sesión fresca.
+
+### 2026-08-06 — P0 revisión final Codex (ronda 2 de 2) — Codex Sol (REVIEW)
+- SESSION: UPGRADE · P0 · REVIEW
+- ACTION: Segunda y última revisión final de P0 sobre `feat/mesa-md-gates`@`398a09d`.
+  **VERDICT: FAIL — 1 BLOCKING.** r1-B1 (falso positivo) y r1-N1 quedan cerrados; el
+  discriminador nuevo introduce un **falso negativo distinto**.
+- FINDINGS RAISED:
+  - **[B1] BLOCKING** — `changed-files-diagnostics.sh:198`: para las dos herramientas JSON,
+    la forma del JSON **anula** el código de salida. `exits["deno lint"]` **no se consulta
+    nunca**, y de ESLint solo falla `>1`. Sondas de Codex: `deno lint` con
+    `{"version":1,"diagnostics":[]}` y **EXIT=127** → el gate sale con **0**; ESLint con
+    `[]` y **EXIT=1** → el gate sale con **0**. Ambos casos los rechazaba la ronda 2.
+    Contradice el contrato de remediación registrado: clasificar sobre
+    `(exit, validez, recuento)` y "cero diagnósticos + comando fallido ⇒ herramienta caída".
+  - Codex **acepta explícitamente** el límite inherente de `tsc`/`deno check` que registré:
+    sin salida estructurada, salir con 0 sin trabajar es indistinguible de una ejecución
+    limpia. Pero ese límite **no justifica ignorar un exit distinto de cero ya capturado**
+    en las herramientas que sí lo tienen.
+- CODEX CONFIRMA: sonda de salida limpia EXIT=0 con totales 0/0/0/0 sin FALLO · binario Deno
+  ausente EXIT=1 con ambas nombradas · JSON malformado de ESLint EXIT=1 · toolchain real
+  EXIT=0 con totales exactos 1041/160/94/46 · stdout idéntico al cuerpo de la base,
+  **15.052 bytes, `cmp` exit 0** · cuerpo de `base-by-file.txt` intacto, solo la línea
+  `mkdir -p` añadida — **N1 cerrado** · sin cambios de producto ni de configuración, ningún
+  diagnóstico arreglado · atribución, orden, emisión y normalización de rutas sin tocar, por
+  lo que no reejecutó Z5b.
+- PM VERIFICATION: **reproduje las dos sondas yo mismo y las dos se sostienen.** `deno lint`
+  con JSON válido vacío y exit 127 → gate EXIT=0. ESLint con `[]` y exit 1 → gate EXIT=0.
+  Leído el bloque `:192-205`: el bucle de `["eslint","deno lint"]` solo mira `parseErrors`,
+  `shapeOk` y —solo para eslint— `exits[t] > 1`. **Este fallo se me pasó al revisar el diff
+  de la ronda 3**, que es exactamente lo que la verificación independiente existe para
+  atrapar.
+- **DOS TOPES DE BUCLE ALCANZADOS A LA VEZ (SOP §1.5)**: ronda PM↔ejecutor **3 de 3** y ronda
+  Codex **2 de 2**. No abro una cuarta ronda por mi cuenta. **Decisión escalada a Brent.**
+- DIAGNÓSTICO DEL PM, sin adornos: **el detector "la herramienta no corrió" no lo pide
+  ningún criterio de aceptación.** Z1–Z7 no lo mencionan; el mecanismo que el plan congelado
+  eligió contra un gate decorativo son los canarios Z5, y Codex los verificó él mismo. El
+  detector lo introduje yo como B1 en la ronda 1. Desde entonces ha consumido las rondas 2 y
+  3 y las dos rondas de Codex, y sigue mal — tres discriminadores, tres formas distintas de
+  estar equivocado. Es el mismo patrón que la propia revisión 6 del plan diagnosticó sobre
+  este PM: una exigencia inventada por el PM que genera rondas sin converger. Además **D8
+  punto 5 dice literalmente que los recuentos globales son observación, "no como criterio"**
+  — es decir, el plan congelado nunca pidió que esto hiciera fallar nada.
+- OPEN AFTER THIS ROUND: decisión de Brent — aceptar, replanificar o backlog. P0 pasa a
+  BLOCKED hasta entonces.
