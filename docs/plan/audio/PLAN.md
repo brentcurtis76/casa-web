@@ -7,7 +7,8 @@ META
 - BASE: `main`
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
-  la **revisión 10**. Ver §9 y §11–§16 para la trazabilidad finding → cambio.
+  **r10 → FAIL (6)**. Esta es la **revisión 11**. Ver §9 y §11–§17 para la trazabilidad
+  finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -20,8 +21,9 @@ META
   en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
   conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **PENDIENTE DE REVIEW:** esta revisión 10 **no ha pasado por Codex**. Ninguna unidad arranca
-  hasta que lo haga.
+- **PENDIENTE DE REVIEW:** esta revisión 11 **no ha pasado por Codex**. Ninguna unidad arranca
+  hasta que lo haga. En la r10 Codex dijo que **congelaría el alcance y el comportamiento de E2**,
+  pero no su contrato de ejecución, por la estrategia de tipado. La r11 la congela.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -186,21 +188,37 @@ derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
 
 ## 4. Gates (D18)
 
-> **⚠ Leer primero el procedimiento corregido en §5** ("Gates (D18) — procedimiento corregido
-> tras Codex r7/B5"). El script que esta sección da por disponible **no existe en `main`**: vive
-> sólo en `feat/mesa-md-gates` (UPGRADE P0, `FAIL 2/2`). §5 fija el SHA aprobado del gate y lo
-> materializa en worktrees desechables. Lo de abajo sigue siendo el *contenido* del gate; §5 es
-> el *cómo se obtiene*.
+> **Reescrita en la r11 (Codex r10/S1).** La versión anterior seguía diciendo que el script no
+> existía en `main`, que P0 estaba en `FAIL 2/2` y que había que materializarlo en worktrees.
+> **Las tres cosas son falsas desde el merge de P0**, y dejaban el documento ofreciendo dos
+> procedimientos incompatibles para la decisión que gobierna E2. **Éste es el único procedimiento.**
 
-El repo arrastra **1041** diagnósticos `tsc`, **160** ESLint, **94** `deno lint` y **46**
-`deno check`. Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que
-toqué no ganaron un diagnóstico nuevo".
+**El gate vive en `main`.** Medido:
+
+```
+$ git ls-tree main --name-only scripts/gates/
+scripts/gates/README.md
+scripts/gates/changed-files-diagnostics.sh
+scripts/gates/selftest.sh
+```
+
+No hay SHA del gate que fijar ni worktrees que montar: se ejecuta desde el árbol.
+
+**Línea base del repo, medida el 2026-08-07** con
+`bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts`:
+
+```
+[gates] totales del proyecto: tsc=1039 eslint=160 deno-lint=94 deno-check=46
+```
+
+*(La r10 y anteriores decían `tsc=1041`. Son **1039**; la cifra venía de la r1 y nadie la volvió
+a medir.)* Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que toqué no
+ganaron un diagnóstico nuevo".
 
 **Procedimiento por fase:**
 
 1. Fijar el **SHA padre** de la fase (el commit del que sale su branch) y anotarlo en el
-   ledger, **junto con el SHA aprobado del gate** (§5). No `git merge-base HEAD main` — en una
-   fase dependiente eso no es su base.
+   ledger. No `git merge-base HEAD main` — en una fase dependiente eso no es su base.
 2. Medir la base en ese SHA sobre la lista `F` de ficheros que la fase modifica o crea:
 
 ```bash
@@ -227,7 +245,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 10, tras `CODEX REVIEW — plan r9` FAIL)
+## 5. Phase index — por olas (revisión 11, tras `CODEX REVIEW — plan r10` FAIL)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -338,7 +356,9 @@ Huecos: no hay ruta `/reflexiones`; no hay columna `slug` ni en la tabla ni en `
 
 ## Phase E2 — Carátula desde la portada de la liturgia
 
-**La única unidad candidata a congelar.** Ruta trazada, sin base de datos, sin e2e:
+**La única unidad candidata a congelar.** Ruta trazada, **sin cambios de esquema ni pruebas
+locales de DB, y sin e2e** *(corregido en la r11 por Codex r10/N1: E2 sí **lee** una tabla
+Supabase real y depende de su RLS; lo que no hace es tocar esquema ni necesitar Postgres local)*:
 
 ```
 liturgia_elementos  WHERE liturgia_id = <ep.liturgy_id> AND tipo = 'portada-reflexion'
@@ -347,7 +367,36 @@ liturgia_elementos  WHERE liturgia_id = <ep.liturgy_id> AND tipo = 'portada-refl
 ```
 
 **Decisión de producto de Brent (2026-08-07):** sin portada de reflexión guardada, se cae a la
-ruta actual de Gemini y **se avisa**. Nadie se queda sin publicar.
+ruta actual de Gemini y **se avisa**. *Promesa acotada tras Codex r10/N2: la ausencia de portada
+guardada **no bloquea por sí sola** el flujo. Gemini o la publicación pueden fallar por su cuenta,
+y eso es otro asunto.*
+
+### Estrategia de tipado — congelada en la r11 (resuelve Codex r10/B1)
+
+**El problema, medido.** `src/integrations/supabase/types.ts` cubre ~16 tablas de las 128 del
+proyecto y **no contiene `liturgias` ni `liturgia_elementos`**
+(`grep -c liturgia_elementos` → **0**). Por eso `useQuickPublish.ts` ya arrastra **2 errores
+`tsc` de base** (TS2769 en `:195` por `.from('liturgias')`, TS2352 en `:200` por el cast).
+Un helper nuevo que haga `.from('liturgia_elementos')` sobre el cliente tipado produce el mismo
+TS2769 — y como el fichero es nuevo, su base es **cero**, así que **cualquier diagnóstico suyo es
+nuevo y D18 lo bloquea**.
+
+**Decisión: adaptador tipado estrecho.** No la elige el ejecutor.
+
+| Opción | Por qué no |
+|---|---|
+| Regenerar `types.ts` | Blast radius sobre 128 tablas y ~1039 diagnósticos. Es el arreglo de fondo, pero es su propia unidad, no un efecto lateral de E2 |
+| Reutilizar `loadLiturgy()` | Funciona y no añade diagnósticos, pero carga **la liturgia entera** —todos los elementos con sus slides en base64— para extraer una imagen. Coste real en el navegador durante la publicación |
+| Cast suelto en el helper | Escape del gate sin contención |
+
+**Lo que se construye:** un módulo nuevo y pequeño que (1) ensancha el cliente **una sola vez**
+y en **un solo sitio**, (2) declara explícitamente la forma de la fila que espera, y (3)
+**valida esa forma en runtime** antes de devolverla. La validación de runtime **es** el guardrail
+del cast: sin ella el cast sería una promesa; con ella, una aserción comprobada. Y no es trabajo
+extra — E2.6 ya la exige.
+
+**Al backlog:** regenerar `types.ts` para las 128 tablas. Que cubra 16 es un defecto del repo que
+produce buena parte de los 1039 diagnósticos, y arreglarlo haría innecesario este adaptador.
 
 **Cómo se presenta el aviso — congelado tras Codex r9/S1**, que señaló que la r9 lo delegaba:
 se emite con el **`useToast` que el editor ya usa**, como toast no bloqueante, en español, y el
@@ -374,13 +423,25 @@ cualquier cosa que toque base de datos o e2e.
 - [ ] E2.4 Liturgia vinculada **sin** portada guardada → ruta Gemini **y toast visible en
       español**, comprobado en el test, no sólo en el helper.
 - [ ] E2.5 **Sin** liturgia (`onContinueWithoutLiturgy`) → ruta Gemini, flujo intacto.
-- [ ] E2.6 Un fallo al leer la portada no bloquea la publicación: degrada a Gemini con toast.
-- [ ] E2.7 Gate desde `main` sobre los ficheros tocados, con el SHA padre registrado. Build verde.
+- [ ] E2.6 **Cuatro casos de fallo de lectura**, cada uno degrada a Gemini y emite el toast
+      *(enumerados tras Codex r10/S2, que señaló que el DoD los exigía sin que el test plan los
+      cubriera)*: (a) la consulta devuelve error; (b) `slides` ausente o con forma inesperada;
+      (c) `imageUrl` vacío o inválido; (d) `base64ToSpotifyCover()` falla. **Esos cuatro casos
+      son además la definición operativa de "portada válida".**
+- [ ] E2.7 El adaptador **no introduce ningún diagnóstico nuevo**: su medición con el gate parte
+      de cero y debe terminar en cero.
+- [ ] E2.8 Gate desde `main` sobre los ficheros tocados, con el SHA padre registrado. Build verde.
 
 **Test plan:** `src/lib/sermon-editor/__tests__/liturgyCover.test.ts` (**nuevo**) —
 `recupera la portada de reflexión de la liturgia`, `cae a Gemini cuando no hay portada guardada`,
-`cae a Gemini cuando la liturgia no existe`. Y en el test del hook:
-`omite la carga del logo cuando hay portada de liturgia`, `emite el toast al degradar a Gemini`.
+`cae a Gemini cuando la liturgia no existe`, y **un caso por cada fallo de E2.6**:
+`cae a Gemini cuando la consulta devuelve error`, `cae a Gemini cuando slides tiene forma
+inesperada`, `cae a Gemini cuando imageUrl está vacío`, `cae a Gemini cuando la conversión falla`.
+
+En el test del hook — **montando `useQuickPublish`**, no sólo el helper (Codex r10, respuesta 3):
+`omite la carga del logo cuando hay portada de liturgia`, `emite el toast en español al degradar
+a Gemini`. No hace falta reprobar el renderer: `App.tsx:40` ya monta `<Toaster />`.
+
 Base-red o mutación por test (D18).
 
 ```bash
@@ -389,7 +450,7 @@ npx vitest run --no-file-parallelism src/lib/sermon-editor src/hooks
 npm run build
 ```
 
-**Definition of done:** tests verdes con evidencia base-red/mutación, E2.1–E2.7, gate y build.
+**Definition of done:** tests verdes con evidencia base-red/mutación, E2.1–E2.8, gate y build.
 
 **Risks / unknowns:** que liturgias antiguas tengan un `SlideGroup` con forma distinta a
 `slides[0].content.imageUrl`. E2.4 y E2.6 cubren el caso degradado sin romper la publicación.
@@ -444,6 +505,12 @@ dentro de sí, y porque mi afirmación de que el entorno ya estaba listo era fal
 
 **Su primer criterio es una medición, no una construcción** — precisamente para no repetir el
 error de especificar infraestructura que no he tocado.
+
+**Nota de Codex r10/S3, aceptada:** en esta forma —"scope a acotar por su primer criterio"—
+E-infra es honesta **sólo mientras siga en borrador**. No se puede congelar así, porque mezcla un
+spike con una implementación desconocida. **Cuando se retome se parte en dos:**
+`E-infra-spike` (medición, con `FINDINGS` como salida legítima) y una unidad de implementación
+redactada **después** de medir. Lo dejo escrito ahora para que quien la retome no repita el error.
 
 **Scope (a acotar por el propio E-infra.1):** configuración de puertos de Supabase local,
 `.env.test`, seed de datos sintéticos, cleanup, y una guarda que impida que los e2e apunten a
@@ -1291,6 +1358,7 @@ resuelta antes del primer envío).
 | Pre-renderizar el XML del feed a Storage | A1 | Sólo si el catálogo supera ~200 items. Disparador, no tarea |
 | **Medir el grabador de liderazgo en iOS y añadir fallback donde haga falta** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | *Corregido en la r10 (Codex r9/S3): decía "arreglar... roto en iOS", lo que volvía a dar por medido algo que nunca se midió.* **Remite al resultado de E1-spike.** Es del sistema de liderazgo; se hace en su workstream |
 | Búsqueda full-text sobre la descripción | A8 | A8 cubre título y predicador |
+| **Regenerar `src/integrations/supabase/types.ts` para las 128 tablas** | Codex r10/B1 | Hoy cubre **~16** y no incluye `liturgias` ni `liturgia_elementos`, lo que fuerza casts por todo el repo y produce buena parte de los 1039 diagnósticos `tsc`. Arreglarlo haría innecesario el adaptador de E2. Blast radius grande: es su propia unidad, no un efecto lateral |
 
 ### Retirado en la r7 por el re-alcance de Brent — **la pista de distribución completa**
 
@@ -1438,6 +1506,10 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-07 | **r11: E2 congela la estrategia de tipado — adaptador estrecho** con el cliente ensanchado en un solo sitio, la forma de fila declarada y **validación en runtime como guardrail del cast** | Codex r10/B1, medido: `types.ts` cubre ~16 de 128 tablas y no tiene `liturgias` ni `liturgia_elementos`; `useQuickPublish.ts` ya arrastra 2 errores `tsc` por eso, y un fichero nuevo parte de base cero, así que cualquier diagnóstico suyo bloquearía el gate. Regenerar `types.ts` es el arreglo de fondo pero es su propia unidad; reutilizar `loadLiturgy()` cargaría la liturgia entera para extraer una imagen | Codex r10/B1 |
+| 2026-08-07 | **r11: §4 se reescribe entera** — el gate se ejecuta desde `main`, sin SHA que fijar ni worktrees. Y la línea base pasa de `tsc=1041` a **`tsc=1039`**, medida | Codex r10/S1: §4 seguía afirmando que el script no existía en `main` y que P0 estaba en `FAIL 2/2`, ofreciendo un procedimiento incompatible con §5 justo para la decisión que gobierna E2. El 1041 venía de la r1 y nadie lo volvió a medir | Codex r10/S1 |
+| 2026-08-07 | **r11: E2.6 enumera sus cuatro fallos de lectura**, y esos cuatro casos son la definición operativa de "portada válida" | Codex r10/S2: el DoD exigía E2.6 y el test plan no lo cubría | Codex r10/S2 |
+| 2026-08-07 | **r11: se registra que `E-infra` deberá partirse** en `E-infra-spike` + implementación cuando se retome | Codex r10/S3: en su forma actual mezcla spike e implementación, y eso sólo es aceptable mientras sea borrador | Codex r10/S3 |
 | 2026-08-07 | **r10: `E0-gates` se retira.** UPGRADE P0 pasó Codex y se mergeó a `main` (`5b947ac`); el gate y su self-test ya están ahí, con el blob `51af6197…` idéntico al aprobado | Verificado: `git ls-tree main scripts/gates/`. D18 vuelve a funcionar tal como se escribió, sin SHA que fijar ni worktrees que montar | Codex (PASS de P0) |
 | 2026-08-07 | **r10: la ola 1 se reduce a `E2`**, y `E3a`/`E3b` pasan detrás de una unidad nueva, **`E-infra`** | Codex r9/B3 y B4: ambas escondían la construcción de un entorno de pruebas que no existe. E2 no toca base ni e2e, así que es lo único congelable hoy sin esconder trabajo | Codex r9/B3+B4, decidido por Brent |
 | 2026-08-07 | **r10: se registra que mi afirmación "Postgres local disponible" era falsa** — `supabase status` falla y el 54322 lo ocupa otro proyecto. **Tercera verificación falsa mía en este plan**, y queda escrita en §5 | Codex r9/B3 lo midió. Las tres tienen la misma forma: una inferencia dentro de una sección titulada "medido". La más grave es la derivada: la E3b de la r9 habría creado filas sintéticas **contra producción**, que es la base compartida con Life OS | Codex r9/B3+B4 |
@@ -1708,3 +1780,43 @@ mí: **escribo "verificado" sobre inferencias**. Ha pasado tres veces y las tres
 Codex ejecutando el comando que yo no ejecuté. La r10 no lo arregla prometiendo cuidado — lo
 arregla haciendo que **toda afirmación de estado lleve al lado el comando que la produjo**, y
 registrando las tres en §5 para que quien lea el plan calibre.
+
+
+---
+
+## 17. Trazabilidad de la review de Codex r10 (FAIL)
+
+**Veredicto:** FAIL — 1 BLOCKING, 3 SHOULD-FIX, 2 NIT, con la frase clave *"congelaría el alcance
+y comportamiento de E2, pero todavía no su contrato de ejecución"*. **Aceptados los seis.**
+La review más estrecha de las siete: el plan por fin discute una unidad, no su propia estructura.
+
+**Verificación independiente:**
+
+```
+$ grep -c "liturgia_elementos" src/integrations/supabase/types.ts   → 0
+$ bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts
+  --- tsc (2)
+  src/hooks/useQuickPublish.ts(195,15): error TS2769  ← .from('liturgias')
+  src/hooks/useQuickPublish.ts(200,20): error TS2352  ← el cast a QuickLiturgy[]
+  [gates] totales del proyecto: tsc=1039 eslint=160 deno-lint=94 deno-check=46
+$ bash scripts/gates/changed-files-diagnostics.sh src/lib/liturgia/liturgyService.ts
+  --- tsc (38)
+```
+
+Confirmado en todo: `types.ts` cubre ~16 tablas de 128; `liturgyService.ts` se come 38
+diagnósticos consultando esas mismas tablas sin tipos; y el total real es **1039**, no 1041.
+
+| Finding | Clase | Resolución en la r11 |
+|---|---|---|
+| **B1** la implementación natural de E2 no pasa el gate tipado | BLOCKING | **Aceptado, y la decisión la toma el plan, no el ejecutor.** Adaptador tipado estrecho: cliente ensanchado en un solo sitio, forma de fila declarada, y **validación en runtime como guardrail del cast**. Se descartan explícitamente regenerar `types.ts` (blast radius de 128 tablas — va al backlog), reutilizar `loadLiturgy()` (carga la liturgia entera para una imagen) y el cast suelto. Nuevo criterio **E2.7**: el adaptador termina en cero diagnósticos |
+| **S1** §4 contradice el estado del gate | SHOULD-FIX | **Aceptado.** §4 reescrita: el gate se ejecuta desde `main`, sin SHA que fijar ni worktrees, con la salida de `git ls-tree` como evidencia. Y la base pasa a **`tsc=1039`**, medida — el 1041 venía de la r1 |
+| **S2** E2.6 no está cubierto por el test plan | SHOULD-FIX | **Aceptado.** E2.6 enumera sus cuatro fallos (error de consulta, `slides` con forma inesperada, `imageUrl` inválido, fallo de conversión), cada uno con su test, y **esos cuatro casos definen "portada válida"** |
+| **S3** E-infra sólo es honesta mientras no se congele | SHOULD-FIX | **Aceptado.** Queda escrito en su cuerpo que al retomarse se parte en `E-infra-spike` + implementación redactada después de medir |
+| **N1** "sin base de datos" es impreciso | NIT | **Aceptado.** Pasa a "sin cambios de esquema ni pruebas locales de DB": E2 **sí** lee una tabla real y depende de su RLS |
+| **N2** "nadie se queda sin publicar" promete de más | NIT | **Aceptado.** Acotado a "la ausencia de portada guardada no bloquea por sí sola el flujo" |
+
+**Sobre la respuesta 6 de Codex.** Tiene razón en que mi promesa de la r10 —"toda afirmación de
+estado lleva al lado el comando que la produjo"— no se cumplía literalmente, y en que §4 no
+carecía de comando sino que era **directamente falsa**. La distinción que propone queda adoptada:
+para hechos estáticos del código, `fichero:línea` basta; **para estado del entorno, hacen falta
+comando y salida**. §4 y §17 los llevan.

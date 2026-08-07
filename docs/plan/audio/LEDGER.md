@@ -322,3 +322,38 @@
 - BACKLOG ADDED: reconciliar con UPGRADE si el gate evoluciona (ya no hay copia en AUDIO).
 - OPEN AFTER THIS ROUND: **review de Codex sobre E2** (y `E1-spike` como contexto). Ninguna
   unidad arranca antes.
+
+### 2026-08-07 — plan round 11 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r10` (VERDICT **FAIL**: 1 BLOCKING, 3 SHOULD-FIX,
+  2 NIT). Aceptados los seis. **La review más estrecha de las siete**: por fin discute una
+  unidad y no la estructura del plan. Codex dice que congelaría el alcance y el comportamiento
+  de E2, pero no su contrato de ejecución.
+- VERIFICACIÓN INDEPENDIENTE:
+  - `grep -c liturgia_elementos src/integrations/supabase/types.ts` → **0**. `types.ts` cubre
+    **~16 tablas de las 128** del proyecto; no tiene `liturgias` ni `liturgia_elementos`.
+  - `bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts` → **tsc (2)**:
+    TS2769 en `:195` por `.from('liturgias')` y TS2352 en `:200` por el cast a `QuickLiturgy[]`.
+  - Mismo gate sobre `src/lib/liturgia/liturgyService.ts` → **tsc (38)**: se come los
+    diagnósticos consultando esas tablas sin tipos.
+  - **Totales reales: `tsc=1039`**, no 1041 como decía el plan desde la r1.
+  - Séptima review consecutiva en que Codex acierta en todo lo comprobable.
+- DECISIÓN TOMADA POR EL PM (B1 exigía que no la eligiera el ejecutor): **adaptador tipado
+  estrecho** — cliente ensanchado en un solo sitio, forma de fila declarada, y **validación en
+  runtime como guardrail del cast**. Descartadas: regenerar `types.ts` (blast radius de 128
+  tablas → backlog), reutilizar `loadLiturgy()` (carga la liturgia entera con sus slides en
+  base64 para extraer una imagen), y el cast suelto (escape del gate sin contención).
+- CAMBIOS: E2 congela la estrategia de tipado y añade **E2.7** (el adaptador termina en cero
+  diagnósticos) · **§4 reescrita entera**: el gate se ejecuta desde `main`, sin SHA que fijar ni
+  worktrees, con `git ls-tree` como evidencia, y la base corregida a `tsc=1039` · E2.6 enumera
+  sus cuatro fallos de lectura y esos casos **definen "portada válida"** · el test del toast se
+  monta sobre `useQuickPublish`, no sobre el helper · E-infra registra que al retomarse se parte
+  en spike + implementación · N1 ("sin base de datos" → "sin cambios de esquema ni pruebas
+  locales de DB") · N2 (la promesa se acota a "no bloquea por sí sola").
+- BACKLOG ADDED: **regenerar `types.ts` para las 128 tablas** — que cubra 16 produce buena parte
+  de los 1039 diagnósticos y haría innecesario el adaptador de E2.
+- REGLA ADOPTADA (respuesta 6 de Codex): para hechos estáticos del código basta `fichero:línea`;
+  **para estado del entorno hacen falta comando y salida**. §4 y §17 los llevan.
+- TESTS: n/a — ronda de planificación.
+- OPEN AFTER THIS ROUND: **review de Codex sobre E2 r11.** Si pasa, E2 arranca. `E1-spike` sigue
+  arrancable en paralelo sin depender de esa review.
