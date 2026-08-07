@@ -844,3 +844,43 @@
 - T8 — `git status` limpio salvo el `.claude/launch.json` no versionado y preexistente.
 - ESTADO: `feat/mesa-md-gates`. P0 con S1 cerrado.
 - OPEN AFTER THIS ROUND: verificación del PM y, si procede, cierre de P0.
+
+### 2026-08-07 — P0 round 5 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P0 r5 (`912c15d`). **S1 cerrado.
+  Cero hallazgos nuevos.** P0 vuelve a IN REVIEW.
+- LO QUE VERIFIQUÉ YO MISMO:
+  - **T1/T2 — la fuga está cerrada.** Conté los directorios de stubs con el método del
+    prompt: **56 antes, 56 después**, delta 0, y el self-test en **7/7 OK** con exit 0. Antes
+    del arreglo yo mismo había medido 55 → 62.
+  - Leí el diff (+9/-9, un solo fichero): `make_stubs` ya no crea ni imprime el directorio,
+    lo recibe como argumento; `run_case` hace el `mktemp -d` y el `STUBS+=` **en el shell
+    padre**, que es lo que faltaba para que el `trap EXIT` encuentre el array poblado.
+  - **T4 — el gate está intacto**: `git diff eae138e -- scripts/gates/changed-files-diagnostics.sh`
+    → **0 líneas**. Todo lo que Codex verificó en su ronda 3, incluido el mutation test, sigue
+    aplicando sin reservas.
+  - **T5** — toolchain real sobre los 11 ficheros: EXIT=0, totales
+    `tsc=1041 eslint=160 deno-lint=94 deno-check=46`, stdout **15.052 bytes** y **diff vacío**
+    contra el cuerpo de `base-by-file.txt`.
+  - **T7** — `npm run build` ok (12.22s) · `deno test --allow-all .` → **409/0** · Vitest:
+    **mi primera pasada dio 1035/7**, con el flake conocido de
+    `CuentacuentoEditor.ph.surfaces.test.tsx` (`AssertionError: expected [] to have a length
+    of 1` en el `waitFor` de `:81`, 10.785 ms). Ese fichero **aislado pasa 15/15**, y mi
+    segunda pasada completa dio **1036/6** con un único fichero rojo,
+    `MesaAbiertaDashboard.test.tsx`. Misma firma que vio Codex en su ronda 1. Esta rama no
+    toca `src/`: es el flake del backlog S1, no una regresión. Lo dejo escrito en vez de
+    reportar solo la pasada verde.
+  - **T8** — `git status` limpio salvo el `.claude/launch.json` preexistente.
+- LO QUE **NO** VERIFIQUÉ POR MI CUENTA: T3 (que la limpieza también actúe cuando el
+  self-test falla). Exige mutar un caso, y editar fuente me está vedado por el SOP §1.1. Lo
+  establecí por lectura —`trap cleanup EXIT` se dispara igual en la salida 0 que en la 1, y
+  el array ya se puebla en el padre— más la evidencia del ejecutor, que mostró el caso 3
+  mutado fallando con delta 0.
+- FINDINGS RAISED: ninguno.
+- BACKLOG: S1 (flake de `CuentacuentoEditor.ph.surfaces`) sigue abierto y ya ha aparecido en
+  tres sesiones distintas —ejecutor r1, Codex r3 y esta verificación—. Merece ficha propia
+  cuando P0 cierre.
+- DECISIONS: ninguna nueva.
+- OPEN AFTER THIS ROUND: **revisión de Codex ronda 4** sobre `feat/mesa-md-gates`. Es el
+  único hallazgo pendiente de su ronda 3 y no toca el gate, así que la revisión debería ser
+  corta. P0 no se marca DONE sin ese PASS.
