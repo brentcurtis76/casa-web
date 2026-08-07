@@ -288,3 +288,37 @@
 - OPEN AFTER THIS ROUND: **review de Codex sobre la ola 1 de la revisión 9.** Ninguna unidad
   arranca antes, salvo que Brent decida que E1-spike puede ir en paralelo: no toca código que se
   mergee, no depende de nada y no pasa por el gate.
+
+### 2026-08-07 — plan round 10 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r9` (VERDICT **FAIL**: 5 BLOCKING, 4 SHOULD-FIX, 1 NIT).
+  Aceptados los diez. **Ola 1 reducida a una sola unidad.**
+- **ERROR PROPIO, el más serio de este plan.** La r9 afirmaba "Postgres local real disponible —
+  verificado". **Era falso.** Lo deduje de que el CLI está instalado, Docker corre y existe
+  `config.toml`, sin ejecutar `supabase status` ni una vez, y lo escribí como verificado también
+  en el mensaje de commit. Medido ahora:
+  - `supabase status` → `No such container: supabase_db_mulsqxfhxxdsadxsljss`.
+  - Puerto 54322 **ocupado por otro proyecto Supabase** (`sxlogxqzmarhqsblxmtj`, 10 contenedores).
+  - `.env.test` **no existe**; `playwright.config.ts` la carga sólo si existe; `client.ts:5` tiene
+    URL y anon key de **producción** hardcodeadas como fallback.
+  - **Consecuencia:** la E3b de la r9 habría mandado a un ejecutor a crear filas sintéticas
+    `draft` y `published` **contra la base de producción compartida con Life OS**. No era un
+    criterio flojo: era una instrucción peligrosa.
+  - Son **61** migraciones, no "~100".
+  - **Tercera verificación falsa mía** en este plan (r1: alcance a Supabase; r2: el script del
+    gate; r9: el Postgres local). Las tres son inferencias colocadas dentro de secciones tituladas
+    "medido". Queda registrado en §5 del plan a propósito.
+- HECHO EXTERNO VERIFICADO: **UPGRADE P0 pasó Codex y ya está mergeado a `main`** (`5b947ac`;
+  `main`, `feat/mesa-md-gates` y `origin/main` idénticos). El gate y su self-test están en `main`
+  con el blob `51af6197…`, el mismo que Codex aprobó. **No lo mergeé yo: ya estaba hecho** cuando
+  fui a verificar el SHA aprobado. Brent había autorizado el merge; no hizo falta.
+- CAMBIOS: **`E0-gates` retirada** (el gate ya está en `main`) · **ola 1 = `E2` y nada más** ·
+  **`E-infra` nueva**, con una medición como primer criterio · **`E3a` y `E3b` bajan a borrador
+  no congelado**, con sus siete huecos de slug y el de paginación listados · E2 congela el toast
+  y el camino corto (r9/S1) · §7 reescrita con riesgos vigentes · backlog de iOS corregido ·
+  61 migraciones.
+- EFECTO: 4 unidades congelables → **1**. `E1-spike` sigue arrancable en paralelo.
+- TESTS: n/a — ronda de planificación.
+- BACKLOG ADDED: reconciliar con UPGRADE si el gate evoluciona (ya no hay copia en AUDIO).
+- OPEN AFTER THIS ROUND: **review de Codex sobre E2** (y `E1-spike` como contexto). Ninguna
+  unidad arranca antes.

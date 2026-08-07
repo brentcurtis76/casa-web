@@ -6,20 +6,21 @@ META
 - BRANCH CONVENTION: `phase/<id>-<slug>` (≤20 chars por DNS de Vercel — `phase/A1-feed`)
 - BASE: `main`
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
-  **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)**. Esta es la **revisión 9**,
-  que aplica la review de la r8 y **reestructura el plan por olas**. Ver §9, §11, §12, §13, §14
-  y §15 para la trazabilidad finding → cambio.
+  **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
+  la **revisión 10**. Ver §9 y §11–§16 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
   automáticamente en página propia, y compartir el enlace en redes y WhatsApp. **Toda la pista
   de distribución (feed RSS, backfill, directorios, corte de Spotify) pasa al backlog.**
-- **ESTRUCTURA POR OLAS (decisión de Brent, 2026-08-07).** Sólo se congela lo especificable hoy:
-  **ola 1** = `E0-gates`, `E2`, `E3a`, `E3b`. **Ola 2** = los dos spikes. **Ola 3** (`E1-impl`,
-  `E4-impl`, `E5`, `E6`) **no está planificada y no se cuenta como aprobada.**
+- **ESTRUCTURA POR OLAS.** **Ola 1 = `E2`, y nada más.** Ola 2 = `E1-spike`, en paralelo.
+  Ola 3 = `E-infra` → `E3a` → `E3b` → `E4-spike`, **ninguna congelada**. Ola 4 (`E1-impl`,
+  `E4-impl`, `E5`, `E6`) sin planificar y **sin contarse como aprobada**.
+- **`E0-gates` retirada en la r10:** UPGRADE P0 pasó Codex y se mergeó, así que el gate ya está
+  en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
   conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **PENDIENTE DE REVIEW:** esta revisión 9 **no ha pasado por Codex**. Ninguna unidad arranca
+- **PENDIENTE DE REVIEW:** esta revisión 10 **no ha pasado por Codex**. Ninguna unidad arranca
   hasta que lo haga.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
@@ -226,79 +227,94 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 9, tras `CODEX REVIEW — plan r8` FAIL)
+## 5. Phase index — por olas (revisión 10, tras `CODEX REVIEW — plan r9` FAIL)
 
-**El cambio estructural de la r9.** Ocho rondas de plan, seis reviews de Codex, **cero líneas de
-código**. Las dos últimas rondas hicieron crecer el documento y cada documento nuevo generó más
-findings: la r7 tenía 5 unidades y sacó 10; la r8 tenía 8 y sacó 11.
+**Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
-La causa está en el propio B1 de Codex sobre la r8, y es correcta:
+1. **UPGRADE P0 pasó Codex y se mergeó a `main`.** `scripts/gates/changed-files-diagnostics.sh`,
+   `selftest.sh` y `README.md` están hoy en `main` (blob del gate
+   `51af6197e5186f0dfc36076512e5d887973d85f6`, idéntico al que Codex aprobó). **`E0-gates` se
+   retira: no hay nada que incorporar ni que fijar.** D18 vuelve a funcionar tal como se escribió.
+2. **Mi afirmación de que había Postgres local disponible era falsa.** Ver la corrección abajo.
 
-> *Un spike puede legítimamente producir el plan de implementación. En ese caso, sin embargo,
-> E1-impl/E4-impl no se pueden contar todavía como unidades aprobadas que entregan el Goal.*
-
-Estaba intentando que **un solo documento pasara review cubriendo trabajo que aún no se puede
-especificar**. E1-impl y E4-impl no son especificables hasta que sus spikes midan; escribirlas
-igual produce las "fases vacías disfrazadas" que Codex encontró, y no se arregla escribiendo más.
-
-**Por eso el plan pasa a olas.** Sólo se congela lo que hoy se puede especificar sin inventar.
-Decisión de Brent, 2026-08-07.
-
-### Ola 1 — CONGELADA, ejecutable
+### Ola 1 — candidata a congelar
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E0-gates | Gate por ficheros, revisado dentro de AUDIO | Código | TODO | — |
-| E2 | Carátula desde la portada de la liturgia | Código | TODO | E0-gates |
-| E3a | `slug`: contrato, DB y `publishService` | Código + DB | TODO | E0-gates |
-| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | TODO | E3a |
+| E2 | Carátula desde la portada de la liturgia | Código | TODO | — |
 
-### Ola 2 — spikes, en paralelo con la ola 1
+**Una sola unidad.** No toca base de datos ni e2e: es lógica de frontend con vitest, y el gate
+que necesita ya está en `main`. Es lo único que hoy puedo congelar sin que esconda trabajo de
+infraestructura que nadie ha medido.
+
+### Ola 2 — en paralelo, sin dependencias
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
 | E1-spike | Grabación: sonda de compatibilidad real | Spike | TODO | — |
-| E4-spike | Previsualización: prototipo desplegado | Spike | TODO | E3b |
 
-**Ninguno de los dos toca código que se mergee**, así que no pasan por el gate y `E1-spike`
-puede arrancar hoy, antes incluso que E0-gates.
+No toca código que se mergee, no pasa por el gate, no depende de nada. **Puede arrancar hoy.**
 
-### Ola 3 — TODAVÍA NO SON UNIDADES
+### Ola 3 — bloqueada por infraestructura que no existe
 
-`E1-impl`, `E4-impl`, `E5` (compartir) y `E6` (cierre del bucle) **no están planificadas y no se
-cuentan como aprobadas.** Se planifican cuando los bloques de E1-spike y E4-spike existan, y esa
-planificación se revisa entonces. §5.1 guarda lo que ya sabemos de su alcance para que no se
-pierda — no es un contrato, es una nota.
+| ID | Nombre | Tipo | Status | Depende de |
+|----|--------|------|--------|-----------|
+| E-infra | Entorno de pruebas: Postgres local y harness e2e | Código + infra | **NO CONGELADA** | — |
+| E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra |
+| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra |
+| E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
-**Esto hace explícito lo que la r8 escondía:** este bloque **no entrega las cuatro condiciones
-del Goal**. Entrega la carátula desde la liturgia y las páginas públicas. La grabación y la
-previsualización quedan acotadas por sus spikes y se entregan en un bloque posterior. Prefiero
-decirlo que volver a contar unidades que no puedo escribir.
+**Los cuerpos de E3a y E3b siguen en este documento como borrador, no como contrato.** Codex r9
+demostró que ambas esconden una unidad de infraestructura, y que su contrato de slug y su
+semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando `E-infra`
+haya medido el entorno.
 
-**Secuencia:** `E1-spike` ‖ `E0-gates → (E2 ‖ E3a) → E3b → E4-spike`.
+### Ola 4 — todavía no son unidades
 
----
+`E1-impl`, `E4-impl`, `E5` y `E6` siguen sin planificar y **sin contarse como aprobadas**. §5.1
+guarda lo que sabemos de su alcance.
 
-### 5.1 Notas para la ola 3 (no son contratos)
-
-**E6 — alcance corregido por Codex r8/B6, medido.** La r8 le daba a E6 sólo `SermonCard.tsx`, y
-es insuficiente: la tarjeta **no recibe slug**, recibe `spotifyLink`
-(`SermonCard.tsx` — `SermonProps`), y la consulta ni siquiera lo selecciona:
-
-```
-useSermonData.ts → .select("title, speaker, description, episode_date, cover_url, audio_url")
-```
-
-Sin `slug` ni `id`. Además el CTA **"Ver todas las reflexiones"** de `Sermones.tsx` también es
-`<a href={spotifyLink}>`. Cuando se planifique, E6 tiene que incluir **el hook, la consulta,
-`Sermones.tsx`, `SermonCard.tsx`, el modelo de fallback para filas sin slug y el host canónico**.
-Y E6.1 se redacta como *"verificar el slug que E3a produce e implementar `canonicalUrl`"*, no
-como si lo produjera — el solape con E3a es de consumo, no de doble propiedad.
-
-**E5** conserva la forma que tenía en la r8 (WhatsApp con matriz, Facebook declarado, Instagram
-declarado como no-compartible por URL desde web, portapapeles como reserva). Depende de E4-impl.
+**Este bloque no entrega las cuatro condiciones del Goal.** Congelar E2 entrega la carátula
+derivada de la liturgia, y nada más. Lo digo aquí para que no haya que deducirlo.
 
 ---
+
+### Corrección: no hay Postgres local disponible
+
+**La r9 decía "Postgres local real disponible — verificado". Era falso, y es la tercera vez en
+este plan que escribo "verificado" sobre una inferencia.** Deduje la disponibilidad de que el
+CLI está instalado, Docker corre y existe `config.toml`, sin ejecutar una sola comprobación.
+Medido ahora, de verdad:
+
+| Comprobación | Resultado real |
+|---|---|
+| `supabase status` | **Falla**: `No such container: supabase_db_mulsqxfhxxdsadxsljss` |
+| Puerto 54322 | **Ocupado por otro proyecto Supabase** (`sxlogxqzmarhqsblxmtj`, 10 contenedores corriendo) |
+| `config.toml` | Sin sección `[db]`: no define puertos alternativos |
+| `.env.test` | **No existe** |
+| `src/integrations/supabase/client.ts:5` | URL y anon key de **producción** hardcodeadas como fallback |
+| Migraciones | **61**, no "~100" como decía la r9 |
+
+**La consecuencia más grave no es el Postgres: son los e2e.** `playwright.config.ts` carga
+`.env.test` sólo si existe, el servidor arranca con `npm run dev`, y `client.ts` cae por defecto
+al proyecto productivo. La E3b de la r9 habría mandado a un ejecutor a **crear filas sintéticas
+`draft` y `published` contra la base de producción**, que además es la compartida con Life OS.
+Eso no es un criterio flojo: es una instrucción peligrosa, y la escribí yo.
+
+**Por eso `E-infra` existe y por eso E3a/E3b no se congelan.**
+
+### Registro de mis verificaciones falsas
+
+Tres, todas con la misma forma — una inferencia colocada dentro de una sección titulada "medido":
+
+| Ronda | Afirmé | Era |
+|---|---|---|
+| r1 | "este entorno no alcanza `*.supabase.co`" | Falso; el feed respondía 200 (Codex CR-1) |
+| r2 | "`scripts/gates/changed-files-diagnostics.sh` existe en el repo" | Estaba en otra rama, no en `main` |
+| r9 | "Postgres local disponible — verificado" | `supabase status` falla; el puerto está ocupado |
+
+Queda escrito aquí a propósito. Es el mismo defecto que este plan lleva seis rondas
+diagnosticando, cometido por el PM que lo diagnostica.
 
 ### Estado verificado del código (medido 2026-08-07)
 
@@ -306,108 +322,172 @@ declarado como no-compartible por URL desde web, portapapeles como reserva). Dep
 |---|---|
 | Flujo de publicación rápida | **Existe**: `QuickPublishContainer.tsx`, stepper `Audio → Liturgia → Revisar → Publicar` |
 | Vínculo episodio ↔ liturgia | **Existe**: `church_podcast_episodes.liturgy_id REFERENCES liturgias(id)` |
-| Portada de reflexión, y **recuperable por `liturgy_id`** | `Portadas.tsx` la genera; `ConstructorLiturgias.tsx:1064` la guarda como `portada-reflexion`; `liturgyService.ts` la persiste en `liturgia_elementos` por `(liturgia_id, tipo)`; la imagen queda en `slides.slides[0].content.imageUrl` |
-| Imagen → carátula cuadrada | `base64ToSpotifyCover()` en `coverImageUtils.ts:17` (**corregido**: la r8 citaba la 57, que es `loadImage`) |
-| Codificación a MP3 | `mp3Encoder.ts` (lamejs) |
-| Grabador en navegador | En `leadership/AudioRecorder.tsx` + `/recorder`. **Sin fallback para iOS < 18.4**; que esté "roto en iOS" **nunca se midió** y E1-spike es quien lo mide |
-| **Postgres local real** | **Disponible**: `supabase` CLI 2.110.0, Docker corriendo, `config.toml` con `project_id` y sin sección `[db]` (puerto por defecto **54322**) |
+| Portada de reflexión, **recuperable por `liturgy_id`** | `ConstructorLiturgias.tsx:1064` la guarda como `portada-reflexion`; `liturgyService.ts` la persiste en `liturgia_elementos` por `(liturgia_id, tipo)`; la imagen queda en `slides.slides[0].content.imageUrl` |
+| Imagen → carátula cuadrada | `base64ToSpotifyCover()` en `coverImageUtils.ts:17`, con recorte central en `:32` |
+| Generación actual de carátula | `useQuickPublish.ts:360` valida título y predicador y **carga el logo** antes de llamar a Gemini |
+| Gate por ficheros | **En `main`** desde el merge de UPGRADE P0 (`5b947ac`) |
+| Grabador en navegador | En `leadership/AudioRecorder.tsx` + `/recorder`. **Sin fallback para iOS < 18.4**; que esté "roto en iOS" nunca se midió |
 
-Huecos medidos: no hay ruta `/reflexiones`; no hay columna `slug` ni en la tabla ni en
-`types.ts` (`grep -c slug` → **0**); `vercel.json` tiene un solo rewrite `/(.*)` → `/index.html`;
-`PublishResult` (`publishService.ts:44-51`) no devuelve slug ni URL canónica.
+Huecos: no hay ruta `/reflexiones`; no hay columna `slug` ni en la tabla ni en `types.ts`;
+`vercel.json` tiene un solo rewrite `/(.*)` → `/index.html`; `PublishResult`
+(`publishService.ts:44-51`) no devuelve slug ni URL canónica.
 
----
-
-## Phase E0-gates — Gate por ficheros, revisado dentro de AUDIO
-
-**Resuelve Codex r8/B4.** La r8 aceptaba el procedimiento de worktrees pero seguía esperando un
-SHA aprobado que sólo UPGRADE P0 podía producir — y P0 lleva `FAIL 2/2`. Codex tiene razón en
-que son dos cosas distintas: **alguna** implementación del gate tiene que estar revisada, pero
-no tiene por qué ser aprobada *como parte de P0*.
-
-**Scope:** `scripts/gates/changed-files-diagnostics.sh`, `scripts/gates/selftest.sh`,
-`scripts/gates/README.md`. Se incorpora un candidato concreto tomado de `feat/mesa-md-gates` y
-**se somete a review dentro de AUDIO**.
-
-**Out of scope:** cualquier cambio funcional al resto del repo; arreglar los 1041/160/94/46
-diagnósticos preexistentes (non-goal); coordinar con UPGRADE P0 — si P0 converge a otra versión,
-la reconciliación es una tarea de backlog, no de esta unidad.
-
-**Acceptance criteria:**
-- [ ] E0.1 `bash scripts/gates/changed-files-diagnostics.sh <fichero>…` emite recuento y detalle
-      por fichero para `tsc`, `eslint`, `deno lint` y `deno check`.
-- [ ] E0.2 **Fail-closed:** si una herramienta no corre, el script falla ruidosamente. Un cero
-      por "no se ejecutó" no puede ser indistinguible de un cero limpio — es el defecto sobre el
-      que P0 regresó tres rondas seguidas.
-- [ ] E0.3 `scripts/gates/selftest.sh` verifica E0.2 con herramientas simuladas: exit distinto de
-      cero, salida vacía, salida no parseable, y salida limpia real. Los cuatro casos, distintos.
-- [ ] E0.4 Determinismo: dos ejecuciones seguidas sobre los mismos ficheros dan salida idéntica.
-- [ ] E0.5 El script sólo lee: no escribe en el árbol ni muta git.
-- [ ] E0.6 `README.md` documenta el procedimiento de SHA padre + worktrees desechables.
-- [ ] E0.7 **Esta unidad se mide a sí misma**: sin gate previo, su evidencia es E0.3 + E0.4.
-
-**Test plan:** `scripts/gates/selftest.sh`, ejecutable y commiteado.
-
-```bash
-bash scripts/gates/selftest.sh
-```
-
-**Definition of done:** self-test verde con salida cruda en el ledger, criterios E0.1–E0.7.
-**El SHA de su commit aprobado es el "SHA del gate" que registran las demás unidades.**
-
-**Risks / unknowns:** que el candidato tomado de `feat/mesa-md-gates` arrastre el defecto de
-clasificación por el que P0 sigue en `FAIL 2/2`. Por eso E0.2 y E0.3 son criterios y no notas: si
-el candidato no los pasa, se arregla aquí.
-
-**Rollback:** `git revert`. Nada depende del script salvo el procedimiento de gate.
-
-**Depende de:** nada. **Es la unidad que desbloquea a las demás.**
+**Secuencia:** `E2` ‖ `E1-spike` → `E-infra` → `E3a` → `E3b` → `E4-spike` → ola 4.
 
 ---
 
 ## Phase E2 — Carátula desde la portada de la liturgia
 
-**Ruta ya trazada, no hay que descubrirla:**
+**La única unidad candidata a congelar.** Ruta trazada, sin base de datos, sin e2e:
 
 ```
 liturgia_elementos  WHERE liturgia_id = <ep.liturgy_id> AND tipo = 'portada-reflexion'
   → slides.slides[0].content.imageUrl        (data URL)
-  → base64ToSpotifyCover()                   (coverImageUtils.ts:17)
+  → base64ToSpotifyCover()                   (coverImageUtils.ts:17, recorte central en :32)
 ```
 
-**Decisión de producto, tomada por Brent el 2026-08-07 — resuelve Codex r8/B5:** cuando la
-liturgia existe pero **no tiene portada de reflexión guardada**, se **cae a la ruta actual de
-generación con Gemini** y se avisa en la UI. Nadie se queda sin publicar. Es el comportamiento
-que ya existe, así que es el cambio más pequeño. **Congelada: E2 ya no tiene decisiones abiertas.**
+**Decisión de producto de Brent (2026-08-07):** sin portada de reflexión guardada, se cae a la
+ruta actual de Gemini y **se avisa**. Nadie se queda sin publicar.
 
-**Scope:** `useQuickPublish.ts`, un helper de lectura de la portada, y tests.
+**Cómo se presenta el aviso — congelado tras Codex r9/S1**, que señaló que la r9 lo delegaba:
+se emite con el **`useToast` que el editor ya usa**, como toast no bloqueante, en español, y el
+scope incluye por tanto la superficie que lo dispara. No es un estado persistente ni un
+componente nuevo.
 
-**Out of scope:** rediseñar `Portadas.tsx`; cambiar `coverPromptBuilder.ts`; el recorte manual.
+**Camino corto — también tras r9/S1:** cuando hay portada de liturgia válida, **se omiten por
+completo** la validación de título/predicador y la carga del logo que `useQuickPublish.ts:360`
+hace hoy antes de Gemini. Esa ruta existe para construir un prompt; con una imagen ya generada
+no hay prompt que construir.
+
+**Scope:** `useQuickPublish.ts`, un helper de lectura de la portada, el toast, y tests.
+
+**Out of scope:** rediseñar `Portadas.tsx`; cambiar `coverPromptBuilder.ts`; el recorte manual;
+cualquier cosa que toque base de datos o e2e.
 
 **Acceptance criteria:**
-- [ ] E2.1 Con liturgia vinculada y portada guardada, la carátula **es esa portada**, no una
-      ilustración nueva. *Mutación declarada: volver a `buildSermonCoverPrompt` pone el test rojo.*
-- [ ] E2.2 La conversión 4:3 → cuadrada está probada: qué se recorta y desde dónde.
-- [ ] E2.3 Liturgia vinculada **sin** portada guardada → ruta Gemini + aviso visible en español.
-- [ ] E2.4 **Sin** liturgia (`onContinueWithoutLiturgy`) → ruta Gemini, flujo intacto.
-- [ ] E2.5 Un fallo al leer la portada no bloquea la publicación: degrada a Gemini y lo dice.
-- [ ] E2.6 Gate sobre los ficheros tocados, con el SHA de E0-gates registrado. Build verde.
+- [ ] E2.1 Con liturgia vinculada y portada guardada, la carátula **es esa portada**.
+      *Mutación declarada: volver a `buildSermonCoverPrompt` pone el test rojo.*
+- [ ] E2.2 Con portada de liturgia válida, **no se llama a Gemini, ni se valida
+      título/predicador, ni se carga el logo**. *Mutación: reintroducir la carga del logo debe
+      romper el test.*
+- [ ] E2.3 La conversión 4:3 → cuadrada usa el recorte central ya implementado, y está probada.
+- [ ] E2.4 Liturgia vinculada **sin** portada guardada → ruta Gemini **y toast visible en
+      español**, comprobado en el test, no sólo en el helper.
+- [ ] E2.5 **Sin** liturgia (`onContinueWithoutLiturgy`) → ruta Gemini, flujo intacto.
+- [ ] E2.6 Un fallo al leer la portada no bloquea la publicación: degrada a Gemini con toast.
+- [ ] E2.7 Gate desde `main` sobre los ficheros tocados, con el SHA padre registrado. Build verde.
 
 **Test plan:** `src/lib/sermon-editor/__tests__/liturgyCover.test.ts` (**nuevo**) —
 `recupera la portada de reflexión de la liturgia`, `cae a Gemini cuando no hay portada guardada`,
-`cae a Gemini cuando la liturgia no existe`. Más el cableado en `useQuickPublish`. Base-red o
-mutación por test (D18).
+`cae a Gemini cuando la liturgia no existe`. Y en el test del hook:
+`omite la carga del logo cuando hay portada de liturgia`, `emite el toast al degradar a Gemini`.
+Base-red o mutación por test (D18).
 
 ```bash
+bash scripts/gates/changed-files-diagnostics.sh <ficheros tocados>
 npx vitest run --no-file-parallelism src/lib/sermon-editor src/hooks
+npm run build
 ```
 
-**Definition of done:** tests verdes con evidencia base-red/mutación, E2.1–E2.6, gate.
+**Definition of done:** tests verdes con evidencia base-red/mutación, E2.1–E2.7, gate y build.
 
-**Risks / unknowns:** que liturgias antiguas tengan un `SlideGroup` de forma distinta a
-`slides[0].content.imageUrl`. E2.3 y E2.5 cubren el caso degradado sin romper la publicación.
+**Risks / unknowns:** que liturgias antiguas tengan un `SlideGroup` con forma distinta a
+`slides[0].content.imageUrl`. E2.4 y E2.6 cubren el caso degradado sin romper la publicación.
 
 **Rollback:** `git revert`. La ruta Gemini sigue intacta debajo.
+
+**Depende de:** nada. El gate ya está en `main`.
+
+---
+
+## Phase E1-spike — Grabación: sonda de compatibilidad real
+
+**Precondición declarada:** necesita **acceso físico a los dispositivos de la matriz**. Sin
+ellos, las celdas van como **no medidas** y el bloque resultante declara alcance reducido. No se
+rellenan por inferencia — que es exactamente el defecto que este PM ya cometió tres veces.
+
+**Wiring ya trazado:** el grabador debe producir un `File`; `handleFileSelected` lo decodifica;
+`quickProcessor` lo convierte a MP3; el bucket sólo acepta `audio/mpeg`
+(`20260610090001_podcast_media_storage.sql:15`).
+
+**Scope:** `evidence/E1-spike.md` y, si hace falta, una página de sonda **desechable que no se
+mergea**.
+
+**Out of scope:** implementar el grabador; tocar `leadership/`; grabación larga o multipista.
+
+**Acceptance criteria:**
+- [ ] E1s.1 Matriz con resultado por celda: iOS ≥ 18.4, iOS < 18.4, Android Chrome, macOS Safari,
+      Chrome de escritorio. Cada celda: MIME negociado y si la grabación se decodifica.
+- [ ] E1s.2 La medición **construye un `MediaRecorder` real y graba**. `isTypeSupported` no vale.
+- [ ] E1s.3 Evidencia cruda por celda. Sin evidencia → **no medida**, nunca inferida.
+- [ ] E1s.4 Postura sobre iOS < 18.4: MIME negociado, degradación y qué se promete. Sustituye la
+      afirmación no medida de "roto en iOS" que el plan arrastraba desde la r1.
+- [ ] E1s.5 Recomendación con costo: reutilizar `leadership/AudioRecorder.tsx`, extraerlo, o
+      escribir uno nuevo.
+- [ ] E1s.6 Bloque de plan para E1-impl con **controles, ciclo start/stop, permisos, errores,
+      limpieza del stream y el `File` resultante** — los seis huecos de Codex r8/B1.
+
+**Test plan:** ninguno automatizado. La verificación es la matriz con su evidencia cruda.
+
+**Definition of done:** `evidence/E1-spike.md` commiteado con matriz, evidencia y bloque de plan.
+
+**Rollback:** ninguno; la sonda no se mergea.
+
+**Depende de:** nada. **Puede arrancar hoy, en paralelo con E2.**
+
+---
+
+## Phase E-infra — Entorno de pruebas: Postgres local y harness e2e
+
+**NO CONGELADA.** Existe porque Codex r9/B3 y B4 demostraron que E3a y E3b escondían esta unidad
+dentro de sí, y porque mi afirmación de que el entorno ya estaba listo era falsa.
+
+**Su primer criterio es una medición, no una construcción** — precisamente para no repetir el
+error de especificar infraestructura que no he tocado.
+
+**Scope (a acotar por el propio E-infra.1):** configuración de puertos de Supabase local,
+`.env.test`, seed de datos sintéticos, cleanup, y una guarda que impida que los e2e apunten a
+producción.
+
+**Out of scope:** detener o reconfigurar el proyecto Supabase ajeno (`sxlogxqzmarhqsblxmtj`) que
+hoy ocupa el 54322 — es de otro proyecto y no se toca; migrar los tests existentes.
+
+**Acceptance criteria (borrador — se cierran cuando E-infra.1 mida):**
+- [ ] E-infra.1 **Medición primero**: qué hace falta para levantar el stack local de este
+      proyecto sin chocar con el ajeno. Puertos, comandos exactos, tiempo de arranque, y si las
+      61 migraciones aplican limpias. Salida cruda.
+- [ ] E-infra.2 **Guarda anti-producción**: los e2e fallan ruidosamente si la URL de Supabase
+      apunta al proyecto productivo `mulsqxfhxxdsadxsljss`. Probado con una mutación que
+      intente apuntar a producción y deba abortar.
+- [ ] E-infra.3 `.env.test` documentado y con plantilla commiteada (sin secretos).
+- [ ] E-infra.4 Seed de datos sintéticos con IDs deterministas y cleanup.
+- [ ] E-infra.5 Un e2e mínimo de humo que demuestre el harness completo.
+
+**Test plan:** el propio E-infra.5 más la mutación de E-infra.2.
+
+**Risks / unknowns:** que levantar un segundo stack de Supabase en esta máquina no sea viable
+sin tocar el proyecto ajeno. **Si es así, la salida correcta es reportar `FINDINGS`** y llevar la
+decisión a Brent — no apagar contenedores de otro proyecto por cuenta propia.
+
+**Depende de:** nada. **Es lo que desbloquea E3a y E3b.**
+
+---
+
+# 📝 Borradores — E3a, E3b y E4-spike (NO congelados)
+
+**No son contrato.** Codex r9 demostró que E3a y E3b escondían la unidad de infraestructura que
+ahora es `E-infra`, y dejó abiertos huecos reales en el contrato del slug (r9/B2) y en la
+semántica de paginación (r9/B5). Se conservan aquí porque el trabajo de trazado es válido y
+porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra` haya medido.**
+
+**Huecos conocidos, pendientes de cerrar (§16):** base de 80 caracteres + sufijo `-2` viola el
+`CHECK`; título >80 sin guion no define truncado; "5 intentos" no dice si son 5 totales o 5
+adicionales; de qué título sale el slug al reintentar un borrador; interacción entre colisión de
+`slug` y de `episode_number` en el mismo `UPDATE`; **`PostgrestError` no expone un campo
+`constraint`** — sólo `code`, `message`, `details` y `hint` — así que "inspeccionar el nombre"
+tiene que decir en qué campo y cómo, y eso exige medir la forma real del error vía PostgREST;
+y la paginación por offset **no garantiza ausencia de solapes** ante inserciones entre
+peticiones, así que hay que elegir entre cursor/keyset o declarar el límite.
 
 **Depende de:** E0-gates.
 
@@ -470,7 +550,7 @@ psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -f supabase/tests
 
 **Definition of done:** tests verdes con evidencia base-red/mutación, E3a.1–E3a.11, gate.
 
-**Risks / unknowns:** que `supabase db reset` no levante con las ~100 migraciones del repo. Por
+**Risks / unknowns:** que `supabase db reset` no levante con las **61** migraciones del repo. Por
 eso E3a.1 es el **primer** criterio y su salida es `FINDINGS`, no un apaño. Alternativa
 registrada si ocurre: una branch de Supabase por MCP, que cuesta más y hay que limpiar.
 
@@ -522,45 +602,8 @@ prueba con **datos sintéticos** — regla dura del proyecto.
 
 **Rollback:** `git revert`.
 
-**Depende de:** E3a (necesita el slug y la URL canónica).
 
 ---
-
-## Phase E1-spike — Grabación: sonda de compatibilidad real
-
-**Precondición declarada (Codex r8/S4):** esta unidad **necesita acceso físico a los dispositivos
-de la matriz**. Si no están disponibles, las celdas van como **no medidas** y el bloque de plan
-resultante declara el alcance reducido. No se rellenan por inferencia. Brent decide entonces si
-E1-impl arranca con cobertura parcial.
-
-**Wiring ya trazado — el spike no tiene que descubrirlo:** el grabador debe producir un `File`;
-`handleFileSelected` lo decodifica; `quickProcessor` lo convierte a MP3; el bucket sólo acepta
-`audio/mpeg` (`20260610090001_podcast_media_storage.sql:15`).
-
-**Scope:** `evidence/E1-spike.md` y, si hace falta, una página de sonda **desechable que no se
-mergea**.
-
-**Out of scope:** implementar el grabador; tocar `leadership/`; grabación larga o multipista.
-
-**Acceptance criteria:**
-- [ ] E1s.1 Matriz con resultado por celda: iOS ≥ 18.4, iOS < 18.4, Android Chrome, macOS Safari,
-      Chrome de escritorio. Cada celda: MIME negociado y si la grabación se decodifica.
-- [ ] E1s.2 La medición **construye un `MediaRecorder` real y graba**. `isTypeSupported` no es
-      evidencia.
-- [ ] E1s.3 Evidencia cruda por celda. Sin evidencia → **no medida**, nunca inferida.
-- [ ] E1s.4 Postura sobre iOS < 18.4: MIME negociado, degradación, y qué se promete. **Sustituye
-      la afirmación no medida de "roto en iOS"** que el plan arrastraba desde la r1.
-- [ ] E1s.5 Recomendación con costo: reutilizar `leadership/AudioRecorder.tsx`, extraerlo, o
-      escribir uno nuevo.
-- [ ] E1s.6 Bloque de plan para E1-impl en la forma del SOP §2.1: scope, criterios, test plan.
-      **Debe incluir controles, ciclo start/stop, permisos, errores, limpieza del stream y el
-      `File` resultante** — los seis huecos que Codex r8/B1 nombró.
-
-**Test plan:** ninguno automatizado. La verificación es la matriz con evidencia cruda.
-
-**Definition of done:** `evidence/E1-spike.md` commiteado con matriz, evidencia y bloque de plan.
-
-**Rollback:** ninguno; la sonda no se mergea.
 
 **Depende de:** nada, **ni siquiera de E0-gates**. Es lo primero que puede arrancar.
 
@@ -1246,7 +1289,7 @@ resuelta antes del primer envío).
 | **Aviso por WhatsApp al publicar** (ex-A17) | ídem | Requiere audiencia con consentimiento y plantilla aprobada en Meta. Depende del ex-A16 |
 | **Boletín por correo con Resend** (ex-A18) | ídem | Ídem, más una decisión de cadencia. Depende del ex-A16 |
 | Pre-renderizar el XML del feed a Storage | A1 | Sólo si el catálogo supera ~200 items. Disparador, no tarea |
-| **Arreglar el grabador de liderazgo en iOS** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | Es del sistema de liderazgo. Debería reutilizar el módulo de A19a; hacerlo después y en su workstream |
+| **Medir el grabador de liderazgo en iOS y añadir fallback donde haga falta** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | *Corregido en la r10 (Codex r9/S3): decía "arreglar... roto en iOS", lo que volvía a dar por medido algo que nunca se midió.* **Remite al resultado de E1-spike.** Es del sistema de liderazgo; se hace en su workstream |
 | Búsqueda full-text sobre la descripción | A8 | A8 cubre título y predicador |
 
 ### Retirado en la r7 por el re-alcance de Brent — **la pista de distribución completa**
@@ -1331,21 +1374,22 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 
 ## 7. Riesgos del plan como conjunto
 
+**Reescrita en la r10 (Codex r9/S4).** La tabla anterior enumeraba riesgos de A6, A20, A0.9,
+Spotify, Apple y el feed — todas unidades retiradas — e incluso afirmaba que "A0.9 instala la
+medición" cuando A0.9 estaba retirado en §6. Un documento cuyo bloque de riesgos describe un plan
+que ya no existe no sirve como fuente del estado activo. **Los riesgos del plan de distribución
+se conservan con él, en §6.**
+
+Riesgos vigentes de las unidades actuales:
+
 | Riesgo | Prob. | Impacto | Mitigación |
 |---|---|---|---|
-| **A6.3 falla (sin `206`)** | baja | **crítico** — cae D2, hay que migrar storage | A6 va antes de cualquier envío a directorios; consecuencia declarada |
-| **A20a concluye que la grabación larga no es viable en iOS** | media | medio | Limitación documentada bajo D15; el spike cuesta menos que tres fases |
-| **A20c obliga a enmendar D16 y el non-goal de procesamiento** | media | alto | A20a.5/A20a.6 lo deciden antes de escribir código |
-| **A10a concluye que el proyecto Vite no admite funciones** | baja | medio | El spike lo determina desplegando, no razonando |
-| Activar video en Spotify | baja | alto | D7 (razón corregida); A13.5 lo verifica |
-| Borrar la cuenta de Spotify | baja | crítico | D8; nunca |
-| Rechazo de Apple por portada | media | alto | A5.2 la verifica antes de A12 |
-| Música de adoración → takedown | media | alto | A0.10 audita; editar los cantos fuera |
-| Vercel no preserva `Content-Type` en el rewrite | media | medio | A3.6/A3.7 lo prueban; hay alternativa con función |
-| El feed de origen de Spotify ya no es accesible | desconocida | alto | A0.6 lo determina antes de A11 |
-| iOS ignora `echoCancellation:false` | media | medio | A19a.3 lo mide; se documenta como limitación (D15) |
-| D3 nunca se dispara por falta de medición | **era cierto** | medio | Corregido: A0.9 instala la medición |
-| El plan asume que "$0 marginal" es cierto | — | bajo | No verificado; A0.8/A0.9 y A11d.7 dan la línea base |
+| **No se puede levantar un segundo stack de Supabase local** sin tocar el proyecto ajeno que ocupa el 54322 | media | alto — bloquea E3a y E3b | `E-infra.1` lo mide primero; si no es viable, **reporta `FINDINGS` a Brent**, no apaga contenedores ajenos |
+| **Un e2e mal configurado escribe en producción** | **era real en la r9** | **crítico** — la base es compartida con Life OS | `E-infra.2`: guarda que aborta si la URL apunta a `mulsqxfhxxdsadxsljss`, probada con mutación |
+| E1-spike no consigue los dispositivos de la matriz | media | medio | Celdas como **no medidas**, nunca inferidas; Brent decide si E1-impl arranca con cobertura parcial |
+| Liturgias antiguas con `SlideGroup` de forma distinta | media | bajo | E2.4 y E2.6: degrada a Gemini con aviso, sin romper la publicación |
+| E4-spike concluye que el preview obliga a cambiar el modelo de despliegue | media | alto | El spike lo determina desplegando, no razonando; el costo se declara en su bloque |
+| **El PM vuelve a escribir "verificado" sobre una inferencia** | **ha ocurrido tres veces** | alto | Registro explícito en §5; toda afirmación de estado lleva el comando que la produjo |
 
 ---
 
@@ -1394,6 +1438,11 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-07 | **r10: `E0-gates` se retira.** UPGRADE P0 pasó Codex y se mergeó a `main` (`5b947ac`); el gate y su self-test ya están ahí, con el blob `51af6197…` idéntico al aprobado | Verificado: `git ls-tree main scripts/gates/`. D18 vuelve a funcionar tal como se escribió, sin SHA que fijar ni worktrees que montar | Codex (PASS de P0) |
+| 2026-08-07 | **r10: la ola 1 se reduce a `E2`**, y `E3a`/`E3b` pasan detrás de una unidad nueva, **`E-infra`** | Codex r9/B3 y B4: ambas escondían la construcción de un entorno de pruebas que no existe. E2 no toca base ni e2e, así que es lo único congelable hoy sin esconder trabajo | Codex r9/B3+B4, decidido por Brent |
+| 2026-08-07 | **r10: se registra que mi afirmación "Postgres local disponible" era falsa** — `supabase status` falla y el 54322 lo ocupa otro proyecto. **Tercera verificación falsa mía en este plan**, y queda escrita en §5 | Codex r9/B3 lo midió. Las tres tienen la misma forma: una inferencia dentro de una sección titulada "medido". La más grave es la derivada: la E3b de la r9 habría creado filas sintéticas **contra producción**, que es la base compartida con Life OS | Codex r9/B3+B4 |
+| 2026-08-07 | **r10: E2 congela cómo se avisa (toast con el `useToast` existente) y el camino corto** (con portada válida no se valida título/predicador ni se carga el logo) | Codex r9/S1: la r9 exigía "aviso visible" sin decir dónde ni probarlo, y no aprovechaba que `useQuickPublish.ts:360` sólo hace ese trabajo para construir un prompt que ya no hace falta | Codex r9/S1 |
+| 2026-08-07 | **r10: §7 se reescribe con los riesgos de las unidades vigentes** | Codex r9/S4: enumeraba riesgos de A6, A20, Spotify, Apple y feed —retiradas— y afirmaba que A0.9 instala una medición cuando A0.9 estaba retirado | Codex r9/S4 |
 | 2026-08-07 | **r9: el plan pasa a olas.** Sólo se congela lo especificable hoy (`E0-gates`, `E2`, `E3a`, `E3b`); los dos spikes van en paralelo; `E1-impl`, `E4-impl`, `E5` y `E6` **dejan de contarse como unidades**. Se declara explícitamente que este bloque **no entrega las cuatro condiciones del Goal** | 8 rondas de plan, 6 reviews, 0 código. Cada enmienda hacía crecer el documento y cada documento generaba más findings (r7: 5 unidades → 10 findings; r8: 8 → 11). Codex r8/B1 nombró la causa: una implementación que su spike aún no ha acotado no se puede contar como aprobada | Codex r8/B1 + Brent |
 | 2026-08-07 | **r9: `E0-gates` nueva — el gate se revisa dentro de AUDIO** | Codex r8/B4: alguna implementación del gate tiene que estar revisada, pero **no tiene por qué aprobarse como parte de UPGRADE P0**. La r8 confundía las dos cosas y dejaba seis unidades esperando a un workstream en `FAIL 2/2` | Codex r8/B4 |
 | 2026-08-07 | **r9: el contrato del slug se congela en el plan, no se delega al ejecutor**: normalización NFD, ≤80 con truncado en frontera de palabra, fallback `reflexion-<fecha>`, sufijo `-N` con el índice como árbitro, asignación en el `UPDATE` que publica, e inspección del **nombre** del índice en vez del `23505` genérico | Codex r8/B2: la r8 enumeraba las decisiones y le pedía al ejecutor que las "declarara". Eso es delegar el trabajo del planificador, que es exactamente lo que r7/B3 ya había señalado | Codex r8/B2 |
@@ -1622,3 +1671,40 @@ código. La r7 falló por spikes sin implementación. La r8 falló por **escribi
 que ningún spike había acotado todavía**. Las tres son la misma cosa: escribir plan por delante
 del conocimiento. La r9 no lo arregla escribiendo mejor — lo arregla **escribiendo menos y
 ejecutando antes**.
+
+
+---
+
+## 16. Trazabilidad de la review de Codex r9 (FAIL)
+
+**Veredicto:** FAIL — 5 BLOCKING, 4 SHOULD-FIX, 1 NIT. **Aceptados los diez.** Séptima review,
+séptimo acierto en todo lo comprobable.
+
+**Verificación independiente — y esta vez la review medía cosas que yo había afirmado sin medir:**
+
+| Afirmación de Codex | Comprobación del PM | Resultado |
+|---|---|---|
+| No hay Postgres local para este proyecto | `supabase status` → `No such container: supabase_db_mulsqxfhxxdsadxsljss` | **confirmado** |
+| El 54322 lo ocupa otro proyecto | `lsof` + `docker ps` → `supabase_db_sxlogxqzmarhqsblxmtj` y 9 contenedores más | **confirmado** |
+| `.env.test` no existe y los e2e caen a producción | `playwright.config.ts` la carga sólo `if (existsSync)`; `client.ts:5` tiene URL y anon key productivas hardcodeadas | **confirmado** |
+| Son 61 migraciones, no ~100 | `ls supabase/migrations/*.sql \| wc -l` → **61** | **confirmado** |
+| La rama del gate es mutable | La punta se movió `09a69d7` → `912c15d` → `5b947ac` durante esta sesión | **confirmado** |
+
+| Finding | Clase | Resolución en la r10 |
+|---|---|---|
+| **B1** E0-gates no fija el candidato | BLOCKING | **Superado por los hechos.** P0 pasó y se mergeó: el gate está en `main` con el blob aprobado. **E0-gates se retira entera** |
+| **B2** el contrato del slug sigue incompleto | BLOCKING | **Aceptado.** E3a **deja de congelarse** y baja a borrador; los siete huecos (80+sufijo, truncado sin guion, "5 intentos", título al reintentar, interacción de colisiones, campo de `PostgrestError`, forma real del error vía PostgREST) quedan listados en el banner de borradores para cerrarse tras `E-infra` |
+| **B3** E3a.1 describe un entorno que no está disponible | BLOCKING | **Aceptado, y es mi error, no una imprecisión.** §5 lleva la corrección y el registro de mis tres verificaciones falsas. `E-infra` existe por esto, y su primer criterio **es una medición** |
+| **B4** E3b no especifica dónde corren sus e2e | BLOCKING | **Aceptado.** E3b baja a borrador. `E-infra.2` congela la guarda anti-producción, probada con una mutación que intente apuntar a `mulsqxfhxxdsadxsljss` y deba abortar |
+| **B5** el offset no garantiza ausencia de solapes | BLOCKING | **Aceptado.** Queda en el banner de borradores: elegir cursor/keyset sobre `(published_at DESC, id ASC)` **o** declarar el límite. La r9 afirmaba una propiedad más fuerte que su implementación |
+| **S1** E2 delega cómo presentar el aviso | SHOULD-FIX | **Aceptado.** E2 congela el toast con el `useToast` existente, lo mete en el scope y lo prueba (E2.4). Y añade el camino corto de E2.2, que Codex señaló |
+| **S2** E0.7 necesita ejecución real | SHOULD-FIX | **Moot.** E0-gates se retira; el gate llegó revisado y mergeado |
+| **S3** la corrección sobre iOS quedó parcial | SHOULD-FIX | **Aceptado.** El backlog pasa de "arreglar el grabador roto en iOS" a "medir y añadir fallback", remitiendo a E1-spike |
+| **S4** bloques activos que contradicen el estado | SHOULD-FIX | **Aceptado.** La etiqueta "CONGELADA" desaparece del índice (§5 dice "candidata a congelar"); §7 se reescribe con los riesgos vigentes |
+| **N1** "~100 migraciones" | NIT | **Aceptado.** 61 |
+
+**Sobre la causa raíz, cuarta lectura.** Las tres anteriores eran sobre el plan. Ésta es sobre
+mí: **escribo "verificado" sobre inferencias**. Ha pasado tres veces y las tres las encontró
+Codex ejecutando el comando que yo no ejecuté. La r10 no lo arregla prometiendo cuidado — lo
+arregla haciendo que **toda afirmación de estado lleve al lado el comando que la produjo**, y
+registrando las tres en §5 para que quien lea el plan calibre.
