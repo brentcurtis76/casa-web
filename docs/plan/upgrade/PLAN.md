@@ -300,7 +300,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | ID | Name | Status | Branch | Depends on |
 |----|------|--------|--------|-----------|
 | P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
-| P1 | Esquema: columna + RPC de resumen | TODO | `feat/mesa-md-schema` | P0, PR1, PR2 |
+| P1 | Esquema: columna + RPC de resumen | **IN PROGRESS** (r1 despachada 2026-08-07) | `feat/mesa-md-schema` | P0, PR1, PR2 |
 | P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | TODO | `feat/mesa-md-core` | P3a |

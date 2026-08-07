@@ -929,3 +929,52 @@
   - La migración es un `.sql`: mostrará `(0)` en las cuatro herramientas. Es correcto.
 - OPEN AFTER THIS ROUND: merge de `feat/mesa-md-gates` (comando entregado a Brent; **el PM no
   mergea**). Después, bootstrap de PM para **P1**, que ya tiene PR1 y PR2 concedidos.
+
+### 2026-08-07 — P1 round 1 — PM (Fable) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P1 · PM
+- ACTION: Bootstrap de PM para **P1 — Esquema: columna + RPC de resumen**. Prompt de
+  ejecutor escrito y commiteado en `docs/plan/upgrade/prompts/P1-r1.md`. P1 pasa a
+  IN PROGRESS en el índice de fases. Sin código tocado (SOP §1.1).
+- ESTADO DE PARTIDA VERIFICADO CONTRA LA REALIDAD, no contra el registro:
+  - `feat/mesa-md-gates` **ya está en `main`**: `git merge-base --is-ancestor` → sí, y
+    `main` = `origin/main` = `5b947ac`. P0 cerrada y mergeada. La base de P1 es `5b947ac`.
+  - `feat/mesa-md-schema` **no existe** todavía, ni local ni en el remoto.
+  - Las cuatro herramientas de P0 están en `main`: `changed-files-diagnostics.sh`,
+    `selftest.sh`, `README.md`, `evidence/base-by-file.txt` (11 ficheros, cabecera `1732bee`).
+- ESTADO DE LA BASE DE DATOS (`mulsqxfhxxdsadxsljss`, introspección de solo lectura):
+  `can_bring_main_dish` **no existe** · `get_my_dinner_summary` **no existe** ·
+  `mesa_abierta_matches.host_food_assignment` existe, `text` **nullable**, sin default —
+  confirma las seis declaraciones literales de `types.ts` que fijó Codex r5-S3 ·
+  31 participantes / 6 matches / 25 assignments / 4 meses, idéntico a lo que dice el plan.
+- **RIESGO DECLARADO DE P1, CERRADO ANTES DE DESPACHAR.** PLAN.md avisaba: «simular
+  llamantes requiere `set_config('request.jwt.claims', …)`; **estoy asumiendo** que es
+  posible». Lo probé yo: una llamada multi-sentencia de `execute_sql` comparte transacción,
+  `set_config(..., true)` persiste entre sentencias y `auth.uid()` lo lee
+  (`00000000-…-0000` devuelto correctamente). **A6–A8 son ejecutables.** En cambio
+  `SET LOCAL ROLE authenticated` está **denegado** al usuario de solo lectura; no hace falta,
+  porque la función es `SECURITY DEFINER` y filtra por `auth.uid()`, no por RLS. El prompt
+  lleva las tres consultas ya escritas.
+- **RIESGO NUEVO QUE EL PLAN NO PREVIÓ — canal de escritura.** El servidor MCP
+  `supabase-casa` está configurado **`--read-only`**: su `execute_sql` corre como
+  `supabase_read_only_user`. PLAN.md D9 dice «aplicación con un único `apply_migration`», y
+  **no he probado si `apply_migration` sigue funcionando bajo esa bandera** — una sonda sería
+  una escritura en producción, y PR2 autoriza aplicar *esta* migración, no experimentar. Se
+  lo traslado a Brent y el prompt está ordenado para absorberlo: **todo el trabajo de
+  ficheros va primero y se commitea**, la base de datos va después. Si el canal está cerrado,
+  A1/A2/A9/A10/A11 quedan hechos y solo faltan A3–A8.
+- FIXTURE DE A6–A8 PRESELECCIONADO, para que el ejecutor no elija uno ambiguo: mes
+  `60a263e9…` tiene dos matches y **cada usuario de ese mes pertenece exactamente a uno**,
+  así que «la misma fila que A7» no admite lectura doble. Valores esperados calculados por mí
+  con la regla D1: `3d4d6709…` → `(6, 1)` · `771bd494…` → `(9, 2)`. Sin PII: el prompt toma
+  los `user_id` de subconsultas para que nadie tenga que pegarlos.
+- GATE: el padre inmediato de P1 es `main`@`5b947ac`, **no** `base-by-file.txt`. El prompt
+  exige medir el padre antes de ramificar. Diferencia esperada: `MesaAbiertaAdmin.tsx`
+  `tsc (12)` → `(10)`, desaparecen exactamente el TS2339 de `:376` y el TS2353 de `:882`
+  (ambos por `host_food_assignment`), cero líneas añadidas, totales `tsc 1041 → 1039` y
+  `160/94/46` sin mover. Es la «excepción medida y única» de D8.
+- FINDINGS RAISED: ninguno (no hay ronda de ejecutor que juzgar todavía).
+- DECISIONS: ninguna nueva. El plan sigue congelado en la revisión 7; nada de lo que verifiqué
+  lo contradice.
+- OPEN AFTER THIS ROUND: (1) Brent resuelve el canal de escritura — quitar `--read-only` del
+  servidor `supabase-casa` o aplicar él mismo la migración desde el editor SQL. (2) Despachar
+  `/exec UPGRADE P1 r1`. (3) Verificación independiente del PM cuando vuelva el reporte.
