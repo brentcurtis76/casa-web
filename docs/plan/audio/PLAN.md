@@ -5,10 +5,19 @@ META
 - SLUG / PREFIJO DE SESIÓN: `AUDIO`
 - BRANCH CONVENTION: `phase/<id>-<slug>` (≤20 chars por DNS de Vercel — `phase/A1-feed`)
 - BASE: `main`
-- PLAN FROZEN: **parcialmente.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
-  **r5 → PARTIAL PASS**. Esta es la **revisión 6**, que aplica los recortes del consenso.
-  Ver §9, §11, §12 y §13 para la trazabilidad finding → cambio.
-- **CONGELADAS y ejecutables ya:** A1, A3, A6, A7, A10a, A11-spike.
+- PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
+  **r5 → PARTIAL PASS** · **r6 → re-alcance**. Esta es la **revisión 7**, que cambia el
+  objetivo del plan por decisión de Brent (2026-08-07). Ver §9, §11, §12 y §13 para la
+  trazabilidad finding → cambio de las revisiones anteriores.
+- **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
+  **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
+  de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
+  automáticamente en página propia, y compartir el enlace en redes y WhatsApp. **Toda la pista
+  de distribución (feed RSS, backfill, directorios, corte de Spotify) pasa al backlog.**
+- **Las unidades vigentes son E1–E5** (§5). Las `A*` quedan retiradas; sus cuerpos se conservan
+  al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
+- **PENDIENTE DE REVIEW:** esta revisión 7 **no ha pasado por Codex**. Ninguna unidad B arranca
+  hasta que lo haga.
 - **ESTRATEGIA DESDE LA r5 (instrucción de Brent):** el objetivo es un plan **consensuado**, no
   un plan completo. Toda fase que Codex señale por especificar implementación sin trazar el
   código **se retira o se convierte en spike**, en vez de seguir puliéndose ronda tras ronda.
@@ -77,19 +86,41 @@ Lecturas de código confirmadas (revisión 1, siguen siendo ciertas):
 
 ## 1. Goal
 
-Que CASA publique el audio de las prédicas desde su propio dominio y su propio feed, que ese
-feed esté inscrito en los directorios relevantes para una audiencia hispanohablante en Chile, y
-que Spotify pase de ser el hosting a ser un destino más — sin perder episodios ni seguidores.
+> **Reemplazado en la revisión 7.** El objetivo anterior — feed propio inscrito en directorios,
+> con Spotify degradado a destino — se conserva íntegro en §6 como bloque de backlog. No se
+> descarta: se aplaza.
+
+Que quien predica pueda **grabar, publicar y compartir** una reflexión sin salir de CASA, y que
+la comunidad la escuche en una página de la iglesia.
 
 Condición de éxito, verificable:
 
-- `https://www.anglicanasanandres.cl/podcast/feed.xml` devuelve 200 `application/rss+xml`,
-  valida en Cast Feed Validator y Podbase, y contiene el catálogo completo.
-- Existe `/reflexiones/<slug>` por episodio, con reproductor y descarga, compartible.
-- El programa está listado en Apple, Podcast Index, iVoox y Amazon, alimentados por ese feed.
-- Spotify sigue funcionando, alimentado por redirect 301 desde ese mismo feed.
+- Se puede **grabar el audio dentro del editor** (`/admin/sermon-editor`), no sólo subir un
+  archivo.
+- La **carátula del episodio se deriva de la portada de la liturgia** vinculada, reutilizando el
+  sistema de generación que ya existe — no una ilustración nueva y ajena.
+- Al publicar, el episodio **aparece solo** en `/reflexiones`, con su propia página
+  `/reflexiones/<slug>`, reproducible por cualquiera sin iniciar sesión.
+- Ese enlace **se comparte en redes y WhatsApp** y la previsualización muestra título, portada
+  y predicador.
+
+**Fuera de la condición de éxito, a propósito:** que el episodio llegue a Apple, Spotify,
+iVoox o cualquier directorio. Eso es distribución y viene después.
 
 ## 2. Non-goals
+
+**Añadidos en la revisión 7 — todo esto era el plan y ahora no lo es:**
+
+- **No** corregir ni mudar el feed RSS, ni servirlo desde dominio propio (ex-A1, ex-A3, ex-A6).
+- **No** inscribir el programa en Apple, Podcast Index, iVoox ni Amazon (ex-A-cutover-spike).
+- **No** migrar el catálogo histórico desde Spotify (ex-A11-spike).
+- **No** tocar nada de Spotify: ni redirect, ni corte, ni la cuenta (D8 sigue vigente).
+- **No** provisionar el correo institucional de `itunes:owner`. **D6 sólo existe para la
+  verificación de propiedad ante directorios**, y sin directorios no está en el camino crítico.
+  Verificado el 2026-08-07: el dominio no tiene registros MX, así que ese buzón habría que
+  crearlo. Cuando se retome la distribución, es lo primero.
+
+**Vigentes desde la revisión 1:**
 
 - **No** migrar el audio fuera de Supabase Storage (ver D2/D3).
 - **No** activar video en Spotify (D7).
@@ -165,52 +196,277 @@ un defecto.
 
 ---
 
-## 5. Phase index — 12 unidades (consenso Codex r5, PARTIAL PASS)
+## 5. Phase index — 5 unidades (revisión 7, re-alcance de Brent)
 
-| ID | Nombre | Tipo | Status | Codex r5 | Depende de |
-|----|--------|------|--------|----------|-----------|
-| A0-core | Reconocimiento | Evidencia | TODO | recortada | — |
-| A1 | Correctitud del feed + `HEAD` + correo institucional | Código | TODO | **aprobada** | A0.7 |
-| A2-core | Entrega de audio: claves versionadas y cache | Código | TODO | recortada | — |
-| A3 | Dominio propio del feed (`www`) | Código | TODO | **aprobada** | A1 |
-| A4-core | Slug + inmutabilidad por UPDATE y borrado | Código + DB | TODO | recortada | — |
-| A5-core | Portada del canal + episodio canario | Evidencia + op | TODO | recortada | A1, A2-core, A4-core |
-| A6 | **Validación operativa del feed** | Evidencia | TODO | **aprobada** | A3, A5-core |
-| A7 | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | TODO | **aprobada** | A4-core, A5-core |
-| A10a | SEO: spike de arquitectura | Spike | TODO | **aprobada** | A7 |
-| A11-spike | Backfill: leer el código y escribir el bloque | Spike | TODO | **aprobada** | A0.6, A4-core |
-| A14-core | `podcast:guid` + `<link>` por episodio | Código | TODO | recortada | A4-core, A7, backfill |
-| A-cutover-spike | Directorios + redirect de Spotify | Spike | TODO | recortada | A6, backfill, A14-core |
+| ID | Nombre | Tipo | Status | Depende de |
+|----|--------|------|--------|-----------|
+| E1-spike | Grabar dentro del editor de audio | Spike | TODO | — |
+| E2-spike | Carátula derivada de la portada de la liturgia | Spike | TODO | — |
+| E3 | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código + DB | TODO | — |
+| E4-spike | Previsualización del enlace (`og:` por episodio) | Spike | TODO | E3 |
+| E5 | Compartir en redes y WhatsApp | Código | TODO | E3, E4-spike |
 
-**La columna `Status` usa el vocabulario del SOP §2.1** — `TODO` / `IN PROGRESS` / `IN REVIEW` /
-`DONE` / `BLOCKED` — y es la única que `/pm-boot` lee para elegir fase. La columna `Codex r5`
-es informativa: **aprobada** = congelada tal cual por Codex; **recortada** = reducida en la r6
-siguiendo su recomendación, pendiente de una confirmación de que el recorte quedó bien, no de
-rediseño.
+`Status` usa el vocabulario del SOP §2.1 — `TODO` / `IN PROGRESS` / `IN REVIEW` / `DONE` /
+`BLOCKED` — y es lo único que `/pm-boot` lee para elegir unidad.
 
-### Nota para el PM que arranque este plan
+**Secuencia:** `(E1-spike ‖ E2-spike ‖ E3) → E4-spike → E5`. Las tres primeras son
+independientes entre sí.
 
-`/pm-boot AUDIO` sin fase tomará **A0-core**, que es la primera sin dependencias. Correcto —
-pero **A0-core no es una fase que un ejecutor pueda completar solo**: A0.5 (estado del programa
-en Spotify for Creators), A0.6 (URL del feed de origen), A0.7 (buzón institucional) y A0.10
-(auditoría de contenido musical) exigen consolas y decisiones de Brent. Un ejecutor puede hacer
-A0.1–A0.4 (conteos por MCP y `curl`); el resto se lo pide el PM a Brent y se pega como
-evidencia.
+**Los tres spikes no preaprueban nada.** Cada uno entrega un bloque de plan revisable; ese
+bloque se revisa antes de ejecutarse. Es el remedio que Codex aplicó en la r5 a A11 y A20, y
+que funcionó: la causa raíz de cuatro FAIL seguidos fue especificar implementación sin trazar
+las firmas reales del código.
 
-**Si Brent prefiere empezar por código**, la primera fase ejecutable de punta a punta por un
-ejecutor es **A4-core**: sin dependencias, y la tabla `church_podcast_episodes` está **vacía**
-(0 filas, verificado), lo que hace el backfill de slugs trivial ahora e incómodo después del
-catálogo. `A2-core` también es autocontenida.
+### Estado verificado del código (medido el 2026-08-07, no asumido)
 
-**Secuencia:** A0-core → (A1 ‖ A2-core ‖ A4-core) → A3 → A5-core → **A6** → A7 → A10a →
-A11-spike → *(bloque de backfill, a planificar)* → A14-core → **A-cutover-spike**.
+Lo que este plan daba por construir **ya existe en buena parte**. Medido:
 
-**Los tres spikes no preaprueban nada.** A10a, A11-spike y A-cutover-spike producen cada uno un
-bloque de plan revisable; esos bloques se revisan antes de ejecutarse.
+| Pieza | Estado real |
+|---|---|
+| Flujo de publicación rápida | **Existe**: `QuickPublishContainer.tsx`, stepper `Audio → Liturgia → Revisar → Publicar`, máquina de estados en `useQuickPublish.ts` |
+| Vínculo episodio ↔ liturgia | **Existe en el esquema**: `church_podcast_episodes.liturgy_id UUID REFERENCES liturgias(id)`; `QuickStepLiturgy.tsx` ya lo deja elegir |
+| Portada de reflexión desde la liturgia | **Existe**: `Portadas.tsx` genera portada MAIN y **REFLECTION** (recomposición imagen-a-imagen de la principal, con título de la liturgia y nombre del predicador) |
+| Imagen → carátula cuadrada | **Existe**: `coverImageUtils.ts` → `base64ToSpotifyCover()` |
+| Codificación a MP3 | **Existe**: `mp3Encoder.ts` (lamejs) |
+| Grabador en navegador | Existe **en otro sitio**: `leadership/AudioRecorder.tsx` + ruta `/recorder`; **roto en iOS** (`RecorderPopupPage.tsx:67-68`, ambos mime son webm) |
+
+Y los huecos, también medidos:
+
+- El paso 1 de Publicación Rápida es `AudioUploader` — **selector de ficheros, no grabador**.
+- `useQuickPublish.ts:376` llama a `buildSermonCoverPrompt` y **genera una ilustración nueva con
+  Gemini**; la portada de reflexión existente no se reutiliza. Además vive como *slide*
+  (`onSlidesGenerated`), no como imagen recuperable por `liturgy_id`.
+- **No existe ruta `/reflexiones`** en `src/appRoutes.tsx`.
+- **`church_podcast_episodes` no tiene columna `slug`** — verificado en la migración.
+- No hay botón de compartir, y la SPA no emite `og:` por episodio.
+
+### Advertencia sobre los gates (D18)
+
+**D18 congela `scripts/gates/changed-files-diagnostics.sh` como gate de toda unidad de código, y
+ese script no existe en `main`.** Vive sólo en `feat/mesa-md-gates`, la rama del workstream
+UPGRADE, cuya fase P0 lleva `FAIL 2/2` de Codex y va por una cuarta ronda autorizada por
+override de Brent. **E3 y E5 son código y están atadas a que P0 aterrice en `main`.**
+
+Salida posible, **no decidida — la decide Codex o Brent, no el PM**: ablandar D18 para este
+bloque a "sin diagnósticos nuevos en los ficheros tocados", medido con `tsc` y `eslint` acotados
+a mano, hasta que P0 llegue. Los spikes E1/E2/E4 no tocan código y no se ven afectados.
 
 ---
 
-## Phase A0-core — Reconocimiento
+## Phase E1-spike — Grabar dentro del editor de audio
+
+**Tipo:** spike. Entrega un **bloque de plan revisable**, no implementación.
+
+**Scope:** lectura de código y un documento. `evidence/E1-spike.md`.
+
+**Out of scope:** escribir el grabador; tocar `leadership/`; arreglar el defecto de iOS del
+grabador de liderazgo (está en el backlog y es de otro sistema); grabación larga o multipista.
+
+**Acceptance criteria:**
+- [ ] E1.1 Traza documentada de `leadership/AudioRecorder.tsx`, `recorderUploader.ts`,
+      `recorderSession.ts` y `RecorderPopupPage.tsx`: qué es reutilizable y qué está acoplado
+      a sesiones de liderazgo, con rutas y líneas.
+- [ ] E1.2 Traza de la entrada actual: `AudioUploader.tsx` → `handleFileSelected` en
+      `useQuickPublish.ts`, con la firma exacta que un grabador tendría que satisfacer.
+- [ ] E1.3 Camino declarado de grabación → MP3, citando `mp3Encoder.ts` y `quickProcessor.ts`.
+      El bucket **sólo acepta `audio/mpeg`** (`20260610090001_podcast_media_storage.sql:15`);
+      una grabación de navegador es webm/opus. El bloque debe decir dónde ocurre la conversión.
+- [ ] E1.4 Postura explícita sobre iOS: qué mime se negocia, cómo se degrada si falla, y qué se
+      promete y qué no. **No se aceptan `isTypeSupported` como prueba** — hay que construir el
+      `MediaRecorder` de verdad (lección de la ex-D16).
+- [ ] E1.5 Recomendación: reutilizar el grabador de liderazgo, extraerlo a un módulo común, o
+      escribir uno nuevo. Con el costo de cada opción.
+- [ ] E1.6 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
+
+**Test plan:** ninguno automatizado — es un spike. La verificación es que el bloque de plan
+resultante sea ejecutable sin volver a abrir el código. Lo declaro en vez de inventar criterios.
+
+**Definition of done:** `evidence/E1-spike.md` commiteado, con el bloque de plan al final.
+
+**Risks / unknowns:** que el grabador de liderazgo resulte inseparable de su modelo de sesión.
+Si es así, el bloque debe decirlo y proponer uno nuevo, no forzar la reutilización.
+
+**Rollback:** ninguno; no modifica el sistema.
+
+**Depende de:** nada.
+
+---
+
+## Phase E2-spike — Carátula derivada de la portada de la liturgia
+
+**Tipo:** spike. **Decisión de producto ya tomada por Brent (2026-08-07):** se reutiliza el
+sistema de generación de portadas que ya existe. No se construye generación nueva.
+
+**Scope:** lectura de código y un documento. `evidence/E2-spike.md`.
+
+**Out of scope:** implementar el cableado; rediseñar `Portadas.tsx`; cambiar los prompts de
+`coverPromptBuilder.ts`; tocar la generación de portadas de la liturgia.
+
+**Acceptance criteria:**
+- [ ] E2.1 Respuesta documentada a **dónde queda persistida la portada de REFLECTION** de
+      `Portadas.tsx`: hoy sale por `onSlidesGenerated` como `SlideGroup` y vive en estado de
+      componente (`reflectionCover`, `:51`). Hay que decir en qué tabla/bucket acaba, si acaba.
+- [ ] E2.2 Respuesta a si es **recuperable por `liturgy_id`**, que es la FK que ya existe en
+      `church_podcast_episodes`. Con la consulta o el camino de código que lo hace.
+- [ ] E2.3 Decisión entre las dos formas de reutilización, con su costo:
+      **(a)** recuperar la portada de reflexión ya generada, o
+      **(b)** reinvocar el generador existente con el contexto de la liturgia.
+- [ ] E2.4 Camino de formato declarado: la portada de liturgia es **4:3 (1024x768)** y la
+      carátula del episodio es cuadrada. Decir si `base64ToSpotifyCover()` sirve tal cual y qué
+      se recorta.
+- [ ] E2.5 Qué pasa cuando **no hay liturgia vinculada** — `QuickStepLiturgy` permite
+      `onContinueWithoutLiturgy`. El bloque debe declarar el comportamiento de reserva.
+- [ ] E2.6 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
+
+**Test plan:** ninguno automatizado — es un spike, igual que E1.
+
+**Definition of done:** `evidence/E2-spike.md` commiteado, con el bloque de plan al final.
+
+**Risks / unknowns:** que la portada de reflexión no se persista en ningún sitio recuperable y
+sólo exista dentro del slide de la liturgia. En ese caso (b) es la única vía y el bloque tiene
+que decirlo sin adornos.
+
+**Rollback:** ninguno; no modifica el sistema.
+
+**Depende de:** nada.
+
+---
+
+## Phase E3 — Páginas públicas `/reflexiones` y `/reflexiones/:slug`
+
+**Reutiliza la ex-A7**, que Codex aprobó tal cual en la r5. Su cuerpo se conserva al final del
+documento como referencia. Lo que cambia respecto de A7: **deja de depender de A4-core y
+A5-core**, que salen del plan.
+
+**Scope:** una migración aditiva (columna `slug`), `src/appRoutes.tsx`, las páginas nuevas,
+`publishService.ts` para asignar el slug al publicar, y sus tests.
+
+**Out of scope:** el **trigger de inmutabilidad** de slug y guid (era A4-core; va al backlog con
+la nota de abajo); enlace público a la liturgia (ya estaba retirado en A7.10 y sigue fuera:
+no hay ruta pública de liturgia ni RLS anon); buscador y filtros; reproductor avanzado.
+
+**Acceptance criteria:**
+- [ ] E3.1 Migración aditiva añade `slug TEXT UNIQUE` a `church_podcast_episodes` (D9: sólo
+      aditivo, sin DROP ni ALTER destructivo).
+- [ ] E3.2 `publishService.ts` asigna el slug al publicar; episodios ya publicados sin slug no
+      rompen la página.
+- [ ] E3.3 Existe `/reflexiones` con el listado de episodios `published`, paginado.
+- [ ] E3.4 Existe `/reflexiones/:slug` con reproductor y descarga.
+- [ ] E3.5 Ambas rutas son accesibles **sin iniciar sesión** — la RLS pública ya expone sólo
+      `status = 'published'` (`20260610090000_church_podcast_episodes.sql:73`).
+- [ ] E3.6 Un slug inexistente da 404, no una página en blanco.
+- [ ] E3.7 Todo el texto en español (D14); sin PII de miembros (D13).
+- [ ] E3.8 Gates + build. **Ver la advertencia de D18 arriba.**
+
+**Test plan:** tests de las páginas nuevas y de la asignación de slug en `publishService`, con
+prueba base-red o de mutación por test (D18). Los nombres exactos los fija el prompt de
+ejecución; no los invento aquí sin haber trazado los ficheros de test existentes.
+
+```bash
+npx vitest run --no-file-parallelism
+```
+
+**Definition of done:** tests verdes con evidencia base-red/mutación, criterios E3.1–E3.8,
+gates, y las dos rutas funcionando en preview.
+
+**Risks / unknowns:**
+- **Sin el trigger de inmutabilidad, un slug se puede cambiar y romper un enlace ya compartido.**
+  Es una degradación consciente respecto de A4-core/D5/D12. Aceptable mientras el enlace sólo
+  circule por redes y WhatsApp y no esté indexado por 15 directorios. **Cuando vuelva la
+  distribución, el trigger vuelve a ser obligatorio.**
+- La paginación sobre una tabla hoy **vacía** (0 filas, verificado) no se puede probar con datos
+  reales; hay que sembrar datos sintéticos (regla dura del proyecto: sólo datos sintéticos).
+
+**Rollback:** `git revert` del código. La columna `slug` queda (aditiva, inofensiva).
+
+**Depende de:** nada.
+
+---
+
+## Phase E4-spike — Previsualización del enlace (`og:` por episodio)
+
+**Es la ex-A10a**, congelada y aprobada por Codex en la r5. Se conserva su planteamiento: la
+arquitectura base es **shell HTML enriquecido para todos, sin branching por user-agent** (evita
+cloaking), y cualquier alternativa hay que justificarla contra ella.
+
+**Sigue siendo el corazón del alcance nuevo**, no un accesorio: por D18b, **la previsualización
+del enlace es la distribución** mientras el canal sea compartir a mano.
+
+**Scope:** lectura de código y un documento. `evidence/E4-spike.md`.
+
+**Out of scope:** implementar el SEO (eran A10b/A10c, ya en el backlog); tocar `index.html`.
+
+**Acceptance criteria:**
+- [ ] E4.1 Camino declarado para emitir `og:title`, `og:image`, `og:description` y `og:audio`
+      **por episodio** en una SPA servida por Vercel, con la técnica nombrada.
+- [ ] E4.2 Cómo se **reemplazan** — no se duplican — las 12 líneas de `og:`/`twitter:`/
+      canonical/JSON-LD que `index.html` ya trae. Duplicarlas es el defecto que CR-13 señaló.
+- [ ] E4.3 Matriz de canales reales de CASA (WhatsApp, Instagram, Facebook) con qué lee cada
+      uno. **Sin asumir que `og:audio` reproduzca** en ninguno.
+- [ ] E4.4 Bloque de plan revisable: unidades propuestas con scope, criterios y test plan.
+
+**Test plan:** ninguno automatizado — es un spike.
+
+**Definition of done:** `evidence/E4-spike.md` commiteado, con el bloque de plan al final.
+
+**Risks / unknowns:** que la técnica elegida obligue a cambiar el modelo de despliegue de la
+SPA. Si es así, el bloque debe declarar el costo en vez de esconderlo.
+
+**Depende de:** E3 — sin la ruta no hay nada que previsualizar.
+
+---
+
+## Phase E5 — Compartir en redes y WhatsApp
+
+**Scope:** un botón de compartir en `/reflexiones/:slug` y en la tarjeta del listado, más sus
+tests.
+
+**Out of scope:** **cualquier envío automático.** Nada de avisos, difusión ni notificaciones —
+**D17 sigue vigente** y prohíbe enviar sin audiencia con consentimiento y sin unicidad de
+entrega en la base. Esto es un botón que el usuario pulsa, no una campaña. Tampoco: audiograma
+para Instagram (backlog), ni acortador de enlaces.
+
+**Acceptance criteria:**
+- [ ] E5.1 El botón comparte la URL canónica de `/reflexiones/:slug`.
+- [ ] E5.2 Compartir por WhatsApp funciona desde móvil y escritorio.
+- [ ] E5.3 Hay una vía de copiar el enlace al portapapeles, con confirmación visible.
+- [ ] E5.4 El texto compartido va en español (D14) y no incluye PII de miembros (D13).
+- [ ] E5.5 Gates + build. **Ver la advertencia de D18 arriba.**
+
+**Test plan:** tests del componente de compartir. Nombres exactos en el prompt de ejecución.
+
+```bash
+npx vitest run --no-file-parallelism
+```
+
+**Definition of done:** tests verdes con base-red/mutación, criterios E5.1–E5.5, gates.
+
+**Risks / unknowns:** la API de compartir del navegador (`navigator.share`) no está en todas
+partes; E5.3 es la vía de reserva y por eso es criterio, no adorno.
+
+**Rollback:** `git revert`.
+
+**Depende de:** E3 (la ruta) y E4-spike (que la previsualización esté resuelta antes de empujar
+a la gente a compartir un enlace sin preview).
+
+---
+
+---
+
+# ⛔ Unidades `A*` — RETIRADAS en la revisión 7
+
+**Nada de lo que sigue está vigente.** Son los cuerpos de las 12 unidades del plan de
+distribución, conservados **sólo como referencia**, porque las reviews de Codex r1–r5 (§9, §11,
+§12, §13) los citan por ID y esas trazas dejarían de resolver si los borrara. Ya cometí ese
+error una vez: en la r6 borré sin querer los cuerpos de A12 y A13 al reemplazar un bloque.
+
+**Los IDs `A*` no se reciclan.** El alcance vigente son las unidades `E*` de §5.
+
+Lo que se rescata de aquí ya está incorporado a las unidades E: **A7 → E3** y **A10a → E4-spike**.
+
+---
+
+## Phase A0-core — Reconocimiento *(retirada)*
 
 **Tipo:** evidencia. **No bloqueante para arrancar** — pero dos de sus criterios sí son
 prerequisitos puntuales (S3): **A0.6** (feed de origen accesible) bloquea **A11a**, y **A0.7**
@@ -841,6 +1097,30 @@ resuelta antes del primer envío).
 | **Arreglar el grabador de liderazgo en iOS** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | Es del sistema de liderazgo. Debería reutilizar el módulo de A19a; hacerlo después y en su workstream |
 | Búsqueda full-text sobre la descripción | A8 | A8 cubre título y predicador |
 
+### Retirado en la r7 por el re-alcance de Brent — **la pista de distribución completa**
+
+Esto **era el plan**. No es basura ni alcance descartado: es el objetivo original, aplazado
+entero por decisión de Brent del 2026-08-07 ("primero el bucle interno; luego vemos temas de
+distribución"). Se retoma como bloque, no pieza a pieza.
+
+| Retirado | Era | Qué haría falta para retomarlo |
+|---|---|---|
+| **Correctitud del feed RSS** (`HEAD`, duración `HH:MM:SS`, correo institucional) | A1 | El buzón institucional. **Medido el 2026-08-07: el dominio no tiene registros MX**, así que hay que provisionar correo antes que nada |
+| **Feed servido desde dominio propio** (`www`, rewrite en `vercel.json`) | A3 | Depende de A1 |
+| **Validación operativa del feed** (Cast Feed Validator, Podbase, rangos `206`) | A6 | Depende de A3 y de que exista al menos un episodio con portada |
+| **Portada del canal + episodio canario** | A5-core | Hoy `show/cover.jpg` da **400** |
+| **Claves content-addressed + cache inmutable** | A2-core | Independiente; se puede retomar sola |
+| **Inmutabilidad de slug y guid por trigger** | A4-core | **Vuelve a ser obligatoria en cuanto haya distribución** — ver el riesgo declarado en E3 |
+| **Backfill del catálogo desde Spotify** | A11-spike | La URL del feed de origen (ex-A0.6), que nadie ha confirmado |
+| **`podcast:guid` + `<link>` por episodio** | A14-core | Depende del backfill |
+| **Directorios + redirect de Spotify** | A-cutover-spike | Depende de todo lo anterior. D8 y D11 siguen vigentes cuando se retome |
+| **Reconocimiento** (conteos, estado en Spotify for Creators, auditoría musical) | A0-core | Cuatro de sus ocho criterios exigen consolas de Brent |
+
+**Decisiones que quedan vigentes aunque ninguna unidad las implemente:** D6 (correo
+institucional, nunca personal), D8 (no borrar la cuenta de Spotify), D11 (orden del corte),
+D12 (slug inmutable una vez publicado), D17 (nada de envíos automáticos sin outbox). Están
+escritas para que quien retome la distribución no las reinvente.
+
 ### Retirado en la r6 por el consenso con Codex (PARTIAL PASS r5)
 
 Nada de esto es basura: es alcance que no sirve a la condición de éxito de §1 y que por eso
@@ -931,6 +1211,11 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 | 2026-08-06 | **r3: A16/A17/A18 (audiencia, WhatsApp, boletín) se retiran al backlog** | Brent confirma que hoy la distribución propia es **pegar enlaces en redes sociales**, sin nada más sofisticado, y que crecer es una meta futura, no el objetivo de este plan. Construir consentimiento + outbox para una audiencia que no existe es infraestructura especulativa. D17 queda vigente para cuando se retomen | Brent |
 | 2026-08-06 | **r3: A10 (SEO/OG) sube de prioridad y deja de tratarse como accesoria** (D18b) | Si el canal es compartir enlaces manualmente, la previsualización del enlace **es** la superficie de distribución. Un enlace sin preview no se abre | Brent + Planner |
 | 2026-08-06 | **§0 corregido**: el entorno **sí** alcanza Supabase; feed 200 con **0 items**; portada **400** | La r1 repitió un supuesto del documento de entrada dentro de una sección de verificación | Codex CR-1/CR-13 |
+| 2026-08-07 | **r7: re-alcance completo a "bucle interno de escucha".** El Goal pasa de distribución en directorios a: grabar en el editor, carátula derivada de la portada de la liturgia, publicación automática en página propia, y enlace compartible en redes y WhatsApp. 12 unidades `A*` → **5 unidades `E*`** | El plan es demasiado ambicioso para una primera instancia. Además, tras seis rondas de planificación seguía sin haber **ninguna unidad arrancable**: cinco de las seis "congeladas" dependían de una fase recortada y la sexta de una respuesta que no existía | Brent |
+| 2026-08-07 | **La carátula reutiliza el sistema de generación de portadas que ya existe**; no se construye generación nueva | Decisión de producto de Brent. `Portadas.tsx` ya genera una portada de REFLECTION con el título de la liturgia y el predicador — es exactamente "una versión de la portada de la liturgia". E2-spike sólo decide si se recupera la ya generada o se reinvoca el generador | Brent |
+| 2026-08-07 | **D6 y el correo institucional salen del camino crítico** | `itunes:owner` sólo sirve para verificar propiedad ante directorios, y no hay directorios en el alcance nuevo. Medido: `dig MX anglicanasanandres.cl` → **sin registros**; el dominio no puede recibir correo y ese buzón habría que crearlo. D6 sigue vigente para cuando vuelva la distribución | Brent + PM (evidencia) |
+| 2026-08-07 | **E3 acepta slug mutable**: se retira el trigger de inmutabilidad (ex-A4-core) del alcance | Degradación consciente frente a D5/D12. Con el enlace circulando sólo por redes y WhatsApp, el costo de un slug cambiado es un enlace roto; con 15 directorios indexando, es pérdida de identidad. **El trigger vuelve a ser obligatorio cuando vuelva la distribución**, y así está escrito en el riesgo de E3 | PM |
+| 2026-08-07 | **Se registra que D18 no es satisfacible hoy**: `scripts/gates/changed-files-diagnostics.sh` no existe en `main` | Verificado por rama: existe sólo en `feat/mesa-md-gates` (UPGRADE P0, `FAIL 2/2`, cuarta ronda por override). E3 y E5 son código y quedan atadas a que P0 aterrice. **Ablandar D18 es una decisión de Codex o Brent, no del PM** | PM |
 
 ---
 
@@ -956,18 +1241,33 @@ grabado, y el editor ya acepta archivos. La captura es un objetivo distinto — 
 
 ## 10. Estado
 
-**PLAN PARCIALMENTE CONGELADO — 12 unidades** (eran 28 en el punto más alto).
+**PLAN NO CONGELADO — 5 unidades** (`E1-spike`, `E2-spike`, `E3`, `E4-spike`, `E5`).
+Trayectoria: 28 unidades en el pico → 12 en la r6 → **5 en la r7**.
 
-*Congelar* = dejar de revisar el plan y empezar a ejecutar. **Seis fases ya están ahí**: A1, A3,
-A6, A7, A10a y A11-spike, aprobadas por Codex r5 tal como están. Se puede empezar hoy.
+**Esta revisión 7 no ha pasado por Codex. Ninguna unidad B arranca hasta que lo haga.**
 
-Las otras seis (A0-core, A2-core, A4-core, A5-core, A14-core, A-cutover-spike) quedaron
-recortadas en esta r6 siguiendo exactamente su recomendación: necesitan confirmación de que el
-recorte quedó bien aplicado, no rediseño.
+### Por qué se re-alcanzó (el hallazgo que lo forzó)
 
-**Regla acordada con Brent:** lo que Codex siga señalando **se recorta o se convierte en
-spike**. No se pule la misma fase ronda tras ronda.
-Ninguna fase empieza hasta que pase.
+La r6 dejó seis fases "congeladas y ejecutables ya". Al arrancar el PM de ejecución el
+2026-08-07 se comprobó, contra el índice de dependencias, que **eso era falso**: ninguna de las
+doce unidades era arrancable.
+
+| Congelada | Depende de | Por qué estaba bloqueada |
+|---|---|---|
+| A1 | A0.7 | criterio que sólo Brent podía responder — y la respuesta fue que **el buzón no existe** |
+| A3 | A1 | encadenada |
+| A6 | A3, **A5-core** | A5-core recortada, sin confirmar |
+| A7 | **A4-core**, **A5-core** | ambas recortadas |
+| A10a | A7 | encadenada |
+| A11-spike | A0.6, **A4-core** | Brent + recortada |
+
+Cinco de las seis colgaban de una fase recortada; la sexta de un dato inexistente. El congelado
+parcial de la r6 **no dejó nada ejecutable**, y eso no se vio en la r5 porque el recorte que
+creó las seis pendientes se aplicó después.
+
+Sobre ese diagnóstico, Brent declaró el plan demasiado ambicioso para una primera instancia y
+fijó el alcance nuevo. La regla acordada desde la r5 sigue en pie: **lo que Codex señale se
+recorta o se convierte en spike**; no se pule la misma unidad ronda tras ronda.
 
 **Estado del cap de plan-review (SOP §1.5, N2):** Codex r1 → FAIL; Codex r2 → FAIL. **El cap de
 2 rondas está consumido.** Brent, como árbitro, autorizó explícitamente una **ronda 3** tras el

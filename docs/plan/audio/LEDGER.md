@@ -134,3 +134,74 @@
 - TESTS: n/a — ronda de planificación.
 - OPEN AFTER THIS ROUND: pasada de confirmación sobre las seis recortadas. Las seis congeladas
   pueden ejecutarse desde ya. Plan sin commitear.
+
+### 2026-08-07 — A0-core round 1 — PM (Fable) + EXEC (Opus)
+- SESSION: `AUDIO · A0-core · PM` / `AUDIO · A0-core · r1 · EXEC`
+- CONTEXT PRESSURE: comfortable (ejecutor) — paró en descubrimiento, antes de tocar código.
+- ACTION: primer `/pm-boot` de ejecución del plan. El PM eligió **A0-core** y escribió el prompt
+  de ejecutor; el ejecutor devolvió **`STATUS: BLOCKED`** sin escribir nada.
+- COMMITS: ninguno (el prompt nunca llegó a commitearse — ver ERROR DEL PM).
+- TESTS: n/a — ninguna ronda produjo código.
+- **ERROR DEL PM, corregido por el ejecutor:** A0-core **no podía arrancar**. §10 dice, literal,
+  que las seis unidades recortadas *"necesitan confirmación... Ninguna fase empieza hasta que
+  pase"*, y A0-core es una de ellas. El PM razonó que una fase de evidencia con un recorte que
+  sólo quitaba criterios no arriesgaba retrabajo — razonamiento propio por encima de una regla
+  congelada, que es exactamente lo que el ciclo existe para impedir. El escape hatch del SOP
+  §1.6 funcionó.
+- **COLISIÓN DE CHECKOUT:** a mitad de ronda, otra sesión (UPGRADE P0 r4) cambió el checkout
+  compartido de `docs/plan-audio` a `feat/mesa-md-gates`. El prompt escrito quedó en la rama
+  equivocada; el PM lo retiró para no ensuciar el árbol ajeno y no pudo escribir PLAN ni LEDGER
+  durante el resto de la ronda. **Resuelto en la ronda siguiente con un worktree dedicado**
+  (`/Users/brentcurtis/dev/wt-audio`).
+- FINDINGS RAISED:
+  - **[B1] BLOCKING** — A0-core no puede arrancar (§10). Elección de fase retirada.
+  - **[B2] BLOCKING** — §10 afirma "se puede empezar hoy" y el grafo de dependencias lo
+    desmiente: **ninguna de las 12 unidades era arrancable**. Cinco de las seis congeladas
+    dependían de una recortada; A1 dependía de A0.7, y A0.7 resultó no existir.
+  - **[S1] SHOULD-FIX** — D18 congela `scripts/gates/changed-files-diagnostics.sh`, que no
+    existe en `main`. Verificado por rama: sólo en `feat/mesa-md-gates` (UPGRADE P0, `FAIL 2/2`).
+  - **[N1] NIT** — el ejecutor advirtió que `docs/plan/audio/` sólo vivía en una rama local sin
+    remoto. **Falso**, verificado: `origin/docs/plan-audio` existe y lleva el plan.
+- DECISIONS: ninguna; se escaló a Brent.
+- OPEN AFTER THIS ROUND: decisión de Brent sobre B2.
+
+### 2026-08-07 — plan round 7 — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: **re-alcance completo del plan** por instrucción de Brent, tras el diagnóstico de que
+  ninguna unidad era arrancable. El Goal pasa de distribución en directorios al **bucle interno
+  de escucha**. 12 unidades `A*` → **5 unidades `E*`**.
+- VERIFICACIÓN INDEPENDIENTE ANTES DE PROPONER (el modo de fallo de cuatro FAIL seguidos fue
+  especificar sin trazar el código; esta vez se trazó primero):
+  - `QuickPublishContainer.tsx` — **el flujo de publicación rápida ya existe** completo:
+    `Audio → Liturgia → Revisar → Publicar`, con `useQuickPublish.ts` de máquina de estados.
+  - `church_podcast_episodes.liturgy_id UUID REFERENCES liturgias(id)` — **el vínculo con la
+    liturgia ya existe en el esquema**, y `QuickStepLiturgy.tsx` ya lo deja elegir.
+  - `Portadas.tsx` — **ya genera una portada de REFLECTION** por recomposición imagen-a-imagen
+    de la principal, con título de la liturgia y nombre del predicador. Es literalmente "una
+    versión de la portada de la liturgia", que es lo que Brent pidió.
+  - `useQuickPublish.ts:376` — la carátula del episodio se genera hoy como **ilustración nueva
+    con Gemini** (`buildSermonCoverPrompt`); la portada de reflexión no se reutiliza.
+  - `src/appRoutes.tsx` — **no existe ruta `/reflexiones`**.
+  - Migración de `church_podcast_episodes` — **no existe columna `slug`**.
+  - `dig MX anglicanasanandres.cl` → **sin registros**. El dominio no puede recibir correo.
+- FINDINGS RAISED: ninguno propio esta ronda; se resolvieron B1/B2 del round anterior por
+  re-alcance en vez de por remediación.
+- DECISIONS (todas en §8 del plan):
+  - Re-alcance a bucle interno de escucha. **Raised by: Brent.**
+  - La carátula **reutiliza el sistema de generación existente**. **Raised by: Brent.**
+  - **D6 y el correo institucional salen del camino crítico** (sin directorios, `itunes:owner`
+    no verifica nada). Siguen vigentes para cuando vuelva la distribución.
+  - **E3 acepta slug mutable**: se retira el trigger de inmutabilidad del alcance. Degradación
+    consciente frente a D5/D12, declarada como riesgo en E3 y reversible.
+  - Se registra que **D18 no es satisfacible hoy**. Ablandarlo es decisión de Codex o Brent.
+- SPLITS / MAPEO: A7 → **E3** · A10a → **E4-spike** (ambas conservan la aprobación de Codex r5).
+  E1-spike, E2-spike y E5 son nuevas. Los IDs `A*` **no se reciclan** y sus cuerpos se conservan
+  al final del plan porque §9/§11/§12/§13 los citan.
+- BACKLOG ADDED: la **pista de distribución completa** como bloque — feed RSS (A1, A3, A6),
+  portada de canal y canario (A5-core), claves content-addressed (A2-core), inmutabilidad por
+  trigger (A4-core), backfill (A11-spike), `podcast:guid` (A14-core), directorios y corte de
+  Spotify (A-cutover-spike), reconocimiento (A0-core). Con lo que haría falta para retomar cada
+  una.
+- TESTS: n/a — ronda de planificación.
+- OPEN AFTER THIS ROUND: **review de Codex sobre la revisión 7.** Ninguna unidad B arranca antes.
+  Pendiente también la decisión sobre D18 (esperar a UPGRADE P0, o ablandar el gate para E3/E5).
