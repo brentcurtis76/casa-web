@@ -584,6 +584,80 @@
   `feat/mesa-md-gates`@`6caa87d` (SOP §1.5, tope 2). Si no pasa, decide Brent: aceptar,
   replanificar o backlog. P0 no se marca DONE hasta el PASS.
 
+### 2026-08-06 — P0 revisión final Codex (ronda 2 de 2) — Codex Sol (REVIEW)
+- SESSION: UPGRADE · P0 · REVIEW
+- ACTION: Segunda y última revisión final de P0 sobre `feat/mesa-md-gates`@`398a09d`.
+  **VERDICT: FAIL — 1 BLOCKING.** r1-B1 (falso positivo) y r1-N1 quedan cerrados; el
+  discriminador nuevo introduce un **falso negativo distinto**.
+- FINDINGS RAISED:
+  - **[B1] BLOCKING** — `changed-files-diagnostics.sh:198`: para las dos herramientas JSON,
+    la forma del JSON **anula** el código de salida. `exits["deno lint"]` **no se consulta
+    nunca**, y de ESLint solo falla `>1`. Sondas de Codex: `deno lint` con
+    `{"version":1,"diagnostics":[]}` y **EXIT=127** → el gate sale con **0**; ESLint con
+    `[]` y **EXIT=1** → el gate sale con **0**. Ambos casos los rechazaba la ronda 2.
+    Contradice el contrato de remediación registrado: clasificar sobre
+    `(exit, validez, recuento)` y "cero diagnósticos + comando fallido ⇒ herramienta caída".
+  - Codex **acepta explícitamente** el límite inherente de `tsc`/`deno check` que registré:
+    sin salida estructurada, salir con 0 sin trabajar es indistinguible de una ejecución
+    limpia. Pero ese límite **no justifica ignorar un exit distinto de cero ya capturado**
+    en las herramientas que sí lo tienen.
+- CODEX CONFIRMA: sonda de salida limpia EXIT=0 con totales 0/0/0/0 sin FALLO · binario Deno
+  ausente EXIT=1 con ambas nombradas · JSON malformado de ESLint EXIT=1 · toolchain real
+  EXIT=0 con totales exactos 1041/160/94/46 · stdout idéntico al cuerpo de la base,
+  **15.052 bytes, `cmp` exit 0** · cuerpo de `base-by-file.txt` intacto, solo la línea
+  `mkdir -p` añadida — **N1 cerrado** · sin cambios de producto ni de configuración, ningún
+  diagnóstico arreglado · atribución, orden, emisión y normalización de rutas sin tocar, por
+  lo que no reejecutó Z5b.
+- PM VERIFICATION: **reproduje las dos sondas yo mismo y las dos se sostienen.** `deno lint`
+  con JSON válido vacío y exit 127 → gate EXIT=0. ESLint con `[]` y exit 1 → gate EXIT=0.
+  Leído el bloque `:192-205`: el bucle de `["eslint","deno lint"]` solo mira `parseErrors`,
+  `shapeOk` y —solo para eslint— `exits[t] > 1`. **Este fallo se me pasó al revisar el diff
+  de la ronda 3**, que es exactamente lo que la verificación independiente existe para
+  atrapar.
+- **DOS TOPES DE BUCLE ALCANZADOS A LA VEZ (SOP §1.5)**: ronda PM↔ejecutor **3 de 3** y ronda
+  Codex **2 de 2**. No abro una cuarta ronda por mi cuenta. **Decisión escalada a Brent.**
+- DIAGNÓSTICO DEL PM, sin adornos: **el detector "la herramienta no corrió" no lo pide
+  ningún criterio de aceptación.** Z1–Z7 no lo mencionan; el mecanismo que el plan congelado
+  eligió contra un gate decorativo son los canarios Z5, y Codex los verificó él mismo. El
+  detector lo introduje yo como B1 en la ronda 1. Desde entonces ha consumido las rondas 2 y
+  3 y las dos rondas de Codex, y sigue mal — tres discriminadores, tres formas distintas de
+  estar equivocado. Es el mismo patrón que la propia revisión 6 del plan diagnosticó sobre
+  este PM: una exigencia inventada por el PM que genera rondas sin converger. Además **D8
+  punto 5 dice literalmente que los recuentos globales son observación, "no como criterio"**
+  — es decir, el plan congelado nunca pidió que esto hiciera fallar nada.
+- OPEN AFTER THIS ROUND: decisión de Brent — aceptar, replanificar o backlog. P0 pasa a
+  BLOCKED hasta entonces.
+
+### 2026-08-06 — P0 round 4 — PM (Fable) — DECISIÓN DE BRENT Y PROMPT
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Escalada resuelta. **Brent elige arreglar el detector, con override explícito al
+  tope de 3 rondas del SOP §1.5.** Prompt de remediación en `prompts/P0-r4.md`. P0 vuelve a
+  IN PROGRESS.
+- DECISIONS (ambas registradas también en el Decision Log de PLAN.md):
+  - **Cuarta ronda de ejecutor autorizada por Brent.** Prefiere arreglar el detector a
+    retirarlo. Es la última: si no cierra limpia, se replanifica la fase.
+  - **P0 pasa de 3 a 4 ficheros: se añade `scripts/gates/selftest.sh`.** Tres rondas
+    seguidas han regresado en el mismo bloque de clasificación y cada regresión solo se
+    detectó con sondas manuales ad hoc — incluida ésta, que a mí se me pasó leyendo el diff.
+    El self-test convierte el contrato del discriminador en algo reejecutable en segundos.
+    No es un requisito nuevo: es el test de una conducta ya decidida. Sigue dentro del tope
+    de 10 ficheros del SOP §1.3.
+- CONTENIDO DEL PROMPT: la regla a implementar cubre las dos herramientas JSON por igual —
+  fallo si (1) no parsea, (2) forma inesperada, (3) exit fuera de `{0,1}`, o (4) exit `1`
+  ("encontré problemas") con **cero** diagnósticos parseados, que es autocontradictorio.
+  Exit `0` con cero diagnósticos sigue siendo ejecución limpia legítima: eso es lo que la
+  ronda 3 acertó y no puede regresar. La rama de `tsc`/`deno check` **no se toca**, ni la
+  atribución, el orden, la agrupación de `deno check` o `rel()` — todo eso lo verificó
+  Codex dos veces, incluida Z5b.
+- LOS SIETE CASOS DEL SELF-TEST fijan los tres defectos históricos a la vez: caso 1 el
+  falso positivo de la ronda 2, caso 2 el silencio de la ronda 1, casos 4/5/6 el falso
+  negativo de la ronda 3, más JSON malformado y forma inesperada.
+- PENDIENTE DE DECIDIR (no lo asumo): el tope de rondas de Codex también está agotado
+  (2 de 2). Una tercera revisión de Codex requiere override explícito de Brent, igual que
+  éste. **Lo recomiendo**: las dos últimas rondas de Codex encontraron cada una un defecto
+  real que yo no había visto, incluida ésta.
+- OPEN AFTER THIS ROUND: ejecución de P0 r4.
+
 ### 2026-08-07 — P0 r4 (ejecutor) — Claude Opus 5 (EXEC)
 - SESSION: UPGRADE · P0 · r4 · EXEC — ronda **bajo override explícito de Brent** al tope de
   3 rondas del SOP §1.5. Prompt: `docs/plan/upgrade/prompts/P0-r4.md`.
@@ -638,3 +712,53 @@
 - DECISIONS: ninguna nueva.
 - OPEN AFTER THIS ROUND: verificación del PM y, si Brent lo autoriza (el tope de Codex está
   en 2 de 2), una tercera revisión de Codex. Reconciliación de las dos copias del ledger.
+
+### 2026-08-07 — P0 round 4 — PM (Fable) — VERIFICACIÓN + REPARACIÓN DEL REGISTRO
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P0 r4 (`13aa12a`). **B1 de la
+  ronda 2 de Codex cerrado. Cero hallazgos nuevos.** Además reparé un error mío de rama.
+- LO QUE VERIFIQUÉ YO MISMO:
+  - **B1 cerrado.** Corrí las seis sondas con mi propio arnés, independiente del self-test
+    del ejecutor, para que un self-test que pasara en vacío no me engañara:
+    `deno lint` JSON válido vacío + exit 127 → **1** · ESLint `[]` + exit 1 → **1** ·
+    `deno lint` JSON válido vacío + exit 1 → **1** · ESLint forma `{}` + exit 0 → **1** ·
+    binario `deno` ausente → **1** · las cuatro limpias y con éxito → **0**, sin `FALLO`.
+    Las dos sondas que Codex bloqueó ahora fallan cerrando, y la ejecución limpia sigue
+    saliendo con 0.
+  - Leí el diff del script (**+11/-7, todo dentro del epílogo**): la regla se aplica ahora a
+    **ambas** herramientas JSON —fuera de `{0,1}`, o `1` con cero diagnósticos parseados—.
+    `exits["deno lint"]` ya se consulta. La rama de `tsc`/`deno check`, la atribución, el
+    orden, la agrupación multilínea y `rel()` siguen intactas.
+  - Leí `selftest.sh` entero (148 líneas). Comprueba el **código de salida** del gate, no su
+    stdout; cada caso altera una sola variable sobre una base limpia, así que un fallo tiene
+    causa única; y el caso 2 **quita de verdad** `deno` del `PATH` en vez de simularlo con un
+    stub. `bash scripts/gates/selftest.sh` → **7/7 OK**, exit 0, ejecutado por mí.
+  - **S6/S7/S8**: toolchain real sobre los 11 ficheros → EXIT=0, totales
+    `tsc=1041 eslint=160 deno-lint=94 deno-check=46`, y **diff vacío** contra el cuerpo de
+    `base-by-file.txt`. La línea base no se movió y la evidencia commiteada sigue válida.
+  - **S10**: `npm run build` ok (7.70s) · `npx vitest run --no-file-parallelism` → **1036
+    pass / 6 fail**, un único fichero rojo, `MesaAbiertaDashboard.test.tsx` ·
+    `deno test --allow-all .` → **409 passed / 0 failed**.
+- **ERROR MÍO — DIVERGENCIA DE RAMAS, DETECTADO POR EL EJECUTOR.** Mis dos últimos commits de
+  PM (`165d704`, `f6a8cdd`) se escribieron sobre `docs/plan-audio` —otra rama de trabajo que
+  se cruzó en el checkout— y no sobre `feat/mesa-md-gates`. Committeé sin volver a comprobar
+  la rama. Consecuencia medida: el `LEDGER.md` de `165d704` se apiló sobre una copia anterior
+  a la ronda 1 y **tiene 17 entradas frente a las 24 de la rama de trabajo** — le faltan
+  siete. Por eso **no** hice cherry-pick: habría borrado historia. Repuse el contenido a mano:
+  - las dos entradas de ledger (Codex ronda 2 de 2, y la decisión de Brent sobre r4),
+    **insertadas en su lugar cronológico** antes de la entrada del ejecutor de r4. Es la única
+    vez que he insertado en vez de anexar, y queda anotado aquí por eso;
+  - `prompts/P0-r4.md`, extraído de `f6a8cdd`;
+  - las dos filas del Decision Log de `PLAN.md` (override de la cuarta ronda, y P0 de 3 a 4
+    ficheros).
+  Verificado tras la reposición: 26 entradas de ledger, ninguna perdida.
+- PENDIENTE PARA BRENT (no lo asumo): `docs/plan-audio` conserva esos dos commits míos, con
+  una copia del ledger a la que le faltan siete entradas. Si esa rama se mergea, el conflicto
+  hay que resolverlo a favor de la rama de trabajo. Limpiarlo exige tocar la rama de otro
+  workstream —ya publicada— y eso no lo hago por mi cuenta.
+- FINDINGS RAISED: ninguno. La suposición del ejecutor sobre `totals[t]` como cantidad de
+  "cero diagnósticos parseados" es correcta y no toca D8 punto 5: se usa como señal de
+  validez de la salida de la propia herramienta, nunca como criterio de aprobación.
+- BACKLOG: S1 sigue abierto (flake de `CuentacuentoEditor.ph.surfaces`; no disparó).
+- OPEN AFTER THIS ROUND: **tercera revisión de Codex, que requiere override explícito de
+  Brent** (el tope §1.5 de 2 está agotado). P0 no se marca DONE sin ese PASS.
