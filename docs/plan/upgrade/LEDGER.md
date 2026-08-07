@@ -762,3 +762,19 @@
 - BACKLOG: S1 sigue abierto (flake de `CuentacuentoEditor.ph.surfaces`; no disparó).
 - OPEN AFTER THIS ROUND: **tercera revisión de Codex, que requiere override explícito de
   Brent** (el tope §1.5 de 2 está agotado). P0 no se marca DONE sin ese PASS.
+
+### 2026-08-07 — P0 — override de Brent para continuar — PM (Fable)
+- SESSION: UPGRADE · P0 · PM
+- ACTION: **Brent autoriza superar el tope de rondas de Codex del SOP §1.5** ("sigue con más
+  rondas, tenemos que terminarlo"), y con él las rondas de ejecutor que hagan falta hasta
+  cerrar P0. Registrado también en el Decision Log de PLAN.md.
+- RAZÓN: las dos revisiones de Codex encontraron cada una un defecto real que yo no había
+  visto —el falso positivo de la ronda 2 y el falso negativo de la ronda 3—, y en la ronda 4
+  yo mismo commiteé sobre la rama equivocada. Cerrar la fase sin revisión externa sería
+  confiar justo en el eslabón que ya ha fallado.
+- LO QUE SE LE PIDE A CODEX EN LA RONDA 3, además de la revisión normal: **mutar la
+  corrección y comprobar que `selftest.sh` falla**. Es la única verificación que a mí me está
+  vedada por el SOP §1.1 y la única que demuestra que los siete casos no pasan en vacío.
+- ESTADO: `feat/mesa-md-gates`@`5e05a73`. P0 IN REVIEW. Z1–Z7 verificados por Codex en su
+  ronda 1; r1-B1, r1-N1 y r2-B1 cerrados y verificados por el PM.
+- OPEN AFTER THIS ROUND: revisión de Codex ronda 3.

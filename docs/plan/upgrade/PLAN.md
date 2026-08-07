@@ -814,6 +814,7 @@ rutas rotas del componente.
 | 2026-08-06 | **PR2 CONCEDIDO.** Autorización para aplicar la migración de P1 a la instancia compartida | Autorización explícita de Brent, distinta de cualquier aprobación de merge | Brent |
 | 2026-08-06 | **Brent autoriza una cuarta ronda de ejecutor en P0**, superando el tope de 3 del SOP §1.5 | Los dos topes cayeron a la vez (ejecutor 3/3, Codex 2/2) sobre el mismo detector de "la herramienta no corrió". Brent prefiere arreglarlo a retirarlo. El arreglo es acotado y Codex enumeró los casos exactos | Brent |
 | 2026-08-06 | **P0 pasa de 3 a 4 ficheros: se añade `scripts/gates/selftest.sh`** | Tres rondas seguidas han regresado en el mismo bloque de clasificación, y cada regresión solo se ha detectado con sondas manuales ad hoc. Un self-test commiteado convierte el contrato del discriminador en algo reejecutable por cualquiera en segundos. No es un requisito nuevo: es el test de una conducta ya decidida. Sigue dentro del tope de 10 ficheros del SOP §1.3 | PM |
+| 2026-08-07 | **Brent autoriza superar el tope de rondas de Codex del SOP §1.5 en P0** (y las rondas de ejecutor que hagan falta): "sigue con más rondas, tenemos que terminarlo" | Las dos revisiones de Codex encontraron cada una un defecto real que el PM no había visto, y el propio PM cometió además un error de rama en la ronda 4. Con ese historial, cerrar la fase sin revisión externa sería confiar en el eslabón que ya ha fallado. Prefiere terminar P0 bien a cerrarla dentro del tope | Brent |
 
 ---
 
