@@ -1028,3 +1028,88 @@
 - OPEN AFTER THIS ROUND: A3–A8 sin ejecutar (no hay canal de escritura). Brent decide cómo se
   aplica la migración; después, una ronda corta de solo verificación cierra A3–A8 sobre el
   commit `d9eebb0` que ya está en la rama.
+
+### 2026-08-07 — P1 round 1 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P1 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P1 r1 (`d9eebb0` + `d8e6e9c`).
+  **Cero hallazgos BLOCKING. El reporte es exacto en todo lo que comprobé.** La fase queda
+  incompleta —no defectuosa— porque A3–A8 necesitan un canal de escritura que la sesión del
+  ejecutor no tenía. Prompt de r2 (solo verificación) escrito y commiteado.
+- LO QUE VERIFIQUÉ YO MISMO, no leyendo el reporte:
+  - **Alcance**: `git diff main...feat/mesa-md-schema --stat` → **3 ficheros**, +93/−0:
+    la migración (+37), `types.ts` (+6) y `LEDGER.md` (+50, proceso). Ni un fichero de más.
+  - **La migración es el contrato D14 literal.** Extraje el bloque `CREATE OR REPLACE
+    FUNCTION … GRANT` de `PLAN.md` y del fichero y los difeé: **idénticos**. A1:
+    `grep -icE 'drop table|truncate|alter column|drop column'` → **0**.
+  - **`types.ts`**: leí el diff entero. Seis líneas, las seis congeladas, con
+    `host_food_assignment: string | null` (no el enum). Colocadas antes de
+    `created_at`/`updated_at`, coherente con todos los bloques del fichero. A9:
+    `grep -c get_my_dinner_summary` → **0**. Mapa `Functions` intacto (D15).
+  - **A2**: PR1 y PR2 están en el Decision Log con fecha 2026-08-06 en `main`; el primer
+    commit de P1 es de **2026-08-07T15:28:28-04:00**. Anterioridad probada.
+  - **Gate D8 reejecutado por mí**, padre en un worktree desprendido en `05dc4ca` y punta en
+    el checkout: ambos **EXIT=0**; totales `tsc=1041 → 1039`, `160/94/46` sin mover; el
+    `diff` de las dos salidas es **byte a byte el que reportó el ejecutor** — una línea de
+    recuento cambiada (`tsc (12)` → `(10)`) y **dos diagnósticos eliminados**, el TS2339 de
+    `:376` y el TS2353 de `:882`, ambos de `host_food_assignment`. **Cero líneas añadidas.**
+    Es exactamente la «excepción medida y única» que D8 predijo.
+  - **`npm run build`** ok (10.16 s) · **`deno test --allow-all .`** → **409 pass / 0 fail**.
+  - **A11 probado por evidencia dura, no por declaración**: `list_migrations` sigue teniendo
+    **60** migraciones, con `20260610233000` como última. Las dos del repo sin aplicar,
+    `20260612000000` y `20260612000001`, **siguen sin aplicar**. Si alguien hubiera corrido
+    `supabase db push` estarían dentro. No se corrió.
+  - **Base de datos intacta**: `column_exists=0`, `function_exists=0`, 31 filas, cero filas
+    de la migración de P1. No hay aplicación parcial que deshacer.
+- **EL FLAKE DE VITEST: el ejecutor tenía razón, y lo probé por dos vías independientes.**
+  - **Empírica**: corrí la suite completa en el **commit padre `05dc4ca`, sin ninguno de los
+    cambios de P1** → **7 rojos / 1035 pass**, los 6 de base más
+    `CuentacuentoEditor.ph.surfaces.test.tsx`. En la rama obtuve **7 / 1035**, los 6 de base
+    más `CuentacuentoEditor.ph.cancel.test.tsx` (T-H.9). Mismo exceso, sin P1 de por medio.
+  - **Estructural, que es la que cierra el asunto**: `src/integrations/supabase/types.ts` no
+    tiene **ninguna** exportación de runtime — siete `export type` y nada más — así que se
+    borra en la transformación; y ningún test de `liturgia-builder` lo importa. El diff de
+    P1 **no puede** alterar la conducta en ejecución de esos ficheros. Eso es una prueba, no
+    una muestra.
+- **RULING DEL PM sobre A10, declarado para que el revisor pueda impugnarlo.** Doy A10 por
+  **cumplido**: su mitad de diagnósticos está verificada al byte, y la sub-condición de
+  Vitest de D8.2 («el conjunto de rojos por nombre es exactamente el de base») no se cumple
+  al pie de la letra **ni en la rama ni en el padre**. No es atribuible a P1. Es un defecto
+  del criterio, no de la fase — ver S1.
+- FINDINGS:
+  - **BLOCKING: ninguno.**
+  - **[S1] SHOULD-FIX (criterio del plan, no código)** — D8.2 exige que el conjunto de rojos
+    por nombre sea exactamente el de base, y con tres ficheros `CuentacuentoEditor.ph.*`
+    flakeando bajo carga eso **no es comprobable de forma fiable en ninguna fase**. Cada
+    fase futura repetirá este juicio. Propuesta para Brent, que requiere entrada en el
+    Decision Log porque el plan está congelado: o se arregla el flake, o D8.2 pasa a «el
+    conjunto de rojos **atribuibles a los ficheros de la fase** no crece, y un exceso se
+    descarta reejecutando y comparando contra el padre». **No he tocado el plan.**
+  - **[N1] NIT** — el ejecutor pasó su primera ejecución de Vitest por `tail` y perdió el
+    código de salida. Lo declaró y la repitió redirigida. Solo queda registrado.
+- CORRECCIÓN DE REGISTRO DEL PM: la entrada del ejecutor numeró su item de backlog como
+  **B-03**, que ya está ocupado en `PLAN.md` (la nota de ESLint `--quiet` de P0 r5). Se
+  renumera a **B-05** y se añade a la tabla de Backlog. La entrada del ejecutor no se edita
+  —el ledger es append-only—; esta línea es la corrección.
+- **EL BLOQUEO, con precisión.** `apply_migration` no falló por Postgres ni por el servidor
+  MCP: lo denegó el **clasificador de permisos de Claude Code** antes de salir de la sesión.
+  Son **dos puertas distintas** y solo una está probada cerrada: aunque Brent autorice la
+  llamada, el servidor `supabase-casa` sigue configurado `--read-only` y **nadie ha
+  comprobado si `apply_migration` funciona bajo esa bandera**. El camino barato es que Brent
+  aplique el `.sql` desde el editor SQL y r2 solo verifique en lectura — que ya probé que
+  funciona con `supabase_read_only_user`.
+- **DE-RIESGO ADELANTADO PARA r2**: ejecuté el cuerpo del contrato D14 **en línea** contra
+  los datos reales, con el claim JWT del anfitrión puesto, y devuelve exactamente
+  `(3d4d6709…, 6, 1)` — el valor que A7 espera. Las uniones, los `COALESCE`, los casts y el
+  filtro por `auth.uid()` están comprobados **antes** de tocar producción. Lo único que no se
+  puede ejercitar sin crear la función es la resolución del nombre `match_id`, que es a la
+  vez parámetro OUT y columna de `mesa_abierta_assignments`; en el cuerpo toda referencia va
+  calificada por tabla, así que no debería haber ambigüedad, y el prompt de r2 ordena
+  reportarlo como FINDINGS si la hubiera en vez de parchear el SQL.
+- TESTS: gate D8 padre/punta EXIT=0 y diff idéntico al reportado · `npm run build` ok ·
+  `deno test` 409/0 · Vitest rama 7/1035 y **control en el padre 7/1035**.
+- DECISIONS: ninguna. Nada de lo que medí contradice el plan congelado.
+- BACKLOG ADDED: **B-05** (los tres ficheros `CuentacuentoEditor.ph.*` flakean, no solo
+  `surfaces`) y **S1** queda arriba a la espera de la decisión de Brent.
+- OPEN AFTER THIS ROUND: (1) Brent aplica la migración —recomendado: editor SQL— o autoriza
+  el canal del agente. (2) `/exec UPGRADE P1 r2`, ronda de **solo verificación** sobre A3–A8.
+  (3) S1 espera decisión. P1 **no se marca DONE**: falta r2 y falta Codex.
