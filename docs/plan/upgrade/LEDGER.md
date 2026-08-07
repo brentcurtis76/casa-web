@@ -311,3 +311,33 @@
   — es decir, el plan congelado nunca pidió que esto hiciera fallar nada.
 - OPEN AFTER THIS ROUND: decisión de Brent — aceptar, replanificar o backlog. P0 pasa a
   BLOCKED hasta entonces.
+
+### 2026-08-06 — P0 round 4 — PM (Fable) — DECISIÓN DE BRENT Y PROMPT
+- SESSION: UPGRADE · P0 · PM
+- ACTION: Escalada resuelta. **Brent elige arreglar el detector, con override explícito al
+  tope de 3 rondas del SOP §1.5.** Prompt de remediación en `prompts/P0-r4.md`. P0 vuelve a
+  IN PROGRESS.
+- DECISIONS (ambas registradas también en el Decision Log de PLAN.md):
+  - **Cuarta ronda de ejecutor autorizada por Brent.** Prefiere arreglar el detector a
+    retirarlo. Es la última: si no cierra limpia, se replanifica la fase.
+  - **P0 pasa de 3 a 4 ficheros: se añade `scripts/gates/selftest.sh`.** Tres rondas
+    seguidas han regresado en el mismo bloque de clasificación y cada regresión solo se
+    detectó con sondas manuales ad hoc — incluida ésta, que a mí se me pasó leyendo el diff.
+    El self-test convierte el contrato del discriminador en algo reejecutable en segundos.
+    No es un requisito nuevo: es el test de una conducta ya decidida. Sigue dentro del tope
+    de 10 ficheros del SOP §1.3.
+- CONTENIDO DEL PROMPT: la regla a implementar cubre las dos herramientas JSON por igual —
+  fallo si (1) no parsea, (2) forma inesperada, (3) exit fuera de `{0,1}`, o (4) exit `1`
+  ("encontré problemas") con **cero** diagnósticos parseados, que es autocontradictorio.
+  Exit `0` con cero diagnósticos sigue siendo ejecución limpia legítima: eso es lo que la
+  ronda 3 acertó y no puede regresar. La rama de `tsc`/`deno check` **no se toca**, ni la
+  atribución, el orden, la agrupación de `deno check` o `rel()` — todo eso lo verificó
+  Codex dos veces, incluida Z5b.
+- LOS SIETE CASOS DEL SELF-TEST fijan los tres defectos históricos a la vez: caso 1 el
+  falso positivo de la ronda 2, caso 2 el silencio de la ronda 1, casos 4/5/6 el falso
+  negativo de la ronda 3, más JSON malformado y forma inesperada.
+- PENDIENTE DE DECIDIR (no lo asumo): el tope de rondas de Codex también está agotado
+  (2 de 2). Una tercera revisión de Codex requiere override explícito de Brent, igual que
+  éste. **Lo recomiendo**: las dos últimas rondas de Codex encontraron cada una un defecto
+  real que yo no había visto, incluida ésta.
+- OPEN AFTER THIS ROUND: ejecución de P0 r4.
