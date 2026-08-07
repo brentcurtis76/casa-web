@@ -299,7 +299,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 
 | ID | Name | Status | Branch | Depends on |
 |----|------|--------|--------|-----------|
-| P0 | Script de gate por ficheros + línea base | IN REVIEW | `feat/mesa-md-gates` | — |
+| P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
 | P1 | Esquema: columna + RPC de resumen | TODO | `feat/mesa-md-schema` | P0, PR1, PR2 |
 | P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
@@ -789,6 +789,19 @@ rutas rotas del componente.
    compromiso consciente: el esquema global resultó tener falsos negativos peores. Los
    recuentos globales se anotan como observación en cada reporte, así que una sorpresa
    grande sigue siendo visible.
+
+---
+
+## Backlog
+
+Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el workstream.
+
+| ID | Origen | Qué es |
+|---|---|---|
+| **B-01** | P0 r1 | Test intermitente `src/components/liturgia-builder/editors/__tests__/CuentacuentoEditor.ph.surfaces.test.tsx`: `waitFor` de `:81` agota los 10 s con `expected [] to have a length of 1`. Aislado pasa 15/15. Visto en tres sesiones distintas (ejecutor P0 r1, Codex ronda 3, verificación PM de P0 r5). Ajeno a Mesa Abierta. |
+| **B-02** | P0 r4 | Dos commits de PM (`165d704`, `f6a8cdd`) quedaron en la rama `docs/plan-audio`, ya publicada, con una copia de `LEDGER.md` a la que le faltan siete entradas. El contenido está repuesto en la rama de trabajo. Si `docs/plan-audio` se mergea, el conflicto de `LEDGER.md` se resuelve **a favor de la rama de trabajo**. Limpiarlo exige reescribir la rama de otro workstream: decisión de Brent. |
+| **B-03** | P0 r5 (Codex) | La regla 4 del discriminador del gate ("exit 1 con cero diagnósticos es autocontradictorio") **deja de valer** si alguna fase cambia la invocación de ESLint a `--quiet --max-warnings 0`, que suprime warnings sin cambiar el código de salida. No alcanzable con la invocación congelada `npx eslint . -f json`. |
+| **B-04** | Non-goals | `handleMoveGuest` (`MesaAbiertaAdmin.tsx:785`) y completar el mapa `Functions` de `types.ts` (D15) siguen fuera de alcance por decisión del plan. |
 
 ---
 

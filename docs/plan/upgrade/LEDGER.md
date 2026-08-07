@@ -884,3 +884,48 @@
 - OPEN AFTER THIS ROUND: **revisión de Codex ronda 4** sobre `feat/mesa-md-gates`. Es el
   único hallazgo pendiente de su ronda 3 y no toca el gate, así que la revisión debería ser
   corta. P0 no se marca DONE sin ese PASS.
+
+### 2026-08-07 — P0 CIERRE — Codex PASS + PM
+- SESSION: UPGRADE · P0 · PM
+- ACTION: **`CODEX REVIEW ronda 4` = PASS.** Cero BLOCKING, cero SHOULD-FIX, cero NIT.
+  **P0 marcada DONE** en el índice de fases con fecha 2026-08-07 y SHA `09a69d7`.
+- CODEX VERIFICÓ EN EL CIERRE: limpieza en ejecución que pasa (56→56, delta 0, 7/7) **y en
+  ejecución que falla** (caso 3 forzado a exit 99: sale 1, falla exactamente ese caso, delta
+  0) — el T3 que yo no podía hacer · **mutation test repetido**: predicado de la ronda 3 →
+  fallan exactamente 4, 5 y 6; predicado de la ronda 2 → falla exactamente el 1 · el blob del
+  gate en `09a69d7` es **idéntico** al de `eae138e` (`51af6197…`) · gate real sobre los 11
+  ficheros: exit 0, 15.052 bytes, `cmp` exacto contra el cuerpo de la base · totales
+  `1041/160/94/46` · README y evidencia sin cambios · nada bajo `src/`, `supabase/`, package,
+  lint, TS ni lockfile · `bash -n` y `git diff --check` limpios · **ningún impedimento para P1**.
+- QUÉ SE CONSTRUYÓ: `scripts/gates/changed-files-diagnostics.sh` (filtra por ruta los
+  diagnósticos crudos de `tsc`, ESLint, `deno lint` y `deno check`, sin canonicalización),
+  `scripts/gates/selftest.sh` (7 casos que fijan las tres regresiones del propio detector),
+  `scripts/gates/README.md`, y `docs/plan/upgrade/evidence/base-by-file.txt` (línea base de
+  los 11 ficheros que P1–P8 tocan, capturada en worktree limpio a `1732bee`).
+- QUÉ CAMBIÓ FRENTE AL PLAN ORIGINAL, y por qué:
+  1. **P0 pasó de 3 a 4 ficheros** (se añadió `selftest.sh`). Tres rondas seguidas regresaron
+     en el mismo bloque de clasificación y cada regresión solo se detectaba con sondas
+     manuales. Decision Log 2026-08-06.
+  2. **Se añadió al gate una detección de "la herramienta no corrió"** que Z1–Z7 no pedían.
+     La levanté yo en la ronda 1 al ver que un `deno` ausente hacía pasar el gate en silencio.
+     Costó cinco rondas y dos FAIL de Codex acertar el discriminador. **Lección para las fases
+     siguientes: un requisito que el PM añade sobre un plan congelado se paga en rondas.** El
+     resultado final es correcto y está fijado por el self-test, pero el camino fue caro.
+  3. Se corrigió la receta de reproducción de la base (`mkdir -p`), Codex r3 N1.
+- COSTE REAL DE LA FASE: 5 rondas de ejecutor (tope del SOP: 3) y 4 de Codex (tope: 2), con
+  override explícito de Brent en ambos casos. Los cuatro FAIL de Codex encontraron cada uno
+  un defecto real que yo no había visto; en la ronda 4 además commiteé sobre la rama
+  equivocada. **La cadena de revisión independiente hizo su trabajo; el eslabón débil fui yo.**
+- CONTEXT PRESSURE (para calibrar §1.3): las cinco rondas de ejecutor reportaron
+  "comfortable". El límite de esta fase no fue el contexto sino la precisión del contrato.
+- BACKLOG ABIERTO: B-01 a B-04, ahora en la sección `## Backlog` de PLAN.md.
+- NOTAS PARA EL PROMPT DE P1 (no son cambios al plan congelado, son precisiones de uso):
+  - El gate **ahora sale con código distinto de cero** cuando una herramienta no corre. El
+    ejecutor de P1 debe comprobar el código de salida, no solo mirar la salida.
+  - A10 acota `F = {migración, types.ts}`, pero los **2 diagnósticos que P1 elimina están en
+    `MesaAbiertaAdmin.tsx`**, que P1 no toca. Para dejar constancia hay que correr el gate
+    sobre `F ∪ {src/components/mesa-abierta/MesaAbiertaAdmin.tsx}` y comparar ese fichero con
+    `base-by-file.txt`. El criterio no cambia; cambia el conjunto de rutas que se pasa.
+  - La migración es un `.sql`: mostrará `(0)` en las cuatro herramientas. Es correcto.
+- OPEN AFTER THIS ROUND: merge de `feat/mesa-md-gates` (comando entregado a Brent; **el PM no
+  mergea**). Después, bootstrap de PM para **P1**, que ya tiene PR1 y PR2 concedidos.
