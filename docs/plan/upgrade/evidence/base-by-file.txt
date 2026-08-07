@@ -3,6 +3,7 @@
 # SHA de la base:  1732bee  (fix(icons): usar el logotipo real de TikTok)
 # Worktree limpio: git worktree add /tmp/upgrade-base 1732bee
 #                  ln -s /Users/brentcurtis/dev/casa-web/node_modules /tmp/upgrade-base/node_modules
+#                  mkdir -p /tmp/upgrade-base/scripts/gates   (scripts/gates/ no existe en 1732bee)
 #                  cp scripts/gates/changed-files-diagnostics.sh /tmp/upgrade-base/scripts/gates/
 #
 # Comando exacto (ejecutado con cwd = /tmp/upgrade-base):

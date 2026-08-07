@@ -173,15 +173,29 @@ es el artefacto que se difea entre el commit padre y la punta de la rama: meter 
 totales ahí inyectaría una línea de ruido en cada comparación e invalidaría
 `docs/plan/upgrade/evidence/base-by-file.txt`.
 
-**Supuesto declarado: un cero global significa que la herramienta no corrió.** Si
-cualquiera de las cuatro no produce **ningún** diagnóstico atribuible en todo el proyecto,
-o su JSON no se puede parsear, el script escribe por stderr qué herramienta falló, incluye
-el stderr capturado de esa herramienta y **sale con código distinto de cero**. Las cuatro
-tienen en este repo una base grande y distinta de cero (1041 / 160 / 94 / 46) y arreglarla
-es un no-objetivo explícito del workstream: por construcción, un cero global nunca puede
-significar que el repo se limpió. Este supuesto se declara igual que la limitación de los
-bloques multiframe de `deno check`, y deja de valer el día en que arreglar la base sí sea
-un objetivo — ese día hay que revisar esta comprobación.
+**Qué distingue una ejecución limpia de una herramienta caída.** El recuento global a
+solas no lo distingue — cero diagnósticos es un resultado legítimo — así que el script
+captura el **código de salida** de cada frontera de comando y clasifica cada herramienta
+sobre (código de salida, validez de la salida, recuento):
+
+- **ESLint y `deno lint`** tienen modo JSON, y ahí la señal fuerte de que la herramienta
+  corrió es que su salida **parsea a la forma esperada**: un array de resultados para
+  ESLint (una ejecución limpia imprime `[]`, que es JSON válido) y un objeto con
+  `.diagnostics` para `deno lint` (limpio: `{"version":1,"diagnostics":[]}`). Binario
+  ausente o crash dejan stdout vacío o con basura, y el parseo o la forma fallan. Un
+  código de salida `> 1` de ESLint (su convención reserva el 2 para errores fatales)
+  también cuenta como caída aunque hubiera JSON.
+- **`tsc` y `deno check`** no tienen modo JSON, así que el código de salida lleva más
+  peso: salida `0` es una ejecución limpia; salida distinta de `0` **con** diagnósticos
+  atribuidos es la ejecución normal en rojo de base (lo que hace toda ejecución real en
+  este repo); salida distinta de `0` **sin ningún** diagnóstico utilizable (127 por
+  binario ausente, un crash, un formato irreconocible) es una caída.
+
+Cuando una herramienta se clasifica como caída, el script escribe por stderr cuál y por
+qué, incluye su stderr capturado y **sale con código distinto de cero**. Una ejecución
+limpia de verdad — comandos con éxito y salida válida aunque vacía — sale con `0`: cero
+diagnósticos **no** es evidencia de fallo, y los recuentos globales siguen siendo solo la
+observación de D8 punto 5, nunca un criterio.
 
 ## Detalles de implementación que no son opcionales
 
@@ -202,6 +216,7 @@ un objetivo — ese día hay que revisar esta comprobación.
 ```bash
 git worktree add /tmp/upgrade-base 1732bee
 ln -s /Users/brentcurtis/dev/casa-web/node_modules /tmp/upgrade-base/node_modules
+mkdir -p /tmp/upgrade-base/scripts/gates   # scripts/gates/ no existe en 1732bee
 cp scripts/gates/changed-files-diagnostics.sh /tmp/upgrade-base/scripts/gates/
 cd /tmp/upgrade-base && bash scripts/gates/changed-files-diagnostics.sh <los 11 ficheros>
 git worktree remove /tmp/upgrade-base

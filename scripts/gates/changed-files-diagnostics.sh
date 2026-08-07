@@ -30,17 +30,24 @@ export NO_COLOR=1
 export FORCE_COLOR=0
 
 # --- 1. Ejecutar cada herramienta UNA vez sobre todo el proyecto -----------------
+# El código de salida de cada frontera de comando se captura aquí: es una de las
+# señales con las que el paso 2 distingue "ejecución limpia" de "la herramienta no
+# corrió". Ver el bloque de clasificación al final y scripts/gates/README.md.
 ( cd "$ROOT" && npx tsc -p tsconfig.app.json --noEmit ) \
   > "$WORK/tsc.txt" 2>&1
+echo $? > "$WORK/tsc.exit"
 
 ( cd "$ROOT" && npx eslint . -f json ) \
   > "$WORK/eslint.json" 2> "$WORK/eslint.err"
+echo $? > "$WORK/eslint.exit"
 
 ( cd "$ROOT/supabase/functions" && deno lint --json ) \
   > "$WORK/deno-lint.json" 2> "$WORK/deno-lint.err"
+echo $? > "$WORK/deno-lint.exit"
 
 ( cd "$ROOT/supabase/functions" && deno check . ) \
   > "$WORK/deno-check.txt" 2>&1
+echo $? > "$WORK/deno-check.exit"
 
 # --- 2. Atribuir y emitir --------------------------------------------------------
 node -e '
@@ -54,14 +61,24 @@ const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 const read = (f) => { try { return stripAnsi(fs.readFileSync(path.join(work, f), "utf8")); } catch { return ""; } };
 const rel = (p) => path.relative(root, p).split(path.sep).join("/");
 
-// Recuento GLOBAL por herramienta (todo el proyecto, no solo los ficheros pedidos)
-// y errores de parseo. Se usan para detectar que una herramienta no llegó a correr.
+// Recuento GLOBAL por herramienta (todo el proyecto, no solo los ficheros pedidos):
+// la observación de D8 punto 5, que se emite por stderr. NO es criterio de aprobación.
+// Los errores de parseo y la forma del JSON sí lo son: alimentan la clasificación
+// "¿corrió cada herramienta?" del final, junto con los códigos de salida capturados.
 const totals = { "tsc": 0, "eslint": 0, "deno lint": 0, "deno check": 0 };
 const parseErrors = new Map();
 const readJson = (f, tool) => {
   try { return JSON.parse(read(f)); }
   catch (e) { parseErrors.set(tool, e.message); return null; }
 };
+const exitOf = (f) => { const s = read(f).trim(); return s === "" ? -1 : parseInt(s, 10); };
+const exits = {
+  "tsc": exitOf("tsc.exit"),
+  "eslint": exitOf("eslint.exit"),
+  "deno lint": exitOf("deno-lint.exit"),
+  "deno check": exitOf("deno-check.exit"),
+};
+const shapeOk = new Map();
 
 // buckets: rel path -> tool -> [diagnostic (array of lines)]
 const buckets = new Map();
@@ -89,7 +106,9 @@ const put = (file, tool, lines) => {
 
 // --- ESLint: JSON, filePath ABSOLUTO -> relativizar
 {
-  const results = readJson("eslint.json", "eslint") || [];
+  const parsed = readJson("eslint.json", "eslint");
+  shapeOk.set("eslint", Array.isArray(parsed));
+  const results = Array.isArray(parsed) ? parsed : [];
   for (const r of results) {
     const f = rel(r.filePath);
     for (const m of r.messages) {
@@ -104,6 +123,7 @@ const put = (file, tool, lines) => {
 // --- deno lint: JSON, filename es una URL file://
 {
   const data = readJson("deno-lint.json", "deno lint");
+  shapeOk.set("deno lint", !!data && Array.isArray(data.diagnostics));
   for (const d of (data && data.diagnostics) || []) {
     const f = rel(fileURLToPath(d.filename));
     const msg = String(d.message).replace(/\s*\n\s*/g, " ");
@@ -157,17 +177,35 @@ const LABEL = { "tsc": "tsc", "eslint": "eslint", "deno lint": "deno-lint", "den
 const ERRSRC = { "tsc": "tsc.txt", "eslint": "eslint.err", "deno lint": "deno-lint.err", "deno check": "deno-check.txt" };
 process.stderr.write("[gates] totales del proyecto: " + TOOLS.map((t) => LABEL[t] + "=" + totals[t]).join(" ") + "\n");
 
-// --- la herramienta no corrió ------------------------------------------------------
-// Las cuatro tienen una base grande y distinta de cero en este repo, y arreglarla es un
-// no-objetivo declarado del workstream. Un cero GLOBAL no significa que el repo se
-// limpió: significa que la herramienta no llegó a producir diagnósticos. Sin esto el
-// gate devuelve todo ceros y "cero diagnósticos nuevos" se cumple trivialmente.
-const failed = TOOLS.filter((t) => parseErrors.has(t) || totals[t] === 0);
-if (failed.length > 0) {
-  for (const t of failed) {
-    const why = parseErrors.has(t)
-      ? "salida no parseable (" + parseErrors.get(t) + ")"
-      : "cero diagnósticos en TODO el proyecto";
+// --- ¿corrió cada herramienta? -----------------------------------------------------
+// Se clasifica cada frontera de comando sobre (código de salida, validez de la salida,
+// recuento), NUNCA sobre el recuento global a solas: los totales son la observación de
+// D8 punto 5, no un criterio, y una ejecución limpia con cero diagnósticos es legítima.
+//
+// - eslint / deno lint tienen modo JSON: la señal fuerte de que corrieron es que su
+//   salida parsea a la forma esperada (array de resultados / objeto con .diagnostics).
+//   Una lista vacía es una ejecución limpia. Binario ausente o crash => stdout vacío o
+//   basura => el parseo o la forma fallan.
+// - tsc / deno check no tienen modo JSON: salida 0 = limpio; salida != 0 con
+//   diagnósticos atribuidos = rojo de base normal; salida != 0 SIN ningún diagnóstico
+//   utilizable (127 binario ausente, crash, formato irreconocible) = caída.
+const failWhy = new Map();
+for (const t of ["tsc", "deno check"]) {
+  if (exits[t] !== 0 && totals[t] === 0) {
+    failWhy.set(t, "salió con código " + exits[t] + " sin producir ningún diagnóstico utilizable");
+  }
+}
+for (const t of ["eslint", "deno lint"]) {
+  if (parseErrors.has(t)) {
+    failWhy.set(t, "salida no parseable (" + parseErrors.get(t) + ")");
+  } else if (!shapeOk.get(t)) {
+    failWhy.set(t, "JSON válido pero sin la forma esperada");
+  } else if (t === "eslint" && exits[t] > 1) {
+    failWhy.set(t, "salió con código " + exits[t] + " (fatal para ESLint, que usa 0/1)");
+  }
+}
+if (failWhy.size > 0) {
+  for (const [t, why] of failWhy) {
     process.stderr.write("[gates] FALLO: " + LABEL[t] + " no produjo resultados utilizables — " + why + ".\n");
     const captured = read(ERRSRC[t]).split("\n").filter((l) => l.trim() !== "");
     const shown = captured.slice(0, 20);
@@ -177,9 +215,8 @@ if (failed.length > 0) {
       process.stderr.write("[gates]   " + LABEL[t] + "> … (" + (captured.length - shown.length) + " líneas más)\n");
     }
   }
-  process.stderr.write("[gates] La línea base de este repo es tsc=1041 eslint=160 deno-lint=94 deno-check=46 y\n");
-  process.stderr.write("[gates] arreglarla es un no-objetivo del workstream UPGRADE: un cero global significa que\n");
-  process.stderr.write("[gates] la herramienta no corrió, nunca que el repo se limpió. Ver scripts/gates/README.md.\n");
+  process.stderr.write("[gates] Una herramienta caída aprueba el gate en silencio: \"cero diagnósticos nuevos\"\n");
+  process.stderr.write("[gates] se cumple trivialmente si la herramienta no llegó a correr. Ver scripts/gates/README.md.\n");
   // exitCode y no exit(): stdout puede ser una tubería y exit() la truncaría.
   process.exitCode = 1;
 }
