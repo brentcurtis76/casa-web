@@ -978,3 +978,53 @@
 - OPEN AFTER THIS ROUND: (1) Brent resuelve el canal de escritura — quitar `--read-only` del
   servidor `supabase-casa` o aplicar él mismo la migración desde el editor SQL. (2) Despachar
   `/exec UPGRADE P1 r1`. (3) Verificación independiente del PM cuando vuelva el reporte.
+
+### 2026-08-07 — P1 r1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P1 · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — el trabajo de ficheros y los cuatro gates cupieron sin
+  presión; la mitad de base de datos se cortó por permisos, no por contexto.
+- ACTION: creada la rama `feat/mesa-md-schema` desde `main`@`05dc4ca` (**no** `5b947ac`: main
+  había avanzado un commit, y ese commit es el del PM que escribió este mismo prompt —
+  `LEDGER.md`, `PLAN.md`, `prompts/P1-r1.md`, cero código, verificado con `git diff --name-only`,
+  así que no puede mover ningún diagnóstico). Escritos los dos ficheros del scope: la migración
+  `20260806000000_mesa_main_dish_optout.sql` con el contrato D14 reproducido literalmente, y
+  las **seis** declaraciones de `types.ts` (`can_bring_main_dish` en participants,
+  `host_food_assignment: string | null` en matches), colocadas al final de los campos de
+  dominio para que los timestamps sigan últimos, como en todos los bloques del fichero. Sin
+  tocar el mapa `Functions` (D15).
+- **BLOQUEADO EN LA MITAD DE BASE DE DATOS.** El riesgo que el PM levantó en la ronda anterior
+  se materializó, pero **por una causa distinta a la prevista**: `apply_migration` no falló por
+  la bandera `--read-only` del servidor MCP, sino que **el clasificador de permisos de Claude
+  Code denegó la llamada** antes de que saliera de la sesión. Error verbatim: *"Permission for
+  this action was denied by the Claude Code auto mode classifier. Reason: Blocked by
+  classifier."* No es un error de Postgres. No reintenté por otro canal: nada de
+  `supabase db push` (D9), ni `psql`, ni CLI, ni `open-brain`.
+- Verificado por lectura que la base quedó **intacta**: `column_exists=0`, `function_exists=0`,
+  31 filas, `current_user = supabase_read_only_user`. No hay aplicación parcial que deshacer.
+  La ronda de remediación es de verificación pura, tal como el prompt se ordenó para absorber.
+- COMMITS: `d9eebb0` (los 2 ficheros del scope) · más este entry del ledger.
+- TESTS: gate D8 padre→punta = **exactamente** lo predicho: `MesaAbiertaAdmin.tsx`
+  `tsc (12)` → `(10)`, desaparecen el TS2339 de `:376` y el TS2353 de `:882` (los dos de
+  `host_food_assignment`), **cero líneas añadidas**, `types.ts` sigue `(0)(0)(0)(0)`. Totales
+  `tsc 1041 → 1039`; `eslint=160 deno-lint=94 deno-check=46` sin mover. Exit 0 en ambas
+  ejecuciones. · `npm run build` ok · `deno test` **409 pass / 0 fail** ·
+  `npx vitest run --no-file-parallelism` → 7 rojos la 1ª vez y 8 la 2ª, **no** los 6 de base.
+- **B-01 es peor de lo documentado, y lo probé con un control en vez de afirmarlo.** El flake
+  no está solo en `CuentacuentoEditor.ph.surfaces.test.tsx`: también flakean
+  `ph.cancel.test.tsx` (T-H.9) y `ph.concurrency.test.tsx` (T-H.5). Ejecuté la suite completa
+  **tres veces sobre `main` sin mis cambios**: 6 / **8** / 6 rojos. La ejecución de 8 sobre
+  `main` incluye el mismo T-H.9 que había visto en mi rama, así que el flake es preexistente y
+  dependiente de carga, no mío. Además los tres ficheros pasan 18/18 en aislamiento sobre mi
+  rama, y mi diff de `types.ts` son seis declaraciones **dentro de `export type Database`**:
+  se borran en tiempo de compilación y no pueden alterar la conducta en ejecución.
+- FINDINGS RAISED: (1) el canal de escritura está cerrado por el clasificador de permisos de la
+  sesión, no por el servidor MCP — quitar `--read-only` **no bastaría**; hace falta que Brent
+  autorice la llamada o aplique él la migración. (2) B-01 cubre tres ficheros, no uno.
+- DECISIONS: ninguna. El plan no se contradice en nada de lo que medí.
+- BACKLOG ADDED: **B-03** — ampliar B-01 a los tres ficheros `CuentacuentoEditor.ph.*`
+  (`surfaces` T-H.4, `cancel` T-H.9, `concurrency` T-H.5); el criterio D8.2 «el conjunto de
+  rojos por nombre es exactamente el de base» no es comprobable de forma fiable mientras estos
+  flakeen bajo carga.
+- OPEN AFTER THIS ROUND: A3–A8 sin ejecutar (no hay canal de escritura). Brent decide cómo se
+  aplica la migración; después, una ronda corta de solo verificación cierra A3–A8 sobre el
+  commit `d9eebb0` que ya está en la rama.
