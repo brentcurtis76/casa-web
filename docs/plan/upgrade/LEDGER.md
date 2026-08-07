@@ -815,3 +815,32 @@
   FAIL y tiene la última palabra sobre el cierre**; Brent ha pedido terminar la fase bien, y
   el arreglo es de tres líneas. Se arregla en una ronda r5 acotada en vez de arrastrarlo.
 - OPEN AFTER THIS ROUND: P0 r5 — un único SHOULD-FIX, sin tocar el gate.
+
+### 2026-08-07 — P0 r5 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P0 · r5 · EXEC
+- ACTION: cerrar el único SHOULD-FIX de la ronda 3 de Codex: `selftest.sh` filtraba los
+  siete directorios de stubs. `make_stubs` ya no crea ni imprime el directorio; lo recibe
+  como primer argumento. `run_case` hace el `mktemp -d` y el `STUBS+=("$dir")` **en el
+  shell padre**, así que el `trap EXIT` sí los borra. Un solo fichero tocado,
+  `scripts/gates/selftest.sh` (+9 / −9).
+- REPRODUCCIÓN PREVIA (antes del arreglo): 49 directorios de stubs antes de la ejecución,
+  **56 después** — los siete de Codex, uno por caso.
+- T1 — `bash scripts/gates/selftest.sh` → **7/7 OK**, exit 0.
+- T2 — **fuga cero**: `antes: 56` / `después: 56`, delta 0, con el contador que solo ve
+  directorios que contienen el stub `npx`.
+- T3 — **la limpieza sobrevive a un fallo**: con el caso 3 esperando exit 99 el script
+  imprime `FALLO caso 3`, sale 1, y el delta sigue siendo 0 (`antes: 56` / `después: 56`).
+  La edición se revirtió acto seguido (`run_case 3 … 1 yes` restaurado).
+- T4 — `git diff eae138e -- scripts/gates/changed-files-diagnostics.sh` **vacío**. El gate
+  no se tocó.
+- T5 — toolchain real sobre los 11 ficheros de la cabecera de `base-by-file.txt`: exit
+  **0**, stderr `[gates] totales del proyecto: tsc=1041 eslint=160 deno-lint=94
+  deno-check=46`, stdout **15.052 bytes** y `diff` vacío contra el cuerpo de la base.
+- T6 — `scripts/gates/README.md` **sin cambios**: su frase «Cada directorio temporal se
+  borra al salir (`trap`)» describe justamente lo que ahora es cierto.
+- T7 — `npm run build` ok · `npx vitest run --no-file-parallelism` **1036 pass / 6 fail**,
+  los seis en `MesaAbiertaDashboard.test.tsx` · `deno test --allow-all .` **409 pass /
+  0 fail**.
+- T8 — `git status` limpio salvo el `.claude/launch.json` no versionado y preexistente.
+- ESTADO: `feat/mesa-md-gates`. P0 con S1 cerrado.
+- OPEN AFTER THIS ROUND: verificación del PM y, si procede, cierre de P0.

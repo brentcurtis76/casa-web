@@ -42,12 +42,12 @@ path_without_deno() {
   printf '%s' "$out"
 }
 
-# make_stubs <con_deno: yes|no> -> imprime el directorio creado
+# make_stubs <dir> <con_deno: yes|no> — puebla un directorio ya creado.
+# No lo crea ni lo imprime: el directorio lo crea `run_case` y lo registra en STUBS en
+# el shell padre. Devolverlo por stdout metía a make_stubs en una subshell, así que el
+# STUBS+= de aquí mutaba una copia y el trap EXIT no borraba nada.
 make_stubs() {
-  local with_deno="$1"
-  local dir
-  dir="$(mktemp -d)"
-  STUBS+=("$dir")
+  local dir="$1" with_deno="$2"
 
   cat > "$dir/npx" <<'EOF'
 #!/usr/bin/env bash
@@ -70,15 +70,15 @@ exit 0
 EOF
     chmod +x "$dir/deno"
   fi
-
-  printf '%s' "$dir"
 }
 
 # run_case <n> <descripción> <esperado> <con_deno> — el resto de la config va por env
 run_case() {
   local n="$1" desc="$2" expected="$3" with_deno="$4"
   local dir base_path actual
-  dir="$(make_stubs "$with_deno")"
+  dir="$(mktemp -d)"
+  STUBS+=("$dir")
+  make_stubs "$dir" "$with_deno"
   if [ "$with_deno" = "yes" ]; then base_path="$PATH"; else base_path="$(path_without_deno)"; fi
 
   PATH="$dir:$base_path" bash "$GATE" "$TARGET" >/dev/null 2>&1
