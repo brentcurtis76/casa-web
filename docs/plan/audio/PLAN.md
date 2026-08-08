@@ -310,8 +310,8 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **CONGELADA en la r14 — ejecutable** | — |
-| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **SIN REDACTAR — se escribe con la salida del spike** | E-infra-spike |
+| E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **EJECUTADA r1 — limpia, en espera de review final de Codex** | — |
+| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **REDACTADA** en `evidence/E-infra-spike.md` §S8 — se congela cuando Codex cierre el spike | E-infra-spike |
 | E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
@@ -704,17 +704,42 @@ fuente modificados o creados, y esta fase no toca ninguno. No se finge una corri
 
 ## Phase E-infra-impl — Entorno de pruebas: construirlo
 
-**SIN REDACTAR, a propósito.** Este cuerpo se escribe con la salida de `E-infra-spike`, no antes.
-Redactarlo ahora sería repetir exactamente el error de la r9: especificar infraestructura que
-nadie ha tocado y llamarlo plan.
+**El cuerpo de esta unidad vive en `docs/plan/audio/evidence/E-infra-spike.md`, §S8** — scope,
+out of scope, criterios I1-I8, test plan, definition of done y rollback. **No se copia aquí a
+propósito:** dos copias del mismo bloque divergen, y el bloque nació de la medición, que es donde
+se lee con su evidencia al lado. **Se congela cuando Codex cierre `E-infra-spike`.**
 
-**Lo único que ya se sabe de esta unidad**, porque no depende de lo que el spike mida:
+**Ruta elegida: A — stack local de Supabase en puertos libres.** Medido por el ejecutor y
+**reproducido por el PM** el 2026-08-08 sobre `6d45f35`: arranca en 33-44 s en
+54331/54332/54333/54334/54335/54337, aplica **61/61** migraciones limpias y sirve RLS correcta a
+`anon` (200, ve sólo lo `published`). Sin costo y sin tocar el proyecto ajeno.
+**La ruta B (branch de Supabase) queda cerrada por innecesaria**, no por inviable: su costo está
+documentado en §S4 (≈ USD 9.81/mes, fuera del Spend Cap) y el plan de la organización **no se
+midió** porque medirlo cuesta dinero.
 
-- **La guarda anti-producción entra sí o sí.** No es una precaución para E3b: la suite e2e que
-  ya existe (16 specs) se ejecuta hoy contra producción. Ver la remedición en §5.
-- **Su prueba es una mutación**, no una aserción (D18): apuntar la configuración a
-  `mulsqxfhxxdsadxsljss` y demostrar que la corrida aborta.
-- **`.env.test` no puede ser la plantilla commiteada** — está en `.gitignore:18`.
+**Dos hallazgos del spike que esta unidad debe arreglar** (ambos reproducidos por el PM):
+
+- **F1 — `supabase start` está roto en `main` desde `55ce9c7` (2026-07-16).** `config.toml`
+  declara `[functions.generate-graphic]` y ese directorio **no ha existido nunca en ninguna rama**.
+  Afecta al repositorio entero, no sólo a AUDIO; nadie lo había visto porque nadie levantaba el
+  stack local. Arreglo: borrar el bloque.
+- **F2 — las 61 migraciones no otorgan privilegios de tabla a `anon`/`authenticated`.** En local
+  toda lectura da 401 `42501`. El esquema depende de un estado ambiente del proyecto alojado que
+  el stack local no reproduce. Arreglo verificado: los `GRANT` en `supabase/seed.sql`.
+  **Backlog abierto sobre este arreglo:** `GRANT … ON ALL TABLES` sólo alcanza a las tablas
+  existentes en ese instante, así que una migración futura rompería el entorno local en silencio.
+  Considerar `ALTER DEFAULT PRIVILEGES`.
+
+**Lo que ya se sabía y sigue en pie:**
+
+- **La guarda anti-producción entra sí o sí.** No es una precaución para E3b: la suite e2e que ya
+  existe (16 specs) se ejecuta hoy contra producción. Ver la remedición en §5.
+- **Su prueba es una mutación**, no una aserción (D18): §S5 fija los tres casos que deben salir
+  rojos, y la salida de los tres se pega en el informe — no sólo la del verde.
+- **`.env.test` no puede ser la plantilla commiteada** (`.gitignore:18`); es `.env.test.example`,
+  verificado no ignorado.
+- **Hueco no obvio que descubrió el spike:** poner sólo `VITE_SUPABASE_URL` deja la app con URL
+  local y **clave anon de producción**. La guarda tiene que exigir las dos variables.
 
 **Depende de:** `E-infra-spike`. **Es lo que desbloquea E3a y E3b.**
 

@@ -713,3 +713,80 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   reales, pero el bloqueo es política correcta y no procede saltárselo con la URL de unblock.
 - OPEN AFTER THIS ROUND: redactar `E-infra-impl` con el bloque S8 del documento de evidencia, y
   que Brent decida si quiere ruta B (no hace falta: la ruta A es gratis y suficiente).
+
+### 2026-08-08 — E-infra-spike round 1 — PM (Opus), verificación
+- SESSION: `AUDIO · E-infra · PM` (verifica `AUDIO · E-infra-spike · r1 · EXEC`)
+- ACTION: verificación independiente del `EXECUTOR REPORT — E-infra-spike round 1` (`006304b`).
+  **No me fié del informe: reproduje el arranque completo yo mismo**, en un worktree desechable
+  `--detach 6d45f35`, borrado después. No commiteé nada de él.
+- **LO QUE REPRODUJE YO MISMO** (comando propio, salida propia, sobre `6d45f35`):
+  - **F1 — reproducido literal.** `supabase start` sobre `main` **sin tocar nada** →
+    `{"_tag":"Error",…"failed to read file: open supabase/functions/generate-graphic/index.ts:
+    no such file or directory"}`, exit 1. Mensaje idéntico al del informe. Estático confirmado:
+    `git log --all --diff-filter=A -- 'supabase/functions/generate-graphic*'` → **vacío**
+    (nunca existió en ninguna rama) y `55ce9c7` es quien añadió el bloque al `config.toml`.
+  - **S1 — reproducido.** Con el delta de puertos del documento (54331/54332/54333/54334/54335/54337)
+    y el bloque neutralizado, el stack arranca: `API_URL http://127.0.0.1:54331`,
+    `DB_URL …:54332`. **33.2 s** en mi corrida (el informe dice 44.3 s; mismo orden de magnitud,
+    imágenes ya calientes). Convive con el proyecto ajeno.
+  - **S2 — reproducido.** `supabase db reset` local → `grep -c 'Applying migration'` = **61**;
+    `grep -iE 'error|failed'` sobre el log entero → **vacío**. **61/61 limpias.**
+  - **F2 — reproducido literal.** `anon` por PostgREST antes de cualquier `GRANT` →
+    `{"code":"42501",…"permission denied for table church_podcast_episodes"}`, **HTTP 401**. Y
+    `role_table_grants` para `anon`/`authenticated` → sólo `REFERENCES`, `TRIGGER`, `TRUNCATE`.
+    **Sin `SELECT`.** Exactamente lo que el documento afirma.
+  - **S3 — reproducido.** Aplicado el `GRANT` propuesto y sembradas 2 filas (1 `published` con los
+    cuatro campos que exige el CHECK, 1 `draft`): `anon` obtiene **HTTP 200 y ve 1 de 2** —sólo la
+    publicada—, y sobre `liturgias` **HTTP 200 con `[]`**. RLS filtra como está diseñada.
+  - **S7 — reproducido.** `INSERT 0 2` → `DELETE 2` → `count = 0`. IDs deterministas y limpieza.
+  - **S5 y S6 — verificados estáticamente.** `playwright.config.ts:21` es el `}` que cierra el
+    bloque de `.env.test` y `:23` es `export default defineConfig({`: el punto de inserción que
+    nombra el documento es exacto. `git check-ignore -v .env.test.example` → **no ignorado**,
+    así que es commiteable.
+  - **CHECK `published_episode_complete`** — leído en
+    `20260610090000_church_podcast_episodes.sql:29`, coincide palabra por palabra con el documento.
+  - **Limpieza suya, comprobada por mí antes de empezar**: `docker ps` → **11 contenedores, todos
+    de `sxlogxqzmarhqsblxmtj`**; puertos 543xx de vuelta a los cinco ajenos; `main` en `6d45f35`.
+    Tras mi propia reproducción dejé el mismo estado: 11 contenedores ajenos, worktree borrado.
+  - **Alcance del diff** (`git show --stat 006304b`): **2 ficheros, +588/-0**, ambos `.md` bajo
+    `docs/plan/audio/`. **Cero ficheros fuente.** Coherente con "el gate D18 no aplica".
+  - **Secretos**: la redacción está declarada y es correcta; el barrido del documento no encuentra
+    ninguna credencial real. Las claves del stack local son las de demo fijas del CLI.
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[S1] SHOULD-FIX — la evidencia del grep de F2 es un falso negativo por mayúsculas.**
+    El documento prueba la ausencia de `GRANT` con `grep -rn 'grant .* to .*anon'` → 0
+    coincidencias. Ese 0 **no viene de la ausencia, viene de la sensibilidad a mayúsculas**:
+    `grep -rin` sobre el mismo patrón devuelve
+    `20250214_refresh_get_users_by_ids.sql:34: GRANT EXECUTE ON FUNCTION … TO anon;`.
+    **La conclusión de F2 sobrevive intacta** —ese `GRANT` es de *función*, no de tabla, y la
+    prueba real es la consulta a `role_table_grants`, que reproduje— pero la línea, tal como está
+    impresa, demuestra una ausencia con un comando que no podía encontrarla. En un plan cuyo
+    historial son cuatro verificaciones falsas, esto va al backlog nombrado. **Además, el informe
+    al PM afirmó "el repo tiene 0 `GRANT` y 0 `REVOKE"`: los 0 `REVOKE` son ciertos; los
+    0 `GRANT` son falsos** (hay 6, todos `GRANT EXECUTE ON FUNCTION`).
+  - **[S2] SHOULD-FIX — `GRANT … ON ALL TABLES` es puntual, y el seed lo trata como permanente.**
+    S8.3 propone `supabase/seed.sql` con `grant … on all tables in schema public`. Eso concede
+    sobre las tablas **existentes en ese instante**: cualquier migración futura creará tablas sin
+    privilegios y romperá el entorno local de forma silenciosa y desconcertante. `E-infra-impl`
+    debería añadir `ALTER DEFAULT PRIVILEGES` o dejar escrito que el seed se re-ejecuta. *(Nota de
+    diseño para la fase siguiente, no una medición: no lo probé.)*
+  - **[N1] NIT** — el criterio I1 de S8 dice *"`supabase start` arranca en limpio desde `main` sin
+    editar nada a mano"*, pero el arreglo de F1 vive en la propia rama de `E-infra-impl`: durante
+    la fase se verifica sobre el árbol de la fase, no sobre `main`.
+- DECISIONS:
+  - **La ruta A es la elegida y la ruta B queda cerrada por innecesaria.** El stack local arranca
+    en 33-44 s, aplica 61/61 y sirve RLS correcta, sin costo y sin tocar el proyecto ajeno.
+    **S4 se acepta como parcial a propósito**: el plan de la organización y la autorización de
+    `create_branch` quedan **no medidos** porque medirlos cuesta dinero, y el prompt ordenaba
+    reportarlo en vez de gastarlo. Fue la conducta correcta.
+  - El bloque de plan de `E-infra-impl` **no se copia a `PLAN.md`**: vive en
+    `evidence/E-infra-spike.md` §S8 y se congela cuando Codex cierre el spike. Duplicarlo ahora
+    crearía dos copias que divergen.
+- BACKLOG ADDED: S1 (rehacer la evidencia del grep de F2) y S2 (`ALTER DEFAULT PRIVILEGES` en el
+  seed). Sigue abierto el SHOULD-FIX de E2 (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
+- **HALLAZGO QUE TRASCIENDE A AUDIO:** F1 significa que **`supabase start` lleva roto en `main`
+  desde el 2026-07-16** (`55ce9c7`), para todo el repositorio y todos los workstreams, no sólo
+  para AUDIO. Nadie lo había detectado porque nadie levantaba el stack local. Queda escalado.
+- OPEN AFTER THIS ROUND: **`E-infra-spike` está limpia y lista para la review final de Codex.**
+  No la marco DONE — sólo un PASS de Codex cierra la unidad.
