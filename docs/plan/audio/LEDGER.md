@@ -1159,3 +1159,63 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   fuera de Scope: el NIT de `supabase/.branches/` en `.gitignore` y las dos imprecisiones de
   evidencia del S3 de Codex. Añadido a ese backlog el ruido de ESLint de `start-secrets` y el rojo
   preexistente de `MesaAbiertaDashboard.test.tsx`.
+
+### 2026-08-08 — E-infra-impl round 1 — PM (Opus), verificación
+- SESSION: `AUDIO · E-infra · PM` (verifica `AUDIO · E-infra-impl · r1 · EXEC`, `1c4490f`)
+- ACTION: verificación independiente. **El informe llegó truncado** —se corta a media frase en la
+  evidencia de la enmienda 1, y con él se fueron `TEST OUTPUT`, `GATE D18` y `NOT DONE`—, **así que
+  el gate y las cinco mutaciones los medí enteros yo.** Es la segunda vez que pasa (E2 r1 igual).
+- **GATE D18, medido por mí de punta a punta** (worktrees desechables + symlink a `node_modules`):
+  - **Base `981c00f`**: `playwright.config.ts` → **0/0/0/0**.
+  - **HEAD `1c4490f`**: `playwright.config.ts`, `tests/e2e/helpers/guard.ts`,
+    `tests/e2e/global-setup.ts` y `tests/e2e/smoke-local.spec.ts` → **0/0/0/0 los cuatro**.
+  - **Totales idénticos a ambos lados**: `tsc=1039 eslint=160 deno-lint=94 deno-check=46`.
+    **CERO diagnósticos nuevos.** *(1039, no 1041: `main` incorporó P1 de UPGRADE, que arregla dos.)*
+  - `npm run build` → **verde** (`✓ built in 6.96s`).
+  - `npx vitest run --no-file-parallelism` → **1068 tests, 6 rojos** en
+    `src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx`. **Comprobé que ya fallan
+    en la base**: los mismos 6, mismo fichero, sobre `981c00f` limpio. **Cero fallos nuevos**, que
+    es lo que exige D18. Fichero ajeno a esta fase.
+- **LAS CINCO MUTACIONES, ejecutadas por mí. Es la prueba de que la guarda sirve — y sirve.**
+  - **A)** URL productiva explícita → **EXIT 1**, `[guarda e2e · capa 1] … NO está en la lista
+    blanca`.
+  - **B)** URL ausente **con `E2E_NO_ENV_FILE=1`** → **EXIT 1**.
+  - **C)** clave ausente **con la bandera** → **EXIT 1**.
+  - **B) sin la bandera → EXIT 0, `Total: 100 tests in 15 files`.** *Reproduce literalmente el
+    B4 de Codex y demuestra que **la bandera es exactamente lo que hace falsable el criterio**.*
+  - **D)** dev server **productivo** ocupando el puerto de test 8111 (verificado que su
+    `import.meta.env` **no** trae `VITE_SUPABASE_URL`, o sea produccion horneada) → la suite
+    **EXIT 1**: `http://localhost:8111 is already used`. **Aborta en vez de engancharse**, que es
+    justo el agujero que Codex encontró en la r2 del spike.
+  - **E)** URL del proyecto local **ajeno** (`54321`) → **EXIT 1**, rechazada por lista blanca.
+  - **CONTROL** → **EXIT 0**, `Total: 100 tests in 15 files`. No corrí los 99.
+- **RESTO VERIFICADO POR MÍ:**
+  - **SHA padre correcto**: `git rev-parse 1c4490f^` → `981c00f…`, el que el plan mandaba.
+  - **I2**: `supabase db reset` → **62/62**, cero errores, `N` medido sobre el SHA padre. El
+    criterio `N/N` era la decisión correcta: a `165e5f2` habrían sido 61.
+  - **Enmienda 1, salida (a), verificada en la base**: el admin sembrado devuelve
+    **`general_admin`** por `church_user_roles JOIN church_roles`. El seed resuelve el `role_id`
+    **por nombre**, no a mano — correcto, porque la migración lo crea con `gen_random_uuid()`.
+  - **Capa 3 corre de verdad**: el log del humo trae
+    `[guarda e2e · capa 3] VITE_SUPABASE_URL horneada = "http://127.0.0.1:54331"`. Lee la
+    **inyección de `import.meta.env`**, no la línea de código fuente que no cambia nunca.
+  - **Humo** → **1 passed**. **Post-estado exacto**: la tabla queda en
+    `{…9000-…010, …9000-…011}` — baseline intacto, rango `8000` a cero. I8 cumplido.
+  - **`.env.test` NO está commiteado** (0 coincidencias en el diff); sí `.env.test.example`.
+  - **Alcance**: 7 ficheros, +673/-5. Nada fuera de lo previsto; `scripts/gates/README.md` es el
+    punto 5 del scope (documentar el arranque), no desborde.
+  - **Limpieza**: `supabase stop`, worktrees borrados, **11 contenedores ajenos vivos y únicos**,
+    puerto 8111 libre.
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[N1] NIT** — el NIT heredado sigue abierto: `supabase/.branches/` no está en `.gitignore`
+    mientras `supabase/.temp/` sí. Correr el stack lo deja sin trackear.
+- DECISIONS: ninguna nueva.
+- BACKLOG: N1. Sigue abierto el SHOULD-FIX de E2 (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
+- **LO QUE ESTA FASE CIERRA DE VERDAD:** hasta hoy `npx playwright test` sobre el árbol limpio
+  apuntaba a la base de producción compartida con Life OS, y era un gate declarado en `CLAUDE.md`.
+  **Ya no puede.** Sin las dos variables locales la suite no arranca; con una URL que no esté en la
+  lista blanca, tampoco; y si alguien deja un servidor productivo en el puerto, aborta en vez de
+  hablar con él. Las cinco mutaciones lo demuestran fallando.
+- OPEN AFTER THIS ROUND: **`E-infra-impl` está limpia y lista para la review final de Codex.**
+  No la marco DONE — sólo un PASS de Codex cierra la unidad. Después: `E3a` → `E3b` → `E4-spike`.
