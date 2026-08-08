@@ -1837,3 +1837,52 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   tras S1 — hay vía de verificación de RPC; **decidir antes de P8**. Ninguno bloquea.
 - OPEN AFTER THIS ROUND: (1) merge de `feat/mesa-md-schema` — decisión y ejecución de Brent.
   (2) Bootstrap de PM para **P2**.
+
+### 2026-08-08 — P2 round 1 — PM (Fable) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P2 · PM
+- ACTION: Bootstrap de PM para **P2 — Módulo puro de asignación**. Prompt escrito y commiteado
+  en `prompts/P2-r1.md`. **No despacho todavía**: P2 debe salir de un `main` con P1 dentro, y
+  P1 aún no está mergeada — la razón está abajo y no es cosmética.
+- **POR QUÉ P2 ESPERA AL MERGE DE P1, aunque técnicamente no dependa de ella.** P2 no toca base
+  de datos, ni `types.ts`, ni componentes: depende solo de P0. Pero `feat/mesa-md-schema`
+  lleva **diez entradas de este ledger** sin mergear. Si P2 sale de un `main` sin ellas y luego
+  añade la suya, las dos ramas **bifurcan `LEDGER.md`** y el merge conflicta. Es exactamente el
+  accidente de **B-02**, que ya costó siete entradas perdidas. El prompt convierte esto en una
+  **precondición dura**: un `grep` sobre `PLAN.md` que debe encontrar P1a marcada DONE, y si no,
+  el ejecutor para en seco y reporta `BLOCKED` antes de tocar nada.
+- LO QUE MEDÍ ANTES DE ESCRIBIR EL PROMPT, para que el ejecutor no lo descubra a su costa:
+  - **Los totales globales en `main`@`165e5f2` siguen en `1041/160/94/46`.** El merge del
+    workstream AUDIO (`useQuickPublish`, `liturgyCover`, `config.toml`) **no añadió ni un
+    diagnóstico**. Es la clase de sorpresa que D8 punto 5 existe para detectar, y no la hubo.
+    Con P1 dentro serán **1039**; el prompt usa ese número como segunda comprobación de que el
+    ejecutor está sobre el padre correcto.
+  - Los tres ficheros de P2 dan `(0)(0)(0)(0)` en el padre — son nuevos. **Así que para P2 el
+    gate se reduce a algo inusualmente limpio: sus tres ficheros no deben introducir ni un solo
+    diagnóstico.** Cualquier recuento distinto de cero en la punta es nuevo por construcción.
+  - **`src/lib/mesa-abierta/` no existe**; P2 la crea. Está dicho en el prompt.
+  - **El import entre runtimes de la prueba 20 resuelve** — lo verifiqué en vez de dejar que lo
+    descubriera: `tsconfig.app.json` trae `allowImportingTsExtensions: true` y
+    `moduleResolution: "bundler"`, así que el especificador con `.ts` tipa; y `mainDish.ts` es
+    una hoja sin imports, así que Vite no tiene nada específico de Deno con lo que atragantarse.
+    Era el candidato número uno a quemar una ronda. El prompt añade: si hiciera falta un alias,
+    una entrada de tsconfig o un paso de build, eso es `FINDINGS`, no un apaño.
+  - **Estilo de la casa**: `supabase/functions/_shared/availableMaterials_test.ts` es el
+    análogo más cercano —suite de conformidad sobre un módulo puro de `_shared`— y el prompt lo
+    señala como el listón, incluida su cabecera que declara **qué prueba la suite y qué no**.
+  - **Node v22.22.0 para Vitest**, explícito. Codex descartó una pasada bajo v26 en la revisión
+    de P1; esa lección entra ahora en los prompts en vez de quedarse en una revisión.
+- **P2 RELEÍDA (SOP §3.8.5): sin enmienda.** Alcance, criterios y tamaño siguen bien. Su
+  criterio B7 («rojos sin cambios») se lee bajo el **D8.2 enmendado**, que es justo lo que
+  impide que el flake de B-05 lo vuelva incumplible; el prompt lo explica para que nadie
+  persiga un fantasma.
+- **LO QUE LE PIDO AL EJECUTOR MÁS ALLÁ DE LOS CRITERIOS**, porque son las dos cosas que no se
+  pueden comprobar con un test: (1) el **argumento de revisión de código de la garantía D5.6**
+  —citar la condición de aceptación del intercambio y mostrar que exige decrecimiento
+  estricto—, que ningún conjunto finito de ejemplos establece; (2) **sus decisiones de
+  recorrido y por qué**, incluido si alguna hace inalcanzable un déficit resoluble. La garantía
+  10 existe para que un déficit honesto sea una respuesta correcta; ocultarlo es la única forma
+  de fallarla.
+- FINDINGS RAISED: ninguno.
+- DECISIONS: ninguna. El plan no cambia.
+- OPEN AFTER THIS ROUND: (1) **Merge de P1** — decisión de Brent; el PM no mergea. (2) Después,
+  `/exec UPGRADE P2 r1`. (3) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
