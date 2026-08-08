@@ -554,3 +554,44 @@
   Ese fichero **no está en mis permisos de escritura**; queda escalado a Brent.
 - OPEN AFTER THIS ROUND: merge de `phase/E2-caratula` a `main` **cuando Brent lo autorice
   explícitamente**. Siguiente unidad: `E1-spike` (arrancable, sin review) o `E-infra` (borrador).
+
+### 2026-08-08 — traspaso de PM — PM (Fable) saliente
+- SESSION: `AUDIO · A0-core · PM` → se retira. Siguiente: `AUDIO · E-infra · PM`.
+- MOTIVO: SOP §3.3 (un bootstrap por fase) y §4 (la sesión de PM es desechable). Esta sesión
+  acumula 13 rondas de plan, 9 reviews de Codex y el cierre de E2. **Además, este PM cometió
+  cuatro verificaciones falsas** —alcance a Supabase (r1), existencia del script del gate (r2),
+  Postgres local (r9), `tsc=1039` (r11)— todas cazadas por Codex y todas registradas en §5 del
+  plan. Re-sembrar desde `PLAN.md` + `LEDGER.md` hereda los hechos corregidos sin heredar el
+  hábito.
+
+**ENCARGO PARA EL PM ENTRANTE — antes de redactar `E-infra`, medir. No especificar a ciegas: ése
+es exactamente el error que dejó a `E-infra` en borrador.**
+
+1. **¿Sirve la ruta de Supabase branches para las pruebas de base de `E3a`?** Está registrada
+   como alternativa en los riesgos de E3a y hay MCP disponible (`mcp__supabase-casa__create_branch`).
+   **Si funciona, el conflicto del puerto 54322 con el proyecto ajeno `sxlogxqzmarhqsblxmtj` deja
+   de importar y `E-infra` se encoge a poco más que la guarda.** Si no funciona, se sabrá con una
+   medición, no con una suposición.
+2. **La guarda anti-producción de los e2e**, que es barata, cierta e independiente de lo anterior:
+   hoy `src/integrations/supabase/client.ts:5` cae por defecto al proyecto **productivo** y no
+   existe `.env.test`. Hay que cerrarlo pase lo que pase — es la base compartida con Life OS.
+
+**Contexto que ahorra tiempo al PM entrante:**
+- `church_podcast_episodes` **sí está tipada** en `types.ts` (línea 683), a diferencia de
+  `liturgias`. **`E3a` NO necesita el adaptador que E2 tuvo que construir**; su criterio de
+  regenerar tipos es sólo añadir `slug` a una tabla que ya está ahí. El borrador de E3a no lo
+  sabe todavía.
+- Los cuerpos de `E3a`, `E3b` y `E4-spike` llevan un banner de **"no aplicar"** sobre los
+  residuos de `E0-gates` y sobre la verificación falsa del Postgres. Léelo antes de reutilizarlos.
+- La regla de evidencia vigente: **comando, salida y SHA exacto — nunca el nombre de una rama**.
+  Este repo lo comparten sesiones concurrentes; el checkout cambia de rama bajo los pies.
+
+**ABIERTO, pendiente de Brent:**
+- **Merge de `phase/E2-caratula` a `main`** (ff de un commit). Autorización explícita requerida.
+- **`E1-spike`**: arrancable y sin review. Su matriz necesita iOS <18.4, iOS ≥18.4 y Android
+  físicos. **Pregunta sin responder: ¿Brent los tiene a mano?** Sin ellos, las celdas vuelven
+  "no medidas" y el bloque sale con alcance reducido.
+- **Fricción de arranque, fuera de los permisos del PM:** AUDIO no tiene fila en
+  `~/.claude/agent-workflow/workstreams.md`, y su plan vive sólo en la rama `docs/plan-audio`.
+  El ejecutor de E2 reportó que ahí se le fue el grueso del contexto. **Cada ejecutor y cada PM
+  futuro paga lo mismo.** Una fila apuntando a `docs/plan/audio/` lo cierra de una vez.
