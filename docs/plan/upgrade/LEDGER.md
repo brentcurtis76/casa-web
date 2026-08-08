@@ -1707,3 +1707,62 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) Brent corre los cuatro bloques y pega la salida cruda. (2) El PM
   la registra verbatim y dictamina A6–A8. (3) Revisión de Codex sobre P1a + P1b juntas, con la
   cadena de evidencia declarada. P2, P3a y P3b siguen libres.
+
+### 2026-08-08 — P1b — A6–A8 DEMOSTRADOS · FASE LIMPIA — PM (Fable)
+- SESSION: UPGRADE · P1b · PM
+- ACTION: **A6, A7 y A8 quedan cumplidos.** Con ellos, los **once** criterios del P1 original
+  están satisfechos. P1a y P1b pasan a IN REVIEW en el índice de fases. **La fase está limpia
+  y lista para la revisión final de Codex**; el prompt queda en
+  `prompts/P1-codex-review.md`. **Ninguna de las dos se marca DONE: eso solo lo hace un PASS
+  de Codex.**
+- **CÓMO SE OBTUVO LA EVIDENCIA, dicho antes de que nadie tenga que preguntarlo.** Brent
+  ejecutó el bloque en el editor SQL de `mulsqxfhxxdsadxsljss`, que conecta como `postgres`
+  —sí está en el ACL—. **No lo produjo ni un ejecutor ni el PM**, porque no existe otro canal:
+  `supabase_read_only_user` está fuera del ACL por diseño, que es justo lo que A5 exige. El
+  bloque son cuatro lecturas etiquetadas dentro de `begin … rollback`.
+- SALIDA CRUDA, verbatim:
+  ```
+  | case_name    | claim_set | match_id                             | total_people | main_dish_count |
+  | A6a stranger | true      | null                                 | null         | null            |
+  | A6b nobody   | true      | null                                 | null         | null            |
+  | A7 host      | true      | 3d4d6709-e86e-4190-a491-9c74e14b00bf | 6            | 1               |
+  | A8 guest     | true      | 3d4d6709-e86e-4190-a491-9c74e14b00bf | 6            | 1               |
+  ```
+- DICTAMEN, criterio a criterio:
+  - **A6 MET.** Dos llamantes autenticados ajenos a toda cena del mes → **cero filas**. El
+    `claim_set = true` de las dos filas es lo que hace que el cero signifique algo: la claim se
+    fijó de verdad, así que es una ausencia medida y no una consulta que nunca llegó a filtrar.
+    Por eso pedí dos variantes y no una.
+  - **A7 MET.** Una fila, `(3d4d6709…, 6, 1)`.
+  - **A8 MET.** Un invitado de ese mismo match recibe **exactamente la misma fila**.
+- **LO QUE VERIFIQUÉ YO MISMO, y por qué importa que fuera por otro canal.** Recalculé la
+  aritmética D1 desde las tablas base con mi consulta de solo lectura: `host=1`,
+  `host_plus_one=0`, `guests=4`, `guest_plus_ones=1` ⇒ **6**; y `host_main=1`, `guest_mains=0`
+  ⇒ **1**. Las dos mitades que A7 exige que coincidan vienen de **canales distintos**: la
+  regla, de mi consulta sobre tablas base; la respuesta de la RPC, del editor de Brent. Es una
+  demostración más fuerte que si una sola sesión hubiera producido las dos.
+- **COBERTURA QUE NO BUSQUÉ Y SALIÓ GRATIS**: en producción el plato principal lo lleva el
+  **anfitrión** (`host_main=1`, `guest_mains=0`); en mi ensayo en Docker lo llevaba un
+  **invitado**. Entre las dos ejecuciones quedan ejercitadas **las dos ramas** de la suma de
+  `main_dish_count` —la del `CASE` sobre `host_food_assignment` y la del `COUNT` sobre
+  assignments—, que es más de lo que A7 sola habría dado.
+- ESTADO DE LA BASE tras el bloque: 31 participantes, 6 matches, 60 migraciones,
+  `20260612000000/1` **siguen sin aplicar**, y **`_p1b` no existe en `public`** — el `rollback`
+  hizo su trabajo y la tabla temporal no dejó rastro. El aviso de RLS del editor sobre `_p1b`
+  era un heurístico genérico que no distingue tablas temporales; se corrió sin RLS a
+  propósito y con criterio, no por descuido.
+- FINDINGS RAISED: **BLOCKING: ninguno. SHOULD-FIX: ninguno nuevo** (S3/B-06 sigue abierto y no
+  bloquea esta fase). **NIT: ninguno.**
+- **LO QUE LE PIDO A CODEX QUE ATAQUE**, escrito en el prompt para que no tenga que
+  descubrirlo: (1) la cadena de evidencia de A6–A8, más débil que la del resto; (2) **mi propio
+  error** al dar por «cerrado» ese riesgo probando el cuerpo inline y un ensayo como
+  superusuario —dos comprobaciones que rodearon la barrera—, con el encargo explícito de
+  buscar la misma clase de fallo en mis otras verificaciones; (3) mi ruling sobre A10 y la
+  enmienda de D8.2, por si fue interesada; (4) si partir P1 fue diagnóstico o racionalización;
+  (5) si el fondo de D9 sobrevive a la aplicación manual; (6) la fila de `schema_migrations`
+  escrita a mano; (7) la ambigüedad de `match_id`.
+- DECISIONS: ninguna nueva.
+- BACKLOG: B-05 y B-06 abiertos; ninguno bloquea.
+- OPEN AFTER THIS ROUND: revisión final de Codex sobre P1a + P1b con
+  `prompts/P1-codex-review.md`. En paralelo, **P2 puede arrancar ya** (`feat/mesa-md-alloc`,
+  módulo puro, sin base de datos), y con ella P3a y P3b.
