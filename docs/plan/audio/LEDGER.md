@@ -821,3 +821,48 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   del plan —SHA siempre, nunca nombre de rama— es justo lo que evita que esto se confunda.
 - OPEN AFTER THIS ROUND: sin cambios. `E-infra-spike` sigue limpia y a la espera de la review
   final de Codex.
+
+### 2026-08-08 — E-infra-spike round 1 — Codex FAIL, triage del PM
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: triage de `CODEX REVIEW — AUDIO E-INFRA-SPIKE FINAL` sobre `docs/plan-audio@dc0df2f`.
+  **VERDICT: FAIL — 3 BLOCKING / 4 SHOULD-FIX / 1 NIT.** Es la ronda 1 del bucle
+  Codex↔PM↔Ejecutor (tope 2, SOP §1.5) y la r2 del bucle de ejecutor (tope 3).
+- **LO QUE VERIFIQUÉ YO MISMO antes de aceptar el FAIL** — una review es una afirmación, también
+  cuando viene de Codex:
+  - **B1 confirmado en el código.** `playwright.config.ts:46` → `reuseExistingServer:
+    !process.env.CI`. En local `CI` no está definida ⇒ **`true`**: si ya hay algo escuchando en
+    `localhost:8080`, Playwright **se engancha a ese servidor y nunca lanza `npm run dev`**. Una
+    guarda que vive en el proceso de Playwright validaría sus propias variables —correctas— mientras
+    el navegador habla con el servidor productivo que estuviera abierto. **La guarda pasaría y los
+    tests escribirían en la base compartida con Life OS.** No es rebuscado: tener `npm run dev`
+    abierto en otra terminal es el modo normal de trabajo.
+  - **B3 confirmado en el código.** `20260106000000_liturgias_antifonales.sql:64-72` define
+    `is_liturgia_admin(user_id)` como `EXISTS (SELECT 1 FROM mesa_abierta_admin_roles WHERE …)`.
+    Sembrar sólo `auth.users` da un usuario que **inicia sesión y no es admin**. Exactamente lo que
+    Codex midió.
+  - **S1: Codex cuenta mejor que yo.** `grep -rn -i "^[[:space:]]*GRANT "` → **6** sentencias
+    reales, todas `GRANT EXECUTE ON FUNCTION`. Yo había contado 5 en mi verificación de la r1;
+    faltaba `20260806000000_mesa_main_dish_optout.sql:37`. La conclusión de F2 no se mueve.
+  - **B2 no necesita verificación externa: es consecuencia del hotfix.** `165e5f2` entregó los
+    puntos 1 y 2 de §S8, y `PLAN.md` dice que **§S8 es el cuerpo de la fase**, no el ledger. Mi
+    entrada anterior anotó el encogimiento en el ledger y **eso no bastaba**: el sitio autoritativo
+    quedó desactualizado. Es un defecto mío, no del ejecutor.
+- TRIAGE:
+  - **B1, B2, B3: ACEPTADOS los tres.** Ninguno dice que la r1 midiera mal. Los tres dicen que el
+    bloque de plan **no es ejecutable todavía**. El veredicto de la r1 —**ruta A viable**— sobrevive
+    entero y no se re-mide.
+  - **S1, S2, S3, S4 y N1: ACEPTADOS**, todos al prompt de la r2.
+  - **S3 corrige además al PM:** mi ledger dijo que "cualquier migración futura" rompería el
+    entorno local. Codex midió que un `db reset` completo corre las migraciones **antes** del seed
+    y por tanto lo repara. **El caso roto es la migración incremental, no el reset.** Queda
+    corregido aquí y en el prompt.
+- **RECONOCIMIENTO DE PROCESO:** B2 existe porque el hotfix `165e5f2` entró fuera del ciclo, a
+  petición directa de Brent, y **yo actualicé el ledger pero no §S8**. La lección no es que el
+  hotfix estuviera mal —está técnicamente sano, Codex lo revisó aparte y lo confirma— sino que
+  **un cambio fuera de ciclo obliga a actualizar el documento autoritativo, no la bitácora.**
+- COMMITS: prompt de la r2 en `docs/plan/audio/prompts/E-infra-spike-r2.md`, commiteado aquí.
+- TESTS: n/a — ronda de triage. No ejecuté ningún spec.
+- FINDINGS RAISED: ninguno propio nuevo; los 8 de Codex, todos aceptados.
+- BACKLOG ADDED: ninguno — todo va a la r2, nada se difiere.
+- OPEN AFTER THIS ROUND: `/exec AUDIO E-infra-spike r2`. Queda **una sola ronda** en el bucle con
+  Codex antes de que la decisión suba a Brent (SOP §1.5).
