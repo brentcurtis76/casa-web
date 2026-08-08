@@ -30,6 +30,7 @@ import {
   type GenerateIllustrationResponse,
 } from '@/lib/covers/coverPromptBuilder';
 import { base64ToSpotifyCover } from '@/lib/sermon-editor/coverImageUtils';
+import { fetchLiturgyCover } from '@/lib/sermon-editor/liturgyCover';
 import {
   publishEpisode,
   type PublishStage,
@@ -43,6 +44,7 @@ import {
   validateForSpotify,
   type ValidationResult,
 } from '@/lib/sermon-editor/spotifyValidator';
+import { useToast } from '@/hooks/use-toast';
 
 export type QuickStep =
   | 'upload'
@@ -137,6 +139,7 @@ interface IllustrationRequestBody {
 }
 
 export function useQuickPublish() {
+  const { toast } = useToast();
   const [step, setStep] = useState<QuickStep>('upload');
   const [fileInfo, setFileInfo] = useState<AudioFileInfo | null>(null);
   const [liturgies, setLiturgies] = useState<QuickLiturgy[]>([]);
@@ -359,7 +362,29 @@ export function useQuickPublish() {
 
   const generateCover = useCallback(
     async (theme?: string) => {
-      const { title, speaker } = metadata;
+      const { title, speaker, liturgyId } = metadata;
+
+      // ── Camino corto: la portada de reflexión de la liturgia ────────────
+      // El constructor de liturgias ya generó una portada a medida para esta
+      // reflexión. Si es legible por quien publica, esa es la carátula: no hay
+      // prompt que construir, así que ni la validación de título/predicador ni
+      // la carga del logo —que existen sólo para armarlo— llegan a correr.
+      // Cualquier fallo de lectura degrada a la ilustración de IA con aviso.
+      if (liturgyId) {
+        const liturgyGenId = ++coverGenIdRef.current;
+        setCover({ status: 'generating' });
+        const fromLiturgy = await fetchLiturgyCover(liturgyId);
+        if (liturgyGenId !== coverGenIdRef.current) return; // superseded
+        if (fromLiturgy.status === 'ok') {
+          setCoverBlob(fromLiturgy.blob);
+          return;
+        }
+        toast({
+          title: 'Portada de la liturgia no disponible',
+          description: `${fromLiturgy.reason} Se generará una ilustración nueva en su lugar.`,
+        });
+      }
+
       if (!title || !speaker) {
         setCover({
           status: 'error',
@@ -415,7 +440,7 @@ export function useQuickPublish() {
         });
       }
     },
-    [metadata, setCoverBlob],
+    [metadata, setCoverBlob, toast],
   );
 
   const setCustomCover = useCallback(
