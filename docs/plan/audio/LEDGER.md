@@ -993,3 +993,61 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - OPEN AFTER THIS ROUND: **`E-infra-spike` está limpia. Lista para la re-review final de Codex.**
   No la marco DONE — sólo un PASS de Codex cierra la unidad. **Es la última ronda del bucle con
   Codex (SOP §1.5): si vuelve a fallar, la decisión sube a Brent.**
+
+### 2026-08-08 — E-infra-spike round 2 — Codex FAIL 2/2 — TOPE DE BUCLE, ESCALA A BRENT
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: triage de `CODEX REVIEW — ROUND 2/2 FINAL` sobre `docs/plan-audio@9b04ea4`.
+  **VERDICT: FAIL — 2 BLOCKING / 3 SHOULD-FIX / 1 NIT.** **Se alcanza el tope del bucle
+  Codex↔PM↔Ejecutor (SOP §1.5).** No redacto una ronda 3: la decisión es de Brent.
+- **LO QUE VERIFIQUÉ YO MISMO** — los dos BLOCKING son reales, y los dos son pequeños:
+  - **B3-remaining confirmado.** `src/appRoutes.tsx:55` →
+    `{ path: "/admin/roles", element: <ProtectedRoute requires={{ role: 'general_admin' }}>…}`.
+    `general_admin` vive en el RBAC de CASA (`church_roles` / `church_user_roles`,
+    `20260209000000_casa_rbac_schema.sql`), **que es otra tabla distinta de
+    `mesa_abierta_admin_roles`**. El usuario que el seed propone entra a la app y **no puede llegar
+    a esa ruta**. `rbac.spec.ts:86` no lo desmiente: ese spec asume un `general_admin` de CASA.
+    Mi propia verificación de la r2 dio por buena la ruta **porque comprobé que el test existe, no
+    que el rol sembrado la autorice**. Es un error mío de verificación, del mismo tipo que el plan
+    lleva persiguiendo: comprobé la existencia y la llamé autorización.
+  - **B4-new confirmado, leyendo el fichero.** `playwright.config.ts:19` →
+    `if (!process.env[key]) process.env[key] = val;`. Con un `.env.test` presente —que
+    `E-infra-impl` **exige**— las mutaciones `env -u VITE_SUPABASE_URL …` y
+    `env -u VITE_SUPABASE_ANON_KEY …` **se rellenan solas desde el fichero**. Los casos B) y C) no
+    pueden fallar, así que el criterio I5 es insatisfacible tal como está escrito. Codex lo
+    reprodujo (`B_EXIT=0`, `C_EXIT=0`).
+- **LO QUE CODEX DA POR CERRADO:** B1 (reproducido con PID `41158 → 41158`), B2, F3, F4, y la
+  atribución de SHA r1/r2 (**PASS**). Su propia frase: *"the infrastructure measurements are
+  substantially sound, and the production guard itself is now well designed"*.
+- **DÓNDE ESTÁN EXACTAMENTE LOS DOS DEFECTOS:** ninguno toca la medición del entorno ni la ruta A.
+  **Los dos están en el plan de pruebas de `E-infra-impl`** — la fase siguiente, que tendrá su
+  propia review de Codex antes de que nadie escriba código.
+- **ESCALADO A BRENT (SOP §1.5).** Opciones, con costo:
+  - **A) Aceptar con enmiendas explícitas — RECOMENDADA.** El PM escribe las dos enmiendas de abajo
+    en los criterios de `E-infra-impl` y `E-infra-spike` se cierra. Coste: cero rondas. Riesgo: las
+    enmiendas no las revisa Codex hasta la review de `E-infra-impl` — que es donde un plan de
+    pruebas se revisa de todos modos.
+  - **B) Autorizar una ronda 3** por override explícito del tope. Coste: un ejecutor + una review.
+    Beneficio: el spike cierra con PASS limpio.
+  - **C) Re-planificar la unidad.** Desproporcionado: nada estructural está mal.
+  - **D) Waiver sin enmiendas.** **Desaconsejada**: dejaría en pie dos criterios que está medido
+    que no pueden fallar.
+- **LAS DOS ENMIENDAS, redactadas para que A) sea accionable:**
+  1. **El viaje del humo no puede asegurar contra `/admin/roles` con el rol que siembra.**
+     `E-infra-impl` debe **medir** cuál de las dos salidas toma y demostrarla de extremo a extremo:
+     (a) sembrar además la asignación en `church_user_roles` contra la fila `general_admin` de
+     `church_roles`; o (b) elegir una ruta que `mesa_abierta_admin_roles` sí autorice. **No se
+     acepta la ruta actual sin una de las dos, medida.**
+  2. **El arnés de mutaciones necesita poder desactivar la carga de `.env.test`.** Concretamente:
+     `playwright.config.ts` salta el bloque cuando `E2E_NO_ENV_FILE=1` (o acepta `E2E_ENV_FILE` con
+     una ruta inexistente). Los casos B) y C) se ejecutan **con esa bandera puesta** y deben salir
+     con código ≠ 0. Sin esto, I5 no es verificable.
+- SHOULD-FIX de Codex, todos al backlog de `E-infra-impl`: **[S1]** I2 exige `61/61` pero `981c00f`
+  ya tiene **62** migraciones — o se fija el padre en `165e5f2`, o el criterio pasa a `N/N` medido
+  sobre el SHA elegido. **[S2]** I6 convirtió el control en correr los 99 tests; basta `--list` más
+  el humo. **[S3]** la precondición usa `git show main:…` violando la regla de SHA del propio
+  documento, y llama "limpio" a un árbol cuyo `git status` mostraba `?? probe-reuse/` (lo exacto es
+  "sin cambios en ficheros trackeados").
+- NIT: `supabase/.branches/` sigue sin ignorar.
+- TESTS: n/a — ronda de triage. No ejecuté specs.
+- OPEN AFTER THIS ROUND: **decisión de Brent entre A, B, C y D.** `E-infra-spike` NO está cerrada y
+  no la marco DONE. `E-infra-impl` no arranca hasta que se resuelva.
