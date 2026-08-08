@@ -790,3 +790,34 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   para AUDIO. Nadie lo había detectado porque nadie levantaba el stack local. Queda escalado.
 - OPEN AFTER THIS ROUND: **`E-infra-spike` está limpia y lista para la review final de Codex.**
   No la marco DONE — sólo un PASS de Codex cierra la unidad.
+
+### 2026-08-08 — hotfix fuera del ciclo de fases — PM (Opus), por instrucción directa de Brent
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: **F1 arreglado y mergeado a `main`**, fuera del ciclo PM→EXEC→Codex. Brent pidió el
+  arreglo directamente y lo reafirmó tras señalarle yo la separación de roles; es su decisión y
+  queda registrada como tal.
+- COMMITS: `165e5f2` en `main` (ff desde `fix/supabase-start`). Único fichero:
+  `supabase/config.toml`.
+- QUÉ CAMBIÓ: (a) borrado `[functions.generate-graphic]`, que `55ce9c7` había declarado para una
+  función cuyo directorio nunca se escribió; (b) fijados los puertos propios
+  (`[api] 54331`, `[db] 54332/54333`, `[studio] 54334`, `[local_smtp] 54335`, `[analytics] 54337`).
+  **Sin (b) el arreglo no basta en esta máquina**: los puertos por defecto los ocupa el proyecto
+  ajeno `sxlogxqzmarhqsblxmtj` y `supabase start` volvería a fallar, por colisión en vez de por
+  fichero ausente.
+- TESTS: `supabase start` → arranca (`API_URL http://127.0.0.1:54331`, `DB_URL …:54332`).
+  `npm run build` → **verde** (`✓ built in 7.69s`). `docker ps` tras `supabase stop` → **los 11
+  contenedores ajenos intactos**. No ejecuté `npx playwright test`: sigue apuntando a producción
+  hasta que exista la guarda.
+- **DESVIACIÓN DE PROCESO, declarada:** el PM escribió código fuente, que la SOP §1.1 le prohíbe.
+  No fue iniciativa mía —lo señalé y Brent lo reafirmó—, pero queda anotado porque **nadie
+  independiente ha revisado este commit**: no pasó por ejecutor ni por Codex. Si Codex quiere
+  tratarlo como parte de la review de `E-infra-spike`, tiene el SHA.
+- **EFECTO SOBRE `E-infra-impl`: su alcance se encoge.** Los puntos 1 y 2 de §S8
+  (arreglar F1, fijar puertos) **ya están en `main`**. Lo que queda de la fase: `seed.sql` con los
+  `GRANT` de F2, la guarda anti-producción, `.env.test.example`, el e2e de humo y la documentación
+  de arranque. Su **SHA padre pasa a ser `165e5f2`**, no `6d45f35`.
+- OJO PARA QUIEN MIDA DESPUÉS: las mediciones de `evidence/E-infra-spike.md` se tomaron sobre
+  `main @ 6d45f35` y **siguen siendo válidas para ese árbol**. `main` es hoy `165e5f2`. La regla
+  del plan —SHA siempre, nunca nombre de rama— es justo lo que evita que esto se confunda.
+- OPEN AFTER THIS ROUND: sin cambios. `E-infra-spike` sigue limpia y a la espera de la review
+  final de Codex.
