@@ -1091,3 +1091,71 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   ruta contra el árbol.
 - OPEN AFTER THIS ROUND: **`E-infra-impl` está congelada y es ejecutable.**
   `/exec AUDIO E-infra-impl r1`. Después: `E3a` → `E3b` → `E4-spike`.
+
+### 2026-08-08 — E-infra-impl r1 — EXECUTOR (Opus)
+- SESSION: `AUDIO · E-infra-impl · r1 · EXEC`
+- BRANCH: `phase/E-infra-impl` · **SHA PADRE `981c00fc1e16210811aa6206ce3d9a515ceaeae3`**
+  (`main` vigente; NO se fijó `165e5f2`, según la decisión del PM al congelar)
+  · COMMIT `1c4490f7f28d96ae2c6690baf9f2a6f6c773a15b`
+- FILES: `supabase/seed.sql` (+140), `tests/e2e/smoke-local.spec.ts` (+195),
+  `tests/e2e/global-setup.ts` (+82), `tests/e2e/helpers/guard.ts` (+77),
+  `scripts/gates/README.md` (+116), `playwright.config.ts` (+36/-5),
+  `.env.test.example` (+27). **`.env.test` NO commiteado** (verificado: 0 coincidencias en el índice).
+- **N/N = 62/62.** Medido sobre el SHA padre, no heredado:
+  `git ls-tree -r --name-only 981c00f -- supabase/migrations/ | grep -c '\.sql$'` → 62, y
+  `grep -c "^Applying migration " ` sobre la salida de `db reset` → 62. `db reset` **antes** de
+  cualquier medición de permisos (F3).
+- **I1-I10: los diez MET.** Guarda en tres capas, con la lista blanca en
+  `tests/e2e/helpers/guard.ts` compartida por la capa 1 (config) y la capa 3 (globalSetup) para que
+  no puedan divergir. Puerto de test dedicado **8111** con `--strictPort`; `reuseExistingServer:
+  false` siempre.
+- **Los cinco casos de mutación salen 1, y ninguno arranca `webServer`:** A=1, B=1, C=1, D=1, E=1.
+  D) abortó por la capa 2 (`http://localhost:8111 is already used`) y de paso quedó medido que ese
+  servidor intruso horneaba
+  `import.meta.env = {"BASE_URL":"/","DEV":true,"MODE":"development","PROD":false,"SSR":false}`
+  — **sin `VITE_SUPABASE_URL`**, o sea el literal de producción. Era el agujero real.
+- **ENMIENDA 2 verificada en los dos sentidos, que es lo que la hace prueba.** Con
+  `E2E_NO_ENV_FILE=1`: `B_EXIT=1`, `C_EXIT=1`. **Sin** la bandera, reproducido el hallazgo de Codex
+  al pie de la letra: `B_EXIT=0`, `C_EXIT=0`, listando `Total: 100 tests in 15 files`.
+- **ENMIENDA 1 — se toma la salida (a)** y queda demostrada de extremo a extremo:
+  - `get_user_roles` (la RPC que usa `AuthContext`, vía PostgREST con el JWT del sembrado) →
+    `["general_admin"]`, HTTP 200; `is_admin()` → `t`.
+  - **Contrafactual medido**, que es lo que justifica (a): un usuario con **sólo**
+    `mesa_abierta_admin_roles` da `is_liturgia_admin = t` pero `is_admin_general = f` y
+    `get_user_roles = {}`. Confirma a Codex: ese rol **no** llega a `/admin/roles`.
+  - En el navegador, el paso 4 del humo carga `/admin/roles`, ve el encabezado «Gestión de Roles»
+    y `pathname === '/admin/roles'` (sin la redirección a `/admin` de `ProtectedRoute`).
+  - El `role_id` se resuelve **por nombre** (`SELECT … WHERE name='general_admin'`): la migración lo
+    crea con `gen_random_uuid()`, así que no puede escribirse a mano.
+- **I8 — limpieza exacta.** Tras el humo la tabla queda en `{…9000-…010, …9000-…011}`; el rango
+  `8000` está a 0 en las cuatro tablas y el `9000` intacto (2 episodios, 1 liturgia, 1 elemento,
+  admin con su fila en `church_user_roles` y en `mesa_abierta_admin_roles`).
+- **I9** — los 11 contenedores de `sxlogxqzmarhqsblxmtj` vivos al terminar; 0 del propio tras
+  `supabase stop --project-id mulsqxfhxxdsadxsljss`.
+- **GATE D18 VERDE.** Base en worktree desechable de `981c00f` + symlink a `node_modules`, HEAD en
+  la rama. `diff` de las dos salidas: **idéntico**, 0/0/0/0 en las cuatro herramientas sobre los
+  cinco ficheros, y totales del proyecto iguales en los dos lados
+  (`tsc=1039 eslint=160 deno-lint=94 deno-check=46`). `npm run build` → **exit 0**.
+  `node v22.22.0`, `deno 2.7.11`.
+- **HALLAZGO DE HIGIENE DEL GATE, no bloqueante y no mío:** `supabase start` genera
+  `supabase/.temp/start-secrets/…/main/index.ts`, que ESLint **sí** lintea (`npx eslint .` no lee
+  `.gitignore`) y que aporta **186 problemas**. Eso subía el total del proyecto de 160 a **346** y
+  habría parecido un delta enorme. `346 − 186 = 160`, exacto. Cualquiera que corra el gate D18 con
+  el stack local levantado va a ver ese ruido: **hay que borrar `supabase/.temp/start-secrets/`
+  antes de medir**, o añadirlo a `ignores` de `eslint.config.js`. Lo dejo abierto porque tocar la
+  config de ESLint no es de esta fase.
+- **`npx vitest run` está ROJO, y lo estaba antes de mí.** 6 tests de
+  `src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx` fallan (79/80 ficheros
+  pasan, 1062/1068 tests). **Reproducido idéntico en el worktree del SHA padre `981c00f`**, sin
+  ninguno de mis cambios: mismos 6 fallos, mismo fichero. No es regresión de esta fase; es el estado
+  heredado de `main`. No toco `src/`, así que no puede serlo.
+- TESTS: `npx playwright test tests/e2e/smoke-local.spec.ts` → **1 passed (12,5 s)**, con la capa 3
+  imprimiendo `VITE_SUPABASE_URL horneada = "http://127.0.0.1:54331"`. Control `--list` → exit 0,
+  `Total: 100 tests in 15 files`. **No se corrieron los 99** (Codex r2/S2).
+- DESVIACIÓN: hubo que instalar el navegador (`npx playwright install chromium`) — el binario no
+  estaba en la máquina y el humo falló una vez por eso. Es preparación de entorno, no cambio de
+  código.
+- OPEN AFTER THIS ROUND: review de Codex de `E-infra-impl`. Backlog heredado **sin tocar** por estar
+  fuera de Scope: el NIT de `supabase/.branches/` en `.gitignore` y las dos imprecisiones de
+  evidencia del S3 de Codex. Añadido a ese backlog el ruido de ESLint de `start-secrets` y el rojo
+  preexistente de `MesaAbiertaDashboard.test.tsx`.
