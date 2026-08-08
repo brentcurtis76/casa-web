@@ -31,5 +31,21 @@ import_map = "./functions/import_map.json"
 verify_jwt = true
 import_map = "./functions/import_map.json"
 
-[functions.generate-graphic]
-verify_jwt = true
+# Puertos propios: los de por defecto (54321-54324, 54327) los ocupa otro
+# proyecto Supabase en esta maquina.
+[api]
+port = 54331
+
+[db]
+port = 54332
+shadow_port = 54333
+major_version = 15
+
+[studio]
+port = 54334
+
+[local_smtp]
+port = 54335
+
+[analytics]
+port = 54337
