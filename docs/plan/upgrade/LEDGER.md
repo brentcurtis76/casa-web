@@ -1168,3 +1168,64 @@
   (2) Brent elige camino (a) o (b) del hallazgo B1. (3) r3 será la ronda de verificación
   A3–A8 una vez aplicada la migración. (4) S1 (criterio D8.2 vs. el flake) sigue esperando
   decisión desde r1. P1 **no se marca DONE**: faltan A3–A8 y falta Codex.
+
+### 2026-08-07 — P1 round 2 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P1 · PM
+- ACTION: Verificación independiente del EXECUTOR REPORT de P1 r2 (`87e7e0c`). **Cero
+  hallazgos. El ejecutor hizo exactamente lo correcto: un intento, sin rodeos, y paró.** La
+  segunda puerta —la que nadie había probado— resultó estar cerrada también. Prompt de r3
+  escrito y commiteado, con el intento de escritura **prohibido de antemano**.
+- LO QUE VERIFIQUÉ YO MISMO:
+  - **Alcance de r2**: `87e7e0c` toca **solo** `LEDGER.md` (+55). `git diff d9eebb0` sobre los
+    dos ficheros del scope → **vacío**. Nadie tocó el código, ni esta ronda ni ninguna.
+  - **Base de datos intacta y sin aplicación parcial**: `column_exists=0`,
+    `function_exists=0`, 31 filas, y `20260612000000`, `20260612000001` y `20260806000000`
+    **los tres ausentes** de `schema_migrations`. El fallo del servidor fue limpio.
+  - **Gate reejecutado por mí**: `EXIT=0`, totales `tsc=1039 eslint=160 deno-lint=94
+    deno-check=46`, y la salida es **byte a byte idéntica** a la que yo mismo medí en r1. La
+    rama está exactamente como la dejé verificada.
+  - **La bandera `--read-only` la había confirmado yo en la ronda anterior**, en los args del
+    servidor `supabase-casa` de `~/.claude.json`. El mensaje del servidor —*"Cannot apply
+    migration in read-only mode"*— es coherente con eso y con que el clasificador sí dejó
+    pasar la llamada esta vez. **Las dos puertas están ahora probadas, y las dos cerradas.**
+    No reintenté la escritura yo: sería la misma llamada denegada, contra producción.
+- CORRECCIÓN DE MI PROPIA ENTRADA ANTERIOR: en la verificación de r1 escribí «sigue teniendo
+  **60** migraciones». El recuento exacto es **59** (`min 20241109000000`, `max
+  20260610233000`). Lo leí de la lista del MCP en vez de contarlo. No cambia ninguna
+  conclusión —lo que sostiene A11 es que `20260612000000/1` siguen ausentes, y siguen— pero
+  el registro debe ser exacto. `PLAN.md` («remoto con 60 migraciones», en *Estado actual
+  verificado*) arrastra el mismo desfase de uno; no lo toco, el plan está congelado y no es
+  material.
+- FINDINGS: **BLOCKING: ninguno. SHOULD-FIX: ninguno nuevo. NIT: ninguno.**
+- **RONDAS: r1 y r2 no fueron rondas de remediación.** Ninguna de las dos produjo un solo
+  hallazgo BLOCKING; las dos murieron contra infraestructura, no contra un defecto. El tope de
+  3 del SOP §1.5 existe para cortar el ping-pong de defectos, y aquí no ha habido ninguno. Aun
+  así, **por la letra del tope, r3 es la última ronda disponible**, así que el prompt de r3
+  prohíbe explícitamente volver a intentar la escritura: si la migración no está aplicada, el
+  ejecutor para en una sola llamada en vez de quemar la ronda contra el mismo muro.
+- **[S2] SHOULD-FIX — ESTO NECESITA DECISIÓN DE BRENT ANTES DE APLICAR NADA.** D9 dice, en un
+  plan congelado: *«Aplicación con un único `apply_migration`, tras PR1 y PR2»*. Las dos vías
+  del agente hacia `apply_migration` están probadas cerradas, así que la única ruta que queda
+  es que Brent pegue el `.sql` en el editor SQL — y **eso no es lo que D9 dice literalmente**.
+  Si se hace sin registrarlo, la revisión final de Codex lo verá, con razón, como una
+  violación de decisión congelada, y estaríamos discutiéndolo *después* de haber escrito en
+  producción. El fondo de D9 se respeta entero: aditivo, sin `db push`, una sola aplicación
+  atómica, después de PR1 y PR2 — solo cambia el mecanismo, y hacia uno donde la escritura la
+  hace Brent en vez de un agente. **Requiere una fila en el Decision Log, que solo Brent puede
+  autorizar. Yo no he tocado el plan.**
+- **CONSECUENCIA TÉCNICA DE ESA DESVIACIÓN, para que no sorprenda a nadie**: el editor SQL
+  **no** escribe fila en `supabase_migrations.schema_migrations`. Tras aplicar, el remoto
+  tendrá la columna y la función pero **no** la versión `20260806000000`, mientras el repo sí
+  tiene el fichero. Es deriva nueva, en dirección contraria a la ya documentada
+  (`20260612000000/1`: en el repo, sin aplicar). Inocua en la práctica —`ADD COLUMN IF NOT
+  EXISTS` y `CREATE OR REPLACE` son idempotentes, así que una reaplicación no rompe nada— pero
+  debe quedar escrita. Si Brent prefiere cerrarla, un `insert … on conflict do nothing` sobre
+  `schema_migrations` en la misma sesión del editor lo hace; es su decisión, no mía.
+- TESTS: gate `EXIT=0`, salida idéntica a la medición del PM en r1 · sin reejecutar build,
+  Vitest ni Deno: ningún fichero cambió desde r1 y ya los verifiqué entonces.
+- DECISIONS: ninguna. Las dos pendientes (S1 de r1 sobre D8.2, S2 de esta ronda sobre D9) son
+  de Brent.
+- OPEN AFTER THIS ROUND: (1) **Decision Log para S2 antes de aplicar**, no después.
+  (2) Brent aplica el `.sql` desde el editor SQL. (3) `/exec UPGRADE P1 r3`, verificación pura
+  de A3–A8, con la escritura prohibida por prompt. (4) S1 sigue esperando. P1 **no se marca
+  DONE**: faltan A3–A8 y falta Codex.
