@@ -1490,3 +1490,34 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   de esta enmienda; el prompt está en la entrada del 2026-08-08 anterior. (4) **P2, P3a y P3b
   pueden arrancar ya**: no tocan la base de datos. P1a y P1b **no se marcan DONE** sin PASS de
   Codex.
+
+### 2026-08-08 — P1b r1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P1b · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — la ronda terminó en una sola llamada, como el prompt exigía.
+- ACTION: Ronda despachada como `/exec UPGRADE P1b r1`; el prompt es `prompts/P1-r3.md`, que la
+  entrada del PM del 2026-08-08 designa como válido «tal cual» para P1b. Verificado antes de
+  nada: rama `feat/mesa-md-schema`, árbol limpio, y
+  `git diff d9eebb0 -- <migración> <types.ts>` **vacío** — los dos ficheros de alcance son
+  byte a byte los que el PM verificó.
+  **STEP 0, la puerta, una única llamada de solo lectura** a `mcp__supabase-casa__execute_sql`:
+  `column_exists = 0`, `function_exists = 0`. **Los dos en cero ⇒ la migración no está
+  aplicada.** El prompt ordena parar ahí en una sola llamada y **no** invocar `apply_migration`
+  «para confirmar»; no se invocó. A3–A8 no son ejecutables: no hay nada que verificar.
+  **PR3 sigue sin resolverse** — Brent no ha aplicado todavía las dos sentencias.
+  No se ejecutaron STEP 1–4: STEP 1–3 dependen del objeto inexistente, y STEP 4 (el gate de
+  manipulación) mide una rama que ningún fichero ha tocado en esta ronda.
+- COMMITS: solo esta entrada de ledger, en `feat/mesa-md-schema`. Cero ficheros de producción.
+- TESTS: ninguno ejecutado. Justificación arriba; ningún fichero cambió.
+- FINDINGS RAISED: ninguno. Que la migración no esté aplicada no es un hallazgo contra el
+  plan: es exactamente el estado que PR3 describe y que el ensayo en Postgres desechable ya
+  anticipó. Cuarta ronda consecutiva de P1 que muere en el mismo punto, y la primera que lo
+  hace **en una sola llamada** — la partición P1a/P1b y el STEP 0 del prompt hicieron su
+  trabajo: el coste de una ronda contra un canal cerrado bajó de una ronda entera a una
+  consulta.
+- DECISIONS: ninguna.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) **PR3 — Brent aplica** desde el editor SQL las dos sentencias que
+  el PM le entregó (la migración verbatim + la fila de `schema_migrations` aparte). (2)
+  Redespachar `/exec UPGRADE P1b r1` con el mismo `prompts/P1-r3.md` una vez aplicada; el
+  contenido sirve sin cambios. (3) P1a espera PASS de Codex. (4) P2, P3a y P3b pueden arrancar
+  ya, no dependen de la base de datos.
