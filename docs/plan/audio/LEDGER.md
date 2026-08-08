@@ -521,3 +521,36 @@
 - BACKLOG ADDED: S1 (texto del aviso cuando la portada existe pero la RLS la oculta).
 - OPEN AFTER THIS ROUND: **E2 está limpia y lista para la review final de Codex.** No la marco
   DONE — sólo un PASS de Codex cierra la unidad.
+
+### 2026-08-08 — E2 CIERRE DE UNIDAD — PM (Fable)
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: cierre de E2 tras `CODEX REVIEW E2 FINAL` → **PASS** (0 BLOCKING, 1 SHOULD-FIX, 0 NIT).
+- **`E2` marcada DONE** en `PLAN.md`: `phase/E2-caratula@6d45f35`, SHA padre `05dc4ca`,
+  2026-08-08. **Primera unidad ejecutada de este plan**, tras 13 rondas de plan y 9 reviews.
+- QUÉ SE CONSTRUYÓ: la carátula del episodio deja de ser una ilustración nueva de Gemini y pasa
+  a ser **la portada de reflexión que el constructor de liturgias ya había generado** — con el
+  título de la liturgia y el nombre del predicador. Cuando no hay portada legible, degrada a
+  Gemini con aviso en español y nadie se queda sin publicar.
+- **QUÉ CAMBIÓ RESPECTO DEL PLAN CONGELADO: nada.** Cero desviaciones, cero suposiciones, cero
+  rondas de remediación. Es la primera unidad de este plan que no necesitó enmienda, y no es
+  casualidad: el plan llegó a la ejecución con la ruta trazada a `fichero:línea`, la estrategia
+  de tipado demostrada por Codex con un prototipo medido, y los cuatro casos de fallo validados
+  contra 30 registros reales de producción.
+- VERIFICACIÓN CRUZADA: el PM comprobó M1 (6 rojos); **Codex corrió las otras cuatro** — M2 → 1,
+  M3 → 1, M4 → 1, M5 → 5. Ninguno de los dos se fió del informe.
+- GATE: base `05dc4ca` vs HEAD `6d45f35` → **sólo desplazamiento de línea** en
+  `useQuickPublish.ts` (`195/200` → `198/203`), tres ficheros nuevos en `0/0/0/0`, totales
+  idénticos (`tsc=1041 eslint=160 deno-lint=94 deno-check=46`). **Cero diagnósticos nuevos.**
+- RUNTIME (D18 §4.6): Node **v22.22.0** · Deno **2.7.11**.
+- BACKLOG (del SHOULD-FIX de Codex): reescribir `REASON_NOT_SAVED` (`liturgyCover.ts:55`) a
+  *"No se encontró una portada de reflexión disponible para esta liturgia"* — el texto actual
+  afirma que no está guardada cuando también cubre el caso de que exista y la RLS la oculte.
+- LECCIÓN REGISTRADA: **la regla de clasificación de §4.3 se ganó su sitio en su primera
+  aplicación real.** El delta de E2 fue exactamente el falso positivo que anticipaba. Sin esa
+  frase —que entró por Codex r11/S3— el ejecutor habría reportado un delta que no existe.
+- FRICCIÓN A RESOLVER FUERA DE MI ALCANCE: el ejecutor reportó que **el grueso de su contexto se
+  fue en localizar el plan**, porque AUDIO no tiene fila en `~/.claude/agent-workflow/workstreams.md`
+  y su plan vive sólo en la rama `docs/plan-audio`. Cada ejecutor futuro paga ese mismo coste.
+  Ese fichero **no está en mis permisos de escritura**; queda escalado a Brent.
+- OPEN AFTER THIS ROUND: merge de `phase/E2-caratula` a `main` **cuando Brent lo autorice
+  explícitamente**. Siguiente unidad: `E1-spike` (arrancable, sin review) o `E-infra` (borrador).

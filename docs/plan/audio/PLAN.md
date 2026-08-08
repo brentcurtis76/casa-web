@@ -21,7 +21,10 @@ META
   en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
   conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **✅ `E2` CONGELADA — `CODEX REVIEW plan r12`: PASS** (0 BLOCKING, 1 SHOULD-FIX, 4 NIT), sobre
+- **✅ `E2` DONE — `CODEX REVIEW E2 FINAL`: PASS** (0 BLOCKING, 1 SHOULD-FIX, 0 NIT) sobre
+  `phase/E2-caratula@6d45f35`, SHA padre `05dc4ca`. Cerrada el **2026-08-08**. **Es la primera
+  unidad ejecutada de este plan**, tras trece rondas de planificación y nueve reviews.
+- **✅ `E2` congelada en su día — `CODEX REVIEW plan r12`: PASS** (0 BLOCKING, 1 SHOULD-FIX, 4 NIT), sobre
   el commit `3084208`. Congelados su **alcance, comportamiento, estrategia de tipado** (demostrada
   por Codex construyendo el adaptador y midiéndolo con el gate real: 0/0/0/0), **test plan** y
   **gate** (§4 verificada, `tsc=1041` reproducida en `main @ 05dc4ca`). Esta revisión 13 aplica
@@ -287,7 +290,7 @@ un defecto.
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E2 | Carátula desde la portada de la liturgia | Código | **TODO — CONGELADA (Codex PASS r12)** | — |
+| E2 | Carátula desde la portada de la liturgia | Código | **✅ DONE — 2026-08-08, `6d45f35`** | — |
 
 **Una sola unidad.** No toca base de datos ni e2e: es lógica de frontend con vitest, y el gate
 que necesita ya está en `main`. Es lo único que hoy puedo congelar sin que esconda trabajo de
@@ -1445,6 +1448,7 @@ resuelta antes del primer envío).
 | Pre-renderizar el XML del feed a Storage | A1 | Sólo si el catálogo supera ~200 items. Disparador, no tarea |
 | **Medir el grabador de liderazgo en iOS y añadir fallback donde haga falta** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | *Corregido en la r10 (Codex r9/S3): decía "arreglar... roto en iOS", lo que volvía a dar por medido algo que nunca se midió.* **Remite al resultado de E1-spike.** Es del sistema de liderazgo; se hace en su workstream |
 | Búsqueda full-text sobre la descripción | A8 | A8 cubre título y predicador |
+| **Texto del aviso cuando la portada existe pero la RLS la oculta** (`liturgyCover.ts:55`) | E2, Codex FINAL/S1 | `REASON_NOT_SAVED` dice *"Esta liturgia no tiene portada de reflexión guardada"*, pero una fila invisible por RLS da el mismo 0 filas y el mismo texto. **La degradación a Gemini es correcta en ambos casos; sólo el diagnóstico afirma de más.** Redacción propuesta por Codex: *"No se encontró una portada de reflexión disponible para esta liturgia."* |
 | **Ampliar la lectura de `liturgia_elementos` a los admins de liturgia** | Codex r11/S2 | `20260108000000_fix_liturgia_rls_authenticated.sql` concede lectura de admin a `liturgias` (`:29`) pero **la elimina y no la recrea** en `liturgia_elementos` (`:35-48`). Un admin ve liturgias ajenas en el selector y no ve sus portadas. **Es cambio de policies, o sea de esquema**, y E2 no toca esquema |
 | **Regenerar `src/integrations/supabase/types.ts` para las 128 tablas** | Codex r10/B1 | Hoy cubre **~16** y no incluye `liturgias` ni `liturgia_elementos`, lo que fuerza casts por todo el repo y produce buena parte de los **1041** diagnósticos `tsc` (`main @ 05dc4ca`). Arreglarlo haría innecesario el adaptador de E2. Blast radius grande: es su propia unidad, no un efecto lateral. **Aviso de Codex r12/N4:** los mensajes de `tsc` incrustan el volcado del union de `Database`, así que tocar `types.ts` **reimprime ~208 mensajes de ficheros ajenos con texto distinto** (mismo fichero, línea y código). Esa unidad verá cientos de deltas crudos que **no** son diagnósticos nuevos y **necesitará comparación normalizada** — el único caso del plan donde §4.3 no se aplica literal |
 
@@ -1594,6 +1598,8 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-08 | **✅ `E2` DONE.** `CODEX REVIEW E2 FINAL` → **PASS** sobre `6d45f35`. Cero desviaciones del plan congelado: no hubo que enmendar nada durante la ejecución | Codex verificó A1–A8 uno a uno y corrió las cuatro mutaciones que el PM no había comprobado (M2→1 rojo, M3→1, M4→1, M5→5). Runtime registrado (D18 §4.6): Node **v22.22.0**, Deno **2.7.11** | Codex (PASS final) |
+| 2026-08-08 | **La regla de clasificación de §4.3 se gana su sitio en su primera aplicación real** | El delta de E2 fue exactamente el falso positivo que anticipaba: los 2 errores base de `useQuickPublish.ts` se desplazaron de `(195,15)`/`(200,20)` a `(198,15)`/`(203,20)` por los imports nuevos. Sin esa frase, el ejecutor habría reportado un delta inexistente | PM |
 | 2026-08-07 | **✅ `E2` CONGELADA.** `CODEX REVIEW plan r12` → **PASS** sobre `3084208`. Se congelan alcance, comportamiento, estrategia de tipado, test plan y gate | Codex validó la estrategia de tipado **construyendo el adaptador y midiéndolo** (0/0/0/0), no argumentando, y reprodujo `tsc=1041` en `main @ 05dc4ca`. Las tres condiciones de su r11 (B1, S2, S3) quedaron aplicadas y verificadas | Codex r12 (PASS) |
 | 2026-08-07 | **r13: la regla de evidencia se unifica a SHA siempre**, nunca nombre de rama | Codex r12/S1. El 2026-08-07, entre las 15:39 y las 15:52, otra sesión tuvo este checkout compartido en `main`: **dos mediciones de Codex y una mía** se atribuyeron a la rama equivocada dentro de esa ventana. Un nombre de rama no identifica un árbol; un SHA sí | Codex r12/S1 |
 | 2026-08-07 | **r13: se registra que el error de atribución de árbol también lo cometió Codex** en su r11 | Simetría, y evidencia de que la regla nueva no es una penitencia del PM sino una condición del método: habría delatado a los dos | Codex r12 (auto-corrección) |
