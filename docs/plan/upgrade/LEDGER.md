@@ -1521,3 +1521,38 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Redespachar `/exec UPGRADE P1b r1` con el mismo `prompts/P1-r3.md` una vez aplicada; el
   contenido sirve sin cambios. (3) P1a espera PASS de Codex. (4) P2, P3a y P3b pueden arrancar
   ya, no dependen de la base de datos.
+
+### 2026-08-08 — P1b round 1 — PM (Fable) — VERIFICACIÓN
+- SESSION: UPGRADE · P1b · PM
+- ACTION: Verificación de P1b r1 (`d7fb9b0`). **Cero hallazgos; el ejecutor hizo exactamente
+  lo correcto** — paró en una sola consulta y no intentó ningún rodeo. **PR3 sigue sin
+  resolverse**, así que A3–A8 siguen sin poder ejecutarse. **Cambio de proceso** para que esto
+  no vuelva a costar una sesión, abajo.
+- LO QUE VERIFIQUÉ YO MISMO:
+  - **Base de datos, consultada por mí**: `column_exists=0`, `function_exists=0`, 31 filas,
+    59 migraciones, última `20260610233000`. **La migración no está aplicada.** El reporte del
+    ejecutor es exacto.
+  - `d7fb9b0` toca **solo** `LEDGER.md` (+31). `git diff d9eebb0 d7fb9b0` sobre los dos
+    ficheros del scope → **vacío**. Árbol de trabajo limpio.
+- **CAMBIO DE PROCESO — la comprobación previa es mía, no de un ejecutor.** Dos rondas
+  completas (P1 r3 y P1b r1) han muerto ejecutando una consulta de solo lectura para descubrir
+  que un pegado no había ocurrido. Yo puedo correr esa consulta en dos segundos y sin gastar
+  una sesión. **A partir de ahora no despacho P1b hasta haber confirmado yo mismo que el
+  remoto lee `1/1`.** El STEP 0 del prompt se queda, pero degradado a comprobación
+  anti-manipulación: si sale `0/0` es que algo cambió entre el despacho y la ejecución.
+- **HIGIENE DE PROMPT, a partir de dos avisos del ejecutor que tenía razón en los dos.** Se
+  crea `prompts/P1b-r1.md`, copia corregida de `P1-r3.md`: (1) la ruta de pre-flight decía
+  `casa-web`, que es el checkout de **otro** workstream —ahora dice
+  `/Users/brentcurtis/dev/casa-upgrade`, el worktree propio de UPGRADE, con la razón escrita
+  al lado—; (2) las cabeceras decían `P1 · r3` y la fase se despacha como `P1b · r1` tras la
+  partición. Ninguna de las dos era un defecto de fondo, pero las dos obligaron al ejecutor a
+  razonar sobre qué prompt le tocaba, y eso es trabajo que el prompt debería haberle ahorrado.
+  `P1-r3.md` se conserva como registro histórico de la ronda que sí se despachó con ese nombre.
+- FINDINGS RAISED: **BLOCKING: ninguno. SHOULD-FIX: ninguno. NIT: ninguno.**
+- DECISIONS: ninguna nueva del plan. Una de proceso, del PM: la comprobación de precondición
+  la hace el PM antes de despachar.
+- BACKLOG: sin cambios.
+- OPEN AFTER THIS ROUND: **PR3 y nada más.** Cuando Brent aplique las dos sentencias, yo
+  confirmo `1/1` y despacho `/exec UPGRADE P1b r1` con `prompts/P1b-r1.md`. Mientras tanto
+  **P2, P3a y P3b están libres y no tocan la base de datos** — si UPGRADE tiene que avanzar
+  hoy, es por ahí. P1a espera revisión de Codex; ninguna fase cierra sin ese PASS.
