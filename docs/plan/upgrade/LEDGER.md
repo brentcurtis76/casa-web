@@ -1556,3 +1556,26 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   confirmo `1/1` y despacho `/exec UPGRADE P1b r1` con `prompts/P1b-r1.md`. Mientras tanto
   **P2, P3a y P3b están libres y no tocan la base de datos** — si UPGRADE tiene que avanzar
   hoy, es por ahí. P1a espera revisión de Codex; ninguna fase cierra sin ese PASS.
+
+### 2026-08-08 — PR3 RESUELTA — Brent + PM (Fable)
+- SESSION: UPGRADE · P1b · PM
+- ACTION: **Brent aplicó la migración desde el editor SQL** de `mulsqxfhxxdsadxsljss`
+  ("Success. No rows returned"). **PR3 queda resuelta.** Verificado por el PM antes de
+  despachar nada, según la regla de proceso adoptada en la ronda anterior.
+- LO QUE CONFIRMÉ YO MISMO, en una consulta de solo lectura:
+  - `column_exists = 1` · `function_exists = 1` — los dos objetos existen.
+  - `participant_rows = 31` — sin cambios; el `DEFAULT TRUE` cubrió las filas existentes sin
+    backfill, como preveía D2.
+  - `schema_migrations`: **59 → 60**, con `20260806000000` presente. La fila que decidí añadir
+    se escribió; el registro de migraciones refleja la realidad.
+  - **`20260612000000` y `20260612000001` siguen SIN aplicar.** Es la comprobación que más me
+    importaba: la aplicación fue quirúrgica y no arrastró nada. Es exactamente el daño que D9
+    evita al prohibir `supabase db push`, y ahora está medido, no argumentado.
+- **NO ejecuté A3–A8.** Son el entregable del ejecutor de P1b; ejecutarlos yo y luego darlos
+  por buenos sería calificar mi propio trabajo (SOP §1.1). Confirmar la precondición sí es mío;
+  demostrar los criterios no.
+- FINDINGS RAISED: ninguno.
+- DECISIONS: ninguna.
+- OPEN AFTER THIS ROUND: `/exec UPGRADE P1b r1` con `prompts/P1b-r1.md` — precondición
+  confirmada `1/1`. Después, verificación independiente del PM y revisión de Codex sobre P1a +
+  P1b juntas. P2, P3a y P3b siguen libres en paralelo.
