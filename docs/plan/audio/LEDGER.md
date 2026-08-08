@@ -474,3 +474,50 @@
   portada guardada. Sigue en pie el backlog de ampliar la lectura de `liturgia_elementos`
   para admins (cambio de policies, fuera de scope).
 - OPEN AFTER THIS ROUND: revisión PM de E2 r1. `E1-spike` sigue arrancable en paralelo.
+
+### 2026-08-08 — E2 round 1 — PM (Fable), verificación
+- SESSION: `AUDIO · A0-core · PM` (verifica `AUDIO · E2 · r1 · EXEC`)
+- ACTION: verificación independiente del `EXECUTOR REPORT — E2 round 1`. **El informe llegó
+  truncado justo en la evidencia del gate**, así que el gate lo medí entero yo.
+- **LO QUE VERIFIQUÉ YO MISMO** (no re-derivado del informe):
+  - **Alcance del diff** (`git diff --stat 05dc4ca 6d45f35`): 4 ficheros, +716/-2. Ni esquema, ni
+    `types.ts`, ni `Portadas.tsx`, ni `coverPromptBuilder.ts`. **Sin desbordes.**
+  - **Adaptador** (`liturgyCover.ts`, leído entero): un solo ensanchado vía `as unknown as` con
+    interfaces estructurales privadas; `grep ": any|<any|as any"` sobre los tres ficheros nuevos →
+    **cero**; `extractImageUrl()` valida la forma en runtime en cuatro niveles y la función
+    **nunca lanza**.
+  - **Orden del camino corto** (A2): el bloque `if (liturgyId)` está **antes** de
+    `if (!title || !speaker)` y de `getCasaLogoAsBase64()`, y respeta el patrón `coverGenIdRef`
+    de supersede que ya usaba el fichero.
+  - **Tests reejecutados por mí**: `npx vitest run --no-file-parallelism src/lib/sermon-editor
+    src/hooks` → **23 ficheros, 292 tests, todos verdes**. Reproduce el informe.
+  - **Gate en HEAD `6d45f35`**: `liturgyCover.ts` **0/0/0/0**; los dos ficheros de test
+    **0/0/0/0**; `useQuickPublish.ts` **tsc (2)** en `(198,15)` y `(203,20)`.
+  - **Gate en base `05dc4ca`** (worktree limpio + symlink a `node_modules`):
+    `useQuickPublish.ts` **tsc (2)** en `(195,15)` y `(200,20)`.
+  - **DELTA: desplazamiento de línea (+3), mismos mensajes y códigos → aceptable por la regla de
+    `scripts/gates/README.md`. CERO diagnósticos nuevos.** Es exactamente el falso delta que
+    §4.3 anticipó, y no tropezó con él.
+  - **Totales: `tsc=1041 eslint=160 deno-lint=94 deno-check=46`**, coincide con la base corregida
+    en la r12 (`main @ 05dc4ca`).
+  - **Mutación ejecutada por mí en worktree desechable** (`--detach 6d45f35`, borrado después —
+    el entregable no se tocó): eliminado el bloque del camino corto → **6 tests rojos**. Los tests
+    fallan de verdad; no son aserciones incapaces de fallar (D18).
+  - **`npm run build`** → verde.
+  - Entrada de ledger del ejecutor commiteada en `docs/plan-audio` (`0587816`).
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[S1] SHOULD-FIX — el mensaje de 0 filas afirma algo que el código no puede saber.**
+    `REASON_NOT_SAVED` dice *"Esta liturgia no tiene portada de reflexión guardada"*, pero por la
+    asimetría de RLS documentada en el plan, una liturgia **ajena que sí tiene portada** devuelve
+    también 0 filas y muestra ese mismo texto. El **comportamiento** es correcto y es justo lo
+    que A1 congeló ("legible por quien publica"); lo que afirma de más es **el texto**. Un
+    "no está disponible" sería cierto en ambos casos. **Latente hoy** —las 30 liturgias con
+    portada tienen un solo autor— y por eso no bloquea. **Al backlog.**
+  - **NIT** — el gate reporta `0/0/0/0` para un fichero que **no existe** en la base, así que la
+    base de los tres ficheros nuevos es cero por construcción. No invalida A7: lo que importa es
+    que en HEAD midan cero, y miden cero.
+- DECISIONS: ninguna nueva.
+- BACKLOG ADDED: S1 (texto del aviso cuando la portada existe pero la RLS la oculta).
+- OPEN AFTER THIS ROUND: **E2 está limpia y lista para la review final de Codex.** No la marco
+  DONE — sólo un PASS de Codex cierra la unidad.
