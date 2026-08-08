@@ -8,15 +8,23 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 13**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 14**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
   automáticamente en página propia, y compartir el enlace en redes y WhatsApp. **Toda la pista
   de distribución (feed RSS, backfill, directorios, corte de Spotify) pasa al backlog.**
-- **ESTRUCTURA POR OLAS.** **Ola 1 = `E2`, y nada más.** Ola 2 = `E1-spike`, en paralelo.
-  Ola 3 = `E-infra` → `E3a` → `E3b` → `E4-spike`, **ninguna congelada**. Ola 4 (`E1-impl`,
-  `E4-impl`, `E5`, `E6`) sin planificar y **sin contarse como aprobada**.
+- **ESTRUCTURA POR OLAS.** **Ola 1 = `E2`, cerrada.** Ola 2 (activa, reordenada por Brent el
+  2026-08-08) = `E-infra-spike` → `E-infra-impl` → `E3a` → `E3b` → `E4-spike`. Ola 3
+  (`E4-impl`, `E5`, `E6`) y ola 4 (`E1-spike`, `E1-impl`) sin planificar y **sin contarse
+  como aprobadas**.
+- **`E-infra` PARTIDA EN DOS en la r14**, como exigía Codex r10/S3 y como el propio cuerpo de
+  la unidad dejaba escrito: **`E-infra-spike`** (medición, **CONGELADA**, `FINDINGS` es salida
+  legítima) y **`E-infra-impl`** (implementación, **se redacta con lo que el spike mida** — no
+  antes). Ver §5 y la sección de fases.
+- **✅ `E2` MERGEADA A `main` el 2026-08-08.** Verificado:
+  `git rev-parse main phase/E2-caratula` → ambos `6d45f35a54bde0335d05ffd6943167cf25d0a09e`.
+  El ledger la daba como pendiente de autorización; ya no lo está.
 - **`E0-gates` retirada en la r10:** UPGRADE P0 pasó Codex y se mergeó, así que el gate ya está
   en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
@@ -29,9 +37,11 @@ META
   por Codex construyendo el adaptador y midiéndolo con el gate real: 0/0/0/0), **test plan** y
   **gate** (§4 verificada, `tsc=1041` reproducida en `main @ 05dc4ca`). Esta revisión 13 aplica
   los cinco arreglos que Codex pidió meter en el commit de congelado. **E2 puede ejecutarse.**
-- **El resto del plan NO está congelado.** `E1-spike` es ejecutable por construcción —no toca
-  código que se mergee ni pasa por el gate— pero **no ha pasado review**. `E-infra`, `E3a`, `E3b`
-  y `E4-spike` siguen en borrador; `E1-impl`, `E4-impl`, `E5` y `E6` no son unidades.
+- **Lo congelado, a la r14: `E2` (ejecutada y cerrada) y `E-infra-spike`.** `E1-spike` es
+  ejecutable por construcción —no toca código que se mergee ni pasa por el gate— pero **no ha
+  pasado review**, y está aplazada a la ola 4. `E3a`, `E3b` y `E4-spike` siguen en borrador;
+  `E-infra-impl` está deliberadamente sin redactar; `E1-impl`, `E4-impl`, `E5` y `E6` no son
+  unidades.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -274,7 +284,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 13 — **E2 congelada por Codex r12**)
+## 5. Phase index — por olas (revisión 14 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -293,24 +303,32 @@ un defecto.
 | E2 | Carátula desde la portada de la liturgia | Código | **✅ DONE — 2026-08-08, `6d45f35`** | — |
 
 Cerrada con `CODEX REVIEW E2 FINAL: PASS`, cero desviaciones del plan congelado y cero rondas de
-remediación. Primera unidad ejecutada del plan.
+remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-08**
+(`git rev-parse main phase/E2-caratula` → ambos `6d45f35a54bde0335d05ffd6943167cf25d0a09e`).
 
 ### Ola 2 — ACTIVA: el camino a la página
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E-infra | Entorno de pruebas: Postgres local y harness e2e | Código + infra | **NO CONGELADA — medir antes de redactar** | — |
-| E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra |
-| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra |
+| E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **CONGELADA en la r14 — ejecutable** | — |
+| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **SIN REDACTAR — se escribe con la salida del spike** | E-infra-spike |
+| E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
+| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
+
+**`E-infra` se partió en la r14.** No fue una decisión nueva: Codex r10/S3 la había condicionado
+—*"E-infra es honesta sólo mientras siga en borrador; al retomarse se parte en dos"*— y el cuerpo
+de la unidad lo llevaba escrito desde la r11. Retomarla sin partirla habría sido congelar una
+fase que mezcla una medición con una implementación cuya forma nadie conoce todavía.
 
 **Es la ola que produce lo primero que la comunidad puede abrir.** Hasta aquí, todo lo entregado
 es plomería interna: E2 mejoró la carátula, pero nadie fuera del editor la ve.
 
 **Los cuerpos de E3a y E3b siguen en este documento como borrador, no como contrato.** Codex r9
 demostró que ambas esconden una unidad de infraestructura, y que su contrato de slug y su
-semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando `E-infra`
-haya medido el entorno — **medir primero, redactar después**, que es la lección de la r9.
+semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando
+`E-infra-spike` haya medido el entorno — **medir primero, redactar después**, que es la lección
+de la r9.
 
 ### Ola 3 — cierre del bucle público, todavía sin planificar
 
@@ -366,6 +384,31 @@ Eso no es un criterio flojo: es una instrucción peligrosa, y la escribí yo.
 
 **Por eso `E-infra` existe y por eso E3a/E3b no se congelan.**
 
+### Remedición del entorno (2026-08-08, `main @ 6d45f35a54bde0335d05ffd6943167cf25d0a09e`)
+
+El PM entrante volvió a medir antes de redactar nada. La foto de la r10 **sigue siendo correcta**,
+y aparece un hecho que la agrava:
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Stack ajeno | `docker ps` | 11 contenedores `*_sxlogxqzmarhqsblxmtj` ocupando **54321-54324 y 54327** |
+| `config.toml` | `grep '^\[' supabase/config.toml` | sólo `[functions.*]`; **sin `[db]`, `[api]`, `[studio]`** |
+| Migraciones | `ls supabase/migrations/*.sql \| wc -l` | **61** (confirma la corrección de la r10) |
+| Entorno | `ls .env*` | sólo `.env.example`; **no hay `.env` ni `.env.test`** |
+| `.env.test` | `.gitignore:18` | **está ignorado** → la plantilla commiteable necesita otro nombre |
+| Branches de Supabase | `mcp__supabase-casa__list_branches` | `{"branches":[]}` — la llamada responde; **no prueba** que `create_branch` esté permitido ni que sea gratis |
+
+**El hecho nuevo, y es el que manda:** el riesgo que la r10 describía en condicional **ya está
+vivo**. `npx playwright test` es un gate declarado en `CLAUDE.md`; `tests/e2e/` tiene **16 specs**;
+`playwright.config.ts` los arranca con `npm run dev`; `client.ts:5` cae a producción; y
+`tests/e2e/helpers/auth.ts` inicia sesión **como admin** con `TEST_ADMIN_EMAIL`/`TEST_ADMIN_PASSWORD`.
+Ninguno llama a Supabase directo (`grep '\.insert(\|\.update(\|\.delete(\|\.upsert('` sobre
+`tests/e2e/` → **0**), pero manejan la UI y **quien escribe es el cliente de la app**. Es decir:
+la suite que ya existe se ejecuta hoy contra la base **compartida con Life OS**.
+
+No es una hipótesis sobre E3b: es el estado de `main`. **La guarda anti-producción deja de ser
+una precaución para una fase futura y pasa a ser una corrección del presente.**
+
 ### Registro de mis verificaciones falsas
 
 Tres, todas con la misma forma — una inferencia colocada dentro de una sección titulada "medido":
@@ -409,7 +452,8 @@ Huecos: no hay ruta `/reflexiones`; no hay columna `slug` ni en la tabla ni en `
 `vercel.json` tiene un solo rewrite `/(.*)` → `/index.html`; `PublishResult`
 (`publishService.ts:44-51`) no devuelve slug ni URL canónica.
 
-**Secuencia:** `E2` ✅ → `E-infra` → `E3a` → `E3b` → `E4-spike` → *(ola 3)* → *(ola 4: `E1-spike` → `E1-impl`)*.
+**Secuencia:** `E2` ✅ → `E-infra-spike` → `E-infra-impl` → `E3a` → `E3b` → `E4-spike` →
+*(ola 3)* → *(ola 4: `E1-spike` → `E1-impl`)*.
 
 ---
 
@@ -596,45 +640,83 @@ mergea**.
 
 ---
 
-## Phase E-infra — Entorno de pruebas: Postgres local y harness e2e
+## Phase E-infra-spike — Entorno de pruebas: medir las rutas viables
 
-**NO CONGELADA.** Existe porque Codex r9/B3 y B4 demostraron que E3a y E3b escondían esta unidad
-dentro de sí, y porque mi afirmación de que el entorno ya estaba listo era falsa.
+**CONGELADA en la r14. Ejecutable.** Es la mitad de medición de la antigua `E-infra`, que Codex
+r10/S3 prohibió congelar entera porque mezclaba un spike con una implementación desconocida.
 
-**Su primer criterio es una medición, no una construcción** — precisamente para no repetir el
-error de especificar infraestructura que no he tocado.
+**No escribe código de producción.** Su entregable es un documento de evidencia.
+**`STATUS: FINDINGS` es una salida legítima y esperada, no un fallo.**
 
-**Nota de Codex r10/S3, aceptada:** en esta forma —"scope a acotar por su primer criterio"—
-E-infra es honesta **sólo mientras siga en borrador**. No se puede congelar así, porque mezcla un
-spike con una implementación desconocida. **Cuando se retome se parte en dos:**
-`E-infra-spike` (medición, con `FINDINGS` como salida legítima) y una unidad de implementación
-redactada **después** de medir. Lo dejo escrito ahora para que quien la retome no repita el error.
+**Scope:** medir tres cosas y redactar una cuarta.
+1. **Ruta A** — si el stack local de este proyecto puede arrancar en puertos libres mientras el
+   ajeno (`sxlogxqzmarhqsblxmtj`) ocupa 54321-54324 y 54327, y si las 61 migraciones aplican.
+2. **Ruta B** — branch de Supabase: **preconditions y costo únicamente**.
+3. **La guarda anti-producción** — dónde va y con qué mutación se prueba.
+4. **El bloque de plan de `E-infra-impl`**, redactado con lo medido.
 
-**Scope (a acotar por el propio E-infra.1):** configuración de puertos de Supabase local,
-`.env.test`, seed de datos sintéticos, cleanup, y una guarda que impida que los e2e apunten a
-producción.
+**Out of scope — y estas prohibiciones son duras:**
+- Detener, reconfigurar o tocar el proyecto ajeno `sxlogxqzmarhqsblxmtj`. Si la ruta A exige
+  apagarlo, **la ruta A no es viable**, y eso es el resultado.
+- **Crear** un branch de Supabase: cuesta dinero y lo decide Brent.
+- Ejecutar `npx playwright test` / `npm run test:e2e`: **hoy apuntan a producción**.
+- Cualquier escritura contra el proyecto remoto: `supabase db reset --linked`, `db push`,
+  `link`, o `execute_sql`/`apply_migration` que no sea `SELECT`. La base es compartida con
+  Life OS y sólo admite migraciones aditivas (D9).
+- Implementar la guarda, el seed, el cleanup o el e2e de humo: eso es `E-infra-impl`.
+- Commitear cambios en `config.toml`, `.env*`, `client.ts` o `playwright.config.ts`.
 
-**Out of scope:** detener o reconfigurar el proyecto Supabase ajeno (`sxlogxqzmarhqsblxmtj`) que
-hoy ocupa el 54322 — es de otro proyecto y no se toca; migrar los tests existentes.
+**Acceptance criteria:**
+- [ ] S1 **Ruta A, arranque**: delta de `config.toml`, comando, salida cruda de `supabase start`,
+      tiempo de arranque. Si falla, el error verbatim.
+- [ ] S2 **Ruta A, migraciones**: ¿aplican limpias las 61? Salida cruda de `db reset` local. Si
+      alguna falla, nombrarla con su error entero.
+- [ ] S3 **Ruta A, esquema utilizable**: existen `church_podcast_episodes`, `liturgias` y
+      `liturgia_elementos` en local, y un cliente anon/authenticated las lee bajo su RLS.
+- [ ] S4 **Ruta B, sólo preconditions**: plan, si `create_branch` está permitido, costo por
+      hora/día, y el comando exacto. **Sin crearla** — va como FINDINGS para Brent.
+- [ ] S5 **Guarda**: `fichero:línea` exactos donde debe vivir para que Playwright falle
+      ruidosamente ante `mulsqxfhxxdsadxsljss`, cubriendo las tres vías por las que llega la URL
+      (`VITE_SUPABASE_URL`, el fallback de `client.ts:5`, `.env.test`), más la mutación que lo
+      probaría. **Sin implementarla.**
+- [ ] S6 **Plantilla de entorno**: `.env.test` está en `.gitignore:18`; nombrar el fichero
+      commiteable y sus variables, sin secretos.
+- [ ] S7 **Seed y cleanup**: si la(s) ruta(s) viable(s) admiten IDs deterministas y limpieza.
+- [ ] S8 **Bloque de plan de `E-infra-impl`**. Si S1-S4 demuestran que no hay ruta viable, S8 es
+      una recomendación con opciones y costo, no un bloque de implementación fingido.
 
-**Acceptance criteria (borrador — se cierran cuando E-infra.1 mida):**
-- [ ] E-infra.1 **Medición primero**: qué hace falta para levantar el stack local de este
-      proyecto sin chocar con el ajeno. Puertos, comandos exactos, tiempo de arranque, y si las
-      61 migraciones aplican limpias. Salida cruda.
-- [ ] E-infra.2 **Guarda anti-producción**: los e2e fallan ruidosamente si la URL de Supabase
-      apunta al proyecto productivo `mulsqxfhxxdsadxsljss`. Probado con una mutación que
-      intente apuntar a producción y deba abortar.
-- [ ] E-infra.3 `.env.test` documentado y con plantilla commiteada (sin secretos).
-- [ ] E-infra.4 Seed de datos sintéticos con IDs deterministas y cleanup.
-- [ ] E-infra.5 Un e2e mínimo de humo que demuestre el harness completo.
+**Test plan:** ninguno automatizado. La verificación es la evidencia cruda de S1-S7.
 
-**Test plan:** el propio E-infra.5 más la mutación de E-infra.2.
+**Gate (D18): no aplica**, y la razón se declara en el informe — el gate se mide sobre ficheros
+fuente modificados o creados, y esta fase no toca ninguno. No se finge una corrida verde.
 
-**Risks / unknowns:** que levantar un segundo stack de Supabase en esta máquina no sea viable
-sin tocar el proyecto ajeno. **Si es así, la salida correcta es reportar `FINDINGS`** y llevar la
-decisión a Brent — no apagar contenedores de otro proyecto por cuenta propia.
+**Definition of done:** `docs/plan/audio/evidence/E-infra-spike.md` commiteado en
+`docs/plan-audio` con evidencia cruda por criterio, más la entrada de ledger.
 
-**Depende de:** nada. **Es lo que desbloquea E3a y E3b.**
+**Risks / unknowns:** que ninguna ruta sea viable sin gastar dinero o tocar el proyecto ajeno.
+**Si es así, la salida correcta es `FINDINGS`** y la decisión sube a Brent.
+
+**Rollback:** ninguno. El worktree de medición se borra; no se mergea código.
+
+**Depende de:** nada.
+
+---
+
+## Phase E-infra-impl — Entorno de pruebas: construirlo
+
+**SIN REDACTAR, a propósito.** Este cuerpo se escribe con la salida de `E-infra-spike`, no antes.
+Redactarlo ahora sería repetir exactamente el error de la r9: especificar infraestructura que
+nadie ha tocado y llamarlo plan.
+
+**Lo único que ya se sabe de esta unidad**, porque no depende de lo que el spike mida:
+
+- **La guarda anti-producción entra sí o sí.** No es una precaución para E3b: la suite e2e que
+  ya existe (16 specs) se ejecuta hoy contra producción. Ver la remedición en §5.
+- **Su prueba es una mutación**, no una aserción (D18): apuntar la configuración a
+  `mulsqxfhxxdsadxsljss` y demostrar que la corrida aborta.
+- **`.env.test` no puede ser la plantilla commiteada** — está en `.gitignore:18`.
+
+**Depende de:** `E-infra-spike`. **Es lo que desbloquea E3a y E3b.**
 
 ---
 
@@ -643,7 +725,8 @@ decisión a Brent — no apagar contenedores de otro proyecto por cuenta propia.
 **No son contrato.** Codex r9 demostró que E3a y E3b escondían la unidad de infraestructura que
 ahora es `E-infra`, y dejó abiertos huecos reales en el contrato del slug (r9/B2) y en la
 semántica de paginación (r9/B5). Se conservan aquí porque el trabajo de trazado es válido y
-porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra` haya medido.**
+porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra-spike` haya medido
+y `E-infra-impl` haya construido.**
 
 **OBSOLETO dentro de estos borradores (Codex r11/S1b), no aplicar:** toda mención a
 `E0-gates` —unidad **retirada en la r10**, el gate está en `main`—, incluidos los criterios
@@ -1560,8 +1643,8 @@ Riesgos vigentes de las unidades actuales:
 
 | Riesgo | Prob. | Impacto | Mitigación |
 |---|---|---|---|
-| **No se puede levantar un segundo stack de Supabase local** sin tocar el proyecto ajeno que ocupa el 54322 | media | alto — bloquea E3a y E3b | `E-infra.1` lo mide primero; si no es viable, **reporta `FINDINGS` a Brent**, no apaga contenedores ajenos |
-| **Un e2e mal configurado escribe en producción** | **era real en la r9** | **crítico** — la base es compartida con Life OS | `E-infra.2`: guarda que aborta si la URL apunta a `mulsqxfhxxdsadxsljss`, probada con mutación |
+| **No se puede levantar un segundo stack de Supabase local** sin tocar el proyecto ajeno que ocupa el 54322 | media | alto — bloquea E3a y E3b | `E-infra-spike` S1 lo mide primero; si no es viable, **reporta `FINDINGS` a Brent**, no apaga contenedores ajenos. S4 mide la ruta alternativa (branch de Supabase) **sin crearla**: cuesta dinero y lo decide Brent |
+| **Un e2e mal configurado escribe en producción** | **ya no es un riesgo: es el estado de `main`** (remedido el 2026-08-08 — ver §5) | **crítico** — la base es compartida con Life OS | La guarda entra en `E-infra-impl` **sí o sí**, probada con la mutación que S5 especifique. Mientras tanto, **no se ejecuta `npx playwright test`** |
 | E1-spike no consigue los dispositivos de la matriz | media | medio | Celdas como **no medidas**, nunca inferidas; Brent decide si E1-impl arranca con cobertura parcial |
 | Liturgias antiguas con `SlideGroup` de forma distinta | media | bajo | E2.4 y E2.6: degrada a Gemini con aviso, sin romper la publicación |
 | E4-spike concluye que el preview obliga a cambiar el modelo de despliegue | media | alto | El spike lo determina desplegando, no razonando; el costo se declara en su bloque |
@@ -1616,6 +1699,9 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
 | 2026-08-08 | **`E1-spike` se aplaza a la ola 4** y la ola 2 pasa a ser el camino a la página (`E-infra` → `E3a` → `E3b` → `E4-spike`) | Decisión de Brent. `E1-spike` no tiene dependencias técnicas —se aplaza por prioridad, no por bloqueo—: entrega un documento, no algo que la comunidad pueda abrir, y su matriz exige dispositivos físicos (iOS <18.4, iOS ≥18.4, Android) cuya disponibilidad no está confirmada. Se adelanta en cuanto se confirmen | Brent |
 | 2026-08-08 | **✅ `E2` DONE.** `CODEX REVIEW E2 FINAL` → **PASS** sobre `6d45f35`. Cero desviaciones del plan congelado: no hubo que enmendar nada durante la ejecución | Codex verificó A1–A8 uno a uno y corrió las cuatro mutaciones que el PM no había comprobado (M2→1 rojo, M3→1, M4→1, M5→5). Runtime registrado (D18 §4.6): Node **v22.22.0**, Deno **2.7.11** | Codex (PASS final) |
+| 2026-08-08 | **r14: `E-infra` se parte en `E-infra-spike` (congelada) y `E-infra-impl` (sin redactar)** | No es una decisión nueva sino la ejecución de una condición ya aceptada: Codex r10/S3 dictaminó que `E-infra` *"sólo es honesta mientras siga en borrador"* porque mezcla un spike con una implementación desconocida, y el cuerpo de la unidad lo llevaba escrito desde la r11. Retomarla entera habría sido congelar lo que Codex prohibió congelar | Codex r10/S3, ejecutado por el PM entrante |
+| 2026-08-08 | **r14: la guarda anti-producción deja de ser precaución futura y pasa a corrección del presente** | **Hecho nuevo, medido en `main @ 6d45f35`:** `npx playwright test` es un gate de `CLAUDE.md`, `tests/e2e/` tiene 16 specs, `playwright.config.ts` los arranca con `npm run dev`, `client.ts:5` cae a producción y `helpers/auth.ts` entra **como admin**. La suite existente ya se ejecuta contra la base compartida con Life OS. El plan lo describía en condicional para E3b; es el estado de `main` | PM entrante (remedición) |
+| 2026-08-08 | **r14: crear un branch de Supabase queda fuera del alcance del spike; se mide su costo y decide Brent** | `list_branches` responde `{"branches":[]}`, lo que prueba que la API contesta y **nada más**. Crear una rama cuesta dinero sobre el proyecto compartido. Es el mismo principio que ya gobierna el proyecto ajeno del 54322: se mide y se reporta, no se gasta ni se apaga por cuenta propia | PM entrante |
 | 2026-08-08 | **La regla de clasificación de §4.3 se gana su sitio en su primera aplicación real** | El delta de E2 fue exactamente el falso positivo que anticipaba: los 2 errores base de `useQuickPublish.ts` se desplazaron de `(195,15)`/`(200,20)` a `(198,15)`/`(203,20)` por los imports nuevos. Sin esa frase, el ejecutor habría reportado un delta inexistente | PM |
 | 2026-08-07 | **✅ `E2` CONGELADA.** `CODEX REVIEW plan r12` → **PASS** sobre `3084208`. Se congelan alcance, comportamiento, estrategia de tipado, test plan y gate | Codex validó la estrategia de tipado **construyendo el adaptador y midiéndolo** (0/0/0/0), no argumentando, y reprodujo `tsc=1041` en `main @ 05dc4ca`. Las tres condiciones de su r11 (B1, S2, S3) quedaron aplicadas y verificadas | Codex r12 (PASS) |
 | 2026-08-07 | **r13: la regla de evidencia se unifica a SHA siempre**, nunca nombre de rama | Codex r12/S1. El 2026-08-07, entre las 15:39 y las 15:52, otra sesión tuvo este checkout compartido en `main`: **dos mediciones de Codex y una mía** se atribuyeron a la rama equivocada dentro de esa ventana. Un nombre de rama no identifica un árbol; un SHA sí | Codex r12/S1 |

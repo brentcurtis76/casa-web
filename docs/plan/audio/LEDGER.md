@@ -611,3 +611,51 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - TESTS: n/a — reordenación de plan.
 - OPEN AFTER THIS ROUND: sin cambios respecto del traspaso — merge de E2 pendiente de
   autorización, y `/pm-boot AUDIO E-infra` con el encargo de medición como primera tarea.
+
+### 2026-08-08 — plan round 14 / E-infra-spike round 0 (preparación) — PM (Opus) entrante
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: bootstrap del PM entrante. **Remedición del entorno antes de redactar nada** (el encargo
+  del PM saliente), partición de `E-infra` en dos unidades, congelado de `E-infra-spike`, y
+  redacción del prompt de ejecutor para su r1.
+- **LO QUE MEDÍ YO MISMO** — todo en `main @ 6d45f35a54bde0335d05ffd6943167cf25d0a09e`, árbol
+  limpio salvo un `.claude/launch.json` sin trackear:
+  - `docker ps` → 11 contenedores `*_sxlogxqzmarhqsblxmtj` ocupando **54321, 54322, 54323, 54324,
+    54327**. `lsof -nP -iTCP -sTCP:LISTEN` confirma que en 54300-54399 no hay nada más.
+  - `grep '^\[' supabase/config.toml` → **sólo `[functions.*]`**; sin `[db]`, `[api]`, `[studio]`.
+    35 líneas, `project_id = "mulsqxfhxxdsadxsljss"`.
+  - `ls supabase/migrations/*.sql | wc -l` → **61**. Confirma la corrección de la r10.
+  - `ls .env*` → **sólo `.env.example`**. No hay `.env` ni `.env.test`.
+  - `.gitignore:18` → **`.env.test` está ignorado.** La "plantilla commiteada" de la antigua
+    `E-infra.3` no puede llamarse así; el plan pedía algo imposible sin saberlo.
+  - `supabase --version` → `2.110.0`. `node --version` → `v22.22.0`. `deno --version` → `2.7.11`.
+  - `mcp__supabase-casa__list_branches` → `{"branches":[]}`. La llamada responde; **no prueba** que
+    `create_branch` esté permitido ni que sea gratis. No creé ninguna.
+  - `git rev-parse main phase/E2-caratula` → **ambos `6d45f35a…`**. **E2 está mergeada.**
+- **HALLAZGO QUE CAMBIA LA URGENCIA** — el riesgo que el plan describía en condicional ya es el
+  estado de `main`: `npx playwright test` es un gate declarado en `CLAUDE.md`; `tests/e2e/` tiene
+  **16 specs**; `playwright.config.ts` los arranca con `npm run dev`; `client.ts:5` cae al
+  proyecto **productivo**; y `tests/e2e/helpers/auth.ts` inicia sesión **como admin** con
+  `TEST_ADMIN_EMAIL`/`TEST_ADMIN_PASSWORD`. `grep '\.insert(\|\.update(\|\.delete(\|\.upsert('`
+  sobre `tests/e2e/` → **0**: no llaman a Supabase directo, manejan la UI, y **quien escribe es el
+  cliente de la app**. Con credenciales puestas, la suite que ya existe corre contra la base
+  **compartida con Life OS**. El plan lo escribía como algo que E3b *habría* provocado.
+- DECISIONS (las tres, en el Decision Log de `PLAN.md`):
+  1. **`E-infra` partida en `E-infra-spike` (CONGELADA) + `E-infra-impl` (sin redactar).** No es
+     decisión nueva: es ejecutar la condición de Codex r10/S3, que el propio cuerpo de la unidad
+     llevaba escrita desde la r11.
+  2. **La guarda anti-producción entra en `E-infra-impl` sí o sí**, por el hallazgo de arriba.
+  3. **Crear un branch de Supabase queda fuera del alcance del spike**: se miden preconditions y
+     costo (S4) y decide Brent. Mismo principio que ya rige con el proyecto ajeno del 54322 — se
+     mide y se reporta, no se gasta ni se apaga por cuenta propia.
+- COMMITS: ver el commit de esta ronda en `docs/plan-audio`.
+- TESTS: n/a — ronda de plan. **No ejecuté `npx playwright test` a propósito**: apunta a producción.
+- FINDINGS RAISED: ninguno contra código. Dos correcciones de hecho sobre el propio plan —
+  E2 ya mergeada, y `.env.test` inelegible como plantilla commiteada.
+- BACKLOG ADDED: ninguno nuevo. Sigue abierto el SHOULD-FIX de E2 (`REASON_NOT_SAVED`,
+  `liturgyCover.ts:55`).
+- **CERRADO del traspaso anterior:** (a) el merge de E2 ya ocurrió; (b) la fricción de arranque
+  que el PM saliente escaló está resuelta — `~/.claude/agent-workflow/workstreams.md` ya lleva una
+  nota que nombra a AUDIO, dice que su plan vive sólo en `docs/plan-audio` y da el comando para
+  leerlo. El prompt de ejecutor lo repite arriba de todo por si acaso.
+- OPEN AFTER THIS ROUND: ejecutar `E-infra-spike` r1 → `/exec AUDIO E-infra-spike r1`. Sigue
+  pendiente de Brent la confirmación de dispositivos físicos para `E1-spike` (ola 4).
