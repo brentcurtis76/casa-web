@@ -1886,3 +1886,33 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - DECISIONS: ninguna. El plan no cambia.
 - OPEN AFTER THIS ROUND: (1) **Merge de P1** — decisión de Brent; el PM no mergea. (2) Después,
   `/exec UPGRADE P2 r1`. (3) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
+
+### 2026-08-08 — P2 round 1 — PM (Opus 5) — DESBLOQUEO Y DESPACHO
+- SESSION: UPGRADE · P2 · PM
+- ACTION: La única cosa que retenía a P2 —el merge de P1— **ya está hecha**. Verifico la
+  precondición y despacho `r1` con el prompt tal cual está commiteado. **No reescribo el
+  prompt**: sigue siendo correcto palabra por palabra, y su condición de parada ahora se
+  cumple en vez de dispararse.
+- LO QUE VERIFIQUÉ YO MISMO, no lo que dice un reporte:
+  - `main` está en `24300d8`, con `feat/mesa-md-schema` dentro (`14af32f` trae las 908 líneas
+    de ledger, `PLAN.md`, la migración y `types.ts`; `24300d8` es un merge vacío posterior,
+    sin diff — ruido, no problema).
+  - `grep -c 'P1a | Esquema: ficheros.*DONE' docs/plan/upgrade/PLAN.md` → **1**. Es
+    exactamente la precondición dura del prompt, y pasa.
+  - `npx tsc -p tsconfig.app.json --noEmit | grep -c "error TS"` → **1039**, bajo
+    **Node v22.22.0**. Es el número que el prompt usa como segunda comprobación de padre
+    correcto, y la predicción del bootstrap anterior (1041 − 2 de P1) se confirma medida, no
+    supuesta.
+  - `prompts/P2-r1.md` está **en `main`** (`git cat-file -e main:…` → ok). Un ejecutor en otro
+    worktree lo encontrará; ése era el riesgo real de un prompt sin commitear.
+- **RIESGO ABIERTO QUE NO ES MÍO DE RESOLVER: `main` local va 18 commits por delante de
+  `origin/main`.** El merge de P1 **no está publicado**. Un ejecutor que trabaje en un worktree
+  de este mismo checkout parte de `main` local y está bien; uno que clone de nuevo caería en un
+  `main` sin P1 y su precondición dispararía `BLOCKED` — que es el comportamiento correcto del
+  prompt, pero cuesta una ronda. `git push origin main` es decisión y ejecución de Brent; el PM
+  no empuja a `main`.
+- FINDINGS RAISED: ninguno.
+- DECISIONS: ninguna. El plan no cambia; P2 sigue releída sin enmienda (§3.8.5, entrada
+  anterior).
+- OPEN AFTER THIS ROUND: (1) **`/exec UPGRADE P2 r1`** — despachado. (2) Publicar `main`
+  (Brent). (3) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
