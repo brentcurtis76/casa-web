@@ -1113,3 +1113,58 @@
 - OPEN AFTER THIS ROUND: (1) Brent aplica la migración —recomendado: editor SQL— o autoriza
   el canal del agente. (2) `/exec UPGRADE P1 r2`, ronda de **solo verificación** sobre A3–A8.
   (3) S1 espera decisión. P1 **no se marca DONE**: falta r2 y falta Codex.
+
+---
+
+### 2026-08-07 — P1 r2 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P1 · r2 · EXEC
+- CONTEXT PRESSURE: comfortable — la ronda se detuvo en el STEP 0 por bloqueo, mucho antes
+  de cualquier presión de contexto.
+- ACTION: **STATUS: BLOCKED.** La segunda puerta —la que nunca se había probado— está
+  cerrada. A3–A8 no son ejecutables porque la migración sigue sin aplicar.
+  - **STEP 0, sonda de solo lectura**: `column_exists=0`, `function_exists=0`. Mundo «ambos
+    0», así que el prompt ordenaba **un** intento de `apply_migration`. Lo hice, con el
+    contenido verbatim del `.sql` y el nombre `20260806000000_mesa_main_dish_optout`.
+  - **La llamada falló con**: `Cannot apply migration in read-only mode.`
+  - **Qué puerta fue, con precisión**: la del **servidor MCP**, no la de Claude Code. El
+    clasificador de permisos **dejó pasar** la llamada esta vez (en r1 la había denegado
+    antes de salir de la sesión); el error viene del servidor como resultado de la
+    herramienta. Confirmado en la configuración: `~/.claude.json:1955-1962` define
+    `supabase-casa` con `args: ["--project-ref", "mulsqxfhxxdsadxsljss", "--read-only"]`.
+    **Ahora las dos puertas están probadas y las dos están cerradas al canal del agente.**
+  - **Un intento, sin reintento, sin segundo canal.** No corrí `supabase db push`, ni `psql`,
+    ni la CLI, ni busqué claves de servicio, ni toqué `open-brain`. **No edité
+    `~/.claude.json` para quitar `--read-only`**: eso sería el workaround que la regla
+    prohíbe, y además un cambio de configuración que no me corresponde hacer.
+  - **No edité ninguno de los dos ficheros de scope.** `git diff d9eebb0 --` sobre la
+    migración y `types.ts` sale **vacío**; la rama es `feat/mesa-md-schema`, punta `ac9ef14`
+    (el commit de documentación del PM, permitido por el prompt).
+- **LO QUE SÍ PUDE PROBAR — evidencia que no depende de la migración.**
+  - **V2 — nada más se movió.** `list_migrations` sigue en **60** migraciones, última
+    `20260610233000`. `20260612000000` y `20260612000001` **siguen ausentes**, y no hay fila
+    de `20260806000000`. `mesa_abierta_participants` sigue con **31 filas**. Cero aplicación
+    parcial: el fallo fue limpio, no dejó ni la columna ni la función.
+  - **STEP 4 — gate D8 de manipulación**: `EXIT=0`, stderr
+    `[gates] totales del proyecto: tsc=1039 eslint=160 deno-lint=94 deno-check=46`, byte a
+    byte lo que el prompt exigía. `MesaAbiertaAdmin.tsx` en `tsc (10)`. La rama es
+    exactamente lo que r1 dejó. No repetí build, Vitest ni Deno: ningún fichero cambió.
+  - **V1 no es obtenible**: `pg_get_functiondef` requiere que la función exista.
+- COMMITS: solo esta entrada de ledger. Cero código.
+- TESTS: gate D8 `EXIT=0` · `tsc=1039 eslint=160 deno-lint=94 deno-check=46`.
+- FINDINGS RAISED:
+  - **[BLOCKING B1] El canal de escritura del agente está cerrado por las dos puertas.**
+    r1 murió en el clasificador de permisos; r2 murió en `--read-only` del servidor MCP. La
+    hipótesis del PM en r1 —que autorizar la llamada podría no bastar— **queda confirmada**.
+    Para desbloquear P1 hay exactamente dos caminos, y **los dos son decisión de Brent**:
+    (a) que Brent aplique el `.sql` desde el editor SQL de Supabase —el camino barato, y el
+    que el propio PM recomendó—, y r2 se rehaga como ronda de solo verificación, que ya está
+    probada viable con `supabase_read_only_user`; o (b) quitar `--read-only` de
+    `~/.claude.json` para `supabase-casa`, lo que abre el canal de escritura del agente
+    contra **producción compartida con Life OS** de forma permanente. (a) es
+    estrictamente menos arriesgado y no requiere tocar configuración.
+- DECISIONS: ninguna. No he tocado el plan congelado ni el SQL.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) **A3–A8 siguen sin verificar** — es lo único que le falta a P1.
+  (2) Brent elige camino (a) o (b) del hallazgo B1. (3) r3 será la ronda de verificación
+  A3–A8 una vez aplicada la migración. (4) S1 (criterio D8.2 vs. el flake) sigue esperando
+  decisión desde r1. P1 **no se marca DONE**: faltan A3–A8 y falta Codex.
