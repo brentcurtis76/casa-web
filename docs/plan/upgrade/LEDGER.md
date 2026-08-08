@@ -1259,3 +1259,168 @@
   verificar y consumen ya las tres rondas del tope de SOP §1.5 sin haber podido ejecutarse:
   **la continuación necesita autorización explícita de Brent para una r4**, igual que la que
   concedió en P0. (4) S1 sigue esperando. **P1 no se marca DONE**: faltan A3–A8 y falta Codex.
+
+### 2026-08-08 — P1 round 3 — PM (Fable) — VERIFICACIÓN + PROPUESTA DE RE-PLAN (SOP §3.9)
+- SESSION: UPGRADE · P1 · PM
+- ACTION: Verificación independiente de P1 r3 (`6dc9c73`). **Cero hallazgos; el reporte es
+  exacto.** Con r3 se agota el tope de 3 rondas del SOP §1.5 **sin que A3–A8 se hayan podido
+  ejecutar ni una sola vez**, así que el SOP manda propuesta de re-plan en vez de una cuarta
+  ronda. Va abajo. **No he tocado `PLAN.md`.**
+- LO QUE VERIFIQUÉ YO MISMO:
+  - `feat/mesa-md-schema` está en `6dc9c73` y **publicado** (`git ls-remote` →
+    `6dc9c73b93…`). `6dc9c73` toca **solo** `LEDGER.md` (+30).
+  - **Los dos ficheros del scope siguen byte a byte como en `d9eebb0`**, comprobado
+    ref-contra-ref (`git diff d9eebb0 6dc9c73 -- <los dos>` → vacío).
+  - La rama frente a `main`: 6 ficheros, 886 inserciones, **cero borrados**; fuera de
+    `docs/plan/upgrade/` solo están la migración (+37) y `types.ts` (+6).
+  - Base de datos: `column_exists=0`, `function_exists=0`, 31 filas, 59 migraciones, última
+    `20260610233000`. Idéntico a lo que verifiqué al cerrar r2. Nada se ha movido.
+  - **P1a es inerte, y lo comprobé en vez de suponerlo**: `git grep can_bring_main_dish` sobre
+    la rama devuelve, fuera de `docs/`, **solo** las tres declaraciones de `types.ts` y la
+    migración. Ningún consumidor. `host_food_assignment` ya existe en el remoto desde
+    `20241203`. Es decir: los dos ficheros pueden mergearse sin que nada los lea.
+  - **No reejecuté el gate**, y lo digo en vez de dejarlo implícito: el diff ref-contra-ref ya
+    prueba que los ficheros no se movieron, el gate es función pura de los ficheros y Z4 fijó
+    que dos ejecuciones dan salida byte-idéntica. Reejecutarlo no añadiría información.
+- **INCIDENTE OPERATIVO — el checkout se cambió de rama por debajo de este workstream.**
+  Al empezar la verificación, `/Users/brentcurtis/dev/casa-web` estaba en
+  **`phase/E2-caratula`** (workstream AUDIO), con un commit propio `6d45f35`. Mis primeros
+  `git diff` contra el árbol de trabajo salieron alarmantes —los ficheros de P1 parecían
+  revertidos y la migración borrada— porque estaban comparando contra **otra rama**. Rehecha
+  la comprobación ref-contra-ref, **todo está intacto**. El error fue del comando, no del
+  trabajo, y el reporte del ejecutor era correcto cuando lo escribió.
+  **Es un riesgo vivo, no una anécdota**: dos workstreams de agente comparten un único
+  checkout. Es exactamente el modo de fallo de B-02 (siete entradas de ledger perdidas en una
+  rama ajena) y lo que el SOP §1.8 manda evitar con worktrees. Un ejecutor de UPGRADE lanzado
+  mientras AUDIO trabaja commitearía sobre `phase/E2-caratula`. **Recomendación a Brent: dar a
+  UPGRADE su propio worktree** (`git worktree add ../casa-upgrade feat/mesa-md-schema`) antes
+  de la siguiente ronda. Yo escribo esta entrada desde un worktree desprendido y publico por
+  SHA, sin tocar el checkout de nadie.
+  Nota derivada: `main` local está en `05dc4ca` y `origin/main` en `5b947ac` — mi commit del
+  prompt de P1 r1 nunca se empujó a `main` (deliberado: empujar a `main` despliega). Como
+  `phase/E2-caratula` salió de `05dc4ca`, ese commit de docs viaja ahora también en la rama de
+  AUDIO. Inocuo, pero que conste.
+- FINDINGS: **BLOCKING: ninguno. SHOULD-FIX: ninguno nuevo. NIT: ninguno.** Las tres rondas de
+  P1 han producido, entre las tres, **cero hallazgos contra el código**.
+
+---
+
+## PROPUESTA DE RE-PLAN — P1 (SOP §3.9). Requiere aprobación de Brent.
+
+### 1. Qué se equivocó el plan, y con qué evidencia
+
+**No es el esquema.** El contrato D14 está verificado: ejecuté su cuerpo **en línea** contra
+los datos reales con el claim JWT del anfitrión puesto y devuelve exactamente `(3d4d6709…,
+6, 1)`, el valor que A7 espera. Las uniones, los `COALESCE`, los casts y el filtro por
+`auth.uid()` son correctos. Los dos ficheros pasan todos los gates y eliminan los 2
+diagnósticos medidos, ni uno más.
+
+**Es D9.** El plan congeló el mecanismo — *«Aplicación con un único `apply_migration`»* —
+dando por hecho que un agente podría ejecutarlo. Tres rondas demuestran que no:
+
+| Ronda | Qué pasó | Puerta |
+|---|---|---|
+| r1 | `apply_migration` denegado antes de salir de la sesión | clasificador de permisos de Claude Code |
+| r2 | el clasificador dejó pasar; el servidor respondió `Cannot apply migration in read-only mode` | `--read-only` del MCP `supabase-casa` |
+| r3 | no se intentó, por diseño del prompt; la migración seguía sin aplicar | — |
+
+Ninguna de las tres murió contra un defecto. **A3–A8 no se han ejecutado ni una vez.**
+
+El diagnóstico exacto: el plan identificó bien **PR1** (excepción a la regla de prefijo) y
+**PR2** (autorización para tocar la instancia compartida) como puertas humanas que solo Brent
+puede abrir. **La aplicación en sí es una tercera puerta humana**, y el plan la etiquetó como
+trabajo de agente. Autorizar un cambio y poder ejecutarlo no son lo mismo — es la misma
+distinción que PR2 ya hacía, aplicada un paso más allá.
+
+### 2. La enmienda propuesta
+
+**Partir P1 por la línea que el bloqueo ya trazó**, en vez de gastar rondas contra ella:
+
+- **P1a — Esquema: ficheros.** Rama `feat/mesa-md-schema`, ya construida. Scope: la migración
+  y las seis declaraciones de `types.ts`. Criterios **A1, A2, A9, A10, A11** — los cinco
+  cumplidos y verificados por el PM de forma independiente. Verde, mergeable e **inerte**:
+  cero consumidores, comprobado por `git grep`.
+- **P1b — Esquema: aplicación y verificación.** Prerrequisito **PR3 — Brent aplica la
+  migración**, puerta humana explícita, hermana de PR1 y PR2. Criterios **A3–A8**. Una sola
+  ronda de ejecutor, de solo lectura; el prompt ya está escrito (`prompts/P1-r3.md` sirve tal
+  cual).
+
+**Por qué partir y no simplemente autorizar una r4.** Una r4 cierra P1 si Brent pega el SQL
+hoy, y es legítima —el precedente existe, Brent levantó los topes dos veces en P0—. Pero deja
+el workstream entero colgando de una acción humana que lleva tres rondas sin ocurrir, y no
+arregla la causa. Partir cuesta lo mismo y compra dos cosas: **P2, P3a y P3b no tocan la base
+de datos y pueden empezar en cuanto P1a se mergee**, y la puerta humana queda escrita en el
+plan, junto a PR1 y PR2, en vez de implícita en una ronda que sigue chocando.
+
+### 3. Qué fases posteriores quedan invalidadas
+
+**Ninguna.** Ni un criterio de aceptación cambia. Solo cambia el grafo de dependencias:
+
+| Fase | Depende de (hoy) | Depende de (propuesto) |
+|---|---|---|
+| P2, P3a | P0 | **sin cambio** — nunca dependieron de P1 |
+| P3b | P3a | **sin cambio** |
+| P4 | P1, P2, P3b | **P1b**, P2, P3b |
+| P5a | P1, P4 | **P1b**, P4 |
+| P5b | P1, P5a | **P1b**, P5a |
+| P6 | P4, P5a | **sin cambio** |
+| P7 | P4 | **sin cambio** |
+| P8 | P1, P4, P7 | **P1b**, P4, P7 |
+
+Orden de merge: **P1a → P2 → P3a → P3b**, con **P1b obligatoria antes de P4** — la primera
+fase que de verdad necesita la columna (persiste comida y lee `can_bring_main_dish`).
+
+### 4. Filas de Decision Log propuestas — REDACTADAS, NO ESCRITAS
+
+| Date | Decision | Rationale | Raised by |
+|---|---|---|---|
+| 2026-08-08 | **D9 se cumple por aplicación manual en el editor SQL, no por `apply_migration`** | Las dos puertas del canal del agente están probadas cerradas (r1 clasificador, r2 `--read-only`). El fondo de D9 —aditivo, sin `db push`, una sola aplicación atómica, tras PR1 y PR2— se respeta entero; solo cambia el mecanismo, y hacia uno donde la escritura la ejecuta Brent | Brent (decisión), PM (diagnóstico) |
+| 2026-08-08 | **P1 se parte en P1a (ficheros) y P1b (aplicación + A3–A8), con PR3 como puerta humana** | Tres rondas agotadas sin un solo hallazgo: las tres murieron contra un canal de escritura que ningún agente tiene. El plan modeló PR1 y PR2 como puertas de Brent pero no la aplicación misma. Partir desbloquea P2/P3a/P3b, que no tocan la base | PM (diagnóstico), Brent (decisión) |
+| 2026-08-08 | **PR3 — Brent aplica `20260806000000_mesa_main_dish_optout.sql` desde el editor SQL** | Tercera puerta humana, hermana de PR1 y PR2 | Brent |
+
+**Consecuencia técnica que debe constar**: el editor SQL **no** escribe fila en
+`supabase_migrations.schema_migrations`. Tras aplicar, el remoto tendrá columna y función pero
+no la versión `20260806000000`, mientras el repo sí tiene el fichero — deriva nueva, en
+dirección contraria a la ya documentada (`20260612000000/1`: en repo, sin aplicar). Inocua
+(`ADD COLUMN IF NOT EXISTS` y `CREATE OR REPLACE` son idempotentes). Se cierra, si Brent
+quiere, con un `insert … on conflict do nothing` en la misma sesión del editor.
+
+### 5. Prompt de Codex para revisar la enmienda (SOP §3.9.5)
+
+```
+SESSION: UPGRADE · P1 · plan · REVIEW
+
+Revisión adversarial de una enmienda a un plan CONGELADO: docs/plan/upgrade/PLAN.md,
+revisión 7. Lee el LEDGER.md completo de P1 (r1, r2, r3 y las tres verificaciones del PM)
+antes de opinar; la propuesta está en la entrada del 2026-08-08.
+
+La enmienda parte P1 en P1a (los dos ficheros, ya construidos y verificados) y P1b (aplicar
+la migración y verificar A3–A8), e introduce PR3 —Brent aplica la migración a mano— como
+tercera puerta humana junto a PR1 y PR2. Motivo: tres rondas de ejecutor agotadas, cero
+hallazgos, y A3–A8 nunca ejecutadas porque ningún agente tiene canal de escritura.
+
+Evalúa:
+1. ¿Es correcto el diagnóstico, o el PM está racionalizando un fallo de ejecución como un
+   fallo del plan?
+2. ¿Es P1a realmente mergeable e inerte? El PM afirma cero consumidores de
+   `can_bring_main_dish`. Verifícalo tú.
+3. ¿Deja la partición algún hueco? En concreto: ¿puede alguna fase entre P1a y P1b romperse
+   porque `types.ts` declare una columna que el remoto todavía no tiene?
+4. ¿Es correcto el grafo de dependencias propuesto (§3 de la entrada)?
+5. ¿La aplicación manual desde el editor SQL viola D9 en el fondo, no solo en la letra?
+6. ¿Hay un canal de escritura legítimo que el PM no haya considerado y que no sea peor?
+7. El PM da A10 por cumplido pese a que la sub-condición de Vitest de D8.2 no se cumple ni en
+   la rama ni en el padre (ver S1). ¿Sostiene ese ruling?
+
+Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
+```
+
+---
+
+- TESTS: sin reejecutar en esta ronda; el diff ref-contra-ref lo hace innecesario (ver arriba).
+- DECISIONS: ninguna tomada por mí. Tres redactadas arriba, pendientes de Brent.
+- BACKLOG: sin cambios. B-05 y S1 siguen abiertos.
+- OPEN AFTER THIS ROUND: (1) **Worktree propio para UPGRADE** antes de nada más.
+  (2) Brent aprueba o rechaza la propuesta de re-plan. (3) Si la aprueba: revisión de Codex de
+  la enmienda, luego PR3, luego P1b con `prompts/P1-r3.md`. (4) S1 sigue esperando.
+  P1 **no se marca DONE** y P1a tampoco: ninguna fase cierra sin PASS de Codex.
