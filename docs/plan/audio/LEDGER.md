@@ -425,3 +425,52 @@
 - OPEN AFTER THIS ROUND: **ejecutar E2** (`/exec AUDIO E2 r1`). `E1-spike` sigue arrancable en
   paralelo, pero **no ha pasado review** — si se lanza, es por decisión explícita de Brent.
   `E-infra`, `E3a`, `E3b` y `E4-spike` siguen en borrador.
+
+### 2026-08-07 — E2 round 1 — EXEC (Opus) — ✅ COMPLETE
+- SESSION: `AUDIO · E2 · r1 · EXEC`
+- BRANCH: `phase/E2-caratula` · **SHA PADRE `05dc4caf857ed4e93c662131d053672032da0cf6`**
+  (= `main` en el momento de crear la rama) · COMMIT `6d45f35a54bde0335d05ffd6943167cf25d0a09e`
+- ACTION: la carátula del episodio pasa a derivarse de la portada de reflexión de la
+  liturgia vinculada. Cuatro ficheros, 716 inserciones:
+  - `src/lib/sermon-editor/liturgyCover.ts` (**nuevo**, 133) — lee
+    `liturgia_elementos WHERE liturgia_id = … AND tipo = 'portada-reflexion'`, extrae
+    `slides.slides[0].content.imageUrl` y convierte con `base64ToSpotifyCover()`.
+    Devuelve `{status:'ok'|'unavailable'}`; **nunca lanza**.
+  - `src/hooks/useQuickPublish.ts` (+27/−2) — camino corto en `generateCover`, **antes** de
+    la validación de título/predicador y de la carga del logo; toast en español al degradar.
+  - `src/lib/sermon-editor/__tests__/liturgyCover.test.ts` (**nuevo**, 18 casos).
+  - `src/hooks/__tests__/useQuickPublish.e2.test.ts` (**nuevo**, 8 casos, monta el hook).
+- TIPADO (estrategia congelada, respetada sin desviación): un solo ensanchado del cliente,
+  privado del módulo, vía `as unknown as` sobre interfaces estructurales; **cero `any`**;
+  `extractImageUrl()` valida la forma en runtime y es la contención del cast.
+- GATE (`05dc4ca` → `6d45f35`, ambos medidos con el script de `main`):
+  - `useQuickPublish.ts` — 2 errores `tsc` antes y después, **mensajes idénticos**, movidos
+    de `(195,15)`→`(198,15)` y `(200,20)`→`(203,20)`. **Desplazamiento de línea, aceptable**
+    por `scripts/gates/README.md`. `diff` normalizado sólo por el número de línea: vacío.
+  - Los **tres ficheros nuevos**: `tsc 0 / eslint 0 / deno-lint 0 / deno-check 0`. **E2.7 ✅**
+  - Totales del proyecto sin cambio: `tsc=1041 eslint=160 deno-lint=94 deno-check=46`.
+  - `npm run build` ✓ (16.59 s). `node v22.22.0` · `deno 2.7.11`.
+- TESTS: `npx vitest run --no-file-parallelism src/lib/sermon-editor src/hooks` →
+  **23 ficheros, 292 tests, 0 fallos**.
+- HONESTIDAD DE TESTS (D18) — base-red real + cinco mutaciones, todas verificadas rojas:
+  - **BASE-RED** de `useQuickPublish.e2.test.ts` antes del cableado: **6 de 8 rojos**.
+    Los 2 verdes (A5, A6) cubren comportamiento ya correcto → van por mutación.
+  - **M1** (A1, mutación declarada por el plan) sin camino corto → 6 rojos.
+  - **M2** (A2, mutación declarada) logo cargado antes del camino corto → 6 rojos.
+  - **M3** (A3) `Math.max`→`Math.min` en `coverImageUtils.ts:34` (recorte central → contain)
+    → 1 rojo: `expected 1400 to be close to 1866.67`.
+  - **M4** (A5) sin la guarda `if (liturgyId)` → 1 rojo:
+    `expected [ 'liturgia_elementos' ] to not include 'liturgia_elementos'`.
+  - **M5** (A6) `return` tras el toast en vez de degradar → 5 rojos.
+- ACCEPTANCE CRITERIA: **E2.1–E2.8 cumplidos.**
+- ASIMETRÍA DE RLS: respetada tal como la congeló el plan. Una liturgia ajena da 0 filas y
+  degrada como si no hubiera portada; no se tocaron policies. Los tests van con mocks, así
+  que **esto no está probado contra la RLS real** — sólo el camino degradado lo está.
+- FINDINGS RAISED: ninguno. La ruta trazada por el plan se verificó exacta: tabla, `tipo`,
+  ruta `slides.slides[0].content.imageUrl`, tolerancia de `loadImage` a base64 crudo,
+  recorte central en `coverImageUtils.ts:32`, y los 2 errores base en `(195,15)`/`(200,20)`.
+- NOT DONE / OPEN: la rama **no se mergea** (autoridad de Brent). Sin verificación en
+  navegador — E2 es lógica bajo vitest y el flujo real exige audio, sesión y liturgia con
+  portada guardada. Sigue en pie el backlog de ampliar la lectura de `liturgia_elementos`
+  para admins (cambio de policies, fuera de scope).
+- OPEN AFTER THIS ROUND: revisión PM de E2 r1. `E1-spike` sigue arrancable en paralelo.
