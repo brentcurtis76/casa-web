@@ -866,3 +866,63 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - BACKLOG ADDED: ninguno — todo va a la r2, nada se difiere.
 - OPEN AFTER THIS ROUND: `/exec AUDIO E-infra-spike r2`. Queda **una sola ronda** en el bucle con
   Codex antes de que la decisión suba a Brent (SOP §1.5).
+
+### 2026-08-08 — E-infra-spike round 2 — EXEC (Opus)
+- SESSION: `AUDIO · E-infra-spike · r2 · EXEC`
+- ACTION: ronda de **remediación documental** de los 3 BLOCKING, 4 SHOULD-FIX y 1 NIT de Codex.
+  **No se escribió código de producción y no se commiteó ningún fichero fuente.** Entregable:
+  `evidence/E-infra-spike.md` reescrito, con las mediciones de la r1 intactas y marcadas por SHA.
+- COMMITS: este commit en `docs/plan-audio`. Ficheros: `evidence/E-infra-spike.md`, `LEDGER.md`.
+- MEDIDO SOBRE `165e5f2` (worktree desechable `/tmp/wt-m`, borrado al terminar). Las mediciones de
+  la r1 siguen atribuidas a `6d45f35` y no se re-escribieron.
+- **B1 CERRADO — y es el que importa.** La guarda pasa de lista negra de un elemento a **lista
+  blanca en tres capas** (§S5.3), y el agujero de `reuseExistingServer` queda **medido, no razonado**:
+  - Caso D) con sonda desechable fuera de `tests/e2e/`, bloque `webServer` copiado verbatim:
+    con `CI` sin definir el **PID en 8080 es el mismo antes y después** (16055) — Playwright se
+    enganchó al servidor productivo y **nunca lanzó el suyo**. Con `CI=1` **aborta**:
+    `Error: http://localhost:8080 is already used`.
+  - Ese servidor tenía producción horneada: `import.meta.env` **sin** `VITE_SUPABASE_URL`.
+  - **`--list` NO arranca `webServer`** (medido: 8080 libre antes y después). La r1 lo daba por
+    suficiente para probar la guarda; lo es para la capa 1, **no** para D) ni E).
+  - **`globalSetup` corre DESPUÉS de que `webServer` esté arriba** (medido) → es donde va la
+    comprobación del servidor real.
+  - `vite` **cambia de puerto en silencio** si el suyo está ocupado (medido: 8080→8081);
+    `vite.config.ts` no declara `strictPort`. Por eso el puerto de test dedicado exige `--strictPort`.
+  - Caso E) fundamentado: el proyecto ajeno en 54321 **responde HTTP 200** igual que el nuestro.
+- **B2 CERRADO.** §S8 pinchado a **`165e5f2`**; los puntos 1 y 2 salen de *Scope*, *DoD* y
+  *Rollback* y quedan como **precondición ya verificada** con su SHA y su comprobación
+  (`supabase start` en 37.6 s sobre el árbol limpio). El rollback dice ahora explícitamente que
+  revertir el borrado de `[functions.generate-graphic]` volvería a romper el repo entero.
+- **B3 CERRADO.** Baseline (rango `…-9000-…`, lo pone el seed, **nadie** lo borra) separado de los
+  fixtures del test (rango `…-8000-…`, los pone y los borra el test). I6 reescrito sin ambigüedad.
+  Viaje del humo congelado en 7 pasos con pre/post-estado. Y el admin, **medido**:
+  `is_liturgia_admin` → **`f`** con el usuario sólo en `auth.users`, **`t`** tras insertar su fila
+  en `mesa_abierta_admin_roles`.
+- **S1-S4 y N1 aplicados.** S1: el grep inválido se sustituye por `role_table_grants` como prueba
+  principal. S2: los dos roles × las tres tablas, antes (401/403) y después (200 con RLS filtrando).
+  S3: `ALTER DEFAULT PRIVILEGES` medido en los dos sentidos, y la corrección al PM escrita con
+  precisión (**el caso roto es la migración incremental, no el reset**). S4: la afirmación sobre el
+  contenido de una rama queda **degradada a NO MEDIDO**. N1: lo medido y lo conjeturado, separados.
+- **DISCREPANCIA DE CONTEO, resuelta sin desacuerdo:** Codex y el PM contaron **6** `GRANT`; yo
+  cuento **5**. Los dos son correctos: el sexto llegó en `d9eebb0`, **posterior a `165e5f2`**
+  (`git grep` sobre los dos SHA lo demuestra). Es la regla «SHA siempre» pagando dividendos.
+- **DOS HALLAZGOS NUEVOS DE ESTA RONDA, ninguno pedido por el prompt:**
+  - **F3 — `supabase start` restaura el backup anterior.** Mi primera lectura de permisos, tomada
+    tras un `start`, mostraba a `anon` con `SELECT` sobre las tres tablas y **habría "refutado" F2
+    por accidente**: eran los `GRANT` que la r1 aplicó a mano, sobrevividos en el backup. Tras
+    `supabase db reset` el hueco reaparece. **Una medición sólo vale tras `db reset`**, y el
+    criterio I2 lo exige ahora.
+  - **F4 — un `INSERT` en `auth.users` no basta para iniciar sesión.** El login daba **HTTP 500**;
+    el log de GoTrue lo nombra: `converting NULL to string is unsupported` en `confirmation_token`.
+    Con los cuatro tokens a `''` el login devuelve `access_token`. Medido además que **no hace falta
+    fila en `auth.identities`**. Sin esto, el seed de `E-infra-impl` habría entregado un admin que
+    no puede entrar.
+- TESTS: n/a — unidad de medición. **Gate D18 no aplica** (cero ficheros fuente) y no se declara
+  ningún gate verde. **No se ejecutó ningún spec de `tests/e2e/`**: sólo `--list` y una sonda
+  desechable, fuera de `tests/e2e/`, cuyo único test no abre navegador ni navega.
+- LIMPIEZA: `docker ps` final con **los 11 contenedores ajenos vivos** y ninguno nuestro; puertos
+  8080/8111 libres; worktree de medición borrado. El proyecto ajeno no se tocó.
+- FINDINGS RAISED: F3 y F4 (arriba), ambos incorporados al scope y a los criterios de `E-infra-impl`.
+- BACKLOG ADDED: ninguno. Sigue abierto el SHOULD-FIX de E2 (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
+- OPEN AFTER THIS ROUND: **review final de Codex sobre `E-infra-spike`.** Es la ronda 2 —la última—
+  del bucle Codex↔PM↔Ejecutor (SOP §1.5); si Codex vuelve a fallar, la decisión sube a Brent.
