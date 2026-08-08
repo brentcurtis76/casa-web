@@ -1644,3 +1644,66 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) A6, A7 y A8 siguen **sin demostrar**; P1b no cierra. (2) El PM
   decide el canal de lectura autenticada y redespacha o recoge la evidencia. (3) P1a espera
   PASS de Codex. (4) P2, P3a y P3b siguen libres en paralelo.
+
+### 2026-08-08 — P1b round 1 — PM (Fable) — VERIFICACIÓN + ERROR PROPIO
+- SESSION: UPGRADE · P1b · PM
+- ACTION: Verificación de P1b r1 (`9814277`). **A3, A4 y A5 quedan demostrados y los verifiqué
+  yo mismo. A6–A8 no son ejecutables por el canal del agente, y la culpa de que lo
+  descubriéramos aquí y no antes es mía.** El ejecutor tiene razón en todo.
+- **MI ERROR, con precisión.** En el prompt de P1 r1 escribí que el riesgo de A6–A8 estaba
+  «cerrado». Lo que probé en realidad fue (a) que `set_config('request.jwt.claims', …, true)`
+  persiste en una llamada multi-sentencia, y (b) que el **cuerpo** del contrato D14, pegado
+  como un `SELECT` corriente, devuelve `(3d4d6709…, 6, 1)`. Ninguna de las dos cosas es
+  `EXECUTE` sobre la función: el cuerpo inline son lecturas de tablas base, que el usuario de
+  solo lectura sí puede hacer. Y el ensayo en Docker corrió como **superusuario**, donde el
+  ACL no muerde. **Mis dos comprobaciones rodearon justo la barrera que ahora bloquea.**
+  Añado que la precondición `1/1` que impuse prueba que los objetos existen, **no** que el
+  canal pueda invocarlos. Era la pregunta que había que hacerse y no la hice.
+- LO QUE VERIFIQUÉ YO MISMO AHORA:
+  - **A3 MET** — `can_bring_main_dish | boolean | NO | true`, y `rows_not_true = 0` sobre las
+    31 filas.
+  - **A4 MET** — `prosecdef = true`, `proconfig = {"search_path=\"\""}`, vacío.
+  - **A5 MET** — `anon` → `false`, `authenticated` → `true`.
+  - **A6–A8 NO EJECUTABLES, reproducido por mí**: la llamada devuelve
+    `ERROR: 42501: permission denied for function get_my_dinner_summary`. El ACL real es
+    `{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}` y
+    `pg_has_role(current_user,'authenticated','MEMBER') = false`. `supabase_read_only_user` no
+    está y no debe estar: **es exactamente lo que A5 exige**. El canal está correctamente
+    excluido por el mismo ACL que la fase acaba de demostrar correcto.
+  - **Gate reejecutado por mí en el worktree de UPGRADE**: `EXIT=0`, totales
+    `tsc=1039 eslint=160 deno-lint=94 deno-check=46`, salida **byte a byte idéntica** a mi
+    medición de r1. `9814277` toca solo `LEDGER.md` (+65); los dos ficheros del scope siguen
+    idénticos a `d9eebb0`.
+  - `npm ci` en el worktree: `node_modules` está en `.gitignore` y `git status` sale limpio.
+    **No es una desviación**, y además el gate hizo su trabajo: sin `node_modules`, `tsc` y
+    ESLint no corrían y el gate **salió con EXIT=1 en vez de aprobar en silencio**. Es
+    literalmente el modo de fallo que P0 gastó cinco rondas en cerrar, funcionando en
+    producción.
+- FINDINGS:
+  - **BLOCKING: ninguno contra el código.** El esquema es correcto por los tres criterios que
+    sí se pudieron ejercitar, y el ACL que impide A6–A8 es el ACL que el plan pedía.
+  - **[S3] SHOULD-FIX / estructural** — ningún agente de este montaje puede demostrar la
+    conducta de una función `SECURITY DEFINER` en producción: el MCP entra como
+    `supabase_read_only_user`, que está fuera del ACL por diseño, y no hay clave de
+    `service_role` ni de cliente autenticado en el repo. Conceder `EXECUTE` a ese usuario
+    **debilitaría justo lo que A5 protege** y queda descartado. Afecta a P1b hoy y a cualquier
+    fase futura que afirme conducta de RPC. Ver B-06.
+- **RUTA ACORDADA PARA A6–A8** (propuesta del ejecutor, mejorada por el PM): las corre Brent
+  desde el editor SQL, que conecta como `postgres` —sí está en el ACL—. **Mejora sobre lo que
+  el ejecutor propuso**: cada bloque hace `set_config` de la claim **antes** de cambiar de rol
+  (para que la búsqueda del `user_id` no la limite RLS) y luego `set local role authenticated`
+  antes de llamar a la función. Así se ejercita el ACL real *y* el filtro por `auth.uid()`, que
+  es más fiel que llamarla como `postgres`. Todo dentro de `begin … rollback`: son lecturas.
+- **CADENA DE EVIDENCIA, declarada para Codex.** La salida de A6–A8 la produce **Brent**, no un
+  ejecutor ni el PM. Es la única vía que existe. Lo dejo escrito aquí en vez de disimularlo:
+  Codex debe saber exactamente por qué canal vino cada dato y puede pedir que se repita.
+- **NO despacho una r2.** Un ejecutor no puede correr A6–A8 —es el ACL, no el prompt— así que
+  su único aporte sería transcribir el pegado de Brent. Ya van tres sesiones gastadas en cosas
+  que una consulta resuelve; ésta no va a ser la cuarta.
+- BACKLOG ADDED: **B-06** — no hay canal de verificación de RPC para agentes. Opciones cuando
+  toque (P8 consume `get_my_dinner_summary` a través de `dinnerSummary.ts`): una clave de
+  `service_role` en un `.env` local no versionado, o pgTAP contra un Supabase local. **Decidir
+  antes de P8**, no durante.
+- OPEN AFTER THIS ROUND: (1) Brent corre los cuatro bloques y pega la salida cruda. (2) El PM
+  la registra verbatim y dictamina A6–A8. (3) Revisión de Codex sobre P1a + P1b juntas, con la
+  cadena de evidencia declarada. P2, P3a y P3b siguen libres.
