@@ -1977,3 +1977,85 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Brent. (2) Corregir la base de Vitest de «Aritmética de tests» (1036 → 1062) si el PM lo ve
   bien. (3) Sigue abierto: `main` local por delante de `origin/main` (P1 sin publicar).
   (4) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
+
+### 2026-08-08 — P2 round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P2 · PM
+- ACTION: Verificación del reporte del ejecutor de P2 r1. **No leí el reporte como evidencia**:
+  reejecuté los cuatro gates yo mismo, leí los tres ficheros enteros, y comprobé cada criterio
+  contra el código. Rama `feat/mesa-md-alloc`@`6af5071`, un solo commit sobre `981c00f`,
+  `git diff --name-status main...` = exactamente los 3 ficheros nuevos + `LEDGER.md`.
+- **LO QUE MEDÍ YO, con el comando y el resultado:**
+  - Gate D8 sobre los tres ficheros → `EXIT=0`, `(0)(0)(0)(0)` en los cuatro linters para cada
+    uno. Totales del proyecto `tsc=1039 eslint=160 deno-lint=94 deno-check=46`, idénticos a los
+    que medí en `main` antes de despachar.
+  - `deno test --allow-all .` desde `supabase/functions/` → **428 passed / 0 failed**. 409 + 19,
+    exacto.
+  - `npm run build` → exit 0.
+  - `npx vitest run --no-file-parallelism` en la punta → **1063 pass / 6 fail**, y **volví a
+    medir el padre yo mismo** haciendo checkout de `main` y ejecutando la suite completa →
+    **1062 pass / 6 fail**. Delta **+1**, conjunto de rojos idéntico (los 6 de
+    `MesaAbiertaDashboard.test.tsx`) en ambos. No hubo flake de `CuentacuentoEditor.ph.*` en
+    ninguna de las dos pasadas. El ejecutor midió el padre moviendo el fichero del test 20 a un
+    lado; es equivalente, pero el criterio es mío y lo comprobé por el camino largo.
+  - B1 `grep -cE "^[[:space:]]*import"` → **0**. B2 `grep -n "Math.random"` → sin salida.
+    B3 `grep -rn "mainDish" supabase --include=index.ts` → sin salida; el **único** importador
+    en todo el repo es el test 20.
+  - B6 no lo di por bueno de palabra: extraje el cuerpo de los 19 `Deno.test` y comprobé cuáles
+    invocan `eachFixture`/`verifyInvariants`. **Los dieciséis tests 4–19 lo invocan; los 1–3
+    no, y no deben** — son contrato puro y no producen asignación. Leído el verificador entero:
+    **reproduce cada movimiento desde la entrada original** y recalcula personas, cuota,
+    dispuestos y déficit por su cuenta, en vez de creerse los números que el módulo reporta —
+    de hecho compara los del módulo contra los suyos. Es la diferencia entre un verificador y
+    un eco, y está del lado correcto.
+  - B4: los nombres de los tests mapean uno a uno sobre D5.1–D5.11 (4,5→G1 · 8→G2 · 9→G3 ·
+    10→G4 · 11→G5 · 12→G6 · 13→G7 · 14,15→G8 · 16,17→G9 · 18→G10 · 19→G11). Las once cubiertas.
+  - Las cinco clases de frontera que D5 exige están en la tabla de 11 fixtures: sin dispuestos
+    (F1, F11), todos dispuestos (F2), capacidad al límite (F3, F7), déficit simultáneo (F4),
+    `+1` en ambos lados (F5). F6 es el contraejemplo de Codex r2 y F7 su variante bloqueada por
+    capacidad — el par que enseña que G3 y G4 son condiciones distintas.
+- **EL ARGUMENTO DE LA GARANTÍA 6 SE SOSTIENE, y lo verifiqué contra el código, no contra la
+  cita.** `mainDish.ts:265-268`: `after` se calcula restando las dos contribuciones viejas y
+  sumando las dos nuevas, lo cual **es** el déficit total posterior y no una estimación, porque
+  las demás mesas no se tocan (las dos únicas escrituras del bucle son a `receiverIndex` y
+  `donorIndex`). La guarda `if (after > before - 1) continue` acepta solo `after ≤ before − 1`:
+  decrecimiento estricto. De ahí G7, y `budget = initialTotalDeficit` lo hace además explícito
+  en el bucle en vez de dejarlo como comentario.
+- **COMPROBÉ EL FALLO DE ALIAS QUE ESTA CLASE DE CÓDIGO YA TUVO** (el "invitado en dos cenas"
+  de `index.ts:305`, motivo de que G9 exista): en `balanceMainDishCarriers`, `receiver` y
+  `donor` se capturan **antes** de escribir, y `swappedTable` devuelve objetos nuevos, así que
+  el segundo `swappedTable` sigue leyendo la lista original del receptor. No hay aliasing. El
+  verificador lo cubre además por reproducción.
+- FINDINGS RAISED: **ninguno BLOCKING.**
+  - **SHOULD-FIX (contra el PLAN, no contra el código) → backlog B-07.** Los absolutos de
+    Vitest de la «Aritmética de tests» están desfasados: 1036 se midió en `1732bee` y el padre
+    real da 1062. Los **deltas** (+32) siguen bien y son lo único que D8 exige, así que no
+    bloquea nada. Corregido en el PLAN con nota al lado y fila de Decision Log, sin reescribir
+    los deltas ni borrar la tabla histórica.
+  - **NIT (observación, ninguna acción).** G5 está implementada como «la donante queda con
+    déficit 0», que cumple la garantía al pie de la letra y además prohíbe todo intercambio
+    entre dos mesas ambas deficitarias, aunque el total bajase. El ejecutor lo declaró él mismo
+    y señaló F4 como el caso. Es exactamente lo que D5 permite —ninguna garantía exige
+    exhaustividad— y G10 existe para que el déficit restante se reporte. **Lo dejo anotado para
+    P4**: si en producción aparece cobertura peor de lo aceptable, aquí está el margen, y sería
+    una enmienda del plan, no un parche.
+  - **NIT.** `Food` incluye `"none"`, que el módulo nunca emite. Es deliberado y documentado:
+    mantiene el test 7 como aserción real en vez de tautología, y el tipo espeja el enum de la
+    base. Correcto.
+- **LO QUE NO ENCONTRÉ Y BUSQUÉ**: ningún `Math.random`, ningún import, ningún consumidor
+  prematuro, ninguna mutación de la entrada (`balanceMainDishCarriers` clona antes de tocar),
+  ninguna escritura fuera de los tres ficheros, ningún fixture que haya dejado de ejercitar su
+  garantía (los tests 4, 5, 6, 7, 9, 11 y 12 llevan aserciones de no-vacuidad, así que una
+  tabla que dejara de cubrir un caso fallaría en vez de pasar en verde).
+- DECISIONS: una, la del Decision Log de arriba (B-07). El plan no cambia en nada sustantivo:
+  P2 se releyó sin enmienda antes de la ronda y sigue sin necesitarla.
+- BACKLOG ADDED: **B-07** — absolutos de Vitest del plan desfasados en 26. B-05 y B-06 siguen
+  abiertos; B-06 hay que decidirlo antes de P8.
+- CONTEXT PRESSURE: el ejecutor reportó "comfortable" y el resultado lo respalda — 19 tests con
+  verificador y 11 fixtures no es una suite recortada por espacio. La fase estaba bien
+  dimensionada pese a ser la mayor del plan.
+- **P2 ESTÁ LIMPIA. Lista para revisión final de Codex.** No la marco Done: eso lo hace el PASS
+  de Codex, no yo.
+- OPEN AFTER THIS ROUND: (1) Revisión final de Codex sobre P2. (2) Merge de
+  `feat/mesa-md-alloc` — decisión de Brent; el PM no mergea. (3) Publicar `main`, que sigue por
+  delante de `origin/main`. (4) Después de P2, **P3a** (`feat/mesa-md-seam`) — la sesión de
+  mayor riesgo del plan.
