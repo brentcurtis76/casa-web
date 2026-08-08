@@ -200,6 +200,7 @@ derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
 | ~~**D17**~~ | **Trasladada al backlog (§6)** en la r9. La r8 decía que bajaba a guardrail pero la dejó físicamente aquí, que es afirmar una cosa y hacer otra. | Codex r8/S3. |
 | **D19** | **El origen canónico público es `https://www.anglicanasanandres.cl`.** Toda URL de episodio que el sistema emita o comparta usa ese host: `/reflexiones/<slug>`. | **Nueva en la r9 (Codex r8/S3)**, que señaló que faltaba una decisión activa para el origen canónico. Medido en la r2: el apex responde **307 → www**, así que emitir el apex haría seguir un redirect permanente hacia una URL distinta de la compartida. Es la misma medición que sostenía a D4; D4 se fue con la distribución, la medición no. |
 | **D18b** | **La previsualización del enlace es la distribución.** *Endurecida en la r8:* el preview debe mostrar **título, portada, predicador y canonical** sobre una URL publicada de verdad — eso es el criterio. **`og:audio` deja de ser obligatorio por decreto**: sólo entra si E4-spike demuestra que algún canal real de CASA lo consume (E4s.6). | Brent (r3), endurecida por Codex r7/S4: exigir `og:audio` sin evidencia de que alguien lo use era fe, no diseño. |
+| **D20** | **`E-infra-spike` se cierra por aceptación explícita de Brent, no por un PASS de Codex.** Codex la falló 2/2 (tope del bucle, SOP §1.5) con dos BLOCKING, los dos verificados por el PM y los dos **dentro del plan de pruebas de `E-infra-impl`**, no de la medición del entorno. Brent eligió la opción **A: aceptar con enmiendas**. Las dos enmiendas son obligatorias y están en el cuerpo de `E-infra-impl`. | Codex confirmó que *"the infrastructure measurements are substantially sound, and the production guard itself is now well designed"*, y dio por cerrados B1, B2, F3, F4 y la atribución de SHA. Lo que quedaba abierto era el contrato de pruebas de la fase siguiente — que tendrá su propia review de Codex antes de que nadie escriba código. Hacer girar el spike una tercera vez para pulir el plan de otra fase no compra corrección, compra rondas. **Queda registrado que este cierre es un override, para que nadie lo lea como un PASS.** | Brent (override §1.5) |
 | **D18** | **Los gates se miden con `scripts/gates/changed-files-diagnostics.sh` sobre los ficheros que la fase toca, contra el SHA padre fijado de esa fase.** Sin esquemas de identidad globales. Build verde absoluto. Todo test nuevo con prueba base-red o de mutación. | CR-9: el gate correcto ya existe en el repo y documenta 62 colisiones del enfoque que yo proponía. |
 
 ---
@@ -310,8 +311,8 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **EJECUTADA r1 — limpia, en espera de review final de Codex** | — |
-| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **REDACTADA** en `evidence/E-infra-spike.md` §S8 — se congela cuando Codex cierre el spike | E-infra-spike |
+| E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
+| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **CONGELADA 2026-08-08 — ejecutable**, cuerpo autoritativo en su sección | E-infra-spike |
 | E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
@@ -704,42 +705,117 @@ fuente modificados o creados, y esta fase no toca ninguno. No se finge una corri
 
 ## Phase E-infra-impl — Entorno de pruebas: construirlo
 
-**El cuerpo de esta unidad vive en `docs/plan/audio/evidence/E-infra-spike.md`, §S8** — scope,
-out of scope, criterios I1-I8, test plan, definition of done y rollback. **No se copia aquí a
-propósito:** dos copias del mismo bloque divergen, y el bloque nació de la medición, que es donde
-se lee con su evidencia al lado. **Se congela cuando Codex cierre `E-infra-spike`.**
+**CONGELADA el 2026-08-08 por decisión de Brent (opción A: aceptar con enmiendas).**
 
-**Ruta elegida: A — stack local de Supabase en puertos libres.** Medido por el ejecutor y
-**reproducido por el PM** el 2026-08-08 sobre `6d45f35`: arranca en 33-44 s en
-54331/54332/54333/54334/54335/54337, aplica **61/61** migraciones limpias y sirve RLS correcta a
-`anon` (200, ve sólo lo `published`). Sin costo y sin tocar el proyecto ajeno.
-**La ruta B (branch de Supabase) queda cerrada por innecesaria**, no por inviable: su costo está
-documentado en §S4 (≈ USD 9.81/mes, fuera del Spend Cap) y el plan de la organización **no se
-midió** porque medirlo cuesta dinero.
+> **Éste es el cuerpo autoritativo de la fase.** Hasta la r14 apuntaba a `evidence/E-infra-spike.md`
+> §S8; **eso se corrige aquí**. La evidencia es el registro de lo que se midió y no se reescribe;
+> el **contrato** es este bloque, que es de PM. Codex r2/B2 mostró lo que cuesta tenerlos separados:
+> un hotfix dejó §S8 obsoleto y el ledger no era el sitio para arreglarlo.
+> **Las mediciones siguen en `evidence/E-infra-spike.md`** — se citan, no se copian.
 
-**Dos hallazgos del spike que esta unidad debe arreglar** (ambos reproducidos por el PM):
+**Ruta elegida: A — stack local de Supabase en puertos libres.** Medida por el ejecutor,
+**reproducida por el PM** y **reproducida por Codex**: arranca en 33-44 s, aplica todas las
+migraciones limpias y sirve RLS correcta (`anon` ve sólo lo `published`). Sin costo y sin tocar el
+proyecto ajeno. **La ruta B (branch de Supabase) queda cerrada por innecesaria**, no por inviable.
 
-- **F1 — `supabase start` está roto en `main` desde `55ce9c7` (2026-07-16).** `config.toml`
-  declara `[functions.generate-graphic]` y ese directorio **no ha existido nunca en ninguna rama**.
-  Afecta al repositorio entero, no sólo a AUDIO; nadie lo había visto porque nadie levantaba el
-  stack local. Arreglo: borrar el bloque.
-- **F2 — las 61 migraciones no otorgan privilegios de tabla a `anon`/`authenticated`.** En local
-  toda lectura da 401 `42501`. El esquema depende de un estado ambiente del proyecto alojado que
-  el stack local no reproduce. Arreglo verificado: los `GRANT` en `supabase/seed.sql`.
-  **Backlog abierto sobre este arreglo:** `GRANT … ON ALL TABLES` sólo alcanza a las tablas
-  existentes en ese instante, así que una migración futura rompería el entorno local en silencio.
-  Considerar `ALTER DEFAULT PRIVILEGES`.
+### SHA padre — decisión, no herencia
 
-**Lo que ya se sabía y sigue en pie:**
+**La fase se ramifica del `main` vigente el día que arranque, y anota su SHA exacto en el ledger.**
+No se fija `165e5f2`: `main` ya avanzó a `981c00f` y seguirá moviéndose, y ramificar de un SHA viejo
+sólo compra un merge sucio. **Consecuencia directa (Codex r2/S1): el criterio de migraciones deja de
+ser `61/61` y pasa a `N/N` medido sobre ese SHA** — a `165e5f2` eran 61, a `981c00f` son 62.
 
-- **La guarda anti-producción entra sí o sí.** No es una precaución para E3b: la suite e2e que ya
-  existe (14 ficheros de spec, 99 tests) se ejecuta hoy contra producción. Ver la remedición en §5.
-- **Su prueba es una mutación**, no una aserción (D18): §S5 fija los tres casos que deben salir
-  rojos, y la salida de los tres se pega en el informe — no sólo la del verde.
-- **`.env.test` no puede ser la plantilla commiteada** (`.gitignore:18`); es `.env.test.example`,
-  verificado no ignorado.
-- **Hueco no obvio que descubrió el spike:** poner sólo `VITE_SUPABASE_URL` deja la app con URL
-  local y **clave anon de producción**. La guarda tiene que exigir las dos variables.
+### Precondición YA ENTREGADA — no es trabajo de esta fase
+
+El hotfix `165e5f2` (antepasado de `main`) ya borró `[functions.generate-graphic]` y fijó los
+puertos. **Sale de Scope, de Definition of done y de Rollback.** Un ejecutor que busque ese bloque
+para borrarlo **no lo encontrará, y eso es lo esperado.**
+Verificación: `git show main:supabase/config.toml | grep -c "generate-graphic"` → **0**.
+
+### Scope
+
+1. **`supabase/seed.sql`**: los `GRANT` de F2, el baseline sintético, y el usuario admin.
+2. **La guarda anti-producción en tres capas**, según `evidence/E-infra-spike.md` §S5.3.
+3. **`.env.test.example`** con sus cuatro variables (§S6).
+4. **`smoke-local.spec.ts`**, el viaje congelado en §S7.
+5. **Documentar el arranque** donde el repo ya documenta sus gates.
+6. **La bandera que desactiva la carga de `.env.test`** — enmienda 2, abajo.
+
+### Out of scope
+
+- Migrar o tocar los 14 ficheros de spec existentes.
+- Crear ramas de Supabase (ruta B).
+- `pg_cron` local y el camino de recordatorios de WhatsApp.
+- La columna `slug` y su trigger (D12) — es de E3a/E3b.
+
+### LAS DOS ENMIENDAS DE BRENT — nacen del FAIL 2/2 de Codex y son obligatorias
+
+**Enmienda 1 — el viaje del humo no puede asegurar contra `/admin/roles` con el rol que se siembra.**
+Medido por Codex y **confirmado por el PM en el árbol**: `src/appRoutes.tsx:55` protege esa ruta con
+`requires={{ role: 'general_admin' }}`, y `general_admin` vive en el RBAC de CASA
+(`church_roles` / `church_user_roles`, `20260209000000_casa_rbac_schema.sql`) — **otra tabla
+distinta de `mesa_abierta_admin_roles`**, que es la que el seed llena. El usuario sembrado entra a
+la app y **no llega a esa ruta**. Que `rbac.spec.ts:86` exista no lo desmiente: ese spec asume un
+`general_admin` de CASA. *(El PM dio la ruta por buena en la r2 comprobando que el test existe, no
+que el rol la autorice. Queda escrito.)*
+**La fase elige una de las dos salidas y la demuestra de extremo a extremo, con salida cruda:**
+(a) sembrar además la asignación en `church_user_roles` contra la fila `general_admin` de
+`church_roles`; **o** (b) elegir una ruta que `mesa_abierta_admin_roles` sí autorice.
+
+**Enmienda 2 — el arnés de mutaciones necesita poder desactivar `.env.test`.**
+`playwright.config.ts:19` hace `if (!process.env[key]) process.env[key] = val;`, así que con un
+`.env.test` presente —que esta fase **exige**— un `env -u VITE_SUPABASE_URL …` **se rellena solo
+desde el fichero** y los casos B) y C) no pueden fallar (Codex midió `B_EXIT=0`, `C_EXIT=0`).
+**La fase añade una bandera** —`E2E_NO_ENV_FILE=1` que salte el bloque, o `E2E_ENV_FILE` apuntando
+a una ruta inexistente— y **ejecuta B) y C) con ella puesta**. Sin esto, I5 no es verificable.
+
+### Criterios
+
+- [ ] I1 `supabase start` arranca sobre el árbol de la fase sin editar nada a mano; salida cruda.
+- [ ] I2 `supabase db reset` aplica **N/N** sin error, con **N medido sobre el SHA padre anotado**;
+      salida cruda. **Antes de cualquier medición de permisos, `db reset` — nunca sólo `start`** (F3).
+- [ ] I3 Tras el seed, `anon` y `authenticated` leen por PostgREST **200** sobre las tres tablas,
+      y `anon` ve sólo lo `published`; salida cruda.
+- [ ] I4 Los cinco casos de mutación de §S5.4 (A-E) salen con código ≠ 0 y **sin** arrancar
+      `webServer`; salida cruda de los cinco.
+- [ ] I5 **B) y C) se ejecutan con la bandera de la enmienda 2** y salen con código ≠ 0.
+- [ ] I6 El control **lista los specs** (`--list`) y el humo pasa; **no** se corren los 99 tests
+      (Codex r2/S2: eso convertía un control de guarda en un gate de integración).
+- [ ] I7 **Enmienda 1 demostrada de extremo a extremo**: el usuario sembrado llega a la ruta que la
+      fase elija, con salida cruda de la autorización.
+- [ ] I8 El humo deja la tabla en el baseline exacto (contrato de limpieza de §S7): borra sólo el
+      rango `8000`, nunca el `9000`.
+- [ ] I9 Los 11 contenedores de `sxlogxqzmarhqsblxmtj` siguen vivos al terminar; `docker ps`.
+- [ ] I10 Gate D18 verde sobre los ficheros que la fase toca.
+
+### Test plan
+
+`npx playwright test tests/e2e/smoke-local.spec.ts` con el stack local arriba, más los cinco casos
+de mutación y su control. **La prueba de que la guarda sirve es que falla**: se pega la salida de
+los cinco casos rojos, no sólo la del verde.
+
+### Definition of done
+
+I1-I10 con salida cruda y SHA. `supabase/seed.sql`, `.env.test.example`, `playwright.config.ts` y
+`smoke-local.spec.ts` commiteados. **`.env.test` real nunca commiteado.**
+
+### Rollback
+
+Todo aditivo. `git revert` del commit de fase lo deshace entero; nada toca producción ni la base
+compartida. **No revertir `165e5f2`**: eso rompería `supabase start` para todo el repositorio.
+
+### Backlog heredado (Codex r2, aceptado por Brent con la opción A)
+
+- **S3** — la precondición usaba `git show main:…` violando la regla de SHA del propio documento, y
+  llamaba "limpio" a un árbol cuyo `git status` mostraba `?? probe-reuse/`. Lo exacto es
+  "sin cambios en ficheros trackeados".
+- **NIT** — `supabase/.branches/` sigue sin ignorar mientras `supabase/.temp/` sí lo está.
+- **F2/S3** — `GRANT … ON ALL TABLES` no alcanza a lo creado después: añadir
+  `ALTER DEFAULT PRIVILEGES` o exigir resembrado. **El caso roto es la migración incremental, no el
+  `db reset`**, que corre migraciones antes del seed y lo repara.
+- **F4** — un `INSERT` en `auth.users` no basta para iniciar sesión (HTTP 500, `confirmation_token`
+  NULL en GoTrue). Con los cuatro tokens a `''` el login devuelve `access_token`; no hace falta
+  fila en `auth.identities`.
 
 **Depende de:** `E-infra-spike`. **Es lo que desbloquea E3a y E3b.**
 

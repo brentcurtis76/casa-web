@@ -1051,3 +1051,43 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - TESTS: n/a — ronda de triage. No ejecuté specs.
 - OPEN AFTER THIS ROUND: **decisión de Brent entre A, B, C y D.** `E-infra-spike` NO está cerrada y
   no la marco DONE. `E-infra-impl` no arranca hasta que se resuelva.
+
+### 2026-08-08 — E-infra-spike CIERRE DE UNIDAD — PM (Opus), por decisión de Brent (opción A)
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: Brent elige **A — aceptar con enmiendas**. `E-infra-spike` se cierra; `E-infra-impl`
+  se congela con las dos enmiendas dentro. Registrado en `PLAN.md` como **decisión D20**.
+- **CÓMO SE CIERRA, dicho sin adornos: por override explícito de Brent (SOP §1.5), NO por un PASS
+  de Codex.** Codex la falló 2/2. Marcarla DONE a secas sería exactamente el tipo de afirmación
+  cómoda que este plan lleva catorce rondas desmontando, así que la fila de §5 y D20 dicen
+  literalmente "por aceptación explícita de Brent, NO por PASS de Codex".
+- QUÉ ENTREGÓ LA UNIDAD: la respuesta a la pregunta para la que existía — **sí hay un entorno de
+  pruebas local viable, y no cuesta dinero**. Stack local en puertos libres, todas las migraciones
+  limpias, RLS correcta, sin tocar el proyecto ajeno. Codex reprodujo lo esencial y lo escribió:
+  *"the infrastructure measurements are substantially sound, and the production guard itself is now
+  well designed"*. De paso destapó **F1** (`supabase start` roto para todo el repo desde
+  2026-07-16), **F2** (el esquema depende de privilegios que las migraciones no declaran),
+  **F3** (`start` restaura backup y contamina cualquier medición de permisos) y **F4** (un `INSERT`
+  en `auth.users` no produce un usuario que pueda iniciar sesión).
+- **CAMBIO ESTRUCTURAL, y es la lección de la ronda:** el cuerpo de `E-infra-impl` **se muda a
+  `PLAN.md`**. Hasta ahora `PLAN.md` decía que el contrato vivía en `evidence/…§S8`. Codex r2/B2
+  demostró el costo: un hotfix dejó §S8 obsoleto y actualizar el ledger no lo arreglaba, porque el
+  ledger no es el sitio autoritativo. **La evidencia registra lo medido y no se reescribe; el
+  contrato es de PM y vive en el plan.** Se citan, no se copian.
+- DECISIONES DEL PM AL CONGELAR (las dos, del SHOULD-FIX S1 de Codex):
+  - **El SHA padre no se fija en `165e5f2`.** La fase se ramifica del `main` vigente el día que
+    arranque y anota su SHA. Ramificar de un SHA viejo sólo compra un merge sucio; `main` ya está
+    en `981c00f`.
+  - **En consecuencia, el criterio de migraciones pasa de `61/61` a `N/N` medido sobre ese SHA.**
+    A `165e5f2` eran 61; a `981c00f` son **62** (verificado por mí:
+    `git ls-tree -r --name-only main -- supabase/migrations/ | grep -c '\.sql$'` → 62).
+- ENMIENDAS OBLIGATORIAS incorporadas a los criterios (I7 e I5):
+  1. El viaje del humo no puede asegurar contra `/admin/roles` con el rol que siembra
+     (`appRoutes.tsx:55` exige `general_admin` del RBAC de CASA, no `mesa_abierta_admin_roles`).
+  2. El arnés de mutaciones necesita una bandera que desactive la carga de `.env.test`, o B) y C)
+     no pueden fallar.
+- BACKLOG HEREDADO a `E-infra-impl`: S3 de Codex (dos imprecisiones de evidencia), el NIT de
+  `supabase/.branches/`, `ALTER DEFAULT PRIVILEGES`, y F4. Sigue abierto el SHOULD-FIX de E2.
+- TESTS: n/a — ronda de cierre y congelado. Verifiqué el conteo de migraciones y la protección de
+  ruta contra el árbol.
+- OPEN AFTER THIS ROUND: **`E-infra-impl` está congelada y es ejecutable.**
+  `/exec AUDIO E-infra-impl r1`. Después: `E3a` → `E3b` → `E4-spike`.
