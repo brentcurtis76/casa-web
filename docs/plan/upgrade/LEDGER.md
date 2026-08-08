@@ -1424,3 +1424,69 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   (2) Brent aprueba o rechaza la propuesta de re-plan. (3) Si la aprueba: revisión de Codex de
   la enmienda, luego PR3, luego P1b con `prompts/P1-r3.md`. (4) S1 sigue esperando.
   P1 **no se marca DONE** y P1a tampoco: ninguna fase cierra sin PASS de Codex.
+
+### 2026-08-08 — P1 — ENMIENDA APROBADA (Opción A) + ENSAYO EN DOCKER — PM (Fable)
+- SESSION: UPGRADE · P1 · PM
+- ACTION: Brent aprueba la **Opción A**: P1 se parte en **P1a** (ficheros) y **P1b**
+  (aplicación + A3–A8), con **PR3** como tercera puerta humana. Delega en el PM las dos
+  decisiones menores (S1 y la fila de `schema_migrations`). `PLAN.md` enmendado: índice de
+  fases, prerrequisitos, sección de fase, D8 punto 2, estado del plan, y **cinco filas nuevas
+  de Decision Log**. El resto del texto sigue congelado en la revisión 7.
+- **POR QUÉ DOCKER NO SUSTITUYE A PR3** (pregunta de Brent, y merece respuesta escrita porque
+  volverá a surgir): `supabase start` levanta un Postgres **local**. No toca
+  `mulsqxfhxxdsadxsljss`, así que no entrega la funcionalidad ni satisface A3–A8, que son
+  consultas sobre el estado **de producción** y aritmética D1 sobre los 6 matches reales. La
+  única forma de que la CLI escriba en producción es `supabase db push`, prohibida por D9 —y
+  la prohibición es sustantiva, no burocrática: arrastraría `20260612000000` y
+  `20260612000001`, sin aplicar y **fuera** de lo que PR2 autorizó. Docker sirve de **ensayo**,
+  y como ensayo ha valido mucho.
+- **ENSAYO EJECUTADO, y lo que costó.** Primero lancé `supabase start` sin comprobar el
+  entorno: había ya un stack local de **otro proyecto** (`sxlogxqzmarhqsblxmtj`) ocupando
+  54321/54322 desde hacía 24 h, y el `config.toml` de casa-web **no declara puertos**, así que
+  usa esos mismos por defecto. Lo aborté antes de que creara un solo contenedor y verifiqué
+  que el stack ajeno seguía sano (11 contenedores healthy). Error mío; solo se descargaron
+  imágenes. Lo rehíce con la herramienta mínima: **un Postgres desechable, sin puertos
+  publicados**, con stubs de `auth.uid()` y las tres tablas, datos **sintéticos** (D12), y el
+  **fichero de migración aplicado verbatim**.
+- **RESULTADO DEL ENSAYO — A3–A8 en forma, todos verdes:**
+  - `psql -f 20260806000000_mesa_main_dish_optout.sql` → `ALTER TABLE / CREATE FUNCTION /
+    REVOKE / GRANT`, **exit 0**. **La función se crea sin error de ambigüedad en `match_id`** —
+    era el único riesgo del contrato D14 que no se podía probar sin crearla, y queda cerrado.
+  - **A3** → `can_bring_main_dish | boolean | NO | true`, `rows_not_true = 0`.
+  - **A4** → `prosecdef = t`, `proconfig = {"search_path=\"\""}` (vacío).
+  - **A5** → `anon_can = f`, `authed_can = t`.
+  - **A6** → ajeno de otro mes: **0 filas**.
+  - **A7** → anfitrión: **1 fila**, `(aaaa1111…, 6, 1)`. La fixture reproduce a propósito la
+    forma de la real: anfitrión sin `+1`, cuatro invitados de los que **uno** trae `+1`, y un
+    solo `main_course` ⇒ `1 + 0 + 4 + 1 = 6` personas y 1 plato.
+  - **A8** → invitado de ese match: **la misma fila**.
+  - Contenedor destruido; nada publicado, nada commiteado, cero datos de miembros.
+  - **Esto es un ensayo, no A3–A8.** Los criterios exigen el estado de producción y los datos
+    reales. Lo que compra es que, cuando Brent aplique, la probabilidad de sorpresa es mínima
+    y el modo de fallo que quedaba —la ambigüedad— está descartado.
+- **DECISIONES QUE BRENT ME DELEGÓ, y el criterio con que las tomé:**
+  - **S1 → D8 punto 2 se enmienda.** De «el conjunto de rojos por nombre es exactamente el de
+    base» a «los rojos atribuibles a `F` no crecen; uno fuera de `F` se dirime reejecutando la
+    suite en el **commit padre**». Motivo: el criterio anterior **no es comprobable** —medí 7
+    rojos en el propio commit padre, sin cambios de ninguna fase— y un criterio insatisfacible
+    degenera en juicio discrecional en cada fase, que es peor que no tenerlo. La regla del
+    padre no inventa nada: es la misma disciplina de comparación que el punto 4 ya usa para los
+    diagnósticos, y no se puede burlar, porque un rojo causado por la fase no se reproduce en
+    el padre. **B-05 sigue abierto**: enmendar el criterio no arregla el flake, y no pretendo
+    que lo haga.
+  - **Fila de `schema_migrations` → sí, se escribe.** El editor SQL no la escribe sola. Sin
+    ella, el remoto tendría columna y función pero no la versión, mientras el repo sí tiene el
+    fichero: cualquier reconciliación futura la vería pendiente, y el registro de migraciones
+    dejaría de reflejar la realidad. Va como **sentencia aparte**, aditiva e idempotente, y
+    **no** se mete en el fichero de la migración, que sigue byte a byte igual al contrato
+    congelado y verificado.
+- FINDINGS RAISED: ninguno.
+- DECISIONS: cinco filas nuevas en el Decision Log de `PLAN.md` (D9 por editor SQL · partición
+  P1a/P1b + PR3 · enmienda de D8.2 · fila de `schema_migrations`), tres con decisión de Brent y
+  dos delegadas al PM.
+- BACKLOG: sin cambios. B-05 abierto. S1 **cerrado** por la enmienda de D8.2.
+- OPEN AFTER THIS ROUND: (1) **PR3 — Brent aplica** las dos sentencias que se le entregan.
+  (2) `/exec UPGRADE P1b r1` con `prompts/P1-r3.md`, que sirve tal cual. (3) Revisión de Codex
+  de esta enmienda; el prompt está en la entrada del 2026-08-08 anterior. (4) **P2, P3a y P3b
+  pueden arrancar ya**: no tocan la base de datos. P1a y P1b **no se marcan DONE** sin PASS de
+  Codex.
