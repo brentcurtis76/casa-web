@@ -1579,3 +1579,68 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: `/exec UPGRADE P1b r1` con `prompts/P1b-r1.md` — precondición
   confirmada `1/1`. Después, verificación independiente del PM y revisión de Codex sobre P1a +
   P1b juntas. P2, P3a y P3b siguen libres en paralelo.
+
+### 2026-08-08 — P1b r1 (redespacho) — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P1b · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — la ronda cabe holgadamente; nada se cortó.
+- ACTION: Ronda despachada como `/exec UPGRADE P1b r1` con `prompts/P1b-r1.md`, tras confirmar
+  el PM la precondición. Pre-flight en el worktree propio `/Users/brentcurtis/dev/casa-upgrade`:
+  rama `feat/mesa-md-schema`, árbol limpio, `git diff d9eebb0` sobre los dos ficheros de
+  alcance **vacío**. **STEP 0 = `1/1`** — la migración está aplicada; el tamper check pasa.
+  **A3, A4 y A5 quedan demostrados contra producción. A6, A7 y A8 NO son ejecutables por este
+  canal** — ver el hallazgo. No se tocó ningún fichero de producción. No se invocó
+  `apply_migration` ni ninguna vía de escritura.
+- **HALLAZGO BLOQUEANTE (método, no plan): el usuario del MCP no puede EJECUTAR la función.**
+  `select … from public.get_my_dinner_summary(…)` responde
+  `ERROR: 42501: permission denied for function get_my_dinner_summary`. Medido, no deducido:
+  - `current_user = session_user = supabase_read_only_user`;
+    `pg_has_role(current_user,'authenticated','MEMBER') = false`;
+    `pg_has_role(current_user,'anon','MEMBER') = false`;
+    `has_function_privilege(current_user, …, 'EXECUTE') = false`.
+  - `proacl = {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}`.
+  El truco de `set_config('request.jwt.claims', …)` es irrelevante aquí: falla el permiso de
+  EJECUCIÓN sobre la función, no la resolución de `auth.uid()`. **Esto es exactamente lo que
+  A5 exige** (`anon_can=false`, `authed_can=true`); la migración no tiene defecto. Lo que falla
+  es la suposición del prompt de que A6–A8 se pueden demostrar desde un canal de solo lectura.
+  El ensayo del PM corrió en un Postgres desechable como superusuario, donde el ACL no muerde.
+  **No se intentó `SET LOCAL ROLE authenticated`** — el prompt lo prohíbe expresamente.
+  La precondición `1/1` del PM comprueba que los objetos **existen**, no que sean **invocables**
+  por el usuario que los va a invocar; el hueco está ahí.
+- LO QUE SÍ QUEDA DEMOSTRADO (salida cruda en el reporte del ejecutor):
+  - **A3** `can_bring_main_dish / boolean / NO / true`; `rows_not_true = 0` sobre 31 filas.
+  - **A4** `prosecdef = true`; `proconfig = {"search_path=\"\""}` — `search_path` **vacío**.
+  - **A5** `anon_can = false`, `authed_can = true`.
+  - **Aritmética D1 del fixture `3d4d6709…`**: `guests=4`, `host_plus_ones=0`,
+    `guest_plus_ones=1` ⇒ `1 + 0 + 4 + 1 = 6`, que **coincide** con el `total_people = 6` que la
+    tabla del prompt espera. Es la mitad manual de A7; la mitad que falta es la respuesta del
+    RPC, que no se puede pedir.
+  - **V1** `pg_get_functiondef` idéntico al fichero del repo en cláusula WHERE y aritmética;
+    solo difiere en normalización de Postgres (`SET search_path TO ''`, `$function$`,
+    reflujo de `STABLE SECURITY DEFINER`). Sin deriva.
+  - **V2** `schema_migrations` **60**, `max_version = 20260806000000` presente (la fila que el PM
+    decidió escribir está); `20260612000000` y `20260612000001` **siguen ausentes**;
+    `mesa_abierta_participants` **31** filas. Nada más se movió.
+  - **STEP 4** gate `EXIT=0`, stderr `tsc=1039 eslint=160 deno-lint=94 deno-check=46`.
+    `MesaAbiertaAdmin.tsx` en `tsc (10)`, como fijó el PM.
+- **NOTA DE ENTORNO (no es un hallazgo del plan).** El worktree `casa-upgrade` no tenía
+  `node_modules`; la primera ejecución del gate salió `EXIT=1` porque `tsc` y `eslint` **no
+  llegaron a correr** (`npx` intentó descargarlos). El gate lo detectó y falló ruidosamente —
+  es justo la protección que P0 r4 instaló, funcionando. Resuelto con `npm ci` en el worktree;
+  `node_modules` está en `.gitignore`, así que no cambia ningún fichero versionado. Conviene que
+  el prompt de futuras fases lo diga, porque cada worktree nuevo empieza igual de vacío.
+- COMMITS: solo esta entrada de ledger, en `feat/mesa-md-schema`. Cero ficheros de producción.
+- TESTS: el gate acotado de STEP 4 (arriba). No se reejecutaron build, Vitest ni Deno — sin
+  cambios de fichero desde r1, como ordena el prompt.
+- FINDINGS RAISED: **uno, bloqueante para A6–A8**, descrito arriba. Propuesta, para que la
+  decida el PM y no el ejecutor: que **Brent ejecute los tres bloques de A6/A7/A8 desde el
+  editor SQL** —el mismo canal con el que resolvió PR3, y que conecta como `postgres`, que sí
+  está en el ACL— y pegue la salida cruda. Es una lectura, no una escritura. Las alternativas
+  se descartan solas: conceder EXECUTE a `supabase_read_only_user` es un cambio de ACL en
+  producción que además debilita justo lo que A5 protege, y un Postgres desechable no es el
+  estado de producción que A6–A8 exigen por definición.
+- DECISIONS: ninguna. El plan **no** está mal: ni el contrato SQL de D14, ni A6–A8 como
+  criterios. Lo que no funciona es la vía de ejecución que el prompt eligió para demostrarlos.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) A6, A7 y A8 siguen **sin demostrar**; P1b no cierra. (2) El PM
+  decide el canal de lectura autenticada y redespacha o recoge la evidencia. (3) P1a espera
+  PASS de Codex. (4) P2, P3a y P3b siguen libres en paralelo.
