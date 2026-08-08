@@ -595,3 +595,19 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   `~/.claude/agent-workflow/workstreams.md`, y su plan vive sólo en la rama `docs/plan-audio`.
   El ejecutor de E2 reportó que ahí se le fue el grueso del contexto. **Cada ejecutor y cada PM
   futuro paga lo mismo.** Una fila apuntando a `docs/plan/audio/` lo cierra de una vez.
+
+### 2026-08-08 — reordenación de olas — PM (Fable) saliente
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: **`E1-spike` se aplaza a la ola 4** por decisión de Brent. La ola 2 pasa a ser el
+  camino a la página: `E-infra` → `E3a` → `E3b` → `E4-spike`. La ola 3 queda como el cierre del
+  bucle público (`E4-impl`, `E5`, `E6`), sin planificar.
+- RAZÓN: `E1-spike` **no tiene dependencias técnicas** — el aplazamiento es de prioridad, no de
+  bloqueo, y así queda escrito para que nadie lo lea como impedimento. Pesa que entrega un
+  documento y no algo que la comunidad pueda abrir, y que su matriz exige dispositivos físicos
+  cuya disponibilidad sigue sin confirmarse.
+- EFECTO: el cuerpo de `E1-spike` se conserva íntegro con un banner de aplazada. **Le falta
+  review, no trabajo**: se adelanta en cuanto Brent confirme los dispositivos o cambie la
+  prioridad.
+- TESTS: n/a — reordenación de plan.
+- OPEN AFTER THIS ROUND: sin cambios respecto del traspaso — merge de E2 pendiente de
+  autorización, y `/pm-boot AUDIO E-infra` con el encargo de medición como primera tarea.

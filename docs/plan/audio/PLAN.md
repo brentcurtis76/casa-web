@@ -286,43 +286,56 @@ un defecto.
    retira: no hay nada que incorporar ni que fijar.** D18 vuelve a funcionar tal como se escribió.
 2. **Mi afirmación de que había Postgres local disponible era falsa.** Ver la corrección abajo.
 
-### Ola 1 — candidata a congelar
+### Ola 1 — COMPLETADA
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
 | E2 | Carátula desde la portada de la liturgia | Código | **✅ DONE — 2026-08-08, `6d45f35`** | — |
 
-**Una sola unidad.** No toca base de datos ni e2e: es lógica de frontend con vitest, y el gate
-que necesita ya está en `main`. Es lo único que hoy puedo congelar sin que esconda trabajo de
-infraestructura que nadie ha medido.
+Cerrada con `CODEX REVIEW E2 FINAL: PASS`, cero desviaciones del plan congelado y cero rondas de
+remediación. Primera unidad ejecutada del plan.
 
-### Ola 2 — en paralelo, sin dependencias
-
-| ID | Nombre | Tipo | Status | Depende de |
-|----|--------|------|--------|-----------|
-| E1-spike | Grabación: sonda de compatibilidad real | Spike | TODO | — |
-
-No toca código que se mergee, no pasa por el gate, no depende de nada. **Puede arrancar hoy.**
-
-### Ola 3 — bloqueada por infraestructura que no existe
+### Ola 2 — ACTIVA: el camino a la página
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E-infra | Entorno de pruebas: Postgres local y harness e2e | Código + infra | **NO CONGELADA** | — |
+| E-infra | Entorno de pruebas: Postgres local y harness e2e | Código + infra | **NO CONGELADA — medir antes de redactar** | — |
 | E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
+**Es la ola que produce lo primero que la comunidad puede abrir.** Hasta aquí, todo lo entregado
+es plomería interna: E2 mejoró la carátula, pero nadie fuera del editor la ve.
+
 **Los cuerpos de E3a y E3b siguen en este documento como borrador, no como contrato.** Codex r9
 demostró que ambas esconden una unidad de infraestructura, y que su contrato de slug y su
 semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando `E-infra`
-haya medido el entorno.
+haya medido el entorno — **medir primero, redactar después**, que es la lección de la r9.
 
-### Ola 4 — todavía no son unidades
+### Ola 3 — cierre del bucle público, todavía sin planificar
 
-`E1-impl`, `E4-impl`, `E5` y `E6` siguen sin planificar y **sin contarse como aprobadas**.
-*(Codex r11/N3: la r10 y la r11 remitían a un "§5.1" que no existe — la sección se perdió al
-reensamblar el documento. El alcance corregido de E6 que guardaba está en §15, finding B6.)*
+`E4-impl`, `E5` (compartir) y `E6` (cierre del bucle en el editor y la home) siguen sin
+planificar y **sin contarse como aprobadas**. `E4-impl` depende del bloque que produzca
+`E4-spike`; el alcance corregido de `E6` está en §15, finding B6.
+
+### Ola 4 — grabación, APLAZADA por decisión de Brent (2026-08-08)
+
+| ID | Nombre | Tipo | Status | Depende de |
+|----|--------|------|--------|-----------|
+| E1-spike | Grabación: sonda de compatibilidad real | Spike | **APLAZADA** — redactada, sin review | — |
+| E1-impl | Grabar dentro del editor | Código | Sin planificar | E1-spike |
+
+**`E1-spike` no tiene dependencias técnicas: puede ejecutarse en cualquier momento.** Se aplaza
+por prioridad, no por bloqueo, y por dos razones:
+
+1. **Entrega un documento, no algo que alguien pueda abrir.** Mientras la comunidad no tenga la
+   página, el camino de la ola 2 vale más.
+2. **Su matriz exige dispositivos físicos** —iOS < 18.4, iOS ≥ 18.4 y Android— y no está
+   confirmado que estén disponibles. Sin ellos las celdas vuelven "no medidas" y el bloque de
+   plan sale con alcance reducido: se gastaría una sesión para saber menos de lo que se quería.
+
+**Se adelanta en cuanto Brent confirme los dispositivos**, o antes si cambia la prioridad. Su
+cuerpo, más abajo, está redactado y listo; lo que le falta es review, no trabajo.
 
 **Este bloque no entrega las cuatro condiciones del Goal.** Congelar E2 entrega la carátula
 derivada de la liturgia, y nada más. Lo digo aquí para que no haya que deducirlo.
@@ -396,7 +409,7 @@ Huecos: no hay ruta `/reflexiones`; no hay columna `slug` ni en la tabla ni en `
 `vercel.json` tiene un solo rewrite `/(.*)` → `/index.html`; `PublishResult`
 (`publishService.ts:44-51`) no devuelve slug ni URL canónica.
 
-**Secuencia:** `E2` ‖ `E1-spike` → `E-infra` → `E3a` → `E3b` → `E4-spike` → ola 4.
+**Secuencia:** `E2` ✅ → `E-infra` → `E3a` → `E3b` → `E4-spike` → *(ola 3)* → *(ola 4: `E1-spike` → `E1-impl`)*.
 
 ---
 
@@ -544,6 +557,9 @@ npm run build
 ---
 
 ## Phase E1-spike — Grabación: sonda de compatibilidad real
+
+> **APLAZADA A LA OLA 4** (decisión de Brent, 2026-08-08). Sin dependencias técnicas — se aplaza
+> por prioridad. El cuerpo de abajo está redactado y listo; le falta review, no trabajo. Ver §5.
 
 **Precondición declarada:** necesita **acceso físico a los dispositivos de la matriz**. Sin
 ellos, las celdas van como **no medidas** y el bloque resultante declara alcance reducido. No se
@@ -1598,6 +1614,7 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-08 | **`E1-spike` se aplaza a la ola 4** y la ola 2 pasa a ser el camino a la página (`E-infra` → `E3a` → `E3b` → `E4-spike`) | Decisión de Brent. `E1-spike` no tiene dependencias técnicas —se aplaza por prioridad, no por bloqueo—: entrega un documento, no algo que la comunidad pueda abrir, y su matriz exige dispositivos físicos (iOS <18.4, iOS ≥18.4, Android) cuya disponibilidad no está confirmada. Se adelanta en cuanto se confirmen | Brent |
 | 2026-08-08 | **✅ `E2` DONE.** `CODEX REVIEW E2 FINAL` → **PASS** sobre `6d45f35`. Cero desviaciones del plan congelado: no hubo que enmendar nada durante la ejecución | Codex verificó A1–A8 uno a uno y corrió las cuatro mutaciones que el PM no había comprobado (M2→1 rojo, M3→1, M4→1, M5→5). Runtime registrado (D18 §4.6): Node **v22.22.0**, Deno **2.7.11** | Codex (PASS final) |
 | 2026-08-08 | **La regla de clasificación de §4.3 se gana su sitio en su primera aplicación real** | El delta de E2 fue exactamente el falso positivo que anticipaba: los 2 errores base de `useQuickPublish.ts` se desplazaron de `(195,15)`/`(200,20)` a `(198,15)`/`(203,20)` por los imports nuevos. Sin esa frase, el ejecutor habría reportado un delta inexistente | PM |
 | 2026-08-07 | **✅ `E2` CONGELADA.** `CODEX REVIEW plan r12` → **PASS** sobre `3084208`. Se congelan alcance, comportamiento, estrategia de tipado, test plan y gate | Codex validó la estrategia de tipado **construyendo el adaptador y midiéndolo** (0/0/0/0), no argumentando, y reprodujo `tsc=1041` en `main @ 05dc4ca`. Las tres condiciones de su r11 (B1, S2, S3) quedaron aplicadas y verificadas | Codex r12 (PASS) |
