@@ -316,8 +316,8 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | ID | Name | Status | Branch | Depends on |
 |----|------|--------|--------|-----------|
 | P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
-| P1a | Esquema: ficheros (migración + `types.ts`) | **IN REVIEW** — A1/A2/A9/A10/A11 cumplidos y verificados por el PM | `feat/mesa-md-schema` | P0, PR1, PR2 |
-| P1b | Esquema: aplicación y verificación (A3–A8) | **IN REVIEW** — A3–A8 cumplidos; PR3 resuelta 2026-08-08 | `feat/mesa-md-schema` | P1a, PR3 |
+| P1a | Esquema: ficheros (migración + `types.ts`) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P0, PR1, PR2 |
+| P1b | Esquema: aplicación y verificación (A3–A8) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P1a, PR3 |
 | P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | TODO | `feat/mesa-md-core` | P3a |
@@ -447,12 +447,28 @@ compensa la ausencia de contrato de tipos por D15.
 **Risks:** el riesgo declarado en la revisión 7 —*«simular llamantes requiere
 `set_config('request.jwt.claims', …)`; **estoy asumiendo** que es posible»*— **está cerrado**:
 el PM lo probó el 2026-08-07. Una llamada multi-sentencia de `execute_sql` comparte
-transacción, `set_config(…, true)` persiste entre sentencias y `auth.uid()` lo lee. No hace
-falta `SET LOCAL ROLE authenticated` —está denegado al usuario de solo lectura y es
-innecesario, porque la función es `SECURITY DEFINER` y filtra por `auth.uid()`, no por RLS.
+transacción, `set_config(…, true)` persiste entre sentencias y `auth.uid()` lo lee.
 El PM además ejecutó el **cuerpo del contrato D14 en línea** contra los datos reales y
 devuelve exactamente `(3d4d6709…, 6, 1)`, el valor que A7 espera. Confirmado también que
 `mulsqxfhxxdsadxsljss` es producción y no hay staging.
+
+> **CORREGIDO 2026-08-08 tras `REVIEW-P1` S1 de Codex.** Este párrafo afirmaba que el riesgo
+> de A6–A8 estaba «cerrado» y que `SET LOCAL ROLE authenticated` era «innecesario». **Las dos
+> cosas eran falsas, y de dos maneras distintas.**
+> 1. Lo que el PM había probado —`set_config` y el **cuerpo** del contrato pegado como un
+>    `SELECT` corriente— **no es `EXECUTE` sobre la función**: son lecturas de tablas base, que
+>    el usuario de solo lectura sí puede hacer. El ensayo posterior en Docker corrió como
+>    **superusuario**, donde el ACL no muerde. Las dos comprobaciones rodearon la barrera real.
+>    P1b chocó con ella: `ERROR 42501: permission denied for function get_my_dinner_summary`.
+> 2. La afirmación de que **no existe** canal de verificación de RPC para agentes era
+>    demasiado amplia. Es cierta **solo del MCP** (`supabase_read_only_user` está fuera del ACL
+>    y no es miembro de `authenticated`). Codex demostró que **sí hay uno**: un login de
+>    revisión de la CLI enlazada puede asumir `postgres` para resolver el `user_id` del
+>    llamante, fijar la claim, y luego asumir `authenticated` para invocar la RPC dentro de
+>    `BEGIN … ROLLBACK`. Con esa vía reprodujo A6–A8 de forma independiente. **No** es un canal
+>    de escritura aceptable —los prompts hicieron bien en prohibir los rodeos por CLI/psql, y
+>    un login con capacidad de superusuario es peor que la aplicación humana explícita de
+>    Brent— pero **como vía de lectura para verificar RPC es reproducible y válida**. Ver B-06.
 Riesgo que queda: la resolución del nombre `match_id`, que es a la vez parámetro OUT y columna
 de `mesa_abierta_assignments`, no puede ejercitarse sin crear la función. En el cuerpo toda
 referencia va calificada por tabla, así que no debería haber ambigüedad; si la hay, es
@@ -857,6 +873,7 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | **B-03** | P0 r5 (Codex) | La regla 4 del discriminador del gate ("exit 1 con cero diagnósticos es autocontradictorio") **deja de valer** si alguna fase cambia la invocación de ESLint a `--quiet --max-warnings 0`, que suprime warnings sin cambiar el código de salida. No alcanzable con la invocación congelada `npx eslint . -f json`. |
 | **B-04** | Non-goals | `handleMoveGuest` (`MesaAbiertaAdmin.tsx:785`) y completar el mapa `Functions` de `types.ts` (D15) siguen fuera de alcance por decisión del plan. |
 | **B-05** | P1 r1 | **B-01 se queda corto: flakean tres ficheros, no uno.** `CuentacuentoEditor.ph.surfaces` (T-H.4), `ph.cancel` (T-H.9) y `ph.concurrency` (T-H.5), todos bajo carga y todos verdes en aislamiento. Medido por el ejecutor (3 pasadas en `main`: 6/8/6) y reproducido por el PM (padre `05dc4ca` sin cambios de P1: **7 rojos**). Mientras dure, el criterio D8.2 «el conjunto de rojos por nombre es exactamente el de base» no es comprobable de forma fiable en **ninguna** fase — ver el SHOULD-FIX S1 de P1 r1, pendiente de decisión de Brent. (El ejecutor lo numeró B-03 por error; B-03 ya estaba ocupado.) |
+| **B-06** | P1b r1 (corregido por Codex `REVIEW-P1` S1) | **Verificación de RPC por un agente.** El MCP `supabase-casa` **no** sirve: entra como `supabase_read_only_user`, fuera del ACL y no miembro de `authenticated` — y así debe seguir, es lo que A5 exige. Pero **sí existe** una vía de solo lectura: un login de revisión de la CLI enlazada asume `postgres` para resolver el `user_id`, fija la claim y asume `authenticated` para invocar dentro de `BEGIN … ROLLBACK`; Codex reprodujo A6–A8 así. **Decidir antes de P8**, que consume `get_my_dinner_summary` por `dinnerSummary.ts`: o se adopta esa vía, o una clave `service_role` en un `.env` no versionado, o pgTAP contra un Supabase local. **Conceder `EXECUTE` al usuario de solo lectura queda descartado**: debilitaría justo lo que A5 protege. |
 
 ---
 
@@ -957,20 +974,24 @@ pedido. Retirarlas, con autorización de Brent, fue lo que desbloqueó el plan.
 
 **PR1 y PR2 concedidos el 2026-08-06.**
 
-**Enmendado el 2026-08-08** (cinco filas nuevas en el Decision Log; el resto del texto sigue
+**Enmendado el 2026-08-08** (**cuatro** filas nuevas en el Decision Log — PR3 va combinada con la de la partición, no aparte; el recuento «cinco» de una redacción anterior era erróneo, Codex `REVIEW-P1` N1; el resto del texto sigue
 congelado en la revisión 7). Estado real:
 
 - **P0 DONE** 2026-08-07 (`09a69d7`), Codex PASS en su cuarta ronda.
-- **P1 partida en P1a y P1b.** P1a construida, verde y verificada por el PM en
-  `feat/mesa-md-schema`; espera revisión de Codex. P1b bloqueada por **PR3** — Brent aplica la
-  migración a mano, porque ningún agente tiene canal de escritura contra
-  `mulsqxfhxxdsadxsljss` y las dos puertas están probadas cerradas.
-- **El contrato D14 está ensayado de punta a punta.** El PM aplicó el fichero de migración
-  **verbatim** en un Postgres desechable con datos sintéticos (D12) y comprobó A3–A8 en forma:
-  la función se crea sin ambigüedad en `match_id`, `prosecdef = t`, `proconfig =
-  {"search_path=\"\""}`, `anon` no puede ejecutar y `authenticated` sí, el ajeno recibe 0 filas
-  y anfitrión e invitado reciben la **misma** fila `(…, 6, 1)`. Lo único que falta es aplicarlo
-  en producción y repetirlo allí con los datos reales.
-- **Siguiente paso:** revisión de Codex de esta enmienda (prompt en la entrada de ledger del
-  2026-08-08), y en paralelo **P2, P3a y P3b, que nunca dependieron de P1** y pueden arrancar
-  ya. Orden de merge en el índice de fases.
+- **P1a y P1b DONE** 2026-08-08 (`9cc637b`). **`CODEX REVIEW — UPGRADE P1 FINAL` = PASS**,
+  cero BLOCKING (`reviews/REVIEW-P1.md`). Codex verificó A1–A11 por su cuenta —**incluidas
+  llamadas RPC autenticadas en vivo**, que reprodujo por una vía que el PM había declarado
+  inexistente—, los gates padre/punta a exit 0 con `tsc 1041 → 1039` (dos eliminados, cero
+  añadidos), build ok, Vitest **1036/6 exactamente la base**, Deno 409/0, y el ACL,
+  `search_path` vacío y agregados en vivo de producción. Sus dos hallazgos no bloqueantes
+  —S1 (mi relato del canal de verificación era demasiado amplio) y N1 (cuatro filas de Decision
+  Log, no cinco)— **quedan corregidos en este mismo documento**.
+- **Migración aplicada a producción** el 2026-08-08 por Brent desde el editor SQL (**PR3**), con
+  su fila en `schema_migrations`. `20260612000000` y `20260612000001` **siguen sin aplicar**:
+  la aplicación fue quirúrgica, que es exactamente lo que D9 protege.
+- **Siguiente paso: P2** (`feat/mesa-md-alloc`), y con ella P3a y P3b. Revisadas a la luz de lo
+  construido, **no necesitan enmienda**. Dos notas de uso, no cambios: (a) el padre de P2 pasa a
+  ser `main` con P1 dentro, así que su línea base es **`tsc = 1039`**, no 1041, y como sus tres
+  ficheros son nuevos el gate se reduce a «los tres ficheros nuevos no introducen ni un
+  diagnóstico»; (b) el criterio B7 («rojos sin cambios») se lee ya bajo el **D8.2 enmendado**,
+  que es justo lo que impide que el flake de B-05 lo haga incumplible.

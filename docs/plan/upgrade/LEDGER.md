@@ -1766,3 +1766,74 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: revisión final de Codex sobre P1a + P1b con
   `prompts/P1-codex-review.md`. En paralelo, **P2 puede arrancar ya** (`feat/mesa-md-alloc`,
   módulo puro, sin base de datos), y con ella P3a y P3b.
+
+### 2026-08-08 — P1 CIERRE — Codex PASS + PM
+- SESSION: UPGRADE · P1b · PM
+- ACTION: **`CODEX REVIEW — UPGRADE P1 FINAL` = PASS**, cero BLOCKING. **P1a y P1b marcadas
+  DONE** con fecha 2026-08-08 y SHA `9cc637b`. Revisión en `reviews/REVIEW-P1.md`.
+- **QUÉ VERIFICÓ CODEX POR SU CUENTA**, y una cosa que hizo mejor que yo: A1–A11 contra el
+  esquema vivo, **incluidas llamadas RPC autenticadas en producción** — que reprodujo por una
+  vía que **yo había declarado inexistente** (ver S1). Gates padre/punta a exit 0 con
+  `tsc 1041 → 1039`, dos eliminados y cero añadidos; `npm ci` en ambos worktrees; **descartó
+  una primera pasada de Vitest bajo Node v26 y la repitió bajo el v22.22.0 congelado del
+  plan** — precisión que yo no había pensado en exigir. Resultado: **1036/6, exactamente la
+  base**, así que esta ronda cumple incluso la redacción **original** de D8.2 y la enmienda no
+  está sirviendo para tapar un rojo de más. Deno 409/0. El bloque `CREATE FUNCTION … GRANT` de
+  `PLAN.md` y el de la migración: **1.449 bytes cada uno, byte a byte iguales**.
+- **HALLAZGOS DE CODEX, los dos corregidos ya en `PLAN.md`:**
+  - **[S1] SHOULD-FIX — mi relato del canal de verificación era demasiado amplio, y lo era en
+    la dirección cómoda.** Lo cierto es lo del MCP: `supabase_read_only_user` está fuera del
+    ACL y no es miembro de `authenticated`. Lo que yo generalicé —«ningún agente puede
+    verificar conducta de RPC»— es **falso**: Codex demostró que un login de revisión de la
+    CLI enlazada asume `postgres` para resolver el `user_id`, fija la claim y asume
+    `authenticated` para invocar dentro de `BEGIN … ROLLBACK`, y **reprodujo A6–A8 así**. No es
+    un canal de escritura aceptable —los prompts hicieron bien en prohibir los rodeos— pero
+    como vía de lectura es reproducible. Corregido: el párrafo de *Risks* de P1 lleva ahora una
+    nota explícita, y **B-06 pasa al backlog de `PLAN.md` reescrito**, porque su redacción
+    anterior habría hecho que P8 diera por imposible algo que sí se puede.
+    Codex anota además que el ledger describe el bloque SQL de cuatro casos pero solo commiteó
+    su tabla de resultados. Es exacto: el bloque está en el prompt del chat, no en el repo.
+  - **[N1] NIT — eran cuatro filas de Decision Log, no cinco.** PR3 va combinada con la de la
+    partición. Ninguna decisión falta; el recuento estaba mal. Corregido en los dos sitios de
+    `PLAN.md`.
+- **QUÉ SE CONSTRUYÓ**: `20260806000000_mesa_main_dish_optout.sql` (columna
+  `can_bring_main_dish BOOLEAN NOT NULL DEFAULT TRUE` + `get_my_dinner_summary` con su `REVOKE`
+  y `GRANT`, contrato D14 literal) y seis declaraciones en `types.ts`. **+43 líneas, cero
+  borrados, dos ficheros de producción.** Aplicado a `mulsqxfhxxdsadxsljss` el 2026-08-08.
+- **QUÉ CAMBIÓ FRENTE AL PLAN ORIGINAL, y por qué:**
+  1. **P1 se partió en P1a y P1b, con PR3 como tercera puerta humana.** El plan modeló PR1 y
+     PR2 como puertas de Brent pero trató la aplicación misma como trabajo de agente. Tres
+     rondas se gastaron descubriendo que no lo es. Codex ratifica el diagnóstico.
+  2. **D9 se cumplió por aplicación manual**, no por `apply_migration`. Autorizado y registrado
+     **antes** de aplicar. Codex: RATIFICADO — las cinco protecciones de fondo sobrevivieron.
+  3. **D8 punto 2 se enmendó.** Codex lo declara legítimo y observa que esta ronda cumple
+     incluso la redacción vieja.
+  4. **Fila de `schema_migrations` escrita a mano.** Codex la valida y añade un dato que yo no
+     tenía: otras tres filas reparadas del proyecto también tienen array de sentencias nulo.
+- **LECCIÓN, y es sobre mí.** Los cuatro FAIL de Codex en P0 encontraron defectos reales; aquí
+  su PASS trajo igualmente la corrección más útil de la fase. Mi error de raíz fue de método,
+  no de cálculo: **probé lo que era fácil de probar y lo tomé por lo que había que probar**
+  —el cuerpo inline en vez de `EXECUTE`, un ensayo como superusuario en vez del ACL real— y
+  después generalicé el resultado más allá de lo medido. La regla que me llevo: **cuando
+  declare un riesgo cerrado, decir explícitamente qué canal y qué privilegio se ejercitaron**,
+  porque «funciona» sin esa frase es justo donde se esconde el error.
+- **P2 RELEÍDA A LA LUZ DE LO CONSTRUIDO (SOP §3.8.5): no necesita enmienda.** Alcance,
+  criterios y tamaño siguen bien; no toca base de datos, así que nada de lo aprendido en P1 la
+  toca. Dos notas de uso para su prompt, que no son cambios al plan: (a) su padre pasa a ser
+  `main` con P1 dentro, así que la línea base es **`tsc = 1039`** y, como sus tres ficheros son
+  nuevos, el gate se reduce a «los tres no introducen ni un diagnóstico»; (b) su criterio B7
+  («rojos sin cambios») se lee bajo el **D8.2 enmendado** — que es precisamente lo que impide
+  que el flake de B-05 lo vuelva incumplible, como habría pasado con la redacción vieja.
+- **MERGE — no es fast-forward, y no por culpa de esta rama.** `main` se ha movido a `165e5f2`
+  mientras trabajábamos: otro workstream (AUDIO / `phase/E2-caratula`) integró y publicó. La
+  rama de P1 sale de `05dc4ca`. **El PM no mergea**; entrego el análisis y el comando a Brent
+  tras comprobar el solape real.
+- COSTE REAL DE LA FASE: 4 rondas de ejecutor (r1, r2, r3 de P1 + r1 de P1b), **cero hallazgos
+  contra el código en las cuatro**, y una revisión de Codex con PASS a la primera. Lo que costó
+  no fue la corrección del trabajo sino el canal de escritura, y el plan no lo había modelado.
+- CONTEXT PRESSURE (§1.3): las cuatro rondas reportaron "comfortable". Ninguna se acercó al
+  límite; la fase era pequeña y el cuello de botella fue externo.
+- BACKLOG: **B-05** abierto (flake de los tres `CuentacuentoEditor.ph.*`). **B-06 reescrito**
+  tras S1 — hay vía de verificación de RPC; **decidir antes de P8**. Ninguno bloquea.
+- OPEN AFTER THIS ROUND: (1) merge de `feat/mesa-md-schema` — decisión y ejecución de Brent.
+  (2) Bootstrap de PM para **P2**.
