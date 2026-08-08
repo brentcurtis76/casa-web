@@ -399,7 +399,7 @@ y aparece un hecho que la agrava:
 | Branches de Supabase | `mcp__supabase-casa__list_branches` | `{"branches":[]}` — la llamada responde; **no prueba** que `create_branch` esté permitido ni que sea gratis |
 
 **El hecho nuevo, y es el que manda:** el riesgo que la r10 describía en condicional **ya está
-vivo**. `npx playwright test` es un gate declarado en `CLAUDE.md`; `tests/e2e/` tiene **16 specs**;
+vivo**. `npx playwright test` es un gate declarado en `CLAUDE.md`; `tests/e2e/` tiene **14 ficheros de spec y 99 tests** (más un duplicado con nombre roto, `mesa-abierta-signup.spec 2.ts`; el «16» de la r14 era mío y estaba mal contado);
 `playwright.config.ts` los arranca con `npm run dev`; `client.ts:5` cae a producción; y
 `tests/e2e/helpers/auth.ts` inicia sesión **como admin** con `TEST_ADMIN_EMAIL`/`TEST_ADMIN_PASSWORD`.
 Ninguno llama a Supabase directo (`grep '\.insert(\|\.update(\|\.delete(\|\.upsert('` sobre
@@ -733,7 +733,7 @@ midió** porque medirlo cuesta dinero.
 **Lo que ya se sabía y sigue en pie:**
 
 - **La guarda anti-producción entra sí o sí.** No es una precaución para E3b: la suite e2e que ya
-  existe (16 specs) se ejecuta hoy contra producción. Ver la remedición en §5.
+  existe (14 ficheros de spec, 99 tests) se ejecuta hoy contra producción. Ver la remedición en §5.
 - **Su prueba es una mutación**, no una aserción (D18): §S5 fija los tres casos que deben salir
   rojos, y la salida de los tres se pega en el informe — no sólo la del verde.
 - **`.env.test` no puede ser la plantilla commiteada** (`.gitignore:18`); es `.env.test.example`,
@@ -1725,7 +1725,7 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-08 | **`E1-spike` se aplaza a la ola 4** y la ola 2 pasa a ser el camino a la página (`E-infra` → `E3a` → `E3b` → `E4-spike`) | Decisión de Brent. `E1-spike` no tiene dependencias técnicas —se aplaza por prioridad, no por bloqueo—: entrega un documento, no algo que la comunidad pueda abrir, y su matriz exige dispositivos físicos (iOS <18.4, iOS ≥18.4, Android) cuya disponibilidad no está confirmada. Se adelanta en cuanto se confirmen | Brent |
 | 2026-08-08 | **✅ `E2` DONE.** `CODEX REVIEW E2 FINAL` → **PASS** sobre `6d45f35`. Cero desviaciones del plan congelado: no hubo que enmendar nada durante la ejecución | Codex verificó A1–A8 uno a uno y corrió las cuatro mutaciones que el PM no había comprobado (M2→1 rojo, M3→1, M4→1, M5→5). Runtime registrado (D18 §4.6): Node **v22.22.0**, Deno **2.7.11** | Codex (PASS final) |
 | 2026-08-08 | **r14: `E-infra` se parte en `E-infra-spike` (congelada) y `E-infra-impl` (sin redactar)** | No es una decisión nueva sino la ejecución de una condición ya aceptada: Codex r10/S3 dictaminó que `E-infra` *"sólo es honesta mientras siga en borrador"* porque mezcla un spike con una implementación desconocida, y el cuerpo de la unidad lo llevaba escrito desde la r11. Retomarla entera habría sido congelar lo que Codex prohibió congelar | Codex r10/S3, ejecutado por el PM entrante |
-| 2026-08-08 | **r14: la guarda anti-producción deja de ser precaución futura y pasa a corrección del presente** | **Hecho nuevo, medido en `main @ 6d45f35`:** `npx playwright test` es un gate de `CLAUDE.md`, `tests/e2e/` tiene 16 specs, `playwright.config.ts` los arranca con `npm run dev`, `client.ts:5` cae a producción y `helpers/auth.ts` entra **como admin**. La suite existente ya se ejecuta contra la base compartida con Life OS. El plan lo describía en condicional para E3b; es el estado de `main` | PM entrante (remedición) |
+| 2026-08-08 | **r14: la guarda anti-producción deja de ser precaución futura y pasa a corrección del presente** | **Hecho nuevo, medido en `main @ 6d45f35`:** `npx playwright test` es un gate de `CLAUDE.md`, `tests/e2e/` tiene 14 ficheros de spec (99 tests; el «16» era un error de conteo mío, corregido en la r2), `playwright.config.ts` los arranca con `npm run dev`, `client.ts:5` cae a producción y `helpers/auth.ts` entra **como admin**. La suite existente ya se ejecuta contra la base compartida con Life OS. El plan lo describía en condicional para E3b; es el estado de `main` | PM entrante (remedición) |
 | 2026-08-08 | **r14: crear un branch de Supabase queda fuera del alcance del spike; se mide su costo y decide Brent** | `list_branches` responde `{"branches":[]}`, lo que prueba que la API contesta y **nada más**. Crear una rama cuesta dinero sobre el proyecto compartido. Es el mismo principio que ya gobierna el proyecto ajeno del 54322: se mide y se reporta, no se gasta ni se apaga por cuenta propia | PM entrante |
 | 2026-08-08 | **La regla de clasificación de §4.3 se gana su sitio en su primera aplicación real** | El delta de E2 fue exactamente el falso positivo que anticipaba: los 2 errores base de `useQuickPublish.ts` se desplazaron de `(195,15)`/`(200,20)` a `(198,15)`/`(203,20)` por los imports nuevos. Sin esa frase, el ejecutor habría reportado un delta inexistente | PM |
 | 2026-08-07 | **✅ `E2` CONGELADA.** `CODEX REVIEW plan r12` → **PASS** sobre `3084208`. Se congelan alcance, comportamiento, estrategia de tipado, test plan y gate | Codex validó la estrategia de tipado **construyendo el adaptador y midiéndolo** (0/0/0/0), no argumentando, y reprodujo `tsc=1041` en `main @ 05dc4ca`. Las tres condiciones de su r11 (B1, S2, S3) quedaron aplicadas y verificadas | Codex r12 (PASS) |

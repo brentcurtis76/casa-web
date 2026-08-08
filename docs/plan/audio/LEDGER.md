@@ -926,3 +926,70 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - BACKLOG ADDED: ninguno. Sigue abierto el SHOULD-FIX de E2 (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
 - OPEN AFTER THIS ROUND: **review final de Codex sobre `E-infra-spike`.** Es la ronda 2 —la última—
   del bucle Codex↔PM↔Ejecutor (SOP §1.5); si Codex vuelve a fallar, la decisión sube a Brent.
+
+### 2026-08-08 — E-infra-spike round 2 — PM (Opus), verificación
+- SESSION: `AUDIO · E-infra · PM` (verifica `AUDIO · E-infra-spike · r2 · EXEC`, `ed32c33`)
+- ACTION: verificación independiente de la ronda de remediación. Revisé si los tres BLOCKING de
+  Codex están **cerrados con medición**, no con prosa.
+- **LO QUE VERIFIQUÉ YO MISMO:**
+  - **Alcance del diff** (`git show --stat ed32c33`): **2 ficheros, +834/-248**, ambos `.md`.
+    **Cero ficheros fuente.** Coherente con "el gate D18 no aplica".
+  - **B1 cerrado, y la medición es la buena.** §S5.2 demuestra el agujero con **el mismo PID en el
+    8080 antes y después** (`16055` → `16055`): Playwright se enganchó al servidor productivo y
+    nunca lanzó el suyo. Con `CI=1` aborta (`is already used`). Eso no se puede razonar, hay que
+    medirlo, y está medido. Verifiqué además a mano el hallazgo colateral: `vite.config.ts` a
+    `165e5f2` declara `port: 8080` y **no declara `strictPort`** (`grep -c strictPort` → **0**), así
+    que la advertencia de que vite se cambia de puerto en silencio es correcta.
+  - **La capa 3 corrige un error de la propia r1.** La r1 "verificaba" la URL leyendo
+    `const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://mulsq…"`. Esa línea es
+    **texto fuente y sale idéntica apunte el servidor a donde apunte**: leerla no prueba nada. Lo
+    que hay que leer es la inyección de `import.meta.env`. Que el ejecutor haya encontrado y
+    declarado el defecto de su propia ronda anterior es exactamente lo que este plan lleva seis
+    rondas pidiendo.
+  - **B2 cerrado.** §S8 pinchado a `165e5f2`, con tabla de precondición verificada. Comprobado por
+    mí: `git show main:supabase/config.toml | grep -c "generate-graphic"` → **0**;
+    `git show 165e5f2 --stat` → **1 fichero, +18/-2**. Y dice explícitamente que un ejecutor que
+    busque el bloque para borrarlo **no lo encontrará, y eso es lo esperado**.
+  - **B3 cerrado.** `f` → `t` en salida cruda al añadir la fila de `mesa_abierta_admin_roles`.
+    Verifiqué el resto contra el árbol: `rbac.spec.ts:86` es en efecto
+    `'/admin/roles loads and displays seeded roles for admin user'`, así que la ruta que ancla el
+    viaje del humo existe; y el enum `mesa_abierta_admin_role` es exactamente
+    `super_admin` / `coordinator` (`20241109000000_mesa_abierta_schema.sql:92-95`).
+  - **Separación baseline (`…9000-…`) vs. fixtures del test (`…8000-…`)** con el contrato de I6
+    escrito sin ambigüedad: el test borra sólo su rango, nunca el baseline.
+  - **Conteo de specs**: `git ls-tree -r 165e5f2 -- tests/e2e/ | grep '\.spec\.ts$'` → **14**.
+- **UNA DESVIACIÓN DEL PROMPT, Y EL EJECUTOR TENÍA RAZÓN.** Mi prompt de la r2 daba por hecho que
+  `npx playwright test --list` bastaba para demostrar el caso D). **Es falso: `--list` no arranca
+  `webServer`**, y el ejecutor lo midió (8080 libre antes y después) en vez de obedecer. Montó una
+  sonda desechable fuera de `tests/e2e/` con el bloque `webServer` copiado verbatim y un único test
+  que no abre navegador. **Instrucción mía incorrecta, corregida con evidencia por quien la
+  recibió.** Es la conducta que la SOP §1.6 pide y queda registrada como tal, no como desviación
+  a corregir.
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[S1] SHOULD-FIX — error mío, ya corregido en este commit.** `PLAN.md` decía "16 specs" en tres
+    sitios. Son **14 ficheros de spec y 99 tests**, más un duplicado con nombre roto
+    (`mesa-abierta-signup.spec 2.ts`). El 16 salió de contar mal una salida de `ls` en la r14. La
+    conclusión que sostenía —que la suite existente corre contra producción— no se mueve.
+  - **[N1] NIT** — correr el stack local deja `supabase/.branches/` sin trackear y **no está en
+    `.gitignore`** (que sí cubre `supabase/.temp/`). Una línea, para `E-infra-impl`.
+- DECISIONS: ninguna nueva. **La ruta A sigue siendo la elegida y no se re-midió.**
+- **DOS HALLAZGOS NUEVOS DEL EJECUTOR, ambos incorporados a `E-infra-impl`:**
+  - **F3 — `supabase start` restaura el backup anterior**, así que `start` a secas **no da estado
+    derivado del árbol**: su primera lectura de permisos mostraba a `anon` con `SELECT` y habría
+    "refutado" F2 por accidente, cuando lo que veía eran los `GRANT` que la r1 aplicó a mano y
+    sobrevivieron en el backup. **Sólo `db reset` da estado limpio.** Corroborado por mí sin
+    esfuerzo: mi propio `supabase stop` de la r1 devolvió `{"backup":true,…}`. Es una trampa fina
+    y habría envenenado cualquier medición futura.
+  - **F4 — un `INSERT` en `auth.users` no basta para iniciar sesión**: HTTP 500, y GoTrue nombra
+    `converting NULL to string is unsupported` en `confirmation_token`. Con los cuatro tokens a
+    `''` el login devuelve `access_token`.
+- BACKLOG ADDED: N1 (`.gitignore` de `supabase/.branches/`). Sigue abierto el SHOULD-FIX de E2
+  (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
+- NOTA DE ENTORNO: durante esta ronda **otra sesión movió el checkout compartido** a
+  `feat/mesa-md-alloc` y `main` avanzó a `981c00f` (con `165e5f2` de antepasado, verificado). Las
+  mediciones de la r2 se tomaron sobre `165e5f2` y están atribuidas a ese SHA. **Es la tercera vez
+  que la regla "SHA siempre, nunca nombre de rama" evita una confusión real.**
+- OPEN AFTER THIS ROUND: **`E-infra-spike` está limpia. Lista para la re-review final de Codex.**
+  No la marco DONE — sólo un PASS de Codex cierra la unidad. **Es la última ronda del bucle con
+  Codex (SOP §1.5): si vuelve a fallar, la decisión sube a Brent.**
