@@ -318,7 +318,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
 | P1a | Esquema: ficheros (migración + `types.ts`) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P0, PR1, PR2 |
 | P1b | Esquema: aplicación y verificación (A3–A8) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P1a, PR3 |
-| P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
+| P2 | Módulo puro de asignación | **DONE** 2026-08-08 · `6363378` | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | TODO | `feat/mesa-md-core` | P3a |
 | P4 | Cablear allocator en el núcleo | TODO | `feat/mesa-md-wire` | **P1b**, P2, P3b |

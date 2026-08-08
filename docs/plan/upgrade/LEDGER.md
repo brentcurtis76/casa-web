@@ -2059,3 +2059,66 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `feat/mesa-md-alloc` — decisión de Brent; el PM no mergea. (3) Publicar `main`, que sigue por
   delante de `origin/main`. (4) Después de P2, **P3a** (`feat/mesa-md-seam`) — la sesión de
   mayor riesgo del plan.
+
+### 2026-08-08 — P2 CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P2 · REVIEW
+- **VERDICT: PASS.** `feat/mesa-md-alloc`@`6363378`. Cero BLOCKING, cero SHOULD-FIX, dos NIT.
+  Review en `reviews/REVIEW-P2.md`, commiteada aquí — Codex la dejó sin stagear en su worktree.
+- **P2 queda DONE.** Es la primera fase del plan que pasa a la primera, sin una sola ronda de
+  remediación: r1 del ejecutor limpia, verificación del PM sin hallazgos, PASS de Codex.
+- LO QUE CODEX VERIFICÓ POR SU CUENTA, en worktree limpio con Node v22.22.0: gate acotado
+  exit 0 con `(0)(0)(0)(0)` por fichero · totales `1039/160/94/46` · Deno **428/0** · Vitest
+  **1062/6 en el padre y 1063/6 en la punta**, misma identidad de rojos · `npm run build`
+  exit 0. Reprodujo las dos medidas de Vitest por checkout completo, igual que yo.
+- **Y ADEMÁS HIZO ALGO QUE NADIE LE PIDIÓ Y QUE VALE LA PENA REGISTRAR: 2.000 configuraciones
+  adversariales generadas**, todas pasando, sin no-determinismo, sin violación de invariantes,
+  sin mutación de la entrada y sin discrepancia de shortfall. El plan había retirado
+  explícitamente el property-based testing del alcance de P2 (D5, «Cómo se establecen») porque
+  el repo no lo usa; Codex lo aportó **desde fuera del árbol**, como evidencia de revisión y no
+  como código commiteado. Es exactamente el reparto correcto: la suite de la fase sigue siendo
+  de ejemplos, y la generación aleatoria la puso quien revisa, no quien implementa.
+- **LAS TRES COSAS QUE LE SEÑALÉ, RESUELTAS UNA A UNA:**
+  1. **Independencia del verificador** (mi punto 2, el que más me preocupaba): la juzga
+     **contención suficiente, no confirmación circular**. Comparte solo `requiredMainDishes` y
+     `tablePeopleCount`, fijadas antes por los tests 1 y 2; no reutiliza ni la selección, ni el
+     intercambio, ni el déficit, ni el shortfall del allocator.
+  2. **G5 más estricta que su redacción** (mi punto 4, que yo había clasificado NIT): **me
+     corrige a mejor.** Su argumento es que no hay pérdida de cobertura en absoluto: en un
+     intercambio de igual número de personas, las cuotas y el total de portadores dispuestos del
+     par quedan fijos, así que **mientras ambas mesas sigan bajo cuota su déficit combinado es
+     invariante** — un decrecimiento estricto es imposible hasta que una deje de ser
+     deficitaria. La guarda que parecía más fuerte es *equivalente* a la condición de progreso
+     alcanzable. Mi NIT no era un margen de mejora para P4: no había margen. Lo doy por cerrado.
+  3. **La enmienda del plan en mi propia ronda** (mi punto 7): **legítima** bajo la regla de
+     control de cambios congelada. Corrige un absoluto obsoleto, conserva el valor histórico y
+     la identidad de los seis rojos, y no toca ningún criterio ni ningún resultado de gate.
+- NITS (ninguna acción, ninguno bloquea): **N1** — `boundedIndex` normaliza un `pick` inválido
+  en vez de fallar rápido; una integración futura podría preferir lanzar para destapar antes su
+  propio bug. **N2** — la cabecera del fichero de tests dice «EVERY test below» del verificador
+  y los tests 1–3 no lo llaman; es precisión documental, no hueco de cobertura. **Los dos son
+  exactamente los que yo había anotado**, lo cual dice algo bueno de la verificación previa y
+  nada nuevo del código.
+- **UNA IMPRECISIÓN EN LA PROPIA REVIEW, que anoto para quien la lea dentro de seis meses.** Su
+  tabla de ACCEPTANCE RULING usa etiquetas `[B1]`–`[B9]` **desplazadas** respecto a las del
+  plan: su `[B1]` describe la fórmula de la cuota (que en el plan es el test 1, no B1), su
+  `[B8]` describe el gate (que es B9), etc. **No falta ningún juicio** — los nueve criterios
+  reales están dictaminados en el cuerpo del documento: el módulo hoja sin imports y la API
+  (B1) en «REVIEW TARGET AND SCOPE», la ausencia de `Math.random` (B2) y el determinismo en
+  «Determinism and injected selection», los importadores (B3) en el mismo apartado de scope, y
+  gate, Deno y Vitest (B7, B9) en «INDEPENDENT RUNS». La correspondencia es una a una si se lee
+  el cuerpo en vez de la tabla. Lo registro porque un lector futuro podría creer que «B1» de
+  este plan es la fórmula de la cuota, y no lo es. **No cambia el veredicto y no reabre nada**;
+  yo mismo verifiqué los nueve criterios contra el código en la ronda anterior.
+- COSTE REAL DE LA FASE: **1 ronda de ejecutor, 1 verificación de PM, 1 revisión de Codex.**
+  Frente a P0 (5 rondas, 4 FAIL) y P1 (4 rondas, cero hallazgos, bloqueada por un canal humano),
+  P2 es la primera que sale por el camino corto — y era la mayor del plan. Lo que la distingue
+  no fue suerte: el prompt llevaba medido de antemano el import entre runtimes, la línea base
+  del padre y la ausencia de diagnósticos en los tres ficheros nuevos.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna nueva.
+- BACKLOG: **B-05**, **B-06** y **B-07** siguen abiertos. **B-06 hay que decidirlo antes de
+  P8.** Ninguno bloquea P3a.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc`** — decisión y ejecución de Brent;
+  el PM no mergea. (2) Después, **P3a** (`feat/mesa-md-seam`), la sesión de mayor riesgo del
+  plan: conviene arrancarla con contexto fresco. (3) `casa-web` está en `phase/E-infra-impl`
+  (workstream AUDIO) con cambios ajenos sin tocar; el trabajo de UPGRADE vive en el worktree
+  `casa-p2-review`.
