@@ -1229,3 +1229,33 @@
   (2) Brent aplica el `.sql` desde el editor SQL. (3) `/exec UPGRADE P1 r3`, verificación pura
   de A3–A8, con la escritura prohibida por prompt. (4) S1 sigue esperando. P1 **no se marca
   DONE**: faltan A3–A8 y falta Codex.
+
+### 2026-08-07 — P1 r3 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P1 · r3 · EXEC
+- CONTEXT PRESSURE: comfortable — la ronda terminó en la llamada de STEP 0.
+- ACTION: **Parada en una sola llamada, como manda el prompt.** Verifiqué primero la rama
+  (`feat/mesa-md-schema`) y que `git diff d9eebb0` sobre los dos ficheros del scope está
+  **vacío**. Después ejecuté la única consulta de STEP 0 vía `mcp__supabase-casa__execute_sql`:
+  `[{"column_exists":0,"function_exists":0}]`. **La migración no está aplicada**, así que no
+  hay nada que verificar: A3–A8 no son ejecutables. No llamé a `apply_migration` — sus dos
+  puertas ya están probadas cerradas en r1 y r2, y el prompt lo prohíbe de antemano. No usé
+  `supabase db push`, ni `psql`, ni la CLI, ni el servidor `open-brain`, ni toqué ningún
+  fichero de configuración. Tampoco ejecuté STEP 1–4: sin columna ni función, sus consultas
+  no tienen objeto, y el gate de STEP 4 es una comprobación anti-manipulación sobre ficheros
+  que nadie tocó.
+- COMMITS: solo esta entrada de registro, en `feat/mesa-md-schema`. Cero ficheros de código.
+- TESTS: ninguno ejecutado. Ningún fichero cambió desde r1; los gates locales siguen siendo
+  los que el PM midió y reverificó (`EXIT=0`, `tsc=1039 eslint=160 deno-lint=94
+  deno-check=46`). Volver a correrlos no aportaba evidencia nueva sobre un árbol idéntico.
+- FINDINGS RAISED: ninguno. Los ceros de STEP 0 son **BLOCKED**, no un defecto: coinciden
+  exactamente con lo que el PM verificó al cerrar r2, o sea que el estado remoto no se ha
+  movido y **no hay aplicación parcial** (0/0, no 1/0).
+- DECISIONS: ninguna. Las dos abiertas (S1 sobre D8.2, S2 sobre D9) siguen siendo de Brent, y
+  **S2 sigue siendo previa a cualquier aplicación**.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) **S2 al Decision Log antes de aplicar nada** — sin eso, aplicar
+  desde el editor SQL le deja a Codex una violación de decisión congelada. (2) Brent aplica
+  `supabase/migrations/20260806000000_mesa_main_dish_optout.sql`. (3) A3–A8 siguen sin
+  verificar y consumen ya las tres rondas del tope de SOP §1.5 sin haber podido ejecutarse:
+  **la continuación necesita autorización explícita de Brent para una r4**, igual que la que
+  concedió en P0. (4) S1 sigue esperando. **P1 no se marca DONE**: faltan A3–A8 y falta Codex.
