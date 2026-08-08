@@ -659,3 +659,57 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   leerlo. El prompt de ejecutor lo repite arriba de todo por si acaso.
 - OPEN AFTER THIS ROUND: ejecutar `E-infra-spike` r1 → `/exec AUDIO E-infra-spike r1`. Sigue
   pendiente de Brent la confirmación de dispositivos físicos para `E1-spike` (ola 4).
+
+### 2026-08-08 — E-infra-spike round 1 — EXEC (Opus)
+- SESSION: `AUDIO · E-infra-spike · r1 · EXEC`
+- ACTION: medición de la infraestructura de pruebas. **Sin código de producción**; el entregable
+  es `docs/plan/audio/evidence/E-infra-spike.md`. Medido todo en `main @
+  6d45f35a54bde0335d05ffd6943167cf25d0a09e`, worktree desechable `/tmp/wt-einfra`, ya borrado.
+- **RUTA VIABLE: A (stack local).** Arranca en **44.3 s** en puertos 54331/54332/54333/54334/
+  54335/54337, conviviendo con el proyecto ajeno `sxlogxqzmarhqsblxmtj` (los nombres de contenedor
+  llevan el `project_id`, que difiere, así que no colisionan). **61/61 migraciones aplican limpias.**
+- **DOS HALLAZGOS QUE NADIE HABÍA MEDIDO, y son el grueso de `E-infra-impl`:**
+  - **F1 — `supabase start` está roto en `main`.** `config.toml` declara
+    `[functions.generate-graphic]` y ese directorio **no existe en ninguna rama**
+    (`git log --all -- supabase/functions/generate-graphic` → vacío). Lo introdujo `55ce9c7`.
+    Error verbatim: `failed to read file: open supabase/functions/generate-graphic/index.ts: no
+    such file or directory`. **Por eso nadie había arrancado el stack local: no arranca.** Arreglo
+    = borrar el bloque.
+  - **F2 — las 61 migraciones no otorgan permisos de tabla.** Tras aplicarlas, **toda** lectura de
+    `anon` por PostgREST da **401 `42501 permission denied`** — no es RLS, es el `GRANT`. Causa
+    raíz medida en `pg_default_acl`: las migraciones corren como `postgres`, cuyos privilegios por
+    defecto conceden a `anon` sólo `Dxt` (TRUNCATE/REFERENCES/TRIGGER), **sin `SELECT`**; los de
+    `supabase_admin` sí conceden `arwdDxt`. El repo tiene **0** `GRANT` y **0** `REVOKE`. Es decir,
+    **el esquema depende de un estado ambiente del proyecto alojado que el stack local no
+    reproduce**. Arreglo verificado vía `supabase/seed.sql` con tres `GRANT`; tras aplicarlo,
+    `anon` obtiene 200 y **RLS filtra bien** (ve 1 de 2 episodios; 0 liturgias).
+- CRITERIOS: S1 met · S2 met · S3 met · **S4 parcial (a propósito: no se creó rama)** · S5 met ·
+  S6 met · S7 met · S8 met.
+- **S4 — no se creó ninguna rama de Supabase.** `list_branches` → `{"branches":[]}`; eso no prueba
+  que `create_branch` esté permitido. Costo documentado: **USD 0.01344/h Micro (≈0.32/día,
+  ≈9.81/mes)** más egress/disk/storage; **el Spend Cap NO lo cubre y los Compute Credits NO
+  aplican**. **NO MEDIDO: el plan de la organización** — ninguna de las 19 herramientas MCP de
+  `supabase-casa` expone facturación; si la org está en Free, la ruta B no existe. Decide Brent.
+  Nota: una rama se construye desde `supabase/migrations` (sólo las 61 de CASA), así que **no**
+  reproduciría las 11 tablas de Life OS — no es "una copia de producción".
+- **S5 — la guarda va en `playwright.config.ts` tras la línea 21**, antes de `defineConfig`, para
+  abortar antes de que `webServer` lance `npm run dev`. **Medido que Vite sí inyecta `VITE_*` desde
+  `process.env`** — y que al poner sólo la URL, `VITE_SUPABASE_ANON_KEY` queda ausente y el código
+  cae a la **clave anon de producción** (`client.ts:6`). La guarda debe exigir **ambas** variables:
+  la ausencia es tan peligrosa como el valor equivocado, por el fallback hardcodeado de `client.ts:5`.
+- TESTS: **n/a — unidad de medición.** **Gate D18 no aplica**: la fase no modifica ningún fichero
+  fuente. **No ejecuté ningún gate ni declaro ninguno verde.** No ejecuté `npx playwright test`
+  ni nada contra el proyecto remoto.
+- LIMPIEZA: `supabase stop --project-id mulsqxfhxxdsadxsljss` ejecutado; `docker ps` final
+  confirma **los 11 contenedores de `sxlogxqzmarhqsblxmtj` vivos y únicos**. Worktree borrado.
+  **El proyecto ajeno no se tocó.**
+- FINDINGS RAISED: F1 y F2 (arriba). Ambos con arreglo medido y verificado, no propuesto a ciegas.
+- BACKLOG ADDED: `pg_cron` no está en la imagen local (`pg_cron=f`), así que un e2e local **no
+  puede probar los recordatorios de WhatsApp**. Fuera del alcance de AUDIO.
+- **REDACCIÓN DECLARADA:** en la salida cruda de `supabase start` van `PUBLISHABLE_KEY` y
+  `SECRET_KEY` como `<REDACTADO>`. Es la única edición a una salida cruda en todo el documento.
+  **GitHub push protection rechazó el primer push** (`GH013`, "Supabase Secret Key",
+  `evidence/E-infra-spike.md:163`). Son las claves de demo fijas del CLI local, no credenciales
+  reales, pero el bloqueo es política correcta y no procede saltárselo con la URL de unblock.
+- OPEN AFTER THIS ROUND: redactar `E-infra-impl` con el bloque S8 del documento de evidencia, y
+  que Brent decida si quiere ruta B (no hace falta: la ruta A es gratis y suficiente).
