@@ -7,8 +7,8 @@ META
 - BASE: `main`
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
-  **r10 → FAIL (6)** · **r11 → FAIL (7)**. Esta es la **revisión 12**. Ver §9 y §11–§18 para la
-  trazabilidad finding → cambio.
+  **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
+  **revisión 13**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -21,11 +21,14 @@ META
   en `main` (`5b947ac`). D18 vuelve a funcionar tal como se escribió.
 - **Las unidades vigentes son las de §5.** Las `A*` quedan retiradas; sus cuerpos se
   conservan al final del documento porque las reviews de Codex r1–r5 los referencian por ID.
-- **PENDIENTE DE REVIEW:** esta revisión 12 **no ha pasado por Codex**. En la r11 Codex
-  **validó con evidencia ejecutada** el alcance, el comportamiento, la estrategia de tipado y el
-  test plan de E2 —construyó el adaptador y lo midió: 0/0/0/0— y dijo que congelaría E2 en la
-  ronda siguiente con tres arreglos: **B1** (la línea base irreproducible), **S2** (acotar E2.1
-  por RLS) y **S3** (citar la regla de clasificación del README). **Los tres están aplicados.**
+- **✅ `E2` CONGELADA — `CODEX REVIEW plan r12`: PASS** (0 BLOCKING, 1 SHOULD-FIX, 4 NIT), sobre
+  el commit `3084208`. Congelados su **alcance, comportamiento, estrategia de tipado** (demostrada
+  por Codex construyendo el adaptador y midiéndolo con el gate real: 0/0/0/0), **test plan** y
+  **gate** (§4 verificada, `tsc=1041` reproducida en `main @ 05dc4ca`). Esta revisión 13 aplica
+  los cinco arreglos que Codex pidió meter en el commit de congelado. **E2 puede ejecutarse.**
+- **El resto del plan NO está congelado.** `E1-spike` es ejecutable por construcción —no toca
+  código que se mergee ni pasa por el gate— pero **no ha pasado review**. `E-infra`, `E3a`, `E3b`
+  y `E4-spike` siguen en borrador; `E1-impl`, `E4-impl`, `E5` y `E6` no son unidades.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -220,8 +223,13 @@ $ bash scripts/gates/changed-files-diagnostics.sh src/hooks/useQuickPublish.ts
 El comando era real; el árbol no era el que la afirmación nombraba. Ver §5, cuarta entrada.
 
 > **Regla, a raíz de esto:** los totales del proyecto se toman **en el SHA padre de la unidad**,
-> nunca en el checkout que el PM tenga debajo, y la medición se anota **con su SHA**. Un total
-> medido sin decir sobre qué árbol no es una medición.
+> nunca en el checkout que el PM tenga debajo, y la medición se anota **con el SHA exacto —
+> nunca con el nombre de una rama**. Un total medido sin decir sobre qué árbol no es una medición.
+>
+> **Por qué el SHA y no la rama** (Codex r12/S1): este repo lo comparten sesiones concurrentes y
+> el checkout cambia de rama bajo los pies. El 2026-08-07, entre las 15:39 y las 15:52, otra
+> sesión lo tuvo en `main`; **dos mediciones de Codex y una mía se atribuyeron a la rama
+> equivocada dentro de esa ventana**. Un nombre de rama no identifica un árbol. Un SHA sí.
 
 Arreglarlos es non-goal. El gate no es "el total bajó" sino "los ficheros que toqué no ganaron un
 diagnóstico nuevo".
@@ -263,7 +271,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 12, tras `CODEX REVIEW — plan r11` FAIL)
+## 5. Phase index — por olas (revisión 13 — **E2 congelada por Codex r12**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -279,7 +287,7 @@ un defecto.
 
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
-| E2 | Carátula desde la portada de la liturgia | Código | TODO | — |
+| E2 | Carátula desde la portada de la liturgia | Código | **TODO — CONGELADA (Codex PASS r12)** | — |
 
 **Una sola unidad.** No toca base de datos ni e2e: es lógica de frontend con vitest, y el gate
 que necesita ya está en `main`. Es lo único que hoy puedo congelar sin que esconda trabajo de
@@ -356,8 +364,15 @@ Tres, todas con la misma forma — una inferencia colocada dentro de una secció
 **La cuarta es la más instructiva, porque rompe la regla que adopté para evitar las tres
 primeras.** En la r10 escribí que toda afirmación de estado del entorno llevaría su comando al
 lado. En la r11 lo hice — y la afirmación siguió siendo falsa, porque **nombré el comando pero no
-el árbol**. La regla, corregida: *comando, salida **y la identidad del árbol** sobre el que se
-ejecutó (rama o SHA)*. Un total sin árbol no es una medición; es un número con un comando al lado.
+el árbol**. La regla, corregida: *comando, salida **y el SHA exacto** sobre el que se ejecutó —
+nunca el nombre de una rama*. Un total sin árbol no es una medición; es un número con un comando
+al lado.
+
+**Y no es un defecto sólo mío.** En la r12 Codex encontró que **su propia r11** había atribuido
+dos mediciones a `feat/mesa-md-schema` cuando el reflog demuestra que este checkout compartido
+estaba en `main` durante esa ventana. Midió contenido de `main` y lo llamó rama. Es exactamente
+el mismo error, en el otro lado de la mesa, y lo habría delatado la misma regla — de ahí que la
+r12 la endurezca a SHA siempre.
 
 Queda escrito aquí a propósito. Es el mismo defecto que este plan lleva seis rondas
 diagnosticando, cometido por el PM que lo diagnostica.
@@ -420,7 +435,7 @@ nuevo y D18 lo bloquea**.
 
 | Opción | Por qué no |
 |---|---|
-| Regenerar `types.ts` | Blast radius sobre 128 tablas y ~1039 diagnósticos. Es el arreglo de fondo, pero es su propia unidad, no un efecto lateral de E2 |
+| Regenerar `types.ts` | Blast radius sobre 128 tablas y **1041** diagnósticos (medido en `main @ 05dc4ca`). Es el arreglo de fondo, pero es su propia unidad, no un efecto lateral de E2 |
 | Reutilizar `loadLiturgy()` | Funciona y no añade diagnósticos, pero carga **la liturgia entera** —todos los elementos con sus slides en base64— para extraer una imagen. Coste real en el navegador durante la publicación |
 | Cast suelto en el helper | Escape del gate sin contención |
 
@@ -459,7 +474,7 @@ policies —es decir, de esquema— y E2 no toca esquema. Va al backlog.
 **latente, no activo**. Por eso Codex lo clasificó SHOULD-FIX y no BLOCKING.*
 
 **Al backlog:** regenerar `types.ts` para las 128 tablas. Que cubra 16 es un defecto del repo que
-produce buena parte de los 1039 diagnósticos, y arreglarlo haría innecesario este adaptador.
+produce buena parte de los **1041** diagnósticos, y arreglarlo haría innecesario este adaptador.
 
 **Cómo se presenta el aviso — congelado tras Codex r9/S1**, que señaló que la r9 lo delegaba:
 se emite con el **`useToast` que el editor ya usa**, como toast no bloqueante, en español, y el
@@ -1430,7 +1445,8 @@ resuelta antes del primer envío).
 | Pre-renderizar el XML del feed a Storage | A1 | Sólo si el catálogo supera ~200 items. Disparador, no tarea |
 | **Medir el grabador de liderazgo en iOS y añadir fallback donde haga falta** (`RecorderPopupPage.tsx:67-68`) | Hallazgo de A19 | *Corregido en la r10 (Codex r9/S3): decía "arreglar... roto en iOS", lo que volvía a dar por medido algo que nunca se midió.* **Remite al resultado de E1-spike.** Es del sistema de liderazgo; se hace en su workstream |
 | Búsqueda full-text sobre la descripción | A8 | A8 cubre título y predicador |
-| **Regenerar `src/integrations/supabase/types.ts` para las 128 tablas** | Codex r10/B1 | Hoy cubre **~16** y no incluye `liturgias` ni `liturgia_elementos`, lo que fuerza casts por todo el repo y produce buena parte de los 1039 diagnósticos `tsc`. Arreglarlo haría innecesario el adaptador de E2. Blast radius grande: es su propia unidad, no un efecto lateral |
+| **Ampliar la lectura de `liturgia_elementos` a los admins de liturgia** | Codex r11/S2 | `20260108000000_fix_liturgia_rls_authenticated.sql` concede lectura de admin a `liturgias` (`:29`) pero **la elimina y no la recrea** en `liturgia_elementos` (`:35-48`). Un admin ve liturgias ajenas en el selector y no ve sus portadas. **Es cambio de policies, o sea de esquema**, y E2 no toca esquema |
+| **Regenerar `src/integrations/supabase/types.ts` para las 128 tablas** | Codex r10/B1 | Hoy cubre **~16** y no incluye `liturgias` ni `liturgia_elementos`, lo que fuerza casts por todo el repo y produce buena parte de los **1041** diagnósticos `tsc` (`main @ 05dc4ca`). Arreglarlo haría innecesario el adaptador de E2. Blast radius grande: es su propia unidad, no un efecto lateral. **Aviso de Codex r12/N4:** los mensajes de `tsc` incrustan el volcado del union de `Database`, así que tocar `types.ts` **reimprime ~208 mensajes de ficheros ajenos con texto distinto** (mismo fichero, línea y código). Esa unidad verá cientos de deltas crudos que **no** son diagnósticos nuevos y **necesitará comparación normalizada** — el único caso del plan donde §4.3 no se aplica literal |
 
 ### Retirado en la r7 por el re-alcance de Brent — **la pista de distribución completa**
 
@@ -1578,6 +1594,10 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r8: D18 se ejecuta desde un SHA aprobado del gate en worktrees desechables**, no esperando a que UPGRADE P0 se mergee. **Rechazado** medir con `tsc`/`eslint` a mano | Desacopla el gate de la entrega de UPGRADE: la dependencia baja de "P0 mergeado a `main`" a "P0 aprobado". Medir a mano sería un gate distinto y peor definido sobre un repo con 1041/160/94/46 diagnósticos | Codex r7/B5 |
 | 2026-08-07 | **r8: D1, D4, D6, D7, D8 y D11 salen del bloque activo al de distribución. D5 se parte. D10 se rejustifica. D17 baja a guardrail. D18b se endurece** | Seis decisiones seguían describiendo el plan retirado — D1 llegaba a decir "Es el objetivo entero", ya falso, y D11 referenciaba fases inexistentes. D18b exigía `og:audio` sin evidencia de que ningún canal real lo consuma | Codex r7/S4 |
 | 2026-08-07 | **r8: se retira la afirmación "el grabador está roto en iOS"** — pasa a "sin fallback para iOS anterior a 18.4", y **E1-spike tiene que medirlo** | No estaba medida. Safari/iOS 18.4 añadió WebM a `MediaRecorder`, dato que este mismo plan registraba en su ledger de la r2 mientras afirmaba lo contrario en §0 | Codex r7/S1 |
+| 2026-08-07 | **✅ `E2` CONGELADA.** `CODEX REVIEW plan r12` → **PASS** sobre `3084208`. Se congelan alcance, comportamiento, estrategia de tipado, test plan y gate | Codex validó la estrategia de tipado **construyendo el adaptador y midiéndolo** (0/0/0/0), no argumentando, y reprodujo `tsc=1041` en `main @ 05dc4ca`. Las tres condiciones de su r11 (B1, S2, S3) quedaron aplicadas y verificadas | Codex r12 (PASS) |
+| 2026-08-07 | **r13: la regla de evidencia se unifica a SHA siempre**, nunca nombre de rama | Codex r12/S1. El 2026-08-07, entre las 15:39 y las 15:52, otra sesión tuvo este checkout compartido en `main`: **dos mediciones de Codex y una mía** se atribuyeron a la rama equivocada dentro de esa ventana. Un nombre de rama no identifica un árbol; un SHA sí | Codex r12/S1 |
+| 2026-08-07 | **r13: se registra que el error de atribución de árbol también lo cometió Codex** en su r11 | Simetría, y evidencia de que la regla nueva no es una penitencia del PM sino una condición del método: habría delatado a los dos | Codex r12 (auto-corrección) |
+| 2026-08-07 | **r13: la unidad futura "regenerar `types.ts`" necesitará comparación normalizada** | Codex r12/N4: los mensajes de `tsc` incrustan el volcado del union de `Database`, así que tocar `types.ts` reimprime **~208 mensajes de ficheros ajenos** con texto distinto pero mismo fichero, línea y código. Es el único caso del plan donde §4.3 no se aplica literal | Codex r12/N4 |
 | 2026-08-07 | **r12: la línea base se corrige a `tsc=1041`** y se fija que los totales se miden **en el SHA padre**, en worktree limpio, anotando el SHA | Codex r11/B1. La r11 dijo `1039` "medido": el comando era real pero corrió sobre `feat/mesa-md-schema` (P1 de UPGRADE, que arregla dos diagnósticos), no sobre `main`. Remedido en worktree limpio de `main` (05dc4ca): **1041** | Codex r11/B1 |
 | 2026-08-07 | **r12: la regla de evidencia se endurece — comando, salida Y la identidad del árbol** | Es la cuarta verificación falsa mía, y la primera que rompe la regla adoptada para evitar las tres anteriores: nombré el comando pero no el árbol. Un total sin árbol es un número con un comando al lado | Codex r11/B1 |
 | 2026-08-07 | **r12: E2.1 se acota a "portada guardada **y legible por quien publica**"** | Codex r11/S2: `20260108000000_fix_liturgia_rls_authenticated.sql` da lectura de admin a `liturgias` (`:29`) pero **la elimina y no la recrea** en `liturgia_elementos` (`:35-48`). Un admin puede ver una liturgia ajena en el selector y no ver su portada → degrada a Gemini con "sin portada guardada" aunque exista. Ampliar esa lectura sería cambio de policies, fuera del scope de E2 | Codex r11/S2 |
@@ -1885,7 +1905,11 @@ $ bash scripts/gates/changed-files-diagnostics.sh src/lib/liturgia/liturgyServic
 ```
 
 Confirmado en todo: `types.ts` cubre ~16 tablas de 128; `liturgyService.ts` se come 38
-diagnósticos consultando esas mismas tablas sin tipos; y el total real es **1039**, no 1041.
+diagnósticos consultando esas mismas tablas sin tipos; y el total real es ~~**1039**, no 1041~~.
+
+> **[r12 — corrección]** La última afirmación era **falsa**: esa medición salió del checkout
+> puesto en la rama de P1 de UPGRADE, no de `main`. **Son 1041 en `main @ 05dc4ca`.** Ver §5,
+> cuarta entrada, y §18.
 
 | Finding | Clase | Resolución en la r11 |
 |---|---|---|
@@ -1922,17 +1946,25 @@ $ bash scripts/gates/changed-files-diagnostics.sh src/lib/sermon-editor/liturgyC
 **Mi verificación de su BLOCKING**, que era sobre una medición mía:
 
 ```
-$ git rev-parse --abbrev-ref HEAD                → feat/mesa-md-schema
+$ git rev-parse --abbrev-ref HEAD                → feat/mesa-md-schema   ← SHA NO ANOTADO
 $ bash scripts/gates/…  src/hooks/useQuickPublish.ts
   [gates] totales del proyecto: tsc=1039 …       ← lo que medí en la r11
 
-$ git worktree add --detach ../wt-measure main   # main = 05dc4ca, árbol limpio
+$ git worktree add --detach ../wt-measure main   # main @ 05dc4ca, árbol limpio
 $ bash scripts/gates/…  src/hooks/useQuickPublish.ts
   [gates] totales del proyecto: tsc=1041 …       ← lo correcto
 ```
 
 Codex tiene razón: **son 1041**. Mi `1039` salió de la rama de P1 de UPGRADE, que arregla dos
 diagnósticos. No fue un árbol sucio — fue **el árbol equivocado**.
+
+**Y no anoté su SHA**, que es justo el defecto que la regla nueva corrige: puedo decir la rama,
+no el árbol. Codex reproduce el 1039 en **`ac9ef14`** y el 1041 en **`main @ 05dc4ca`**, ambos en
+árbol limpio. **Mecanismo del delta, identificado por Codex r12:** `d9eebb0` añade
+`host_food_assignment` a `mesa_abierta_matches` en `types.ts`, lo que apaga exactamente dos
+diagnósticos de `MesaAbiertaAdmin.tsx` — `(376,39)` TS2339 y `(882,19)` TS2353. Dos, y ninguno
+más. La saga del 1039/1041 fueron **cuatro mediciones verdaderas** que se contradecían porque dos
+de ellas —una de Codex y una mía— no sabían sobre qué árbol estaban paradas.
 
 | Finding | Clase | Resolución en la r12 |
 |---|---|---|
@@ -1948,3 +1980,39 @@ diagnósticos. No fue un árbol sucio — fue **el árbol equivocado**.
 medir*. Ésta es *medir mal*: puse el comando, como exige la regla que yo mismo adopté en la ronda
 anterior, y lo ejecuté sobre otro árbol. La regla no falló por floja sino por incompleta, y la
 corrección es de una palabra: **el árbol también es parte de la evidencia.**
+
+
+---
+
+## 19. Trazabilidad de la review de Codex r12 (PASS — E2 congelada)
+
+**Veredicto:** **PASS** — 0 BLOCKING, 1 SHOULD-FIX, 4 NIT, sobre el commit `3084208`.
+**E2 queda congelada.** Novena review; la primera que pasa.
+
+**Lo que Codex confirmó reproduciendo:**
+
+| Medición | Árbol | Resultado |
+|---|---|---|
+| §4 (línea base) | `main @ 05dc4ca`, worktree limpio | `tsc=1041` ✓ |
+| §18 (el 1039 de la r11) | `ac9ef14`, limpio | `tsc=1039` ✓ |
+| Estrategia de tipado (r11) | prototipo del adaptador + gate real | `0/0/0/0` ✓ |
+
+**Y una corrección propia de Codex**, que conviene dejar escrita: su r11 afirmó haber medido
+1041 "en `feat/mesa-md-schema`". Era falso — el reflog muestra que entre las 15:39 y las 15:52
+este checkout compartido estuvo en `main`, y sus dos mediciones cayeron dentro de esa ventana.
+**Midió `main` y lo llamó rama: exactamente mi cuarto defecto, en el otro lado de la mesa.**
+De ahí que la r13 endurezca la regla a SHA siempre, para los dos.
+
+| Finding | Clase | Resolución en la r13 |
+|---|---|---|
+| **S1** unificar la regla de evidencia a SHA-siempre | SHOULD-FIX | **Aceptado.** §4 y §5 exigen ahora **SHA exacto, nunca nombre de rama**, citando la carrera de checkouts del 2026-08-07 como razón |
+| **N1** tres `1039` residuales en texto vigente | NIT | **Aceptado.** Corregidos los tres a **1041**, con `main @ 05dc4ca` al lado. Los `1039` que quedan son todos históricos o correctivos |
+| **N2** la fila de backlog prometida no existía | NIT | **Aceptado.** Añadida: ampliar la lectura de `liturgia_elementos` a los admins, declarada cambio de policies |
+| **N3** errata en §17 | NIT | **Aceptado.** La frase "el total real es 1039, no 1041" queda tachada y con su bloque de corrección, siguiendo el patrón que §0 usó para iOS |
+| **N4** completar §18 con SHAs y avisar del churn | NIT | **Aceptado.** §18 lleva los SHAs y dice explícitamente que **no anoté el mío**; el ítem de `types.ts` en el backlog lleva el aviso de los ~208 falsos deltas |
+
+**Cierre de la saga 1039/1041.** Fueron cuatro mediciones verdaderas que se contradecían porque
+dos de ellas —una de Codex, una mía— no sabían sobre qué árbol estaban paradas. El mecanismo:
+`d9eebb0` añade `host_food_assignment` a `mesa_abierta_matches` en `types.ts`, apagando
+`MesaAbiertaAdmin.tsx(376,39)` TS2339 y `(882,19)` TS2353. Dos diagnósticos, ninguno más.
+La regla que queda escrita —**comando, salida, SHA**— es lo que impide que vuelva a pasar.

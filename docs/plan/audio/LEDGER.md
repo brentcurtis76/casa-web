@@ -394,3 +394,34 @@
 - TESTS: n/a — ronda de planificación.
 - OPEN AFTER THIS ROUND: **review de Codex sobre E2 r12.** Codex declaró que congelaría E2 con
   B1, S2 y S3 arreglados; los tres lo están. `E1-spike` sigue arrancable en paralelo.
+
+### 2026-08-07 — plan round 13 — PM (Fable) — ✅ E2 CONGELADA
+- SESSION: `AUDIO · A0-core · PM`
+- ACTION: triage de `CODEX REVIEW — plan r12` (VERDICT **PASS**: 0 BLOCKING, 1 SHOULD-FIX,
+  4 NIT) sobre `3084208`. **Novena review, la primera que pasa.** Aplicados en este commit de
+  congelado los cinco arreglos que Codex pidió, más el prompt de ejecutor de E2.
+- **E2 QUEDA CONGELADA**: alcance, comportamiento, estrategia de tipado, test plan y gate.
+  Codex validó la estrategia **construyendo el adaptador y midiéndolo** con el gate real
+  (`tsc 0 / eslint 0 / deno-lint 0 / deno-check 0`), no argumentando.
+- CIERRE DE LA SAGA 1039/1041 — cuatro mediciones verdaderas que se contradecían:
+  - `main @ 05dc4ca`, worktree limpio → **1041** (Codex ×2, PM ×1).
+  - `ac9ef14` (rama de P1), limpio → **1039** (Codex ×2, PM ×1 sin anotar SHA).
+  - **Mecanismo:** `d9eebb0` añade `host_food_assignment` a `mesa_abierta_matches` en `types.ts`,
+    lo que apaga `MesaAbiertaAdmin.tsx(376,39)` TS2339 y `(882,19)` TS2353. Dos, ninguno más.
+  - **El error fue de los dos.** Mi r11 midió la rama y la llamó `main`. **La r11 de Codex midió
+    `main` y lo llamó rama** — el reflog muestra que entre las 15:39 y las 15:52 otra sesión tuvo
+    este checkout compartido en `main`, y sus dos mediciones cayeron dentro. Codex lo detectó y
+    lo corrigió él mismo en la r12.
+  - **Regla final: comando, salida y SHA exacto. Nunca el nombre de una rama** — en un repo con
+    sesiones concurrentes, el nombre de rama no identifica un árbol.
+- CAMBIOS DE ESTA RONDA: §4 y §5 unifican la regla a SHA-siempre (S1) · tres `1039` residuales
+  corregidos a **1041** (N1) · añadida la fila de backlog para ampliar la lectura de
+  `liturgia_elementos` (N2) · errata de §17 tachada con su bloque de corrección (N3) · §18 con
+  los SHAs y admitiendo que **no anoté el mío**, más el aviso de los ~208 falsos deltas para la
+  futura unidad de `types.ts` (N4) · §19 nueva.
+- ENTREGABLE: **`docs/plan/audio/prompts/E2-r1.md`**, commiteado en `docs/plan-audio` para que el
+  ejecutor lo encuentre desde otro worktree.
+- TESTS: n/a — ronda de planificación.
+- OPEN AFTER THIS ROUND: **ejecutar E2** (`/exec AUDIO E2 r1`). `E1-spike` sigue arrancable en
+  paralelo, pero **no ha pasado review** — si se lanza, es por decisión explícita de Brent.
+  `E-infra`, `E3a`, `E3b` y `E4-spike` siguen en borrador.
