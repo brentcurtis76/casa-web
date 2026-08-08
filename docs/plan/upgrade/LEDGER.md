@@ -2122,3 +2122,96 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   plan: conviene arrancarla con contexto fresco. (3) `casa-web` está en `phase/E-infra-impl`
   (workstream AUDIO) con cambios ajenos sin tocar; el trabajo de UPGRADE vive en el worktree
   `casa-p2-review`.
+
+### 2026-08-08 — P3a round 1 — PM (Opus 5) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P3a · PM
+- ACTION: Bootstrap de PM para **P3a — Seam: `handler.ts` en `create-mesa-matches`**. Prompt
+  escrito y commiteado en `prompts/P3a-r1.md`. **No despacho todavía**: P3a debe salir de un
+  `main` con P2 dentro, y P2 sigue sin mergear en `feat/mesa-md-alloc`. Es exactamente la misma
+  precondición dura que P2 tuvo respecto a P1, por el mismo motivo, y el prompt la implementa
+  igual: un `grep` sobre `PLAN.md` que debe encontrar P2 marcada DONE, y si no, el ejecutor para
+  en seco y reporta `BLOCKED` antes de tocar nada. P3a **no depende del código de P2** — depende
+  solo de P0; la espera es únicamente para no bifurcar `LEDGER.md` (backlog **B-02**).
+- **P3a RELEÍDA (SOP §3.8.5): sin enmienda.** Alcance, criterios C1–C7, plan de test y tamaño
+  siguen bien. Lo que sí hago es medir por adelantado todo lo medible, porque el plan llama a
+  esta «la sesión de mayor riesgo» y las dos fases que salieron baratas (P2) fueron las que
+  llevaban el terreno medido en el prompt.
+- LO QUE MEDÍ YO MISMO SOBRE EL PADRE REAL (`feat/mesa-md-alloc`@`d98fa6d`, que es `main` + P2 en
+  fast-forward), no lo que dice ningún reporte:
+  - **Gate D8 sobre los tres ficheros de `F`**: `handler.ts` `(0)(0)(0)(0)` y `handler_test.ts`
+    `(0)(0)(0)(0)` — no existen todavía. **`index.ts` `(0)(0)(4)(6)`: diez diagnósticos
+    preexistentes.** Totales `1039/160/94/46`.
+  - **Deno: 428 passed / 0 failed.** Así que C6 («+10») significa **438/0** en la punta, no un
+    número que el ejecutor tenga que adivinar.
+  - **Vitest: 1063 passed / 6 failed**, y los 6 son todos de `MesaAbiertaDashboard.test.tsx` —
+    exactamente el conjunto base que declara D8.2. Esta pasada salió limpia del flake de B-05.
+  - **`npm run build` exit 0.**
+- **EL HALLAZGO QUE DECIDE LA FASE, Y POR QUÉ LO RESUELVO ASÍ.** De los diez diagnósticos de
+  `index.ts`, **ocho están pegados a código que P3a mueve**: los 6 de `deno check` (un TS18046
+  por `error.message` sobre `unknown` y cinco TS7006 por `any` implícito en `g`, `guest`, `j`) y
+  dos `no-unused-vars` (`TARGET_GUEST_SIDE_FOR_DINNER`, `count`). Cuando el bloque se mueve,
+  **aterrizan en `handler.ts`, cuya línea base es cero**. Leído al pie de la letra, D8.4 —«cero
+  diagnósticos nuevos en `F`», comparado por fichero— convierte eso en ocho BLOCKING y hace que
+  P3a suspenda su propio gate haciendo exactamente lo que el plan le manda hacer.
+  **Lo clasifico como desplazamiento, no como diagnóstico nuevo**, y esto **no es una enmienda al
+  plan**: D8.4 ya le da al revisor la clasificación a mano («desplazamiento de línea —mismo
+  mensaje, otra línea— aceptable»), y un movimiento verbatim entre dos ficheros que están **los
+  dos dentro de `F`** es la misma especie de cosa que un desplazamiento de línea: mismo mensaje,
+  otra ubicación, cero cambio neto en el proyecto. Los totales lo confirman —`deno-check` se
+  queda en 46— y `deno-lint` incluso **baja a 92**, porque el `index.ts` nuevo usa el import map
+  y pierde los dos `no-import-prefix`.
+  Lo que **no** hago es pedirle al ejecutor que los arregle de camino, y la razón no es pereza:
+  la regla dura de P3a es *conducta idéntica*, y la única forma práctica de verificarla es
+  diffear el bloque movido contra el original y no ver nada. Un ejecutor que además repare ocho
+  diagnósticos hace ese diff ilegible y deja la regla dura sin comprobar. Además los cinco TS7006
+  no son un arreglo de una línea: nacen de que el cliente de Supabase no está tipado, y la
+  reparación honesta es declarar una interfaz `Participant`, que es trabajo propio y con riesgo
+  de ripple. **Queda como backlog B-08, candidata a P4**, que ya toca `handler.ts`.
+  El prompt lleva la tabla exacta del estado final esperado —`handler.ts` `(0)(0)(2)(6)`,
+  `index.ts` `(0)(0)(0)(0)`, `handler_test.ts` `(0)(0)(0)(0)`, totales `1039/160/92/46`— para que
+  esto sea un criterio comprobable y no un juicio improvisado en la revisión. **Codex tiene que
+  recibir esto explícitamente en su prompt de revisión final**; si no, lo leerá estricto y hará
+  FAIL con razón aparente.
+- **LO OTRO QUE EL PLAN NO SABÍA Y ABARATA LA FASE: el seam ya existe cinco veces en este repo.**
+  `generate-oraciones`, `generate-story`, `generate-scene-images`, `refine-story` y
+  `process-reflexion-pdf` tienen exactamente el split `handler.ts` + `index.ts` delgado +
+  `handler_test.ts`, con la firma `createHandler(deps)`. La sección «Risks» de P3a no lo
+  menciona y describe la fase como si hubiera que inventar el patrón. El prompt inlinea
+  `generate-oraciones/index.ts` entero (27 líneas) como plantilla. Esto rebaja el riesgo real de
+  la fase bastante por debajo de lo que dice el plan.
+- **LO QUE SÍ SE CONFIRMA DEL RIESGO DECLARADO**: `_shared/testHelpers.ts` **no** tiene doble de
+  consultas —lo verifiqué: tiene `makeAuthzDeps`, `AUTH_HEADER`, spy de `fetch`, captura de logs
+  y fixtures de imagen, nada de query builder— y `wa-webhook/makeSupabase()` es una fábrica de
+  cliente real, no un doble. Hay que escribirlo desde cero, dentro de `handler_test.ts` (meterlo
+  en `_shared/` haría `F` de cuatro ficheros y tocaría un fichero del que dependen seis suites).
+  El prompt enumera las **diez formas de llamada exactas** que el handler hace, separadas en
+  lecturas y escrituras, para que el ejecutor no las derive leyendo. Y le calibra el umbral de
+  `FINDINGS`: el plan dice «si el doble supera al código que prueba»; el código que prueba son
+  ~470 líneas, así que un doble de 100–200 **no** es motivo de FINDINGS.
+- OTRAS DOS COSAS QUE PUSE EN EL PROMPT PARA QUE NO CUESTEN UNA RONDA: (1) la sustitución exacta
+  de `pick` —`Math.floor(Math.random() * (i + 1))` → `pick(i + 1)`, mismo rango, sin off-by-one—
+  y el aviso de que `shuffle` corre **cuatro veces o más** por request, con el orden de consumo,
+  que es la forma más probable de quemar una ronda en los goldens 5 y 6; sugiero `pick = () => 0`
+  para quitarse la contabilidad de encima. (2) El `// deno-lint-ignore no-explicit-any` sobre el
+  alias del cliente es **obligatorio**: `adminAuth.ts` ya lo hace, y sin él el ejecutor introduce
+  un `no-explicit-any` nuevo en `handler.ts` y suspende su propio gate.
+- **`index 2.ts`**: hay un duplicado obsoleto y **trackeado** en el mismo directorio, con cinco
+  diagnósticos propios que ya cuentan en los totales. Está fuera de `F`. El prompt dice
+  explícitamente que no se toca ni se borra — borrarlo es una decisión aparte, no un apaño de
+  paso. Lo dejo anotado aquí porque es la clase de cosa que un ejecutor «arregla» sin preguntar.
+- **Vitest, simplificación honesta**: `F` no contiene ningún fichero que Vitest cargue —P3a no
+  toca nada bajo `src/`— así que **por construcción** cualquier rojo es preexistente y D8.2 se
+  satisface sin dirimir nada en el commit padre. Se registra como observación y ya. Está en el
+  prompt para que nadie persiga el flake de B-05.
+- BACKLOG ADDED: **B-08** (los ocho diagnósticos desplazados; candidata P4). Y añado la **fila de
+  B-07**, que el Decision Log y la nota de la «Aritmética de tests» ya citaban dos veces pero que
+  nunca llegó a existir en la tabla del backlog.
+- FINDINGS RAISED: ninguno contra el código. El punto de D8.4 de arriba es una **ambigüedad del
+  plan que resuelvo dentro de su propia letra**, no un defecto de implementación.
+- DECISIONS: ninguna que enmiende el plan. La clasificación de los ocho diagnósticos como
+  desplazamiento se apoya en la cláusula de clasificación manual que D8.4 ya contiene.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent; el PM no mergea. Es lo único que retiene a P3a. (2) Después, `/exec UPGRADE P3a r1`.
+  (3) Cuando P3a llegue a revisión final, **el prompt de Codex debe declarar el desplazamiento de
+  B-08 explícitamente**. (4) Backlog B-05, B-06, B-07 y B-08 abiertos; **B-06 hay que decidirlo
+  antes de P8**.
