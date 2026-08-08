@@ -264,3 +264,119 @@ git worktree remove /tmp/upgrade-base
 
 El resultado, con su cabecera de SHA y comando, está en
 `docs/plan/upgrade/evidence/base-by-file.txt`.
+
+---
+
+# El gate e2e y su entorno local
+
+> Esta sección **no** es del gate D8. Documenta el otro gate del repo —
+> `npx playwright test` — y cómo levantar el entorno contra el que corre.
+> La construyó `AUDIO / E-infra-impl`; el contrato está en
+> `docs/plan/audio/PLAN.md` (rama `docs/plan-audio`).
+
+## Por qué esto existe
+
+La base de datos de CASA es **compartida con Life OS**. Hasta esta fase, `npx playwright
+test` sobre el árbol limpio apuntaba a **producción**: `playwright.config.ts` no exigía
+ninguna variable, y `src/integrations/supabase/client.ts` cae a un literal productivo
+cuando `VITE_SUPABASE_URL` no está definida. Un e2e mal configurado no fallaba — escribía
+en la base real.
+
+Por eso la guarda no es una comodidad. **Es la condición para poder correr la suite.**
+
+## Arranque, de cero
+
+```bash
+supabase start                      # stack local en los puertos 5433x
+supabase db reset                   # migraciones y DESPUÉS supabase/seed.sql
+cp .env.test.example .env.test      # .env.test está ignorado por git
+npx playwright install chromium     # sólo la primera vez
+npx playwright test tests/e2e/smoke-local.spec.ts
+```
+
+**`supabase db reset`, no sólo `supabase start`.** Un `start` a secas restaura el backup de
+la corrida anterior, así que el estado de permisos que se observe puede venir de una sesión
+pasada y no del árbol actual. Cualquier medición de permisos exige un `reset` previo.
+
+Al terminar, y **sólo el proyecto propio**:
+
+```bash
+supabase stop --project-id mulsqxfhxxdsadxsljss
+```
+
+En esta máquina vive un **segundo** proyecto Supabase local (`sxlogxqzmarhqsblxmtj`, puertos
+54321-54324 y 54327) que no es de este repo. Un `supabase stop` sin `--project-id` puede
+alcanzarlo. Por eso los puertos de este proyecto están fijados en `supabase/config.toml`
+a `5433x`.
+
+## La guarda anti-producción, en tres capas
+
+| Capa | Dónde | Qué comprueba |
+|---|---|---|
+| 1 | `playwright.config.ts`, al cargar la config | Que `VITE_SUPABASE_URL` esté en la **lista blanca** y que `VITE_SUPABASE_ANON_KEY` exista. Corre antes de que `webServer` lance nada |
+| 2 | `webServer` de `playwright.config.ts` | `reuseExistingServer: false` **siempre**, y puerto dedicado `8111` con `--strictPort` |
+| 3 | `tests/e2e/global-setup.ts` | Interroga al **servidor real**: `GET /src/integrations/supabase/client.ts` y lee la inyección de `import.meta.env` que hace Vite |
+
+La lista blanca (`tests/e2e/helpers/guard.ts`) es **lista blanca, no lista negra**:
+`http://127.0.0.1:54331` y `http://localhost:54331`, nada más. Una lista negra del proyecto
+productivo dejaría pasar entero el proyecto local ajeno del 54321, que está vivo y responde
+igual de bien.
+
+La capa 3 lee la **inyección** de `import.meta.env`, no la línea
+`const SUPABASE_URL = import.meta.env.… || "https://…"`. Esa línea es texto fuente y sale
+idéntica apunte el servidor a donde apunte; leerla no prueba nada.
+
+## Probar que la guarda sirve
+
+Una aserción que no puede fallar es un defecto. Los cinco casos deben salir con código ≠ 0:
+
+```bash
+# A) URL productiva explícita
+VITE_SUPABASE_URL=https://mulsqxfhxxdsadxsljss.supabase.co VITE_SUPABASE_ANON_KEY=x \
+  npx playwright test --list
+
+# B) URL ausente (caería al literal productivo)
+E2E_NO_ENV_FILE=1 env -u VITE_SUPABASE_URL -u VITE_SUPABASE_ANON_KEY \
+  npx playwright test --list
+
+# C) URL local pero clave ausente (usaría la clave productiva)
+E2E_NO_ENV_FILE=1 env -u VITE_SUPABASE_ANON_KEY VITE_SUPABASE_URL=http://127.0.0.1:54331 \
+  npx playwright test --list
+
+# D) un servidor productivo ya escuchando en el puerto de test
+env -u VITE_SUPABASE_URL -u VITE_SUPABASE_ANON_KEY npm run dev -- --port 8111 --strictPort &
+npx playwright test tests/e2e/smoke-local.spec.ts
+
+# E) URL del proyecto local AJENO
+VITE_SUPABASE_URL=http://127.0.0.1:54321 VITE_SUPABASE_ANON_KEY=x \
+  npx playwright test --list
+```
+
+**`E2E_NO_ENV_FILE=1` no es decorativo en B) y C).** El bloque que carga `.env.test` hace
+`if (!process.env[key]) process.env[key] = val`, así que sin la bandera un
+`env -u VITE_SUPABASE_URL` **se rellena solo desde el fichero** y el caso sale con código 0
+—listando los tests— en vez de abortar. Medido: sin bandera `B_EXIT=0` y `C_EXIT=0`; con
+ella, `1` y `1`.
+
+## El seed y el contrato de rangos de UUID
+
+`supabase/seed.sql` lo aplica `db reset` **después** de las migraciones, y hace tres cosas:
+
+1. **Los `GRANT` de tabla.** Las migraciones no los otorgan. Corren como `postgres`, cuyos
+   privilegios por defecto dan a `anon` y `authenticated` sólo TRUNCATE/REFERENCES/TRIGGER,
+   sin `SELECT`; en el proyecto alojado las tablas las crea `supabase_admin`, que sí concede
+   `arwdDxt`. Sin estos `GRANT`, **toda** lectura por PostgREST devuelve 401 `42501` aunque
+   la RLS sea correcta.
+2. **El usuario admin sintético** (`admin@e2e.local`). Sus cuatro campos de token van a `''`,
+   no a `NULL`: con `NULL`, GoTrue responde HTTP 500 con
+   `converting NULL to string is unsupported`. Lleva fila en `mesa_abierta_admin_roles`
+   (para `is_liturgia_admin`) **y** en `church_user_roles` contra `general_admin` (para el
+   RBAC de CASA). Son sistemas distintos: el primero no autoriza `/admin/roles`.
+3. **El conjunto BASELINE** de filas.
+
+| Rango de UUID | Quién lo crea | Quién lo borra |
+|---|---|---|
+| `00000000-e2e0-4000-`**`9000`**`-…` | `supabase/seed.sql` | **Nadie.** Ningún test lo toca |
+| `00000000-e2e0-4000-`**`8000`**`-…` | el propio test | el propio test, y sólo él |
+
+Restaurar el baseline no es tarea de los tests: es tarea de `supabase db reset`.
