@@ -50,6 +50,14 @@ de tests.
   verificar la propiedad **no deroga la regla**.
 - **PR2 — Autorización para aplicar la migración** a la instancia compartida
   (`mulsqxfhxxdsadxsljss`). Autorizar un merge no autoriza cambios de base de datos.
+- **PR3 — Brent aplica físicamente la migración de P1b** (añadido 2026-08-08, Decision Log).
+  PR2 autorizó el cambio; **poder ejecutarlo es otra cosa**, y esa distinción costó las tres
+  rondas de P1. Ningún agente tiene canal de escritura contra `mulsqxfhxxdsadxsljss`: las dos
+  puertas están probadas cerradas —el clasificador de permisos de Claude Code (P1 r1) y el
+  `--read-only` del servidor MCP `supabase-casa` (P1 r2)— y la tercera vía, `supabase db push`,
+  la prohíbe D9 con razón: arrastraría también `20260612000000` y `20260612000001`, que están
+  sin aplicar y **no** las cubre PR2. Docker no cambia nada de esto: `supabase start` levanta
+  un Postgres **local**, útil como ensayo y nada más.
 
 ---
 
@@ -231,9 +239,17 @@ más estrecho y sin ese problema:
 Para cada fase, siendo `F` la lista de ficheros que la fase modifica o crea:
 
 1. `npm run build` termina con éxito.
-2. `npx vitest run --no-file-parallelism`: el conjunto de tests en rojo, **por nombre**, es
-   exactamente el de la base (los 6 de `MesaAbiertaDashboard.test.tsx`), salvo en P8, que
-   los repara y declara el conjunto nuevo.
+2. `npx vitest run --no-file-parallelism`: el conjunto de tests en rojo **atribuibles a los
+   ficheros de `F`** no crece. La base sigue siendo los 6 de `MesaAbiertaDashboard.test.tsx`
+   hasta P8, que los repara y declara el conjunto nuevo. **Un rojo fuera de `F` se dirime
+   reejecutando la suite completa en el commit padre**: si también aparece allí, es
+   preexistente, se anota en el reporte y no bloquea; si no aparece, es BLOCKING.
+   (Enmendado 2026-08-08, Decision Log. La redacción anterior —«el conjunto en rojo, por
+   nombre, es exactamente el de la base»— no es comprobable mientras los tres ficheros
+   `CuentacuentoEditor.ph.*` de B-05 flakeen bajo carga: el PM midió **7 rojos en el propio
+   commit padre**, sin cambios de ninguna fase. La regla del padre no es una invención nueva:
+   es la misma disciplina de comparación que el punto 4 ya usa para los diagnósticos, y no se
+   puede burlar, porque un rojo que la fase haya causado no se reproduce en el padre.)
 3. `deno test --allow-all .` desde `supabase/functions/`: **0 fallos**.
 4. **Cero diagnósticos nuevos en `F`**, comparando **mensajes crudos completos**, no
    recuentos ni códigos (Codex r6 B2). Se filtran las salidas de
@@ -300,19 +316,29 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | ID | Name | Status | Branch | Depends on |
 |----|------|--------|--------|-----------|
 | P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
-| P1 | Esquema: columna + RPC de resumen | **IN PROGRESS** (r1 despachada 2026-08-07) | `feat/mesa-md-schema` | P0, PR1, PR2 |
+| P1a | Esquema: ficheros (migración + `types.ts`) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P0, PR1, PR2 |
+| P1b | Esquema: aplicación y verificación (A3–A8) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P1a, PR3 |
 | P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | TODO | `feat/mesa-md-core` | P3a |
-| P4 | Cablear allocator en el núcleo | TODO | `feat/mesa-md-wire` | P1, P2, P3b |
-| P5a | Captura en el frontend | TODO | `feat/mesa-md-form` | P1, P4 |
-| P5b | Seam + captura en `admin-add-participant` | TODO | `feat/mesa-md-addp` | P1, P5a |
+| P4 | Cablear allocator en el núcleo | TODO | `feat/mesa-md-wire` | **P1b**, P2, P3b |
+| P5a | Captura en el frontend | TODO | `feat/mesa-md-form` | **P1b**, P4 |
+| P5b | Seam + captura en `admin-add-participant` | TODO | `feat/mesa-md-addp` | **P1b**, P5a |
 | P6 | Cobertura y diálogos del panel de admin | TODO | `feat/mesa-md-admin` | P4, P5a |
 | P7 | Copia de notificaciones y porciones | TODO | `feat/mesa-md-copy` | P4 |
-| P8 | Dashboard del miembro | TODO | `feat/mesa-md-dash` | P1, P4, P7 |
+| P8 | Dashboard del miembro | TODO | `feat/mesa-md-dash` | **P1b**, P4, P7 |
 
-Ramas ≤20 caracteres. **Orden de merge lineal**: P0 → P1 → P2 → P3a → P3b → P4 → P5a →
-P5b → P6 → P7 → P8. Recuentos de test **delta**, no absolutos.
+Ramas ≤20 caracteres. Recuentos de test **delta**, no absolutos.
+
+**Orden de merge** (enmendado 2026-08-08, Decision Log — antes era lineal con P1 entera):
+P0 → **P1a** → P2 → P3a → P3b, con **P1b obligatoria antes de P4**, y luego P4 → P5a → P5b →
+P6 → P7 → P8. P2, P3a y P3b **nunca dependieron de P1**: son módulos puros y seams de Deno que
+no tocan la base de datos, así que pueden ejecutarse mientras PR3 sigue pendiente. Ése es el
+motivo de la partición: no dejar tres fases paradas detrás de una acción humana.
+
+P1a y P1b **comparten la rama `feat/mesa-md-schema`**: P1b no cambia ningún fichero de
+producción, solo ejecuta consultas de verificación y escribe su entrada de ledger. Un solo PR
+cierra las dos.
 
 ---
 
@@ -358,9 +384,18 @@ utilizable en las versiones instaladas. Si no, `FINDINGS` con el formato real.
 
 ---
 
-## Phase P1 — Esquema: columna + RPC de resumen
+> **P1 se partió en P1a y P1b el 2026-08-08** (Decision Log). Lo de abajo es la fase original
+> íntegra; nada de su contenido cambia, solo se reparte. **P1a** = scope, las seis
+> declaraciones, y los criterios **A1, A2, A9, A10, A11** — construida, verde y verificada por
+> el PM en la rama. **P1b** = criterios **A3–A8**, bloqueada por **PR3**; no toca ningún
+> fichero de producción, solo ejecuta las consultas de verificación. El motivo de la partición
+> está en la entrada de ledger del 2026-08-08: tres rondas agotadas sin un solo hallazgo,
+> todas contra un canal de escritura que ningún agente tiene.
 
-**Rama:** `feat/mesa-md-schema` · **Bloqueada por PR1 y PR2** · base con P0
+## Phase P1a / P1b — Esquema: columna + RPC de resumen
+
+**Rama:** `feat/mesa-md-schema` (las dos) · **P1a bloqueada por PR1 y PR2** · **P1b bloqueada
+por PR3** · base con P0
 
 **Scope (2 ficheros):** la migración
 `supabase/migrations/20260806000000_mesa_main_dish_optout.sql` (columna + función exacta de
@@ -382,10 +417,18 @@ Update: host_food_assignment?: string | null
 
 **Nada en el mapa `Functions`** (D15).
 
-**Acceptance criteria:**
-- [ ] A1 — La migración contiene solo `ADD COLUMN`, `CREATE OR REPLACE FUNCTION`, `REVOKE`
+**Acceptance criteria — P1a (ficheros).** Los cinco cumplidos en r1 y verificados de forma
+independiente por el PM (ledger 2026-08-07); `feat/mesa-md-schema`@`d9eebb0`:
+- [x] A1 — La migración contiene solo `ADD COLUMN`, `CREATE OR REPLACE FUNCTION`, `REVOKE`
   y `GRANT`; `grep -iE 'drop table|truncate|alter column|drop column'` → 0.
-- [ ] A2 — PR1 y PR2 constan en el Decision Log con fecha antes del primer commit.
+- [x] A2 — PR1 y PR2 constan en el Decision Log con fecha antes del primer commit.
+- [x] A9 — `types.ts` declara exactamente las seis líneas de arriba y **no** contiene
+  `get_my_dinner_summary` (`grep -c` → 0).
+- [x] A10 — Gate D8 sobre `F = {migración, types.ts}`: cero diagnósticos nuevos; se anota
+  la eliminación medida de 2 en `MesaAbiertaAdmin.tsx`. Build ok, Vitest y Deno sin cambios.
+- [x] A11 — El ejecutor no ejecutó `supabase db push`.
+
+**Acceptance criteria — P1b (aplicación y verificación).** Requieren PR3:
 - [ ] A3 — `information_schema.columns` da `can_bring_main_dish / boolean / NO / true`; y
   `SELECT count(*) … WHERE can_bring_main_dish IS DISTINCT FROM TRUE` → 0.
 - [ ] A4 — `SELECT prosecdef, proconfig FROM pg_proc WHERE proname='get_my_dinner_summary';`
@@ -396,23 +439,50 @@ Update: host_food_assignment?: string | null
 - [ ] A7 — Llamante anfitrión: 1 fila con `total_people` y `main_dish_count` iguales al
   cálculo manual de D1 sobre uno de los 6 matches existentes.
 - [ ] A8 — Llamante invitado de ese match: **la misma** fila que A7.
-- [ ] A9 — `types.ts` declara exactamente las seis líneas de arriba y **no** contiene
-  `get_my_dinner_summary` (`grep -c` → 0).
-- [ ] A10 — Gate D8 sobre `F = {migración, types.ts}`: cero diagnósticos nuevos; se anota
-  la eliminación medida de 2 en `MesaAbiertaAdmin.tsx`. Build ok, Vitest y Deno sin cambios.
-- [ ] A11 — El ejecutor no ejecutó `supabase db push`.
 
 **Test plan:** sin lógica de aplicación. A3–A8 son consultas SQL reejecutables y cubren
 las cuatro clases de llamante (anónimo, autenticado ajeno, anfitrión, invitado). Son lo que
 compensa la ausencia de contrato de tipos por D15.
 
-**Risks:** simular llamantes requiere `set_config('request.jwt.claims', …)` o roles de
-prueba; **estoy asumiendo** que es posible en la consola SQL del proyecto. Si no, A6–A8 no
-son ejecutables tal cual y es `FINDINGS`. **Estoy asumiendo** que
+**Risks:** el riesgo declarado en la revisión 7 —*«simular llamantes requiere
+`set_config('request.jwt.claims', …)`; **estoy asumiendo** que es posible»*— **está cerrado**:
+el PM lo probó el 2026-08-07. Una llamada multi-sentencia de `execute_sql` comparte
+transacción, `set_config(…, true)` persiste entre sentencias y `auth.uid()` lo lee.
+El PM además ejecutó el **cuerpo del contrato D14 en línea** contra los datos reales y
+devuelve exactamente `(3d4d6709…, 6, 1)`, el valor que A7 espera. Confirmado también que
 `mulsqxfhxxdsadxsljss` es producción y no hay staging.
 
-**Rollback:** `git revert`. La columna se deja (inerte hasta P4). La función puede
-eliminarse con `DROP FUNCTION` con autorización de Brent.
+> **CORREGIDO 2026-08-08 tras `REVIEW-P1` S1 de Codex.** Este párrafo afirmaba que el riesgo
+> de A6–A8 estaba «cerrado» y que `SET LOCAL ROLE authenticated` era «innecesario». **Las dos
+> cosas eran falsas, y de dos maneras distintas.**
+> 1. Lo que el PM había probado —`set_config` y el **cuerpo** del contrato pegado como un
+>    `SELECT` corriente— **no es `EXECUTE` sobre la función**: son lecturas de tablas base, que
+>    el usuario de solo lectura sí puede hacer. El ensayo posterior en Docker corrió como
+>    **superusuario**, donde el ACL no muerde. Las dos comprobaciones rodearon la barrera real.
+>    P1b chocó con ella: `ERROR 42501: permission denied for function get_my_dinner_summary`.
+> 2. La afirmación de que **no existe** canal de verificación de RPC para agentes era
+>    demasiado amplia. Es cierta **solo del MCP** (`supabase_read_only_user` está fuera del ACL
+>    y no es miembro de `authenticated`). Codex demostró que **sí hay uno**: un login de
+>    revisión de la CLI enlazada puede asumir `postgres` para resolver el `user_id` del
+>    llamante, fijar la claim, y luego asumir `authenticated` para invocar la RPC dentro de
+>    `BEGIN … ROLLBACK`. Con esa vía reprodujo A6–A8 de forma independiente. **No** es un canal
+>    de escritura aceptable —los prompts hicieron bien en prohibir los rodeos por CLI/psql, y
+>    un login con capacidad de superusuario es peor que la aplicación humana explícita de
+>    Brent— pero **como vía de lectura para verificar RPC es reproducible y válida**. Ver B-06.
+Riesgo que queda: la resolución del nombre `match_id`, que es a la vez parámetro OUT y columna
+de `mesa_abierta_assignments`, no puede ejercitarse sin crear la función. En el cuerpo toda
+referencia va calificada por tabla, así que no debería haber ambigüedad; si la hay, es
+`FINDINGS` contra el contrato congelado, no algo que se parchee sobre la marcha.
+
+**Rollback:** `git revert` para P1a. Para P1b: la columna se deja (inerte hasta P4 — el PM
+verificó por `git grep` que no tiene ni un consumidor). La función puede eliminarse con
+`DROP FUNCTION` con autorización de Brent.
+
+**Fila de `schema_migrations`** (decidido por el PM 2026-08-08, ver Decision Log): aplicar
+desde el editor SQL **no** escribe la versión en `supabase_migrations.schema_migrations`, así
+que PR3 incluye, como sentencia aparte y después de la migración, un
+`insert … on conflict do nothing` con `('20260806000000','mesa_main_dish_optout')`. **No se
+añade al fichero de la migración**, que se queda byte a byte como el contrato congelado.
 
 ---
 
@@ -802,6 +872,8 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | **B-02** | P0 r4 | Dos commits de PM (`165d704`, `f6a8cdd`) quedaron en la rama `docs/plan-audio`, ya publicada, con una copia de `LEDGER.md` a la que le faltan siete entradas. El contenido está repuesto en la rama de trabajo. Si `docs/plan-audio` se mergea, el conflicto de `LEDGER.md` se resuelve **a favor de la rama de trabajo**. Limpiarlo exige reescribir la rama de otro workstream: decisión de Brent. |
 | **B-03** | P0 r5 (Codex) | La regla 4 del discriminador del gate ("exit 1 con cero diagnósticos es autocontradictorio") **deja de valer** si alguna fase cambia la invocación de ESLint a `--quiet --max-warnings 0`, que suprime warnings sin cambiar el código de salida. No alcanzable con la invocación congelada `npx eslint . -f json`. |
 | **B-04** | Non-goals | `handleMoveGuest` (`MesaAbiertaAdmin.tsx:785`) y completar el mapa `Functions` de `types.ts` (D15) siguen fuera de alcance por decisión del plan. |
+| **B-05** | P1 r1 | **B-01 se queda corto: flakean tres ficheros, no uno.** `CuentacuentoEditor.ph.surfaces` (T-H.4), `ph.cancel` (T-H.9) y `ph.concurrency` (T-H.5), todos bajo carga y todos verdes en aislamiento. Medido por el ejecutor (3 pasadas en `main`: 6/8/6) y reproducido por el PM (padre `05dc4ca` sin cambios de P1: **7 rojos**). Mientras dure, el criterio D8.2 «el conjunto de rojos por nombre es exactamente el de base» no es comprobable de forma fiable en **ninguna** fase — ver el SHOULD-FIX S1 de P1 r1, pendiente de decisión de Brent. (El ejecutor lo numeró B-03 por error; B-03 ya estaba ocupado.) |
+| **B-06** | P1b r1 (corregido por Codex `REVIEW-P1` S1) | **Verificación de RPC por un agente.** El MCP `supabase-casa` **no** sirve: entra como `supabase_read_only_user`, fuera del ACL y no miembro de `authenticated` — y así debe seguir, es lo que A5 exige. Pero **sí existe** una vía de solo lectura: un login de revisión de la CLI enlazada asume `postgres` para resolver el `user_id`, fija la claim y asume `authenticated` para invocar dentro de `BEGIN … ROLLBACK`; Codex reprodujo A6–A8 así. **Decidir antes de P8**, que consume `get_my_dinner_summary` por `dinnerSummary.ts`: o se adopta esa vía, o una clave `service_role` en un `.env` no versionado, o pgTAP contra un Supabase local. **Conceder `EXECUTE` al usuario de solo lectura queda descartado**: debilitaría justo lo que A5 protege. |
 
 ---
 
@@ -828,6 +900,10 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-06 | **Brent autoriza una cuarta ronda de ejecutor en P0**, superando el tope de 3 del SOP §1.5 | Los dos topes cayeron a la vez (ejecutor 3/3, Codex 2/2) sobre el mismo detector de "la herramienta no corrió". Brent prefiere arreglarlo a retirarlo. El arreglo es acotado y Codex enumeró los casos exactos | Brent |
 | 2026-08-06 | **P0 pasa de 3 a 4 ficheros: se añade `scripts/gates/selftest.sh`** | Tres rondas seguidas han regresado en el mismo bloque de clasificación, y cada regresión solo se ha detectado con sondas manuales ad hoc. Un self-test commiteado convierte el contrato del discriminador en algo reejecutable por cualquiera en segundos. No es un requisito nuevo: es el test de una conducta ya decidida. Sigue dentro del tope de 10 ficheros del SOP §1.3 | PM |
 | 2026-08-07 | **Brent autoriza superar el tope de rondas de Codex del SOP §1.5 en P0** (y las rondas de ejecutor que hagan falta): "sigue con más rondas, tenemos que terminarlo" | Las dos revisiones de Codex encontraron cada una un defecto real que el PM no había visto, y el propio PM cometió además un error de rama en la ronda 4. Con ese historial, cerrar la fase sin revisión externa sería confiar en el eslabón que ya ha fallado. Prefiere terminar P0 bien a cerrarla dentro del tope | Brent |
+| 2026-08-08 | **D9 se cumple por aplicación manual desde el editor SQL, no por `apply_migration`** | Las dos puertas del canal del agente están **probadas** cerradas: el clasificador de permisos de Claude Code (P1 r1) y el `--read-only` del servidor MCP `supabase-casa` (P1 r2, error verbatim `Cannot apply migration in read-only mode`). La tercera vía, `supabase db push`, la prohíbe D9 por una razón concreta y no burocrática: arrastraría `20260612000000` y `20260612000001`, sin aplicar y **fuera** de lo que PR2 autorizó. El fondo de D9 —aditivo, sin `db push`, una sola aplicación atómica, tras PR1 y PR2— se respeta entero; solo cambia el mecanismo, y hacia uno donde la escritura la ejecuta Brent | Brent (decisión), PM (diagnóstico) |
+| 2026-08-08 | **P1 se parte en P1a (ficheros) y P1b (aplicación + A3–A8); se añade PR3 como tercera puerta humana** | Tres rondas de ejecutor agotadas con **cero hallazgos contra el código**: las tres murieron contra el canal de escritura, y A3–A8 no llegaron a ejecutarse ni una vez. El plan modeló PR1 y PR2 como puertas de Brent pero trató la aplicación misma como trabajo de agente — autorizar un cambio y poder ejecutarlo no son lo mismo. Partir no invalida ninguna fase posterior ni cambia un solo criterio, y desbloquea P2/P3a/P3b, que nunca dependieron de P1 | PM (diagnóstico), Brent (decisión) |
+| 2026-08-08 | **D8 punto 2 se enmienda**: de «el conjunto de rojos por nombre es exactamente el de base» a «los rojos atribuibles a `F` no crecen; un rojo fuera de `F` se dirime reejecutando en el commit padre» | El criterio anterior no es comprobable: el PM midió **7 rojos en el propio commit padre**, sin cambios de ninguna fase, por el flake de B-05. Un criterio insatisfacible se convierte en juicio discrecional en cada fase, que es peor que no tenerlo. La regla del padre es la misma disciplina que el punto 4 ya usa para diagnósticos, y no se puede burlar: un rojo causado por la fase no se reproduce en el padre | PM (S1 de P1 r1; Brent delegó la decisión) |
+| 2026-08-08 | **PR3 incluye escribir la fila de `schema_migrations` a mano**, como sentencia aparte | El editor SQL no la escribe. Sin ella el remoto tendría la columna y la función pero no la versión, mientras el repo sí tiene el fichero: cualquier reconciliación futura la vería pendiente. El registro de migraciones debe reflejar la realidad. Es un `insert … on conflict do nothing`, aditivo e idempotente, y **no** se mete en el fichero de la migración, que sigue byte a byte igual al contrato congelado | PM (Brent delegó la decisión) |
 
 ---
 
@@ -896,6 +972,26 @@ atacaban dos exigencias que el propio PM había inventado —equivalencia byte-i
 implementaciones y un esquema global de identidad de diagnósticos— y que nadie había
 pedido. Retirarlas, con autorización de Brent, fue lo que desbloqueó el plan.
 
-**PR1 y PR2 concedidos el 2026-08-06.** No queda ningún bloqueo: el siguiente paso es el
-bootstrap de PM para **P0** (SOP §3.3), y a partir de ahí el orden de merge lineal
-P0 → P1 → P2 → P3a → P3b → P4 → P5a → P5b → P6 → P7 → P8.
+**PR1 y PR2 concedidos el 2026-08-06.**
+
+**Enmendado el 2026-08-08** (**cuatro** filas nuevas en el Decision Log — PR3 va combinada con la de la partición, no aparte; el recuento «cinco» de una redacción anterior era erróneo, Codex `REVIEW-P1` N1; el resto del texto sigue
+congelado en la revisión 7). Estado real:
+
+- **P0 DONE** 2026-08-07 (`09a69d7`), Codex PASS en su cuarta ronda.
+- **P1a y P1b DONE** 2026-08-08 (`9cc637b`). **`CODEX REVIEW — UPGRADE P1 FINAL` = PASS**,
+  cero BLOCKING (`reviews/REVIEW-P1.md`). Codex verificó A1–A11 por su cuenta —**incluidas
+  llamadas RPC autenticadas en vivo**, que reprodujo por una vía que el PM había declarado
+  inexistente—, los gates padre/punta a exit 0 con `tsc 1041 → 1039` (dos eliminados, cero
+  añadidos), build ok, Vitest **1036/6 exactamente la base**, Deno 409/0, y el ACL,
+  `search_path` vacío y agregados en vivo de producción. Sus dos hallazgos no bloqueantes
+  —S1 (mi relato del canal de verificación era demasiado amplio) y N1 (cuatro filas de Decision
+  Log, no cinco)— **quedan corregidos en este mismo documento**.
+- **Migración aplicada a producción** el 2026-08-08 por Brent desde el editor SQL (**PR3**), con
+  su fila en `schema_migrations`. `20260612000000` y `20260612000001` **siguen sin aplicar**:
+  la aplicación fue quirúrgica, que es exactamente lo que D9 protege.
+- **Siguiente paso: P2** (`feat/mesa-md-alloc`), y con ella P3a y P3b. Revisadas a la luz de lo
+  construido, **no necesitan enmienda**. Dos notas de uso, no cambios: (a) el padre de P2 pasa a
+  ser `main` con P1 dentro, así que su línea base es **`tsc = 1039`**, no 1041, y como sus tres
+  ficheros son nuevos el gate se reduce a «los tres ficheros nuevos no introducen ni un
+  diagnóstico»; (b) el criterio B7 («rojos sin cambios») se lee ya bajo el **D8.2 enmendado**,
+  que es justo lo que impide que el flake de B-05 lo haga incumplible.
