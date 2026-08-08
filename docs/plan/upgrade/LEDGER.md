@@ -1916,3 +1916,64 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   anterior).
 - OPEN AFTER THIS ROUND: (1) **`/exec UPGRADE P2 r1`** — despachado. (2) Publicar `main`
   (Brent). (3) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
+
+### 2026-08-08 — P2 r1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P2 · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — el fichero de tests fue lo más pesado y entró de una sola
+  pasada; nunca hubo que recortar cobertura por espacio.
+- ACTION: Tres ficheros nuevos, nada más tocado.
+  - `supabase/functions/_shared/mainDish.ts` — módulo hoja, cero imports, sin generador de
+    aleatoriedad propio. Exporta `Carrier`, `TableInput`, `SIDE_FOODS`, `requiredMainDishes`,
+    `tablePeopleCount`, `balanceMainDishCarriers`, `allocateTableFood`, `allocateAll` (más los
+    tipos de resultado `SwapMove`, `BalanceResult`, `TableAllocation`, `AllocationResult`,
+    `TableShortfall`, `Food`, `SideFood`, `Pick`).
+  - `supabase/functions/_shared/mainDish_test.ts` — 19 tests Deno sobre una tabla de 11
+    fixtures de frontera, todos invocando el verificador de invariantes.
+  - `src/lib/mesa-abierta/__tests__/mainDishImport.test.ts` — test 20 (Vitest), import por
+    ruta relativa. **No hizo falta alias, entrada de tsconfig ni paso de build**: el import
+    entre runtimes resuelve tal como el PM había verificado.
+- **DECISIONES DE RECORRIDO** (lo que D5 dejaba abierto y P2 fija):
+  - `SIDE_FOODS = ["salad", "drinks", "dessert"]` — el enum de la base sin `main_course`.
+  - Mesas deficitarias en orden de entrada; mesas contraparte en orden de entrada; subconjuntos
+    de invitados primero los de tamaño 1 en orden ascendente, luego los pares en orden
+    lexicográfico. Gana el **primer** candidato aceptable y se reexplora desde arriba, porque
+    los déficits han cambiado.
+  - Al aplicar un intercambio, los invitados que se quedan conservan su orden relativo y los
+    que llegan se añaden al final.
+  - `pick` se consume por mesa en este orden y solo en este: cero o más extracciones del grupo
+    de invitados dispuestos, y después **exactamente una** para el desplazamiento de la
+    rotación de acompañamientos. Las mesas se recorren en el orden de entrada.
+  - **Déficits resolubles que este recorrido no alcanza, dicho explícitamente**: la garantía 5
+    («ningún intercambio deja a la donante en déficit») rechaza cualquier intercambio entre dos
+    mesas ambas deficitarias, aunque el total bajase. El fixture F4 lo enseña: los intercambios
+    T1↔T2 se rechazan uno a uno y el déficit solo se resuelve contra la mesa donante sana T3.
+    Es la garantía funcionando, no un fallo, y por eso existe la garantía 10.
+- **ARGUMENTO DE REVISIÓN DE CÓDIGO DE LA GARANTÍA D5.6** (ningún test lo establece): la
+  condición de aceptación de `findImprovingSwap` termina en
+  `const after = before - tableDeficit(receiver) - tableDeficit(donor) + tableDeficit(nextReceiver) + tableDeficit(nextDonor); if (after > before - 1) continue;`
+  Solo cambian esas dos mesas, así que `after` **es** el déficit total posterior. La guarda
+  descarta todo candidato que no cumpla `after ≤ before − 1`, es decir, exige decrecimiento
+  estricto de al menos 1. Como el déficit total es un entero `≥ 0`, a lo sumo se aplican `Δ₀`
+  intercambios — y el bucle de `balanceMainDishCarriers` declara ese mismo `Δ₀` como presupuesto.
+- TESTS: `deno test --allow-all .` → **428 pass / 0 fail** (409 + 19, exacto). `npm run build`
+  → exit 0. `npx vitest run --no-file-parallelism` → **1063 pass / 6 fail**, los 6 rojos son
+  los de `MesaAbiertaDashboard.test.tsx` de siempre; ningún `CuentacuentoEditor.ph.*` flakeó.
+  Gate D8 sobre los tres ficheros: `(0)(0)(0)(0)` en los cuatro para cada uno, **byte-idéntico
+  al padre** (`diff` = 0), exit 0. Totales del proyecto sin mover: `tsc=1039 eslint=160
+  deno-lint=94 deno-check=46`.
+- **OBSERVACIÓN PARA EL PM — la base de Vitest del plan está desfasada, la de Deno no.** Medí
+  el padre yo mismo (misma suite, apartando solo el fichero del test 20): **1062 pass / 6 fail**.
+  La punta da 1063 / 6. El delta es exactamente **+1**, que es lo que B7 pide. Pero
+  «Aritmética de tests» de `PLAN.md` parte de **1036**, no de 1062: la aritmética de Vitest de
+  ahí en adelante (`1036 + 32 = 1068`, `1074` tras P8) está 26 tests por debajo de la realidad.
+  La de Deno (409) sí es correcta: 409 + 19 = 428 medido. No cambio el plan; lo señalo.
+- FINDINGS RAISED: ninguno. El plan no resultó equivocado en nada de lo que P2 toca: la API
+  especificada satisface las once garantías, ninguna necesitó generación aleatoria de casos, y
+  el import del test 20 no necesitó configuración.
+- DECISIONS: ninguna que cambie el plan. Las de recorrido son las que D5 delega en P2 y quedan
+  arriba.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) Revisión de P2 y merge de `feat/mesa-md-alloc` — decisión de
+  Brent. (2) Corregir la base de Vitest de «Aritmética de tests» (1036 → 1062) si el PM lo ve
+  bien. (3) Sigue abierto: `main` local por delante de `origin/main` (P1 sin publicar).
+  (4) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
