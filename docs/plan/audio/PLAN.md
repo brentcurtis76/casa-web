@@ -200,6 +200,7 @@ derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
 | ~~**D17**~~ | **Trasladada al backlog (§6)** en la r9. La r8 decía que bajaba a guardrail pero la dejó físicamente aquí, que es afirmar una cosa y hacer otra. | Codex r8/S3. |
 | **D19** | **El origen canónico público es `https://www.anglicanasanandres.cl`.** Toda URL de episodio que el sistema emita o comparta usa ese host: `/reflexiones/<slug>`. | **Nueva en la r9 (Codex r8/S3)**, que señaló que faltaba una decisión activa para el origen canónico. Medido en la r2: el apex responde **307 → www**, así que emitir el apex haría seguir un redirect permanente hacia una URL distinta de la compartida. Es la misma medición que sostenía a D4; D4 se fue con la distribución, la medición no. |
 | **D18b** | **La previsualización del enlace es la distribución.** *Endurecida en la r8:* el preview debe mostrar **título, portada, predicador y canonical** sobre una URL publicada de verdad — eso es el criterio. **`og:audio` deja de ser obligatorio por decreto**: sólo entra si E4-spike demuestra que algún canal real de CASA lo consume (E4s.6). | Brent (r3), endurecida por Codex r7/S4: exigir `og:audio` sin evidencia de que alguien lo use era fe, no diseño. |
+| **D21** | **`E-infra-impl` DONE con PASS de Codex a la primera.** Las dos enmiendas obligatorias de D20 quedaron cerradas y verificadas de forma independiente por tres partes. | Vale la pena registrar por qué salió limpia donde el spike necesitó dos rondas: **llegó a la ejecución con el agujero ya medido, no supuesto**. El ejecutor no tuvo que descubrir que `reuseExistingServer` se engancha a un servidor productivo ni que `.env.test` rellena lo que `env -u` quita — lo llevaba escrito con su salida cruda. **Medir primero y redactar después dejó de ser una consigna y produjo el resultado.** | Codex (PASS final) |
 | **D20** | **`E-infra-spike` se cierra por aceptación explícita de Brent, no por un PASS de Codex.** Codex la falló 2/2 (tope del bucle, SOP §1.5) con dos BLOCKING, los dos verificados por el PM y los dos **dentro del plan de pruebas de `E-infra-impl`**, no de la medición del entorno. Brent eligió la opción **A: aceptar con enmiendas**. Las dos enmiendas son obligatorias y están en el cuerpo de `E-infra-impl`. | Codex confirmó que *"the infrastructure measurements are substantially sound, and the production guard itself is now well designed"*, y dio por cerrados B1, B2, F3, F4 y la atribución de SHA. Lo que quedaba abierto era el contrato de pruebas de la fase siguiente — que tendrá su propia review de Codex antes de que nadie escriba código. Hacer girar el spike una tercera vez para pulir el plan de otra fase no compra corrección, compra rondas. **Queda registrado que este cierre es un override, para que nadie lo lea como un PASS.** | Brent (override §1.5) |
 | **D18** | **Los gates se miden con `scripts/gates/changed-files-diagnostics.sh` sobre los ficheros que la fase toca, contra el SHA padre fijado de esa fase.** Sin esquemas de identidad globales. Build verde absoluto. Todo test nuevo con prueba base-red o de mutación. | CR-9: el gate correcto ya existe en el repo y documenta 62 colisiones del enfoque que yo proponía. |
 
@@ -312,7 +313,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
-| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **CONGELADA 2026-08-08 — ejecutable**, cuerpo autoritativo en su sección | E-infra-spike |
+| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
@@ -705,7 +706,21 @@ fuente modificados o creados, y esta fase no toca ninguno. No se finge una corri
 
 ## Phase E-infra-impl — Entorno de pruebas: construirlo
 
-**CONGELADA el 2026-08-08 por decisión de Brent (opción A: aceptar con enmiendas).**
+**✅ DONE — 2026-08-08.** `phase/E-infra-impl@1c4490f`, SHA padre `981c00f`.
+**`CODEX REVIEW E-infra-impl FINAL: PASS`** — 0 BLOCKING, 0 SHOULD-FIX, 0 NIT, en **una sola
+ronda de ejecución y cero rondas de remediación**. Es la primera unidad de este plan que sale
+limpia del primer intento con revisión adversarial completa.
+
+**Qué cierra, en una frase:** hasta el 2026-08-08, `npx playwright test` sobre el árbol limpio
+apuntaba a la base de **producción compartida con Life OS** — y era un gate declarado en
+`CLAUDE.md`. **Ya no puede.** Sin las dos variables locales la suite no arranca; con una URL fuera
+de la lista blanca tampoco; y si alguien deja un servidor productivo ocupando el puerto de test,
+aborta en vez de hablar con él. Las **cinco mutaciones lo demuestran fallando**, ejecutadas por el
+ejecutor, por el PM y por Codex de forma independiente.
+
+**Pendiente:** merge de `phase/E-infra-impl` a `main`, **cuando Brent lo autorice explícitamente**.
+
+*(Congelada el 2026-08-08 por decisión de Brent — opción A: aceptar con enmiendas. Ver D20.)*
 
 > **Éste es el cuerpo autoritativo de la fase.** Hasta la r14 apuntaba a `evidence/E-infra-spike.md`
 > §S8; **eso se corrige aquí**. La evidencia es el registro de lo que se midió y no se reescribe;

@@ -1219,3 +1219,49 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   hablar con él. Las cinco mutaciones lo demuestran fallando.
 - OPEN AFTER THIS ROUND: **`E-infra-impl` está limpia y lista para la review final de Codex.**
   No la marco DONE — sólo un PASS de Codex cierra la unidad. Después: `E3a` → `E3b` → `E4-spike`.
+
+### 2026-08-08 — E-infra-impl CIERRE DE UNIDAD — PM (Opus)
+- SESSION: `AUDIO · E-infra · PM`
+- ACTION: cierre de `E-infra-impl` tras `CODEX REVIEW E-infra-impl FINAL` → **PASS**
+  (0 BLOCKING, 0 SHOULD-FIX, **0 NIT**) sobre `phase/E-infra-impl@1c4490f`, SHA padre `981c00f`.
+- **`E-infra-impl` marcada DONE.** Segunda unidad ejecutada del plan, y **la primera que sale
+  limpia del primer intento con revisión adversarial completa**: una ronda de ejecución, cero de
+  remediación, cero hallazgos de cualquier severidad.
+- QUÉ SE CONSTRUYÓ: el entorno de pruebas local (stack en puertos propios, seed con los `GRANT`
+  que las migraciones no otorgan, baseline sintético y admin con rol) y **la guarda anti-producción
+  en tres capas**. Hasta hoy `npx playwright test` sobre el árbol limpio escribía contra la base
+  compartida con Life OS, siendo un gate declarado en `CLAUDE.md`.
+- **VERIFICACIÓN POR TRES PARTES INDEPENDIENTES**, que es lo que da valor al PASS: el ejecutor
+  midió las cinco mutaciones, **el PM las repitió enteras** (porque el informe llegó truncado en la
+  evidencia del gate) y **Codex las repitió otra vez**. Los tres obtuvieron lo mismo: A/B/C/D/E →
+  exit 1, control → exit 0. Y los tres corrieron **B sin la bandera** → exit 0, que es la prueba de
+  que el criterio I5 es falsable.
+- CODEX AÑADIÓ DOS COMPROBACIONES QUE NADIE HABÍA HECHO: **aisló la capa 3**
+  (`global-setup.ts:38` rechaza un servidor productivo real por URL ausente — o sea que lee de
+  verdad la inyección de Vite, no la línea de código fuente) y **llevó la enmienda 1 a un navegador
+  real** (login sintético → `/admin/roles`, con "Gestión de Roles" y `general_admin` visibles y sin
+  redirección). El PM la había verificado sólo en base de datos.
+- GATE D18: base `981c00f` y HEAD `1c4490f` → **0/0/0/0** en los cuatro ficheros TS, mensajes
+  idénticos, totales idénticos `tsc=1039 eslint=160 deno-lint=94 deno-check=46`. Build verde
+  (4983 módulos). Vitest `1062/1068`; los 6 rojos de `MesaAbiertaDashboard.test.tsx` **confirmados
+  preexistentes en la base por PM y por Codex**.
+- RUNTIME (D18 §4.6): Node **v22.22.0** · Deno **2.7.11** · Supabase CLI **2.110.0**.
+- ALCANCE: 1 commit, 7 ficheros, **+673/-5**, `git diff --check` limpio. Codex confirma que
+  `scripts/gates/README.md` **no es desborde**: es el punto 5 del scope (documentar el arranque) y
+  ese fichero ya documenta los gates.
+- **POR QUÉ SALIÓ LIMPIA A LA PRIMERA, y merece registrarse:** llegó a la ejecución con el agujero
+  **ya medido, no supuesto**. El ejecutor no tuvo que descubrir que `reuseExistingServer` se
+  engancha a un servidor productivo, ni que `.env.test` rellena lo que `env -u` quita: lo llevaba
+  escrito con su salida cruda, cortesía de dos rondas de Codex sobre el spike. **Las dos rondas que
+  el spike "perdió" son las que esta fase no gastó.**
+- BACKLOG VIVO (nada de esto bloquea): `supabase/.branches/` sin ignorar; `ALTER DEFAULT
+  PRIVILEGES` para tablas creadas después del seed; el SHOULD-FIX de E2 (`REASON_NOT_SAVED`,
+  `liturgyCover.ts:55`).
+- NOTA PARA E3a/E3b (de Codex): el baseline y el fixture del humo **habrá que actualizarlos cuando
+  E3a introduzca `slug`**; E3b puede reutilizar los episodios del rango `9000` para sus e2e
+  anónimos.
+- OPEN AFTER THIS ROUND:
+  1. **Merge de `phase/E-infra-impl` a `main`**, pendiente de autorización explícita de Brent.
+  2. **`E3a` es la siguiente unidad, y está EN BORRADOR, no congelada.** Su cuerpo arrastra siete
+     huecos del contrato del slug (Codex r9/B2) que sólo podían cerrarse con el entorno construido
+     — ya lo está. Le toca un `/pm-boot AUDIO E3a`.
