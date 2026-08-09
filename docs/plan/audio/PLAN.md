@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 14**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 17**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -288,7 +288,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 14 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 17 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -328,7 +328,7 @@ fase que mezcla una medición con una implementación cuya forma nadie conoce to
 **Es la ola que produce lo primero que la comunidad puede abrir.** Hasta aquí, todo lo entregado
 es plomería interna: E2 mejoró la carátula, pero nadie fuera del editor la ve.
 
-**Los cuerpos de E3a y E3b siguen en este documento como borrador, no como contrato.** Codex r9
+**El cuerpo de E3b sigue en este documento como borrador, no como contrato.** *(`E3a` salió de aquí en la r15 y se reescribió en la r16 y la r17; su cuerpo **sí** es contrato candidato. Codex r16/B3.)* Codex r9
 demostró que ambas esconden una unidad de infraestructura, y que su contrato de slug y su
 semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando
 `E-infra-spike` haya medido el entorno — **medir primero, redactar después**, que es la lección
@@ -865,7 +865,7 @@ Qué cierra eso, y por qué esto no es preferencia mía sino consecuencia de los
 | BLOCKING | Cómo queda |
 |---|---|
 | **B2** — `podcast-backfill/index.ts:353` publica sin slug | **Disuelto.** Recibe slug del trigger sin tocar una línea de esa función. Y cualquier publicador futuro también |
-| **B3** — D22 sobredimensiona lo medido, y no hay test de alambre | **Disuelto.** El cliente **nunca ve un `23505` de slug**: el trigger lo resuelve dentro. Se elimina el parseo de `message`. Ver D22 CORREGIDA |
+| **B3** — D22 sobredimensiona lo medido, y no hay test de alambre | **Disuelto, pero no por lo que dijo la r16.** El parseo de `message` se elimina **porque es innecesario**, no porque un `23505` de slug no pueda escapar del trigger: sí puede, por carrera. Ver «Concurrencia» |
 | **B5** — hueco 5 ambiguo, contadores sin test | **Disuelto.** No hay dos contadores. Un solo reintento del `UPDATE`, y el trigger vuelve a derivar |
 | **B6** — regeneración de `types.ts` contradice §6 y revienta el sizing | **Aceptado.** Se añade **`slug` de forma quirúrgica** al tipo existente. La regeneración completa sigue siendo su propia unidad, como dice §6 desde la r10 |
 | **B1** — ciclo de vida de la migración y rollback inseguros | **Aceptado.** Migración nueva con versión > las 62; rollback consciente del esquema. Ver abajo |
@@ -911,6 +911,28 @@ desde el `UPDATE` de publicación es el de `episode_number`, o una **carrera** d
 `NOT EXISTS` del trigger y el índice. **Las dos se tratan igual**: reintentar el `UPDATE` entero
 recalculando `max+1`, y el trigger vuelve a derivar un sufijo libre. Un solo mecanismo, cero
 parseo de texto.
+
+### Concurrencia — el contrato real, corregido en la r17 (Codex r16/B1)
+
+**La r16 escribió que el cliente "nunca ve un `23505` de slug". Es falso, y el propio documento se
+contradecía dos secciones más abajo.** Codex lo reprodujo: dos triggers concurrentes pasan ambos el
+`NOT EXISTS`, el índice único rechaza a uno con `23505`, y reemitir el `UPDATE` produce `…-2`.
+
+**Lo que se promete, y es lo único:**
+
+1. **Integridad, siempre.** Ni fila `published` sin slug, ni slug duplicado. El árbitro es el
+   índice único, no el `NOT EXISTS`.
+2. **`publishService` reintenta el `UPDATE` entero de forma genérica**, sin mirar qué índice falló:
+   recalcula `max+1` y deja que el trigger vuelva a derivar. **Un solo mecanismo cubre la carrera de
+   número y la de slug**, y por eso no hace falta leer `message`.
+3. **No se promete que todo publicador tenga éxito.** `podcast-backfill/index.ts:353-367` **no tiene
+   reintento**, así que una carrera hace fallar esa invocación concreta.
+
+**Decisión sobre el punto 3: el fallo transitorio del backfill se ACEPTA.** Es una operación de lote
+administrativa, no interactiva; el ítem se reporta fallido y una reejecución lo recoge, con la
+integridad intacta. **Añadirle reintento va al backlog, no a esta fase** — meterlo aquí obligaría a
+tocar la edge function que el invariante existe precisamente para no tocar. *Queda escrito para que
+nadie lea el silencio como que no puede pasar.*
 
 ### Contrato del slug
 
@@ -982,12 +1004,23 @@ fuentes que derivan. Los episodios históricos necesitan un slug **estable, úni
       **incluidas dos que colisionen** → `supabase migration up --local` → slugs únicos, estables
       y válidos, y los dos `CHECK` en pie. Cierre con reset limpio.
 - [ ] E3a.10 **El `CHECK` antes del backfill falla** — se demuestra el orden, no se afirma.
-- [ ] E3a.11 `PublishResult` devuelve `slug` y `canonicalUrl` con el host de D19.
-- [ ] E3a.12 **Sin regresión en los publicadores existentes**: `db reset` verde con el seed **sin
+- [ ] E3a.11 **Cableado del título persistido (B2).** Hoy `publishService.ts:140` selecciona
+      `id, guid, episode_number` — **sin `title`**. Con una fila cuyo título persistido es A y un
+      `metadata.title` distinto B, la base derivada **sale de A**. *Mutación: derivar de
+      `metadata.title` pone el test rojo.*
+- [ ] E3a.12 **El slug que vale es el que devuelve la base (B2).** El `UPDATE` hace
+      `.select('episode_number, slug')`; si el trigger resuelve `x-2` sobre una preferencia `x`,
+      entonces `PublishResult.slug === 'x-2'` y `canonicalUrl` **termina en `/x-2`**, con el host de
+      D19. *Dos mutaciones: (a) quitar `slug` del payload del `UPDATE`; (b) construir el resultado
+      desde la base propuesta en vez de la devuelta. Las dos deben poner rojo.*
+- [ ] E3a.13 **Concurrencia (B1):** dos sesiones publicando la misma base a la vez ⇒ **sin
+      duplicado**, la perdedora recibe `23505`, y **reemitir su `UPDATE` tiene éxito** con el sufijo
+      siguiente. Salida cruda de las dos sesiones.
+- [ ] E3a.14 **Sin regresión en los publicadores existentes**: `db reset` verde con el seed **sin
       modificar** y `smoke-local.spec.ts` verde **sin modificar**. Salida cruda de los dos.
-- [ ] E3a.13 `types.ts` contiene `slug` **sin regenerarse**: el diff de ese fichero son unas pocas
+- [ ] E3a.15 `types.ts` contiene `slug` **sin regenerarse**: el diff de ese fichero son unas pocas
       líneas, no miles.
-- [ ] E3a.14 Gate D18 sobre el **SHA padre anotado**. Build verde.
+- [ ] E3a.16 Gate D18 sobre el **SHA padre anotado**. Build verde.
 
 ### Test plan
 
@@ -997,19 +1030,22 @@ fuentes que derivan. Los episodios históricos necesitan un slug **estable, úni
   quitar el reintento del `23505` deja la republicación en carrera sin recuperación y el test rojo.
 - `supabase/tests/slug.sql` **(nuevo)** — trigger, unicidad, fallback, inmutabilidad, presupuesto
   del sufijo, y **el caso `podcast-backfill`**, contra Postgres local. *Mutación declarada:*
-  quitar el `RETURN NEW` del camino de fallback deja `slug NULL` y el `CHECK` del paso 6 lo caza.
+  en el camino de fallback, **conservar `RETURN NEW` pero dejar `NEW.slug := NULL`**, y el `CHECK` del paso 6 lo caza. *(La r16 decía "quitar el `RETURN NEW`", que es impreciso: caerse de la función lanza error de retorno, y `RETURN NULL` en un `BEFORE` se salta la fila entera y probaría otra cosa. Codex r16/S2.)*
 
 ```bash
 supabase db reset
 npx vitest run --no-file-parallelism src/lib/sermon-editor
-psql "postgresql://postgres:postgres@127.0.0.1:54332/postgres" -f supabase/tests/slug.sql
+# `psql` NO existe en el host (medido: `command -v psql` vacío). El cliente vive en el
+# contenedor; el nombre sale de `project_id` en supabase/config.toml. (Codex r16/S1)
+docker exec -i supabase_db_$(grep '^project_id' supabase/config.toml | cut -d'"' -f2) \
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/slug.sql
 npx playwright test tests/e2e/smoke-local.spec.ts
 # ruta de upgrade (E3a.9), con su reset limpio al final
 ```
 
 ### Definition of done
 
-E3a.1-E3a.14 con salida cruda, gate D18 contra el SHA padre anotado, build verde, y `db reset` +
+E3a.1-E3a.16 con salida cruda, gate D18 contra el SHA padre anotado, build verde, y `db reset` +
 humo verdes **con el seed y el spec sin modificar**.
 
 ### Rollback — consciente del esquema (B1)
@@ -1033,7 +1069,10 @@ reversión es: **primero una migración aditiva que elimine el `CHECK` del paso 
 
 `E-infra-impl`, mergeada. **Ramifica del `main` vigente el día que arranque y anota su SHA
 exacto**, como hizo `E-infra-impl`; no se fija aquí un SHA que envejecerá. `main` era `1c4490f`
-cuando se escribió esta revisión y ya está en `1d6869d` — **por eso no se fija**.
+cuando se escribió la r16 y ya está en `1d6869d` — **por eso no se fija**. *(El delta entre ambos no
+es sólo `supabase/functions/_shared/mainDish*.ts` como decía la r16: incluye también
+`src/lib/mesa-abierta/__tests__/mainDishImport.test.ts` y la documentación de UPGRADE. Ninguno
+toca la superficie de `E3a`, y siguen siendo 62 migraciones. Codex r16/S3.)*
 
 ---
 

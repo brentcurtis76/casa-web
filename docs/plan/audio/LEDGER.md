@@ -1532,3 +1532,38 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   Codex sin ambigüedad y son de PM, no de código: reescribir una frase y añadir un criterio de
   concurrencia; añadir cuatro tests de cableado, dos mutaciones y `title` al `select`; y borrar el
   texto obsoleto. **Ninguna exige medición nueva.**
+
+### 2026-08-08 — plan round 17 — PM (Opus) — las seis correcciones de Codex r16
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: r17. **Brent anuló explícitamente el tope de §1.5** y eligió una ronda más de plan con
+  tercera review, en vez de aceptar con enmiendas (opción D20). Queda registrado como override
+  suyo: el SOP mandaba parar en dos.
+- **B1 — la sobreafirmación, retirada.** La tabla de resolución decía *"el cliente **nunca ve** un
+  `23505` de slug"* mientras el mismo documento describía bien la carrera dos secciones más abajo.
+  Sección nueva **«Concurrencia»** que promete sólo tres cosas: **integridad siempre** (ni fila
+  `published` sin slug ni duplicado, con el índice único —no el `NOT EXISTS`— como árbitro);
+  **`publishService` reintenta el `UPDATE` entero de forma genérica**, cubriendo con un solo
+  mecanismo la carrera de número y la de slug; y **no se promete que todo publicador tenga éxito**.
+  **Decisión nueva:** el fallo transitorio de `podcast-backfill` (que no tiene reintento,
+  `index.ts:353-367`) **se acepta** — es lote administrativo, la reejecución lo recoge y la
+  integridad queda intacta. Añadirle reintento va al **backlog**, no aquí: meterlo obligaría a
+  tocar la edge function que el invariante existe para no tocar.
+- **B2 — el cableado, ahora exigido y falsable.** Era el hallazgo con más filo: el contrato decía
+  "derivar del título persistido" pero `publishService.ts:140` selecciona `id, guid,
+  episode_number` **sin `title`**, y nada obligaba a que `PublishResult.slug` fuese **el que
+  devuelve el trigger**. Una implementación podía proponer `x`, recibir `x-2` y publicar `/x`:
+  **URL canónica equivocada, que es exactamente lo que E3b y el enlace compartido necesitan bien.**
+  Dos criterios nuevos (E3a.11, E3a.12) con **tres mutaciones declaradas**, más E3a.13 de
+  concurrencia. Criterios: 14 → **16**.
+- **B3 — el texto obsoleto, borrado.** `PLAN.md:331` decía que el cuerpo de E3a seguía siendo
+  borrador y no contrato; META decía "revisión 14" en dos sitios. Los tres corregidos.
+- **S1** el comando del test plan pasa a `docker exec … psql` con el nombre del contenedor derivado
+  de `project_id` — **medido: `psql` no existe en el host**. **S2** la mutación SQL pasa a
+  *conservar `RETURN NEW` y dejar `NEW.slug := NULL`*, porque quitar el `RETURN NEW` probaría otra
+  cosa. **S3** el delta `1c4490f..1d6869d` queda descrito entero.
+- **Sin medición nueva en esta ronda**, y es deliberado: los seis hallazgos eran de redacción y de
+  criterios, no de comportamiento. Lo que sí hice fue verificar los seis contra el árbol antes de
+  aceptarlos, incluido `command -v psql` vacío y el `select` sin `title`.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: **`CODEX REVIEW plan r17`, tercera y por override.** Si vuelve FAIL, no
+  hay r18: se acepta con enmiendas o se re-planifica.

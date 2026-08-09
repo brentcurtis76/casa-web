@@ -1,64 +1,50 @@
 SESSION: AUDIO · E3a · REVIEW
 
-Adversarial review of **E3a, revision 16** of the AUDIO plan (CASA podcast). You failed revision
-15 with six BLOCKING findings. All six were accepted. This is the re-review.
+Third review of E3a (revision 17), AUDIO plan. You failed r15 with six BLOCKING and r16 with three.
+All nine were accepted; none was argued down. This round exists because Brent explicitly overrode
+the SOP §1.5 two-round cap rather than accept-with-amendments. **Scope is narrow: confirm the six
+r16 findings are closed, and say whether this can freeze.**
 
-WHERE THE PLAN LIVES — read this first or you will not find it.
-Only on branch `docs/plan-audio`, never on `main`. Use
-`git show docs/plan-audio:docs/plan/audio/PLAN.md` and `…/LEDGER.md`, or cut a worktree.
+WHERE THE PLAN LIVES: only on branch `docs/plan-audio`, never `main`. Use
+`git show docs/plan-audio:docs/plan/audio/PLAN.md` and `…/LEDGER.md`. Code is on `main`.
 
-WHAT CHANGED, AND WHY IT IS NOT THE SPLIT YOU RECOMMENDED
-You proposed splitting E3a in two while keeping client-side slug assignment. Brent chose a
-different route: **the database now owns the slug.** A `BEFORE INSERT OR UPDATE` trigger assigns
-it on publish, resolves uniqueness with `-2`…`-5`, applies a `reflexion-<episode_date>` fallback
-when no publisher supplies a base, and freezes it (D12) raising `23514` — never `23505`. TypeScript
-keeps only normalisation.
+WHAT CHANGED SINCE r16 — nothing was measured again, deliberately: all six were wording and
+criteria defects, not behaviour. Verify each landed and that none introduced a new problem.
 
-The claim is that this **dissolves three of your six findings** rather than patching them:
-- **B2** — `podcast-backfill/index.ts:353` gets a slug without that file being touched at all.
-- **B3** — the client never sees a slug `23505`, so the `message`-parsing dependency is deleted,
-  not gated.
-- **B5** — there are no two counters to coordinate; one retry re-issues the UPDATE and the trigger
-  re-derives.
-B1, B4 and B6 are accepted as amendments: new migration file with a version above the existing 62,
-an explicit upgrade-path backfill test, and a surgical `slug` addition instead of regenerating
-`types.ts`.
+- **B1** — the "client never sees a slug `23505`" claim is deleted. A new **«Concurrencia»**
+  section promises exactly three things: integrity always (no published-without-slug, no
+  duplicate, unique index — not `NOT EXISTS` — as arbiter); `publishService` retries the whole
+  UPDATE generically so one mechanism covers both number and slug races; and **it does not promise
+  every publisher succeeds**. New explicit decision: a transient `podcast-backfill` failure
+  (no retry at `index.ts:353-367`) is **accepted** — batch admin operation, rerun recovers,
+  integrity intact; adding retry there goes to backlog rather than pulling that edge function into
+  this phase. **Judge that acceptance, not just its wording.**
+- **B2** — new criteria E3a.11 (base derives from the *persisted* title A, not `metadata.title` B;
+  requires adding `title` to the select at `publishService.ts:140`), E3a.12 (the UPDATE does
+  `.select('episode_number, slug')`; a trigger-resolved `x-2` must surface as
+  `PublishResult.slug === 'x-2'` with `canonicalUrl` ending `/x-2`), and E3a.13 (two-session
+  concurrency: no duplicate, loser gets `23505`, reissue succeeds). Three declared mutations.
+  Criteria went 14 → 16.
+- **B3** — the stale "los cuerpos de E3a y E3b siguen … como borrador, no como contrato" line now
+  covers only E3b; META revision is 17 in both places.
+- **S1** — test command is now `docker exec … psql` with the container name derived from
+  `project_id`; `psql` is genuinely absent from the host.
+- **S2** — the SQL mutation now keeps `RETURN NEW` and sets `NEW.slug := NULL`.
+- **S3** — the `1c4490f..1d6869d` delta is described in full.
 
-**Attack that claim first.** If the invariant does not actually close B2/B3/B5, say so.
+ASSESS — only these
+1. Is each of B1, B2, B3, S1, S2, S3 actually closed?
+2. **B1's accepted risk:** is "a concurrent backfill invocation may fail and need a rerun" a
+   defensible thing to freeze, or does it need retry/serialisation before execution?
+3. **B2's new criteria:** are they genuinely falsifiable? Do the three declared mutations kill?
+   Is anything else in the publish path still assertable-but-unasserted?
+4. Did any amendment introduce a new contradiction? The document has been spliced repeatedly and
+   r16/B3 was exactly that failure — check for others.
+5. Freeze or not. If not, say plainly whether the remaining gap is worth a fourth round or should
+   be carried into execution as a mandatory amendment, because there will not be an r18.
 
-ON B3 SPECIFICALLY — I got it wrong and you should check my correction.
-Revision 15 asserted `details` carries `Key (<column>)=…`. That measurement used `service_role`,
-which bypasses RLS. Re-measured as the authenticated `admin@e2e.local`: `details` is **null**,
-exactly as you said. D22 is corrected in §3 and records the method failure. Verify the correction
-is complete and that nothing else in the plan still leans on the old claim.
-
-WHAT ELSE TO VERIFY — the phase body lists these as measured, on the authenticated path:
-- repeated base → `x`, `x-2`, `x-3`; publish with **no slug supplied** → `reflexion-<date>`;
-  fallback also de-duplicates; 80-char base in collision → 42 chars, never over 80.
-- **the repo's `seed.sql`, unmodified, with the trigger already created, self-resolves** — which
-  is why H1 and H2 were *removed* from scope. This reverses revision 15. Check it.
-- the `published ⇒ slug NOT NULL` CHECK **fails** if added before the backfill (H4 stands).
-Reproduce what matters. The stack is up: API 54331, DB 54332, `supabase db reset` is green.
-
-STATE OF THE TREE. `main` moved during the session to `1d6869d` (UPGRADE's P2). `1c4490f` is still
-an ancestor and the delta touches only `supabase/functions/_shared/mainDish*.ts` — nothing E3a
-needs; still 62 migrations. E3a therefore **pins no parent SHA**: it branches from the `main` in
-force on the day it starts and records it, as `E-infra-impl` did. Confirm that is sound rather
-than evasive.
-
-DO NOT treat `supabase/migrations/20260610090000_church_podcast_episodes.sql` as a file E3a edits
-— revision 15's prompt said that and it was the confusion behind B1. It is read-only reference.
-
-ASSESS
-1. Does the invariant genuinely close B2, B3 and B5, or does it move the problem?
-2. Are B1, B4 and B6 properly amended?
-3. Is plpgsql the right home for uniqueness here? The trigger's `NOT EXISTS` is not atomic; the
-   plan says the unique index remains the arbiter and promises no duplicates rather than
-   determinism under concurrency. Is that honest and sufficient?
-4. Acceptance criteria: unverifiable, vague or self-graded? Do the two declared mutations kill?
-5. Is removing `seed.sql` and `smoke-local.spec.ts` from scope actually safe?
-6. Sizing: 7 files, 14 criteria. One session?
-7. Anything that makes E3b harder.
+Do not re-litigate what you already ruled fixed in r16 (B1/B4/B6 of r15, the D22 correction, H4,
+seed/smoke removal, parent-SHA strategy, sizing, plpgsql placement) unless an r17 edit broke it.
 
 Taste is a NIT. Only correctness, contract violations, security and architectural violations are
-BLOCKING. Output using the CODEX REVIEW format. VERDICT: PASS only if you would be held to this.
+BLOCKING. Output using the CODEX REVIEW format.
