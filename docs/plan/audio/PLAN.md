@@ -316,7 +316,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 |----|--------|------|--------|-----------|
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
-| E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **CANDIDATA A CONGELAR — r16 tras el FAIL de Codex a la r15; pendiente de review** | E-infra-impl ✅ |
+| E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ CONGELADA — r17, `CODEX REVIEW E3a ROUND 3: PASS` el 2026-08-08. Ejecutable** | E-infra-impl ✅ |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
@@ -844,15 +844,17 @@ compartida. **No revertir `165e5f2`**: eso rompería `supabase start` para todo 
 
 ## Phase E3a — `slug`: invariante en la base, derivación y `publishService`
 
-**Revisión 16 (2026-08-08). Reescrita otra vez tras `CODEX REVIEW plan r15: FAIL` (6 BLOCKING,
-los seis aceptados).** La r15 puso el slug como responsabilidad del cliente: cada publicador
+**Revisión 17 (2026-08-08) — ✅ CONGELADA.** `CODEX REVIEW E3a ROUND 3: PASS`, 0 BLOCKING, 2
+SHOULD-FIX de contabilidad aplicados en este mismo commit. **Tres rondas de review de plan:** la
+r15 falló con 6 BLOCKING, la r16 con 3, la r17 pasó. **Reescrita tras `CODEX REVIEW plan r15: FAIL`
+(6 BLOCKING, los seis aceptados) y corregida tras la r16 (3 BLOCKING, los tres aceptados).** La r15 puso el slug como responsabilidad del cliente: cada publicador
 tenía que acordarse de asignarlo, y el cliente tenía que distinguir qué índice había fallado
 leyendo el texto de un mensaje de Postgres. **Codex encontró un tercer publicador que nadie había
 puesto en el scope (B2) y demostró que mi medición del mensaje se había hecho por una ruta que la
 app no usa (B3).** Los dos son síntomas de lo mismo, así que lo que cambia aquí no es el contrato:
 es de quién es la responsabilidad.
 
-**Candidata a congelar. No congelada:** le falta review de plan.
+**CONGELADA.** Cambios a partir de aquí exigen entrada en el Decision Log.
 
 ### El cambio de diseño, en una frase
 
@@ -1822,6 +1824,7 @@ resuelta antes del primer envío).
 
 | Item | Origen | Por qué no es fase |
 |---|---|---|
+| **Reintento en `podcast-backfill` ante carrera de slug** | `E3a` r17, Codex r16/B1 | `index.ts:353-367` no reintenta, así que una carrera de slug hace fallar esa invocación. **La integridad queda intacta** —ni duplicado ni fila inválida— y es lote administrativo: la reejecución reutiliza el borrador por su GUID y las subidas son `upsert`. Codex r17 lo declaró **defendible sin arreglar antes de ejecutar `E3a`**. Meterlo en `E3a` obligaría a tocar la edge function que el invariante existe para no tocar |
 | `podcast:transcript` + VTT reutilizando `transcribe-meeting` | A14 | Pipeline propio; el mayor beneficio de accesibilidad, pero merece su propio plan |
 | `podcast:chapters`, `podcast:person` | A14 | Dependen de marcar capítulos, que no existe en el editor |
 | **Ruta pública de liturgia** + RLS anon | A7.10 | Hoy no existe y las RLS son de propietario/admin. Sin ella, no se puede prometer el enlace |

@@ -1567,3 +1567,31 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno.
 - OPEN AFTER THIS ROUND: **`CODEX REVIEW plan r17`, tercera y por override.** Si vuelve FAIL, no
   hay r18: se acepta con enmiendas o se re-planifica.
+
+### 2026-08-08 — CODEX REVIEW plan r17 → PASS — ✅ `E3a` CONGELADA
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **PASS** sobre `docs/plan-audio@684e266`, código `main@1d6869d`. **0 BLOCKING**, 2
+  SHOULD-FIX de contabilidad, 0 NIT. Codex cierra los seis hallazgos de la r16 y recomienda
+  congelar aplicando los dos SHOULD-FIX en el commit de congelado. **Hecho en este commit.**
+- **`E3a` CONGELADA.** Tres rondas de review de plan: r15 **FAIL** (6 BLOCKING), r16 **FAIL** (3),
+  r17 **PASS**. Doce hallazgos en total, **los doce aceptados y ninguno discutido**.
+- SHOULD-FIX aplicados: las etiquetas de procedencia decían "Revisión 16" y "r16 tras el FAIL de la
+  r15" (§5 y el encabezado de la fase) — ahora dicen r17; y **§6 no tenía la fila del reintento de
+  `podcast-backfill`** que el cuerpo mandaba al backlog — ahora la tiene.
+- **LO QUE CODEX AÑADE Y EL EJECUTOR NECESITA SABER:** el constructor de mocks de
+  `publishService.test.ts` **ignora `_payload` y `_cols`**, así que **las tres mutaciones de B2 no
+  se pondrán rojas sin reforzar el mock o añadir espías equivalentes**. Los criterios ya exigen la
+  evidencia en rojo, así que está cubierto por contrato — pero es trabajo real y va escrito en el
+  prompt del ejecutor para que no lo descubra a mitad.
+- Codex declaró además **defendible el riesgo aceptado** del backfill: un `UPDATE` de publicación
+  fallido deja la integridad intacta, el borrador se conserva por su GUID, las subidas son
+  repetibles con `upsert` y la reejecución reutiliza el borrador. **No hace falta reintento ni
+  serialización antes de ejecutar `E3a`.**
+- **POR QUÉ HICIERON FALTA TRES RONDAS, y merece registrarse junto a D21.** `E-infra-impl` salió
+  limpia a la primera porque llegó con el agujero medido. Aquí medí tres veces y aun así fallé dos
+  rondas, siempre en el mismo punto: **el salto de "lo que observé" a "lo que siempre pasa"**
+  (r15/B3 medir con `service_role`; r16/B1 "el cliente nunca ve un `23505`"). **Medir no basta si
+  la frase que escribes es más ancha que la medición.** La r17 no midió nada nuevo y pasó.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: **`/exec AUDIO E3a r1`.** Prompt de ejecutor commiteado en
+  `prompts/E3a-r1.md`. Rama `phase/E3a-slug` desde el `main` del día, con su SHA anotado.
