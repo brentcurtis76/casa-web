@@ -2483,3 +2483,71 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   (4) Vitest observado: **1063 passed / 6 failed**, los 6 en
   `MesaAbiertaDashboard.test.tsx` — el conjunto base declarado por D8.2, sin séptimo flake.
   `npm run build` exit 0.
+
+### 2026-08-08 — P3a round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P3a · PM
+- **Ronda real: 1 de 3.** El ejecutor entregó `STATUS: FINDINGS` con el código completo y verde,
+  y escaló una contradicción del plan en vez de resolverla por su cuenta. Fue la decisión
+  correcta: la salida que eligiera habría atado al plan sin autoridad para hacerlo.
+- **LO QUE VERIFIQUÉ YO MISMO, ejecutándolo, no leyéndolo:**
+  - **El movimiento es verbatim, y esto es lo que más importaba.** Reconstruí el bloque esperado
+    desde `1d6869d` (líneas 12–16 + 23–501 del `index.ts` viejo, sin la estanza de env/cliente) y
+    lo comparé con el cuerpo de `handler.ts`: **484 líneas contra 484**, y `diff -w` devuelve
+    **exactamente cuatro líneas distintas**, las cuatro llamadas a `shuffle` con `, pick`. Nada
+    más. La regla dura de la fase queda demostrada mecánicamente, no afirmada.
+  - **F-1 confirmada.** `cd supabase/functions && deno test --allow-all .` → `Found 8 errors. Type
+    checking failed`, **exit 1, cero tests ejecutados**. Con `--no-check`: **438 passed / 0
+    failed**. La contradicción es real.
+  - C1: `grep -c "serve(\|Deno\.env" handler.ts` → **0**. C2: default en `handler.ts:38`, y
+    `shuffle` usa `pick(i + 1)`, la sustitución exacta. C3/C4/C5: los 10 goldens están y se
+    llaman como manda el plan; **tests 1 y 2 afirman `db.ops.length === 0`** —cero operaciones,
+    más fuerte que cero escrituras— y **tests 3, 4 y 10 afirman `db.writes().length === 0`**.
+    Test 2 además afirma `jsonCalls() === 0`. Comprobado leyendo los cuerpos, no el reporte.
+  - Gate reproducido en el worktree del ejecutor: `handler.ts` `(0)(1)(2)(8)`, `index.ts`
+    `(0)(0)(0)(0)`, `handler_test.ts` `(0)(0)(0)(0)`. Build exit 0. Vitest **1063/6**, los 6 del
+    conjunto base declarado.
+- **F-2c ES INCORRECTA, y la corrijo con la medición.** El ejecutor concluyó que mi línea base de
+  ESLint (160) estaba mal y que lo real era 346. No: **el mismo commit da 160 en un checkout
+  limpio (`casa-p2-review`) y 347 en `casa-web`**. La diferencia es **187 = 186 + 1**. Los 186
+  salen de un único fichero generado, `supabase/.temp/start-secrets/…/main/index.ts`, que deja
+  `supabase start` y que `eslint.config.js` no ignora — artefacto local del entorno de AUDIO, no
+  del commit. El **+1** sí es suyo y es real. Su aritmética de delta era correcta; su diagnóstico
+  de la causa no. **El total de ESLint no es portable entre checkouts**, que es exactamente por
+  qué D8.5 lo trata como observación. Backlog **B-09**.
+- **F-2a ES CORRECTA Y ES CULPA MÍA.** Dos de los 8 `deno check` no son desplazamiento: los
+  `TS7006` de `p` en `handler.ts:144–145` **los causó la prescripción de mi prompt**,
+  `HandlerDeps.supabase: SupabaseLike = any`, que borra el tipado contextual que `createClient(...)`
+  daba a `participants`. Su explicación —un `any` contextual no dispara `noImplicitAny`, uno
+  desnudo sí— es exacta. Igual el `no-explicit-any` de ESLint: el `deno-lint-ignore` que yo exigí
+  silencia `deno lint`, no ESLint, y `adminAuth.ts:13` —el exemplar que yo mismo cité— carga el
+  mismo error. **B-08 queda corregida: 6 desplazados + 3 nuevos por consecuencia del seam**, y la
+  línea base de P4 es `(0)(1)(2)(8)`, no `(0)(0)(2)(6)`.
+- **F-1 ES MI FALLO DE BOOTSTRAP, dicho sin rodeos.** `deno test` type-checkea su grafo de
+  importación. Hoy la suite está verde con `index.ts` cargando 6 errores **solo porque ningún test
+  lo importa**. En cuanto `handler_test.ts` importa `handler.ts` —el objeto entero de la fase— esos
+  errores entran en el grafo y `deno test` se niega a ejecutar la suite completa. Medí `deno check`
+  por fichero y `deno test` en el padre, pero **nunca simulé el caso «un test importa un fichero con
+  errores de tipo»**, que era precisamente lo que mi decisión de desplazamiento iba a provocar.
+- **MI RECOMENDACIÓN SOBRE F-1, con el dato que la decide.** De las tres salidas que planteó el
+  ejecutor, la primera es mucho más barata de lo que él supuso, y lo comprobé:
+  **`deno check .` ya type-checkea el árbol entero por su cuenta, ficheros de test incluidos.**
+  `deno check .` enumera `handler_test.ts`, `availableMaterials_test.ts`, `contract_test.ts` y el
+  resto; y `deno check create-mesa-matches/handler_test.ts` a solas destapa los 8 errores del
+  handler. Es el **paso 4 del gate D8**, independiente y conservado. Por tanto **`deno test
+  --no-check` no pierde ni una pizca de cobertura de tipos**: elimina una comprobación duplicada,
+  no una comprobación. Las otras dos salidas cuestan mucho más —adelantar B-08 destruye la
+  propiedad de diff limpio que es lo único que hace verificable esta fase, y partir P3a deja el
+  seam sin tests hasta otra fase—. **Recomiendo enmendar C6 a `deno test --allow-all --no-check .`
+  con fila de Decision Log.** No lo hago yo: cambia un criterio congelado.
+- FINDINGS: **BLOCKING B1** = F-1, resoluble con una decisión de plan, **no con una ronda de
+  ejecutor** — el código está completo y verde. **SHOULD-FIX S1** = B-08 mal contada (corregida
+  arriba). **SHOULD-FIX S2** = total de ESLint no portable (B-09). **NIT N1** = el diagnóstico de
+  causa de F-2c, corregido. **NIT N2** = el grep de C1 cazó su propio comentario de cabecera; lo
+  reformuló él mismo en `6e060e0`, fuera del bloque movido. **Cero hallazgos BLOCKING contra el
+  trabajo del ejecutor.**
+- BACKLOG ADDED: **B-09**. B-08 corregida.
+- OPEN AFTER THIS ROUND: (1) **Decisión de Brent sobre C6** (recomendación: `--no-check`).
+  (2) Con eso, la fase queda limpia y lista para Codex **sin ronda de remediación**. (3) El prompt
+  de Codex debe declarar el desplazamiento como **6 desplazados + 3 nuevos**, no 6 + 0, y advertir
+  que el total de ESLint depende del checkout. (4) B-05, B-06, B-07, B-08, B-09 abiertos; **B-06
+  antes de P8**.
