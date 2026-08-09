@@ -2890,3 +2890,81 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   del `no-unused-vars` a un fichero nuevo le parece aceptable. (2) La fase **no** se marca DONE
   hasta que Codex pase. (3) Merge de `feat/mesa-md-core` — de Brent, después y solo si Codex pasa.
   (4) Luego P4.
+
+### 2026-08-09 — P3b CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P3b · REVIEW
+- **VERDICT: PASS.** `feat/mesa-md-core`, código en `79e662e`, review commiteada y **publicada
+  por Codex** en `e2bf43a` (la primera que no hubo que empujar a mano: en P2 quedó sin push y en
+  P3a sin stagear). **Cero BLOCKING, cero NIT, un SHOULD-FIX.** **P3b queda DONE.**
+- LO QUE CODEX VERIFICÓ POR SU CUENTA, en worktree limpio y dedicado: **reprodujo las dos
+  comparaciones mecánicas** —192 contra 192 con cero diferencias exactas incluido whitespace, y
+  175 antiguas contra 165 actuales idénticas salvo el helper `shuffle` que ahora se exporta— ·
+  D1e–D6e uno a uno · Deno **446/0**, goldens **10/0**, `matching_test` **8/0** · build exit 0 ·
+  gate por fichero `(0,1,1,3)` / `(0,0,1,0)` / `(0,0,0,0)` · Vitest **1054/15 en punta y en
+  padre**, con las mismas identidades · `planSeating` no muta sus entradas, **comprobado
+  ejecutándolo con entradas congeladas**, no leyéndolo.
+- **AVALA LAS TRES COSAS QUE YO HABÍA MARCADO COMO DISCUTIBLES.** (1) El desplazamiento del
+  `no-unused-vars` a un fichero nuevo: aceptable bajo la revisión manual de D8.4 «aunque el
+  fichero destino sea nuevo», porque el bloque que contiene la declaración se movió exacto y no
+  hay defecto nuevo. Era el punto donde le pedí explícitamente que discrepara. (2) La desviación
+  de `SeatingPlan` con cinco miembros: «**no es una desviación del contrato arquitectónico**» —
+  devolver las colecciones completas conserva el bloque consumidor verbatim, no las expone fuera
+  del handler y nada downstream las muta. (3) La frontera **no** dificulta P4: `hostStatus` ya es
+  el asiento final que `allocateAll` tendrá que consumir, y `SeatingPlan` puede crecer con
+  `mainDishCoverage` y `tablesWithShortfall` sin devolver la decisión al handler.
+- **EL SHOULD-FIX S1 ES REAL Y LO REPRODUJE.** Sustituí `matching.ts:76–77` por copias simples
+  (`[...hosts]`, `[...guests]`) en una copia temporal —el repo no se tocó— y **la suite pura
+  siguió en 8/0**. Los 8 tests no fijan los dos `shuffle` iniciales: el de determinismo solo
+  compara dos ejecuciones entre sí, y los otros siete afirman recuentos sobre fixtures homogéneas
+  donde una permutación es inobservable. **No bloquea**: los diez goldens de `handler_test.ts`
+  sí la cazan de extremo a extremo, porque la comida depende del orden de invitados. Backlog
+  **B-11**, con P4 como sitio natural.
+- **LA PREGUNTA QUE LE HICE SE PAGÓ SOLA.** Yo había corrido una mutación (romper el aliasing:
+  8/0 → 4/4) y, en vez de presentarla como prueba de que la suite muerde, le pedí que dijera si
+  **una sola mutación bastaba** y que nombrara un cambio que estos 8 tests no cazaran. Nombró uno
+  a la primera. **Lección para las fases que quedan: la mutación que uno elige mide lo que uno ya
+  sospechaba; el hueco estaba en el eje que no se me ocurrió mirar.** Vale más pedir el
+  contraejemplo que exhibir el propio.
+- **DE LAS MEDICIONES QUE NO CUADRARON, NINGUNA ERA CÓDIGO Y TODAS ERAN EL ENTORNO, otra vez.**
+  ESLint: yo 347 (inflado por `supabase/.temp/`, B-09), Codex **161** en limpio — y el plan dice
+  160, así que hay **+1 estable** que tampoco es de nadie; anotado en B-09. Vitest: yo 1063/6,
+  Codex 1054/15, idéntico en padre y punta, con B-05 rotando de fichero entre corridas
+  (`ph.concurrency` en punta, `ph.cancel` en padre). **Tercera fase seguida en que las sorpresas
+  de medición son del entorno y los recuentos por fichero son lo único portable.** D8.5 lleva tres
+  fases teniendo razón.
+- COSTE REAL DE LA FASE: **1 ronda de ejecutor, 1 verificación de PM, 1 revisión de Codex.** Cero
+  redespachos, cero rondas de remediación, **cero criterios congelados modificados** — la primera
+  fase del plan de la que se pueden decir las tres cosas. Lo que la abarató fue concreto y
+  repetible: el prompt llevaba la línea base medida **por fichero y con los mensajes crudos**, y
+  nombraba por adelantado los dos modos de fallo reales (aliasing y secuencia de `pick`).
+- **§3.8.5 — P4 RELEÍDA A LA LUZ DE LO CONSTRUIDO. UNA ENMIENDA HECHA, TRES AVISOS:**
+  - **Hecho:** E7 decía `deno test` **+10** sin absoluto. Actualizado a
+    `deno test --allow-all --no-check .` y **456/0**, partiendo de los 446/0 que deja P3b. Misma
+    consecuencia de la enmienda de D8.3 que ya se aplicó a D5e; no es criterio nuevo.
+  - **Aviso 1 — `matching.ts` deja de ser hoja.** Hoy tiene **cero imports**, y eso es parte de
+    por qué sale `(0,0,1,0)`. P4 le añade `allocateAll`, que necesita `_shared/mainDish.ts`. Sigue
+    cumpliendo D1e (que prohíbe `@supabase/supabase-js` y `Deno.env`, no cualquier import) y
+    `mainDish.ts` es hoja pura y mide `(0)(0)(0)(0)`, así que no debería costar diagnósticos.
+    Pero conviene decirlo antes de que un ejecutor lo descubra y crea que rompió algo.
+  - **Aviso 2 — `Participant` tendrá que crecer.** La interfaz de `matching.ts` nombra hoy solo
+    lo que el asiento lee; no incluye `can_bring_main_dish`. P4 la amplía. Es trabajo previsto,
+    y Codex lo confirma como propio del incremento de P4.
+  - **Aviso 3 — E6 hay que hacerlo concreto en el prompt.** Dice «`git diff` sobre ellos, vacío»
+    referido a los otros ocho goldens, pero los diez viven en **un solo fichero** que P4 sí toca
+    (cambia 5 y 6, añade 11–14), así que un `git diff` del fichero nunca saldrá vacío. El criterio
+    real es que **los hunks no toquen más que los tests 5 y 6 y los añadidos**, y eso se comprueba
+    leyendo el diff, no contándolo. El prompt de P4 debe decirlo así o el criterio se vuelve
+    discrecional.
+  - Sin más enmiendas: alcance, E1–E5, E8, E9, la allowlist de dos goldens y el tamaño de P4
+    siguen bien.
+- FINDINGS RAISED: ninguno nuevo del PM. DECISIONS: ninguna que toque el plan; Codex descartó
+  explícitamente que `SeatingPlan` con cinco miembros sea desviación, así que **no hay fila de
+  Decision Log** por ello.
+- BACKLOG: **B-11 añadido** (S1). **B-08 encogida a tres diagnósticos**, línea base de P4
+  `(0)(1)(1)(3)`. **B-09 afinada** con el 161 de Codex. B-05, B-06, B-07, B-10 sin cambios.
+  **B-06 hay que decidirlo antes de P8.**
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-core` a `main`** — decisión de Brent;
+  fast-forward posible mientras `main` no se mueva, y `main` sigue tomado por el worktree
+  `casa-p2-review`, así que va con `git -C`. (2) Después, `/pm-boot UPGRADE P4` con contexto
+  fresco. **P4 es la primera fase que quiere cambiar conducta**, y la única con allowlist de
+  goldens: tocar un tercer golden es `FINDINGS`. (3) Decidir si B-11 entra en P4.
