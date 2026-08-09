@@ -3,7 +3,7 @@
  *
  * Extracted from `index.ts` so it can be imported by tests without starting a
  * server or reading the environment. `index.ts` is the only place that
- * constructs production dependencies and calls `serve()`.
+ * constructs production dependencies and starts the HTTP server.
  *
  * The matching logic is a verbatim move: the guard order (OPTIONS ->
  * requireMesaAdmin -> req.json() -> monthId -> month exists -> status open ->
