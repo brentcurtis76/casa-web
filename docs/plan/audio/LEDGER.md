@@ -1265,3 +1265,59 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   2. **`E3a` es la siguiente unidad, y está EN BORRADOR, no congelada.** Su cuerpo arrastra siete
      huecos del contrato del slug (Codex r9/B2) que sólo podían cerrarse con el entorno construido
      — ya lo está. Le toca un `/pm-boot AUDIO E3a`.
+
+### 2026-08-08 — plan round 15 / E3a round 0 (preparación) — PM (Opus) — BLOQUEADA POR DOCKER
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: arranque de PM sobre `E3a`. **No escribo prompt de ejecutor, y no debía escribirse:**
+  `E3a` está **EN BORRADOR**, con el banner de "no es contrato" puesto desde la r10 (Codex r9/B2),
+  y el SOP §1.7 sólo ejecuta sobre plan congelado. Lo que toca es una **ronda de plan (r15)** que
+  reescriba `E3a` con lo que `E-infra` midió y construyó, y después una review de plan de Codex.
+- **VERIFICADO POR MÍ, con el comando al lado (§16: nada de "verificado" sobre inferencias):**
+  - `git merge-base --is-ancestor phase/E-infra-impl main` → **falso**. `main` sigue en `981c00f`,
+    la rama en `1c4490f`. **La dependencia de `E3a` está DONE pero NO MERGEADA.**
+  - `git ls-tree main -- .env.test.example tests/e2e/helpers/guard.ts tests/e2e/global-setup.ts
+    tests/e2e/smoke-local.spec.ts supabase/seed.sql` → **vacío**; el mismo comando sobre
+    `phase/E-infra-impl` los devuelve todos. **El entorno de pruebas existe sólo en la rama.**
+  - Migraciones: **62 en ambas**.
+- **CUATRO HALLAZGOS DE CONTRATO, leídos en el código, que el borrador de `E3a` no cubre:**
+  - **[H1] `E3a.8` rompe `supabase db reset` para todo el repositorio.** `supabase/seed.sql:120-128`
+    inserta el baseline `…-9000-…010` con `status='published'` **y sin slug**. En cuanto la migración
+    imponga `published ⇒ slug IS NOT NULL`, el seed falla — y con él **el entorno que
+    `E-infra-impl` acaba de construir**. El scope de `E3a` dice "una migración aditiva,
+    `publishService.ts`, tipos y tests": **el seed no está, y tiene que estar.**
+  - **[H2] El mismo agujero en el humo.** `tests/e2e/smoke-local.spec.ts:131-155` hace `POST` de un
+    fixture con `status:'published'` y sin slug. Rompe igual. Codex lo avisó en el cierre de
+    `E-infra-impl`; queda aquí con fichero y línea.
+  - **[H3] La interacción de colisiones es peor de lo que dice el borrador.**
+    `publishService.ts:282-292`: el bucle de reintento está condicionado a
+    `existingEpisodeNumber === null`. Consecuencia: **al republicar**, un `23505` de slug **no
+    reintenta nada** y cae directo al `throw`; **al publicar por primera vez**, un `23505` de slug se
+    diagnostica como colisión de número y **quema los tres reintentos pidiendo `max+1`**, que no
+    puede arreglar una colisión de slug. `idx_podcast_episodes_number` es además **parcial**
+    (`WHERE episode_number IS NOT NULL`, `20260610090000_church_podcast_episodes.sql:51-53`).
+  - **[H4] El orden de la migración no es libre.** Añadir el `CHECK` de `E3a.8` sobre una tabla que
+    ya tenga filas `published` sin slug **falla al aplicarse**. La migración tiene que ser
+    backfill-primero-y-restringir-después, y el contrato debe decirlo. En la r2 el catálogo
+    productivo estaba vacío (§0), pero eso se midió el 2026-08-07 y no es una garantía.
+- **LO QUE NO PUDE MEDIR, Y POR QUÉ.** El hueco 6 de Codex r9/B2 —en qué campo de `PostgrestError`
+  viaja el nombre del índice— **exige medir la forma real del error vía PostgREST**; cerrarlo por
+  razonamiento sería repetir exactamente el fallo que §16 documenta. Levanté el stack local
+  (`npx supabase start`, puertos 54331/54332) y **Docker Desktop se cayó durante el pull de
+  imágenes**: `failed commit on ref "layer-sha256:c75449d…": … sync
+  …/io.containerd.content.v1.content/ingest/…: input/output error`, y a partir de ahí
+  `Error response from daemon: Docker Desktop is unable to start` en todo, incluido `docker ps`.
+  **Los 11 contenedores del proyecto ajeno `sxlogxqzmarhqsblxmtj` se cayeron con el daemon** — es
+  decir, I9 de `E-infra-impl` ya no se sostiene hasta que Docker vuelva. Disco del host sano
+  (42 GiB libres), así que apunta al disco de la VM de Docker, no a falta de espacio. Quedan un
+  diálogo de error abierto y `com.docker.diagnose` recogiendo datos: **reiniciar Docker Desktop es
+  decisión de Brent; no lo fuerzo desde aquí.**
+- FINDINGS RAISED: H1, H2, H3, H4 — los cuatro **de plan**, no de código: no existe código de `E3a`.
+  Entran en la reescritura, no en una ronda de ejecución.
+- DECISIONS: ninguna congelada. **La r15 no se escribe hasta tener medido el hueco 6**, que es
+  justo la disciplina a la que D21 atribuye que `E-infra-impl` saliera limpia a la primera.
+- OPEN AFTER THIS ROUND:
+  1. **Docker Desktop caído.** Sin él no hay medición, y sin medición no hay r15 honesta.
+  2. **Base de `E3a` — decisión de Brent:** o se mergea `phase/E-infra-impl` a `main` y `E3a`
+     ramifica de `main`, o `E3a` ramifica de `phase/E-infra-impl`. Hoy `main` no tiene el entorno,
+     así que la fase no puede ramificar de `main` tal como está.
+  3. **`E3a` sigue EN BORRADOR.** Le faltan la r15 y una review de plan de Codex antes de `/exec`.
