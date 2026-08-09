@@ -1657,3 +1657,38 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   que emitir un `-6`. Longitud máxima ~23 caracteres, muy dentro del `CHECK`.
 - OPEN AFTER THIS ROUND: **`E3a` está limpia y lista para la review final de Codex.** No la marco
   DONE: sólo un PASS de Codex cierra la unidad. Después: `E3b`.
+
+### 2026-08-09 — E3a round 1 — CODEX REVIEW FINAL → FAIL (1 BLOCKING) — triage del PM
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `phase/E3a-slug@1d09b7d`. **1 BLOCKING**, 0 SHOULD-FIX, 1 NIT.
+  Codex da **14 de 16 criterios MET**, E3a.12 y E3a.16 **PARTIAL**, y dice explícitamente que **no
+  hace falta rediseño de código de producción ni remediación amplia**.
+- **[B1] ACEPTADO Y REPRODUCIDO POR MÍ.** `publishService.test.ts:361` afirma
+  `recorded.selectCols.some((c) => c.includes('slug'))`, pero el mock apila **todos** los `select()`
+  en un array plano (`publishService.test.ts:54`), así que esa aserción **se satisface con el
+  `select` del borrador** (líneas 153 y 185 de producción, que también piden `slug`). Mutando sólo
+  la proyección del `UPDATE` —`.select('episode_number, slug')` → `.select('episode_number')`—
+  **los 10 tests siguen verdes**. Medido por mí dos veces, con control restaurado a 10/10.
+  Contra Supabase real esa mutación haría que la respuesta de publicación no trajera `slug` y
+  `publishEpisode` lanzara **después** de haber publicado el episodio, sin URL canónica que
+  devolver. **Viola la regla congelada de D18: una afirmación de cableado tiene que ponerse roja
+  cuando se corta ese cableado.**
+- **MI FALLO DE VERIFICACIÓN, y va escrito.** Probé las **tres mutaciones declaradas** y las tres
+  salieron rojas, así que di E3a.12 por cumplido. Pero el criterio **nombra la proyección**
+  (`.select('episode_number, slug')`), o sea que era comprobable, y no la comprobé: **miré la lista
+  de mutaciones en vez del criterio.** Una lista de mutaciones es una ayuda, no el contrato; el
+  contrato es el criterio, y cada cláusula suya que afirme cableado hay que intentar romperla.
+- **[N1 de Codex] NIT** — `DROP TRIGGER IF EXISTS` (migración, línea 138): Codex confirma que en
+  todo estado de upgrade soportado el trigger nuevo no puede existir y el statement es no-op, pero
+  quitarlo encajaría mejor con la letra de D9. Coincide con mi N1.
+- **LO QUE CODEX VERIFICÓ POR SU CUENTA Y CONFIRMA:** las tres mutaciones declaradas rojas más una
+  cuarta suya (desactivar el reintento genérico del `23505`, que rompe las dos carreras); ruta de
+  upgrade real desde la migración 62 con **seis** filas históricas de la misma fecha llegando hasta
+  `-6`; el índice parcial único —no el `NOT EXISTS`— como árbitro; el riesgo aceptado de
+  `podcast-backfill` **sigue siendo defendible**; el `ROW_NUMBER()` sin tope **es correcto**;
+  anular el slug en borradores **es correcto**; y lanzar si la base no devuelve slug es el
+  fail-closed correcto. **Las cuatro desviaciones del ejecutor, aceptadas.** Sin PII, sin texto sin
+  traducir, sin desborde de alcance, sin estorbo para `E3b`.
+- FINDINGS: **1 BLOCKING (B1)** → ronda de remediación r2. 1 NIT al backlog.
+- OPEN AFTER THIS ROUND: `/exec AUDIO E3a r2`, **de alcance mínimo**: sólo el fichero de test.
+  Es la ronda 1 de 2 del bucle de Codex sobre esta fase.
