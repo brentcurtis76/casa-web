@@ -2272,3 +2272,40 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Brent; ahora con merge normal, no `--ff-only`. Es lo único que retiene a P3a. (2) Después,
   `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt
   de Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
+
+### 2026-08-08 — P3a r1 (2.º redespacho) — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P3a · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — parada en la puerta de precondición, antes de crear rama.
+- **STATUS: BLOCKED. La misma puerta que la vez anterior: P2 sigue sin mergear en `main`.**
+  No creé `feat/mesa-md-seam`, no escribí código, no toqué `PLAN.md`.
+- ACTION: localicé el plan y el prompt, verifiqué la precondición dura del prompt y paré.
+  El prompt `P3a-r1.md` **sigue existiendo solo en `feat/mesa-md-alloc`** (checkout
+  `casa-p2-review`); no está en `main`. Es la SHOULD-FIX de proceso que el PM ya se anotó en
+  la ronda anterior, y sigue costando trabajo de búsqueda al ejecutor.
+- **LO QUE MEDÍ, tras `git fetch origin`:**
+  - `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P2 | Módulo puro…DONE'` → **0**.
+  - Fila P2 en `origin/main`:321 → `TODO`; en `origin/feat/mesa-md-alloc`:321 →
+    `**DONE** 2026-08-08 · 6363378`.
+  - `git merge-base --is-ancestor origin/feat/mesa-md-alloc origin/main` → **no**.
+  - `origin/main` sigue en **`1c4490f`** — no se ha movido desde la verificación del PM, así que
+    las líneas base que midió (gate por fichero, `tsc=1039 eslint=160 deno-lint=94 deno-check=46`,
+    Deno 428/0, Vitest 1063/6) siguen siendo las del padre correcto.
+  - `origin/main..origin/feat/mesa-md-alloc` = **6 commits** (1 de código P2 + 5 de docs), y el
+    ledger de la rama lleva **cinco entradas** que `main` no tiene. Ramificar de `main` y añadir
+    una sexta bifurcaría exactamente esas cinco: B-02 otra vez.
+  - Ensayo de merge sin tocar ningún worktree:
+    `git merge-tree --write-tree origin/main origin/feat/mesa-md-alloc` → **exit 0, sin
+    conflictos**. Confirma el ensayo del PM: el merge es limpio pero **no** fast-forward.
+- ENTRADA DE LEDGER: la escribo **en `feat/mesa-md-alloc`**, que es donde está la punta real del
+  ledger. Escribirla ahí no bifurca nada; lo que bifurcaba era escribirla desde una rama de
+  `main`, que es lo que la ronda anterior evitó correctamente omitiéndola.
+- TESTS: ninguno ejecutado — la fase no llegó a empezar.
+- FINDINGS RAISED: ninguno. El plan y el prompt siguen correctos palabra por palabra.
+- DECISIONS: ninguna.
+- BACKLOG ADDED: ninguno. B-05, B-06, B-07 y B-08 siguen abiertos; **B-06 antes de P8**.
+- **RONDAS CONSUMIDAS: cero**, por el mismo motivo que la anterior (SOP §1.5): no hubo intento de
+  implementación que juzgar. El redespacho tras el merge sigue siendo `r1`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent, con merge normal (no `--ff-only`). Es lo único que retiene a P3a. (2) Después,
+  `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt de
+  Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
