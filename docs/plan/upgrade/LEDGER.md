@@ -2723,3 +2723,38 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Brent; fast-forward posible y ensayado limpio. **Único bloqueo.** (2) Verificar
   `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P3a | Seam.*DONE'` → `1`.
   (3) Solo entonces, `/exec UPGRADE P3b r1`.
+
+### 2026-08-08 — P3a MERGE + P3b DESBLOQUEADA — Brent (autorización) + PM (ejecución)
+- SESSION: UPGRADE · P3b · PM
+- **Brent ejecutó él mismo el comando de merge; falló por una razón ajena a la rama y lo terminé
+  yo.** `git checkout main` abortó con `fatal: 'main' is already checked out at
+  '/Users/brentcurtis/dev/casa-p2-review'`. No era un problema del merge: `main` está tomado por
+  el worktree que se cortó para la revisión de P2. Ejecuté el merge **en ese worktree**
+  (`git -C … merge --ff-only`), que es donde `main` vive.
+- **Fast-forward limpio:** `1d6869d` → **`03fd6c3`**, publicado en `origin/main`. Rama aprobada
+  `feat/mesa-md-seam`.
+- VERIFICACIONES PREVIAS AL MERGE, todas antes de tocar nada: worktree de `main`
+  (`casa-p2-review`) **sin cambios** y en `1d6869d` = `origin/main` · `--is-ancestor` → FF posible
+  · alcance de código = **exactamente los tres ficheros de P3a** (`handler.ts` +536,
+  `handler_test.ts` +511, `index.ts` −506) más documentos de plan · **`git diff` de código entre
+  `76d2d5e` (el SHA que pasó Codex) y la punta: vacío** — todo lo posterior es documentación, así
+  que lo que se mergeó es literalmente lo que Codex aprobó, no una versión posterior.
+- VERIFICACIÓN PREVIA A PUBLICAR, porque un push a `main` dispara el despliegue de Vercel:
+  `npm run build` → **exit 0**. Como en P2, el merge no cambia nada de cara al usuario: los tres
+  ficheros son Deno bajo `supabase/functions/`, que Vercel no despliega.
+- **CONDICIÓN DE REARME CUMPLIDA**: sobre `origin/main`,
+  `grep -c 'P3a | Seam.*DONE'` → **1**. Y `prompts/P3b-r1.md` **ya está en `origin/main`**, así
+  que el ejecutor lo encuentra donde su propio prompt le dice — el coste de búsqueda que pagaron
+  los tres redespachos de P3a no se repite.
+- **P3b queda desbloqueada.** Prompt sin cambios, líneas base vigentes y medidas por mí sobre este
+  mismo árbol (Deno **438/0**, `handler.ts` **(0)(1)(2)(8)**), **rondas consumidas: cero** — el
+  despacho es `r1`.
+- TESTS: `npm run build` → exit 0. Deno 438/0 medido antes en este mismo árbol; el FF no cambia
+  un solo byte de código respecto a lo ya medido, así que no se re-mide.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna que toque el plan.
+- BACKLOG: sin cambios. B-05, B-06, B-07, B-08, B-09, B-10 abiertos. **B-06 antes de P8.**
+- OPEN AFTER THIS ROUND: (1) `/exec UPGRADE P3b r1` — ahora sí. (2) Los dos riesgos que el prompt
+  lleva por delante (aliasing de `activeHosts`/`hostStatus`, y la secuencia de llamadas a `pick`
+  con `shuffle` exportado desde `matching.ts`) son lo primero que hay que mirar en la
+  verificación. (3) `main` sigue tomado por el worktree `casa-p2-review`: cualquier operación
+  futura sobre `main` va con `git -C`, no con `git checkout`.
