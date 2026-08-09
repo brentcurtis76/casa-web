@@ -702,6 +702,7 @@ export type Database = {
           guid: string
           episode_number: number | null
           status: 'draft' | 'published'
+          slug: string | null
           published_at: string | null
           created_by: string | null
           created_at: string
@@ -722,6 +723,7 @@ export type Database = {
           guid?: string
           episode_number?: number | null
           status?: 'draft' | 'published'
+          slug?: string | null
           published_at?: string | null
           created_by?: string | null
           created_at?: string
@@ -742,6 +744,7 @@ export type Database = {
           guid?: string
           episode_number?: number | null
           status?: 'draft' | 'published'
+          slug?: string | null
           published_at?: string | null
           created_by?: string | null
           created_at?: string
