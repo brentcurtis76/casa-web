@@ -1455,3 +1455,37 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS: B1-B6 BLOCKING aceptados; 1 NIT. `E3a` **no se congela**.
 - OPEN AFTER THIS ROUND: r16. Hay una bifurcación de diseño que la review abre y que decide qué
   unidades existen; está planteada a Brent antes de escribir nada.
+
+### 2026-08-08 — plan round 16 — PM (Opus) — `E3a` reescrita sobre invariante de base (D23)
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: reescritura de `E3a` tras el FAIL de la r15. **Los seis BLOCKING quedan cerrados: tres
+  disueltos por cambio de diseño y tres aceptados como enmienda.** Brent eligió el invariante de
+  base sobre el split que Codex recomendaba.
+- **EL CAMBIO:** la base garantiza el slug, el cliente sólo aporta preferencia (D23). B2 se cierra
+  **sin tocar `podcast-backfill`**; B3 desaparece porque el cliente **nunca ve un `23505` de
+  slug**; B5 desaparece porque no hay contadores dobles. B1, B4 y B6 se aceptan como enmienda:
+  migración nueva con versión > 62, test de ruta de upgrade, `types.ts` quirúrgico.
+- **TODO MEDIDO POR LA RUTA AUTENTICADA, que es la corrección de método que exigía B3.** Prototipo
+  en base desechable, como `admin@e2e.local`, borrado después con `db reset`:
+  - base repetida → `reflexion-de-prueba`, `…-2`, `…-3`.
+  - **publicar sin aportar slug** (la forma de `podcast-backfill/index.ts:353`) → `reflexion-2026-05-04`.
+  - sin slug con la fecha ocupada → `reflexion-2026-01-04-2`: **el fallback también desempata**.
+  - base de 80 exactos → 80; la misma en colisión → **42**, truncada en el último `-`.
+  - cambiar un slug asignado → `{"code":"23514","details":null,…}`.
+  - **el seed del repo SIN modificar, con el trigger ya creado** → la fila `published` recibe
+    `reflexion-2026-01-04`, la `draft` se queda `NULL`, y el `CHECK` entra **sin backfill**.
+  - **el mismo `CHECK` antes del backfill sobre una fila `published` sin slug → falla.**
+- **H1 y H2 SALEN DEL SCOPE, y esto es un cambio respecto de la r15.** Eran reales para el diseño
+  de la r15; con el trigger creado por migración el seed corre después y se resuelve solo. Medido,
+  no supuesto. **H4 sigue vivo** y sólo para bases ya desplegadas.
+- **SIZING: 7 ficheros**, contra los 9 de la r15 — B6 resuelto sin partir la unidad. 14 criterios.
+- **`main` SE MOVIÓ DURANTE LA SESIÓN.** Otra sesión (UPGRADE) cambió el checkout principal a
+  `feat/mesa-md-seam` y mergeó su P2: `main` pasó de `1c4490f` a **`1d6869d`**. Verificado que
+  `1c4490f` **sigue siendo ancestro** y que el delta (`supabase/functions/_shared/mainDish*.ts`)
+  **no toca nada de la superficie de `E3a`**; siguen siendo 62 migraciones. Por eso `E3a` **no
+  fija un SHA padre**: ramifica del `main` del día y lo anota, como hizo `E-infra-impl`.
+- PLAN: cuerpo de `E3a` reescrito; **D22 corregida** (el error de `service_role`); **D23 nueva**;
+  fila de §5 actualizada; cuatro filas nuevas en §8.
+- FINDINGS RAISED: ninguno nuevo.
+- OPEN AFTER THIS ROUND: **`E3a` no está congelada.** Falta `CODEX REVIEW plan r16`. Es la ronda 2
+  del bucle de review de este contrato; si vuelve FAIL, escribo propuesta de re-plan en vez de r17.
