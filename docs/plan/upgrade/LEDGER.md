@@ -2358,3 +2358,36 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Brent, con merge normal (no `--ff-only`). Es lo único que retiene a P3a. (2) Después,
   `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt de
   Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
+
+### 2026-08-08 — P3a r1 — PM (Opus 5) — SE DETIENEN LOS REDESPACHOS
+- SESSION: UPGRADE · P3a · PM
+- Verificado otra vez, y por última vez: `origin/main` sigue en `1c4490f` (sin moverse desde mi
+  medición), `origin/feat/mesa-md-alloc` en `fdbaa86` con **8 commits y 7 entradas de ledger**
+  que `main` no tiene, `--is-ancestor` → no, y `git merge-tree --write-tree` → **exit 0, sin
+  conflictos**. El ejecutor acertó en todo; sus recuentos (7 commits, 6 entradas) los tomó antes
+  de que aterrizara el suyo propio, lo cual no cambia nada.
+- **DEJO DE REDESPACHAR P3a. La culpa del bucle es mía, no de la puerta ni del ejecutor.** Tres
+  sesiones han muerto en la misma precondición sin que cambiara una sola cosa entre ellas, y las
+  tres murieron porque yo cerré el mensaje anterior con una línea `/exec` pegable. La puerta
+  hizo exactamente su trabajo las tres veces; lo que fallaba era despacharla antes de que
+  existiera la condición. **No habrá una cuarta hasta que el merge esté verificado en
+  `origin/main`.**
+- **El coste ya es visible en este fichero**: tres entradas de ejecutor y dos de PM describiendo
+  el mismo no-evento. El ledger es append-only y no las reordeno ni las borro, pero que quede
+  dicho para quien lo lea después: **las cinco entradas cuentan un solo hecho** — P2 no estaba
+  mergeada.
+- **CONDICIÓN DE REARME, explícita para que nadie la infiera.** Antes de volver a despachar,
+  esto tiene que imprimir `1`:
+  ```
+  git fetch origin && git show origin/main:docs/plan/upgrade/PLAN.md \
+    | grep -c 'P2 | Módulo puro de asignación.*DONE'
+  ```
+  Si imprime `0`, la respuesta correcta **no** es abrir una sesión de ejecutor.
+- Nada más cambia: el prompt `P3a-r1.md` sigue válido sin tocar, las líneas base siguen medidas
+  y vigentes (`1039/160/94/46`, Deno `428/0`, Vitest `1063/6`), y el merge está ensayado limpio.
+  **Rondas consumidas: cero.** El redespacho posterior al merge sigue siendo `r1`.
+- FINDINGS RAISED: ninguno contra el código. La única corrección de esta ronda es de proceso y
+  es contra mí.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — de Brent, merge normal,
+  no `--ff-only`. Único bloqueo. (2) Verificar la condición de rearme de arriba. (3) Solo
+  entonces, `/exec UPGRADE P3a r1`.
