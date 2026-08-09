@@ -1321,3 +1321,35 @@ es exactamente el error que dejó a `E-infra` en borrador.**
      ramifica de `main`, o `E3a` ramifica de `phase/E-infra-impl`. Hoy `main` no tiene el entorno,
      así que la fase no puede ramificar de `main` tal como está.
   3. **`E3a` sigue EN BORRADOR.** Le faltan la r15 y una review de plan de Codex antes de `/exec`.
+
+### 2026-08-08 — E-infra-impl MERGE A `main` — PM (Opus), por autorización explícita de Brent
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: merge **fast-forward** de `phase/E-infra-impl` a `main` y push a `origin`. Cierra el
+  punto 1 de "OPEN AFTER THIS ROUND" del cierre de la unidad. Brent lo autorizó al resolver la
+  pregunta de base de `E3a` eligiendo "mergear a `main` primero".
+- **VERIFICACIÓN PREVIA AL MERGE, toda medida antes de tocar `main`:**
+  - `git rev-parse main origin/main` → ambos `981c00f`. **Sin divergencia con el remoto.**
+  - `git merge-base --is-ancestor main phase/E-infra-impl` → verdadero. **FF limpio, sin merge commit.**
+  - `git diff --stat main phase/E-infra-impl` → **7 ficheros, +673/-5**, idéntico a lo que
+    registró el cierre de la unidad. **Cero desborde respecto de lo aprobado por Codex.**
+  - Un solo commit: `1c4490f`. **`.env.test` no commiteado** (`git ls-tree -r` → 0).
+  - `npm run build` → **verde, `✓ built in 7.00s`** sobre el SHA aprobado (el cierre midió 6.96s).
+  - Worktrees: ninguno con `main` checkouteado (`casa-p2-review` en `feat/mesa-md-alloc`,
+    `casa-upgrade` en `feat/mesa-md-schema`). **Sin actividad en conflicto.**
+  - *No re-corrí el e2e: exige el stack local y Docker está caído. La evidencia de la guarda ya la
+    midieron tres partes independientes sobre este mismo SHA, y el árbol no ha cambiado desde
+    entonces. Queda dicho, no escondido.*
+- COMMITS: `981c00f..1c4490f` → `main`, empujado a `origin/main`.
+- POST-VERIFICACIÓN: `git rev-parse main origin/main` → ambos `1c4490f`;
+  `git merge-base --is-ancestor phase/E-infra-impl origin/main` → verdadero.
+- **CONSECUENCIA PARA `E3a`, y resuelve la pregunta de base:** el entorno de pruebas
+  (`supabase/seed.sql`, `.env.test.example`, `guard.ts`, `global-setup.ts`, `smoke-local.spec.ts`,
+  `playwright.config.ts`, `scripts/gates/README.md`) **ya está en `main`**. `E3a` ramifica de
+  **`main@1c4490f`**, sin apilarse. Y los ficheros de H1 y H2 —el seed y el humo— ahora se editan
+  en `main`, que es donde tienen que editarse.
+- El push a `main` dispara el deploy normal de Vercel, que es el camino que autoriza la instrucción
+  de merge. No se corrió ningún comando manual de despliegue.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND:
+  1. **Docker Desktop sigue caído** — bloquea la medición del hueco 6 y, con ella, la r15.
+  2. **`E3a` sigue EN BORRADOR** con H1-H4 abiertos. Falta la r15 y la review de plan de Codex.

@@ -313,7 +313,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | ID | Nombre | Tipo | Status | Depende de |
 |----|--------|------|--------|-----------|
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
-| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
+| E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
@@ -718,7 +718,11 @@ de la lista blanca tampoco; y si alguien deja un servidor productivo ocupando el
 aborta en vez de hablar con él. Las **cinco mutaciones lo demuestran fallando**, ejecutadas por el
 ejecutor, por el PM y por Codex de forma independiente.
 
-**Pendiente:** merge de `phase/E-infra-impl` a `main`, **cuando Brent lo autorice explícitamente**.
+**✅ MERGEADA A `main` el 2026-08-08** por autorización explícita de Brent, en fast-forward.
+Verificado: `git rev-parse main origin/main` → ambos `1c4490f`, y
+`git merge-base --is-ancestor phase/E-infra-impl origin/main` → verdadero. **Nada queda pendiente
+de esta unidad.** Consecuencia directa: **el entorno de pruebas ya está en `main`**, así que `E3a`
+ramifica de `main@1c4490f` y no necesita apilarse sobre ninguna rama.
 
 *(Congelada el 2026-08-08 por decisión de Brent — opción A: aceptar con enmiendas. Ver D20.)*
 
