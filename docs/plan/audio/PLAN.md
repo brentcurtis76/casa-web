@@ -37,11 +37,11 @@ META
   por Codex construyendo el adaptador y midiéndolo con el gate real: 0/0/0/0), **test plan** y
   **gate** (§4 verificada, `tsc=1041` reproducida en `main @ 05dc4ca`). Esta revisión 13 aplica
   los cinco arreglos que Codex pidió meter en el commit de congelado. **E2 puede ejecutarse.**
-- **Lo congelado, a la r14: `E2` (ejecutada y cerrada) y `E-infra-spike`.** `E1-spike` es
-  ejecutable por construcción —no toca código que se mergee ni pasa por el gate— pero **no ha
-  pasado review**, y está aplazada a la ola 4. `E3a`, `E3b` y `E4-spike` siguen en borrador;
-  `E-infra-impl` está deliberadamente sin redactar; `E1-impl`, `E4-impl`, `E5` y `E6` no son
-  unidades.
+- **Lo congelado, a la r15: `E2`, `E-infra-spike` y `E-infra-impl`, las tres ejecutadas y
+  cerradas.** `E1-spike` es ejecutable por construcción —no toca código que se mergee ni pasa por
+  el gate— pero **no ha pasado review**, y está aplazada a la ola 4. **`E3a` se reescribió entera
+  en la r15 y es candidata a congelar: le falta sólo la review de plan de Codex.** `E3b` y
+  `E4-spike` siguen en borrador; `E1-impl`, `E4-impl`, `E5` y `E6` no son unidades.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -201,6 +201,7 @@ derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
 | **D19** | **El origen canónico público es `https://www.anglicanasanandres.cl`.** Toda URL de episodio que el sistema emita o comparta usa ese host: `/reflexiones/<slug>`. | **Nueva en la r9 (Codex r8/S3)**, que señaló que faltaba una decisión activa para el origen canónico. Medido en la r2: el apex responde **307 → www**, así que emitir el apex haría seguir un redirect permanente hacia una URL distinta de la compartida. Es la misma medición que sostenía a D4; D4 se fue con la distribución, la medición no. |
 | **D18b** | **La previsualización del enlace es la distribución.** *Endurecida en la r8:* el preview debe mostrar **título, portada, predicador y canonical** sobre una URL publicada de verdad — eso es el criterio. **`og:audio` deja de ser obligatorio por decreto**: sólo entra si E4-spike demuestra que algún canal real de CASA lo consume (E4s.6). | Brent (r3), endurecida por Codex r7/S4: exigir `og:audio` sin evidencia de que alguien lo use era fe, no diseño. |
 | **D21** | **`E-infra-impl` DONE con PASS de Codex a la primera.** Las dos enmiendas obligatorias de D20 quedaron cerradas y verificadas de forma independiente por tres partes. | Vale la pena registrar por qué salió limpia donde el spike necesitó dos rondas: **llegó a la ejecución con el agujero ya medido, no supuesto**. El ejecutor no tuvo que descubrir que `reuseExistingServer` se engancha a un servidor productivo ni que `.env.test` rellena lo que `env -u` quita — lo llevaba escrito con su salida cruda. **Medir primero y redactar después dejó de ser una consigna y produjo el resultado.** | Codex (PASS final) |
+| **D22** | **El constraint que falla se distingue por el nombre del índice dentro de `message`, no por un campo `constraint` — que no existe.** Medido el 2026-08-08 vía PostgREST sobre el stack local, en los dos índices y por `INSERT` y por `UPDATE`: HTTP **409**, `code:'23505'`, el **nombre del índice** en `message` entre comillas dobles y el **nombre de la columna** en `details` como `Key (<col>)=…`. La lectura se hace por **subcadena del identificador**, porque `lc_messages` (`en_US.UTF-8`) puede traducir la frase pero **nunca el identificador**. | Cierra el hueco 6 de Codex r9/B2, que era el último que impedía congelar `E3a`. Descarta por **innecesarias** las dos alternativas que estaban sobre la mesa —partir el `UPDATE` en dos sentencias, o mover la asignación a plpgsql con `GET STACKED DIAGNOSTICS`—; quedan registradas para que no se re-propongan sin dato nuevo. | PM (medición), a petición de Codex r9/B2 |
 | **D20** | **`E-infra-spike` se cierra por aceptación explícita de Brent, no por un PASS de Codex.** Codex la falló 2/2 (tope del bucle, SOP §1.5) con dos BLOCKING, los dos verificados por el PM y los dos **dentro del plan de pruebas de `E-infra-impl`**, no de la medición del entorno. Brent eligió la opción **A: aceptar con enmiendas**. Las dos enmiendas son obligatorias y están en el cuerpo de `E-infra-impl`. | Codex confirmó que *"the infrastructure measurements are substantially sound, and the production guard itself is now well designed"*, y dio por cerrados B1, B2, F3, F4 y la atribución de SHA. Lo que quedaba abierto era el contrato de pruebas de la fase siguiente — que tendrá su propia review de Codex antes de que nadie escriba código. Hacer girar el spike una tercera vez para pulir el plan de otra fase no compra corrección, compra rondas. **Queda registrado que este cierre es un override, para que nadie lo lea como un PASS.** | Brent (override §1.5) |
 | **D18** | **Los gates se miden con `scripts/gates/changed-files-diagnostics.sh` sobre los ficheros que la fase toca, contra el SHA padre fijado de esa fase.** Sin esquemas de identidad globales. Build verde absoluto. Todo test nuevo con prueba base-red o de mutación. | CR-9: el gate correcto ya existe en el repo y documenta 62 colisiones del enfoque que yo proponía. |
 
@@ -314,7 +315,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 |----|--------|------|--------|-----------|
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
-| E3a | `slug`: contrato, DB y `publishService` | Código + DB | **NO CONGELADA** | E-infra-impl |
+| E3a | `slug`: contrato, DB y `publishService` | Código + DB | **CANDIDATA A CONGELAR — reescrita en la r15, pendiente de review de plan de Codex** | E-infra-impl ✅ |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
@@ -840,99 +841,229 @@ compartida. **No revertir `165e5f2`**: eso rompería `supabase start` para todo 
 
 ---
 
-# 📝 Borradores — E3a, E3b y E4-spike (NO congelados)
-
-**No son contrato.** Codex r9 demostró que E3a y E3b escondían la unidad de infraestructura que
-ahora es `E-infra`, y dejó abiertos huecos reales en el contrato del slug (r9/B2) y en la
-semántica de paginación (r9/B5). Se conservan aquí porque el trabajo de trazado es válido y
-porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra-spike` haya medido
-y `E-infra-impl` haya construido.**
-
-**OBSOLETO dentro de estos borradores (Codex r11/S1b), no aplicar:** toda mención a
-`E0-gates` —unidad **retirada en la r10**, el gate está en `main`—, incluidos los criterios
-`E3a.11` y `E3b.8` que piden "el SHA de E0-gates"; la línea *"Depende de: nada, ni siquiera de
-E0-gates. Es lo primero que puede arrancar"* que quedó huérfana entre E3b y E4-spike **y que
-contradice la tabla de olas: E3b depende de `E-infra`**; y la fila de la tabla del slug que dice
-*"CLI 2.110.0 y Docker verificados; puerto por defecto 54322"*, que es exactamente la
-verificación falsa que §5 retracta. **Nada de eso gobierna nada mientras el banner esté puesto.**
-
-**Huecos conocidos, pendientes de cerrar (§16):** base de 80 caracteres + sufijo `-2` viola el
-`CHECK`; título >80 sin guion no define truncado; "5 intentos" no dice si son 5 totales o 5
-adicionales; de qué título sale el slug al reintentar un borrador; interacción entre colisión de
-`slug` y de `episode_number` en el mismo `UPDATE`; **`PostgrestError` no expone un campo
-`constraint`** — sólo `code`, `message`, `details` y `hint` — así que "inspeccionar el nombre"
-tiene que decir en qué campo y cómo, y eso exige medir la forma real del error vía PostgREST;
-y la paginación por offset **no garantiza ausencia de solapes** ante inserciones entre
-peticiones, así que hay que elegir entre cursor/keyset o declarar el límite.
-
-**Depende de:** E0-gates.
-
----
-
 ## Phase E3a — `slug`: contrato, DB y `publishService`
 
-**Reescrita tras Codex r8/B2 y B3.** La r8 *enumeraba* las decisiones del slug y le pedía al
-ejecutor que las "declarara". Eso es delegar el trabajo del planificador. **Aquí se toman.**
+**Reescrita entera en la r15 (2026-08-08), que es el momento que el banner de borradores fijaba:
+`E-infra-spike` ya midió y `E-infra-impl` ya construyó y está mergeada.** Los seis huecos que
+Codex r9/B2 dejó abiertos se cierran aquí — **cinco por decisión y el sexto por medición**, no por
+delegación al ejecutor. La r8 *enumeraba* las decisiones del slug y le pedía al ejecutor que las
+"declarara"; eso es delegar el trabajo del planificador, y es lo que esta unidad dejó de hacer.
 
-### Contrato del slug — congelado, no delegado
+**Candidata a congelar. No congelada:** le falta la review de plan de Codex.
+
+### LA MEDICIÓN QUE GOBIERNA EL DISEÑO — hueco 6, cerrado con salida cruda
+
+Codex r9/B2 dijo que `PostgrestError` **no expone un campo `constraint`** y que "inspeccionar el
+nombre" tenía que decir **en qué campo y cómo**, midiendo la forma real del error vía PostgREST.
+Medido el 2026-08-08 por el PM sobre el stack local (`main@1c4490f`, Postgres **15.8**,
+`lc_messages = en_US.UTF-8`), con una columna y un índice **desechables** creados sólo en la base
+local — ningún fichero del repo se tocó, y `supabase db reset` los borró después:
+
+| Sonda | HTTP | Cuerpo crudo |
+|---|---|---|
+| **A** colisión de `slug` por `INSERT` | **409** | `{"code":"23505","details":"Key (slug)=(ping-cache) already exists.","hint":null,"message":"duplicate key value violates unique constraint \"idx_podcast_episodes_slug\""}` |
+| **B** colisión de `episode_number` por `INSERT` | **409** | `{"code":"23505","details":"Key (episode_number)=(777) already exists.","hint":null,"message":"duplicate key value violates unique constraint \"idx_podcast_episodes_number\""}` |
+| **C** colisión de `slug` por `UPDATE` — **la ruta real de `publishService`** | **409** | idéntico a A |
+| **D** colisión de `episode_number` por `UPDATE` | **409** | idéntico a B |
+
+**Conclusiones, y son el contrato:**
+
+1. **Codex tenía razón: no hay campo `constraint`.** Verificado además en el tipo instalado —
+   `node_modules/@supabase/postgrest-js/dist/index.d.cts:7-10` declara exactamente
+   `details: string`, `hint: string`, `code: string`, más el `message` heredado de `Error`.
+2. **El nombre del índice sí viaja, en `message`**, entre comillas dobles. El **nombre de la
+   columna** viaja aparte, en `details`, como `Key (<columna>)=…`.
+3. **`INSERT` y `UPDATE` producen la misma forma**, así que lo medido aplica a la ruta real.
+4. **La discriminación se hace por subcadena del nombre del índice sobre `message`**, no
+   parseando la frase. Razón medida: `lc_messages` es `en_US.UTF-8` y la frase que la rodea es
+   traducible por configuración del servidor, **pero los identificadores de Postgres no se
+   traducen nunca**. Buscar `idx_podcast_episodes_slug` dentro de `message` sobrevive a un cambio
+   de locale; comparar la frase entera, no.
+5. **No hace falta partir el `UPDATE` en dos sentencias ni mover la asignación a plpgsql.** Las
+   dos alternativas que estaban sobre la mesa quedan descartadas **por innecesarias, no por
+   inviables**, y se registran aquí para que nadie las re-proponga sin dato nuevo.
+
+### Contrato del slug — los seis huecos, cerrados
 
 | Asunto | Decisión |
 |---|---|
-| **Normalización** | NFD → eliminar marcas diacríticas → minúsculas → `[^a-z0-9]+` → `-` → colapsar repetidos → recortar `-` de los extremos |
-| **Longitud** | **≤ 80 caracteres**, truncando en el último `-` anterior al límite para no cortar una palabra. Impuesto además con `CHECK (char_length(slug) BETWEEN 1 AND 80)` |
-| **Título vacío, sólo símbolos, o sin equivalente ASCII** | Fallback `reflexion-<episode_date en YYYY-MM-DD>` |
-| **Colisión** | Sufijo numérico `-2`, `-3`, … El **índice único es el árbitro**: ante violación se reintenta con el siguiente, hasta **5** intentos, y luego **falla ruidosamente**. *Honestidad: esto es determinista con publicaciones serializadas, no bajo concurrencia real; lo que sí garantiza siempre es no producir un duplicado* |
-| **Momento de asignación** | En el **`UPDATE` que publica** (`draft → published`), no al crear el borrador. Razón: el título puede cambiar mientras es borrador, y D12 congela el slug desde que se asigna |
-| **Distinción de constraint** | El índice se llama **`idx_podcast_episodes_slug`**. Hoy `isUniqueViolation` sólo mira `code === '23505'` (`publishService.ts:112-117`) y el de número es `idx_podcast_episodes_number`: **el helper pasa a inspeccionar el nombre**, no sólo el código |
-| **Host canónico** | `https://www.anglicanasanandres.cl` — nueva decisión activa **D19** |
-| **Entorno de pruebas de base** | **Postgres local vía `supabase db reset`** (CLI 2.110.0 y Docker verificados; puerto por defecto 54322). Desechable, así que no hay problema de limpieza de datos sintéticos |
+| **Normalización** | NFD → eliminar marcas diacríticas (`\p{M}`) → minúsculas → `[^a-z0-9]+` → `-` → colapsar repetidos → recortar `-` de los extremos |
+| **Longitud** | **≤ 80 caracteres**, impuesto además con `CHECK`. Ver las dos filas siguientes, que son los huecos 1 y 2 |
+| **Hueco 1 — el sufijo no puede desbordar** | **El presupuesto del sufijo se reserva ANTES de truncar**: la base se trunca a `80 − longitud(sufijo)`. Con el hueco 3 el sufijo máximo es `-5`, o sea 2 caracteres, así que la base nunca pasa de 78 cuando hay colisión y de 80 cuando no. **El resultado no puede violar el `CHECK` por construcción** |
+| **Hueco 2 — truncado sin guion** | Se trunca en el último `-` **dentro del presupuesto**. Si no hay ninguno —una palabra de 100 caracteres, o un título cuyo primer guion cae más allá del límite— **corte duro en el presupuesto** y recorte del `-` sobrante. Determinista, sin excepción implícita |
+| **Título vacío, sólo símbolos, o sin equivalente ASCII** | Fallback `reflexion-<episode_date en YYYY-MM-DD>` (21 caracteres, siempre válido). Se aplica también si el truncado dejara la base vacía |
+| **Hueco 3 — cuántos intentos** | **5 en total, no 5 adicionales.** Intento 1 sin sufijo; intentos 2-5 con `-2`, `-3`, `-4`, `-5`. Agotados los cinco, **`PublishError` ruidoso** con el slug base en el mensaje. *Honestidad, sin cambios: es determinista con publicaciones serializadas, no bajo concurrencia real; lo que sí garantiza siempre es no producir un duplicado, porque el árbitro es el índice único* |
+| **Hueco 4 — de qué título sale el slug** | Si `slug IS NOT NULL`, **no se re-deriva nunca** (D12) y el `UPDATE` **no escribe la columna**. Si es `NULL`, se deriva **del título persistido en la fila**, no de `metadata.title`. Razón medida: el `UPDATE` de publicación (`publishService.ts:257-272`) **no escribe `title`**, así que derivar del argumento produciría un slug que no concuerda con el título guardado. Actualizar además el título es **out of scope** |
+| **Hueco 5 — colisión de slug × colisión de número** | **Contadores independientes en un solo bucle**, despachando por el índice que nombre el error: slug hasta 5 intentos totales, número hasta 3 (comportamiento existente). **El guardia `existingEpisodeNumber === null` deja de gobernar los reintentos de slug** — hoy los suprime, y ése es el defecto |
+| **Hueco 6 — cómo se distingue el constraint** | `code === '23505'` **y** `message` contiene el nombre del índice. Medido arriba. `isUniqueViolation` pasa a recibir el nombre del índice como argumento |
+| **Host canónico** | `https://www.anglicanasanandres.cl` (D19) |
+| **Entorno de pruebas de base** | **Postgres local del stack de `E-infra-impl`, ya en `main`.** Puerto **54332**, API **54331**. *(La fila anterior decía "puerto por defecto 54322" y "CLI y Docker verificados": era una de las tres verificaciones falsas que §5 retracta. El puerto real de este proyecto lo fija `supabase/config.toml:40`.)* |
 
-**Scope:** una migración aditiva, `publishService.ts`, tipos regenerados, y tests.
+### El defecto que hereda `publishService`, con fichero y línea
 
-**Out of scope:** las páginas públicas (E3b); el trigger de GUID y la prohibición de `DELETE`
-(backlog); el HTTP 404 (se va a la ola 3 con E4-impl).
+`publishService.ts:282-292` condiciona todo el bucle de reintento a `existingEpisodeNumber === null`.
+Con el slug metido en el mismo `UPDATE` eso produce **dos fallos distintos**, y los dos son
+demostrables:
 
-**Acceptance criteria:**
-- [ ] E3a.1 **Precondición verificada primero:** `supabase db reset` levanta el stack local y
-      aplica todas las migraciones. **Si no levanta, la unidad reporta `FINDINGS` y para** — no
-      se sustituye por mocks, porque una garantía de base sólo se prueba en la base.
-- [ ] E3a.2 Migración aditiva: `slug TEXT`, `CHECK (char_length(slug) BETWEEN 1 AND 80)`, e
-      índice único **`idx_podcast_episodes_slug`** (D9: sin DROP ni ALTER destructivo).
-- [ ] E3a.3 La derivación implementa la tabla de arriba, con tests por fila: acentos, mayúsculas,
-      símbolos, título vacío, título sólo-símbolos, título largo truncado en frontera de palabra.
-- [ ] E3a.4 Colisión: dos títulos iguales producen `x` y `x-2`; al quinto intento fallido, error
-      ruidoso, no silencioso.
-- [ ] E3a.5 `isUniqueViolation` **distingue `idx_podcast_episodes_slug` de
-      `idx_podcast_episodes_number`**. *Mutación declarada: volver a mirar sólo `23505` hace que
-      una colisión de slug entre en el retry de número y el test se pone rojo.*
-- [ ] E3a.6 Trigger: transición única `NULL → valor`; una vez asignado, inmutable (D12).
-- [ ] E3a.7 **Republicar conserva el mismo slug**, probado con la secuencia
-      `publicar → despublicar → republicar` contra Postgres local.
-- [ ] E3a.8 `status = 'published'` ⇒ `slug IS NOT NULL`, impuesto en la base.
-- [ ] E3a.9 `PublishResult` devuelve `slug` y `canonicalUrl` (host de D19).
-- [ ] E3a.10 `src/integrations/supabase/types.ts` regenerado y conteniendo `slug`.
-- [ ] E3a.11 Gate con el SHA de E0-gates registrado. Build verde.
+- **Al republicar** (`existingEpisodeNumber !== null`): un `23505` de slug **no reintenta nada** y
+  cae directo al `throw`.
+- **Al publicar por primera vez**: un `23505` de slug se diagnostica como colisión de número y
+  **quema los tres reintentos pidiendo `max+1`**, que no puede arreglar una colisión de slug. El
+  mensaje final culpa al número.
 
-**Test plan:** unitarios de derivación y colisión en `src/lib/sermon-editor/__tests__/slug.test.ts`
-(**nuevo**); pruebas de trigger, `CHECK` e índice **contra Postgres local**, en
-`supabase/tests/slug.sql` (**nuevo**), ejecutadas tras `supabase db reset`. Base-red o mutación
-por test (D18).
+`idx_podcast_episodes_number` es además **parcial** (`WHERE episode_number IS NOT NULL`,
+`20260610090000_church_podcast_episodes.sql:51-53`); el índice de slug se define igual, parcial
+sobre `slug IS NOT NULL`, para que los borradores sin slug no colisionen entre sí.
+
+### Orden obligatorio de la migración — hallazgo H4 de la r15
+
+**Añadir el `CHECK` de `published ⇒ slug IS NOT NULL` sobre una tabla que ya tenga filas
+`published` sin slug falla al aplicarse.** La migración va en este orden y no en otro:
+
+1. `ADD COLUMN IF NOT EXISTS slug TEXT`
+2. **Backfill** de las filas `published` con `slug IS NULL`
+3. `CHECK` de longitud (`slug IS NULL OR char_length(slug) BETWEEN 1 AND 80`)
+4. `CREATE UNIQUE INDEX idx_podcast_episodes_slug … WHERE slug IS NOT NULL`
+5. `CHECK` de `status <> 'published' OR slug IS NOT NULL`
+6. Trigger de inmutabilidad
+
+**El backfill NO reproduce la derivación de TypeScript.** Usa el fallback `reflexion-<episode_date>`
+con desempate numérico. Razón: duplicar el algoritmo en SQL y en TS crea dos fuentes que derivan
+con el tiempo, y Codex lo marcaría con razón. Los episodios históricos sólo necesitan un slug
+**estable, único y válido**, no bonito. En la r2 el catálogo productivo estaba vacío (§0), así que
+lo más probable es que el backfill no toque ninguna fila — **pero eso se midió el 2026-08-07 y no
+es una garantía, que es justo por lo que el orden importa.**
+
+**El trigger de inmutabilidad no puede lanzar `23505`.** Usa `ERRCODE '23514'`, porque un `23505`
+del trigger entraría en el bucle de reintento y lo haría girar contra un error que no es de
+colisión.
+
+### Scope
+
+1. Una migración aditiva (D9), en el orden de arriba.
+2. `src/lib/sermon-editor/slug.ts` **(nuevo)** — la derivación pura, sin dependencia de Supabase.
+3. `src/lib/sermon-editor/publishService.ts` — slug en el `UPDATE`, bucle de reintento con dos
+   contadores, `isUniqueViolation` por nombre de índice, `slug` y `canonicalUrl` en `PublishResult`.
+4. `src/integrations/supabase/types.ts` regenerado.
+5. **`supabase/seed.sql` — hallazgo H1, y es obligatorio.** El baseline `…-9000-…010` se inserta
+   con `status='published'` y sin slug (`seed.sql:120-128`). En cuanto exista el `CHECK` del punto
+   5 de la migración, **el seed falla y con él `supabase db reset` para todo el repositorio** — es
+   decir, esta fase rompería el entorno que la anterior acaba de construir. La fila publicada
+   recibe un slug fijo; la `draft` se queda en `NULL`.
+6. **`tests/e2e/smoke-local.spec.ts` — hallazgo H2.** El fixture del rango `8000`
+   (`smoke-local.spec.ts:131-155`) hace `POST` con `status:'published'` y sin slug. Mismo fallo.
+7. Los tests del test plan.
+
+### Out of scope
+
+- Las páginas públicas `/reflexiones` y `/reflexiones/:slug` — son `E3b`.
+- El trigger de GUID y la prohibición de `DELETE` — backlog.
+- El HTTP 404 — ola 3, con `E4-impl`.
+- **Escribir `title` en el `UPDATE` de publicación**, aunque el hueco 4 lo roce.
+- Migrar los 14 ficheros de spec existentes; tocar la guarda anti-producción.
+
+### Criterios
+
+- [ ] E3a.1 **Precondición primero:** `supabase db reset` aplica **N/N** con **N medido sobre el
+      SHA padre anotado** y el seed entra sin error. Si no levanta, la unidad reporta `FINDINGS`
+      y para — una garantía de base sólo se prueba en la base.
+- [ ] E3a.2 Migración aditiva **en los seis pasos del orden de arriba**, con el backfill antes de
+      los `CHECK`. Salida cruda de `db reset` aplicándola.
+- [ ] E3a.3 Derivación: un test por fila de la tabla — acentos, mayúsculas, símbolos, título
+      vacío, sólo-símbolos, y largo truncado en frontera de palabra.
+- [ ] E3a.4 **Hueco 1 medido:** título cuya base normalizada da exactamente 80 caracteres y
+      colisiona ⇒ el resultado tiene **≤80** y el `INSERT` no viola el `CHECK`.
+- [ ] E3a.5 **Hueco 2 medido:** título de >80 caracteres **sin ningún guion** ⇒ corte duro, sin
+      excepción y sin `-` final.
+- [ ] E3a.6 **Hueco 3 medido:** cinco títulos iguales producen `x`, `x-2`, `x-3`, `x-4`, `x-5`; el
+      **sexto** falla con `PublishError` ruidoso que nombra el slug base.
+- [ ] E3a.7 **Hueco 6 / mutación declarada:** `isUniqueViolation` distingue
+      `idx_podcast_episodes_slug` de `idx_podcast_episodes_number` leyendo `message`. *Mutación:
+      volver a mirar sólo `code === '23505'` mete una colisión de slug en el retry de número y el
+      test se pone rojo.*
+- [ ] E3a.8 **Hueco 5 / el defecto de H3:** con `existingEpisodeNumber !== null` (republicación),
+      una colisión de slug **sí reintenta**. *Mutación: restaurar el guardia lo pone rojo.*
+- [ ] E3a.9 Trigger: `NULL → valor` una sola vez, inmutable después (D12), y **lanza `23514`, no
+      `23505`**. Probado contra Postgres local.
+- [ ] E3a.10 **Republicar conserva el slug**, con la secuencia `publicar → despublicar →
+      republicar` contra Postgres local.
+- [ ] E3a.11 `status='published' ⇒ slug IS NOT NULL` impuesto en la base, y **el backfill probado
+      contra filas `published` sin slug** sembradas a mano.
+- [ ] E3a.12 `PublishResult` devuelve `slug` y `canonicalUrl` con el host de D19.
+- [ ] E3a.13 **H1 y H2 cerrados:** `supabase db reset` verde **y** `smoke-local.spec.ts` pasa con
+      la migración aplicada. Salida cruda de los dos. Sin esto la fase rompe `main`.
+- [ ] E3a.14 `types.ts` regenerado y conteniendo `slug`. Gate D18 sobre el **SHA padre
+      `main@1c4490f`**. Build verde.
+
+### Test plan
+
+- `src/lib/sermon-editor/__tests__/slug.test.ts` **(nuevo)** — derivación y truncado, puro, sin red.
+- `src/lib/sermon-editor/__tests__/publishService.test.ts` — se **extiende**, no se reescribe. Ya
+  tiene `retries once with a fresh max+1 on episode_number unique violation` (línea 169), que **no
+  debe romperse**; se añaden los casos de E3a.7 y E3a.8 con el `message` real medido arriba.
+- `supabase/tests/slug.sql` **(nuevo)** — trigger, `CHECK`, índice parcial y backfill, contra
+  Postgres local tras `db reset`.
 
 ```bash
 supabase db reset
 npx vitest run --no-file-parallelism src/lib/sermon-editor
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -f supabase/tests/slug.sql
+psql "postgresql://postgres:postgres@127.0.0.1:54332/postgres" -f supabase/tests/slug.sql
+npx playwright test tests/e2e/smoke-local.spec.ts
 ```
 
-**Definition of done:** tests verdes con evidencia base-red/mutación, E3a.1–E3a.11, gate.
+Base-red o mutación por test (D18). Las dos mutaciones declaradas son las de E3a.7 y E3a.8.
 
-**Risks / unknowns:** que `supabase db reset` no levante con las **61** migraciones del repo. Por
-eso E3a.1 es el **primer** criterio y su salida es `FINDINGS`, no un apaño. Alternativa
-registrada si ocurre: una branch de Supabase por MCP, que cuesta más y hay que limpiar.
+### Definition of done
 
-**Rollback:** `git revert` del código. Columna, `CHECK` e índice quedan (aditivos).
+E3a.1-E3a.14 con salida cruda, gate D18 contra `main@1c4490f`, build verde, y **`db reset` y el
+humo verdes con la migración aplicada**.
 
-**Depende de:** E0-gates.
+### Risks / unknowns
+
+- **Nueve ficheros tocados** — dentro del tope de 10 del SOP §1.3, pero sin margen. Si el ejecutor
+  necesita un décimo, que lo diga en `DEVIATIONS` en vez de abrirlo en silencio.
+- `types.ts` es generado y su diff puede ser grande; **no cuenta como líneas escritas a mano**,
+  pero puede empujar el total por encima de las ~600 del SOP. Declarado aquí para que no se lea
+  como desborde.
+- El backfill es casi con certeza un no-op en producción (catálogo vacío en la r2). **Casi.**
+
+### Rollback
+
+`git revert` del commit de fase deshace el código. La columna, los `CHECK`, el índice y el trigger
+quedan (aditivos, D9). **Si hay que revertir después de mergear, el seed y el humo revierten con
+el mismo commit**, así que `db reset` vuelve a su estado anterior sin pasos manuales.
+
+### Depende de
+
+**`E-infra-impl`, ya mergeada.** Ramifica de **`main@1c4490f`**, que es el SHA padre a anotar y
+contra el que se mide el gate.
+
+---
+
+# 📝 Borradores — E3b y E4-spike (NO congelados)
+
+**No son contrato.** Codex r9 demostró que E3a y E3b escondían la unidad de infraestructura que
+ahora es `E-infra`, y dejó abiertos huecos reales en el contrato del slug (r9/B2) y en la
+semántica de paginación (r9/B5). Se conservan aquí porque el trabajo de trazado es válido y
+porque tirarlos obligaría a rehacerlo — **pero se reescriben cuando `E-infra` haya medido y
+construido.**
+
+**✅ `E3a` YA SALIÓ DE AQUÍ.** Se reescribió entera en la r15 con la medición del hueco 6 y está
+arriba, antes de este banner, como candidata a congelar. **Lo que sigue en borrador es `E3b` y
+`E4-spike`.**
+
+**OBSOLETO dentro de estos borradores (Codex r11/S1b), no aplicar:** toda mención a `E0-gates`
+—unidad **retirada en la r10**, el gate está en `main`—, incluido el criterio `E3b.8` que pide
+"el SHA de E0-gates"; la línea *"Depende de: nada, ni siquiera de E0-gates. Es lo primero que
+puede arrancar"* que quedó huérfana entre E3b y E4-spike **y que contradice la tabla de olas:
+E3b depende de `E-infra`**. **Nada de eso gobierna nada mientras el banner esté puesto.**
+
+**Hueco conocido de `E3b`, pendiente de cerrar (r9/B5):** la paginación por offset **no
+garantiza ausencia de solapes** ante inserciones entre peticiones, así que hay que elegir entre
+cursor/keyset sobre `(published_at DESC, id ASC)` o declarar el límite. *(Los siete huecos del
+slug que este banner listaba se cerraron en la r15 y ya no viven aquí.)*
+
+**Depende de:** `E-infra-impl`, mergeada.
 
 ---
 
@@ -1851,6 +1982,10 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-07 | **r9: D5 se retira, D17 se traslada físicamente al backlog, y el backlog deja de reclamar el slug** | Codex r8/S3. D5 ya sólo remitía a D12; D17 decía haber bajado a backlog mientras seguía en el bloque activo; y el backlog pedía "inmutabilidad de slug y guid" cuando el slug ya había vuelto a E3a | Codex r8/S3 |
 | 2026-08-07 | **r9: los spikes declaran sus precondiciones** — E1-spike necesita los dispositivos de la matriz; E4-spike necesita credenciales de Vercel y cuentas reales de WhatsApp y Facebook | Codex r8/S4: permitir evidencia incompleta sin declarar de qué depende convierte "no medido" en una salida cómoda | Codex r8/S4 |
 | 2026-08-07 | **r8: E3 y E4-spike dejan de heredar la aprobación de Codex r5** a A7 y A10a | La r7 les cambió scope, dependencias, e2e y pruebas de RLS. Una aprobación no sobrevive a eso, y presentarla como heredada era vender revisión que no existe | Codex r7/N1 |
+| 2026-08-08 | **`E-infra-impl` mergeada a `main`** en fast-forward (`981c00f..1c4490f`) | Autorización explícita de Brent. Verificado antes: sin divergencia con `origin`, FF limpio, 7 ficheros y +673/-5 idénticos a lo aprobado por Codex, build verde | Brent |
+| 2026-08-08 | **`E3a` reescrita entera (r15)**; sale del bloque de borradores | Los seis huecos de Codex r9/B2 cerrados —cinco por decisión, el sexto por medición (D22)— más cuatro hallazgos nuevos del PM (H1-H4) que el borrador no cubría | PM |
+| 2026-08-08 | **El seed y el humo entran en el scope de `E3a`** | H1/H2: `seed.sql:120-128` y `smoke-local.spec.ts:131-155` insertan filas `published` sin slug. Con el `CHECK` de `E3a.11` el `db reset` fallaría y la fase rompería el entorno que `E-infra-impl` acaba de construir | PM |
+| 2026-08-08 | **La migración va backfill-primero-restringir-después** | H4: añadir el `CHECK` sobre una tabla con filas `published` sin slug falla al aplicarse. El catálogo productivo estaba vacío en la r2, pero eso se midió y no es garantía | PM |
 
 ---
 

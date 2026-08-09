@@ -1353,3 +1353,53 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - OPEN AFTER THIS ROUND:
   1. **Docker Desktop sigue caído** — bloquea la medición del hueco 6 y, con ella, la r15.
   2. **`E3a` sigue EN BORRADOR** con H1-H4 abiertos. Falta la r15 y la review de plan de Codex.
+
+### 2026-08-08 — plan round 15 — PM (Opus) — ✅ `E3a` REESCRITA, candidata a congelar
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: reescritura completa de `E3a` y salida del bloque de borradores. Es lo que el propio
+  banner fijaba: *"se reescriben cuando `E-infra-spike` haya medido y `E-infra-impl` haya
+  construido"*. Las dos condiciones se cumplieron hoy.
+- **EL HUECO 6, MEDIDO — es lo que desbloqueó la ronda.** Codex r9/B2 exigía medir la forma real
+  del error vía PostgREST antes de escribir "inspeccionar el nombre". Medido sobre el stack local
+  (`main@1c4490f`, Postgres **15.8**, `lc_messages = en_US.UTF-8`), con columna e índice
+  **desechables** creados sólo en la base local:
+  - **A** colisión de `slug` por `INSERT` → **409** `{"code":"23505","details":"Key (slug)=(ping-cache) already exists.","hint":null,"message":"duplicate key value violates unique constraint \"idx_podcast_episodes_slug\""}`
+  - **B** colisión de `episode_number` por `INSERT` → **409**, mismo molde, `…unique constraint "idx_podcast_episodes_number"`, `details: "Key (episode_number)=(777) already exists."`
+  - **C** y **D**: las mismas dos por `UPDATE` —**la ruta real de `publishService`**— con cuerpo
+    idéntico a A y B respectivamente.
+  - **Codex tenía razón: no hay campo `constraint`.** Confirmado también en el tipo instalado,
+    `@supabase/postgrest-js/dist/index.d.cts:7-10` → sólo `details`, `hint`, `code` y el `message`
+    heredado de `Error`.
+  - **Conclusión que se vuelve contrato (D22):** el **nombre del índice** viaja en `message`; el
+    **nombre de la columna**, en `details`. Se lee por **subcadena del identificador**, porque la
+    frase es traducible por `lc_messages` y el identificador no. **No hace falta partir el
+    `UPDATE` ni bajar a plpgsql**: las dos alternativas quedan descartadas por innecesarias, y
+    registradas para que no vuelvan sin dato nuevo.
+- **LOS OTROS CINCO HUECOS, cerrados por decisión y no por delegación:** presupuesto del sufijo
+  reservado antes de truncar (1); corte duro cuando no hay guion dentro del presupuesto (2); **5
+  intentos totales**, sufijos `-2`…`-5`, lo que acota el sufijo a 2 caracteres y cierra el 1 por
+  construcción (3); el slug se deriva **del título persistido**, no de `metadata.title`, porque el
+  `UPDATE` no escribe `title` (4); contadores independientes en un solo bucle despachando por
+  índice (5). El séptimo hueco del banner era de paginación: **es de `E3b`** y allí se queda.
+- **CUATRO HALLAZGOS PROPIOS QUE EL BORRADOR NO CUBRÍA, ahora en el scope:** H1 el seed
+  (`seed.sql:120-128`) y H2 el humo (`smoke-local.spec.ts:131-155`) insertan filas `published` sin
+  slug y **romperían `supabase db reset` para todo el repositorio** —esta fase habría roto el
+  entorno que la anterior construyó—; H3 el guardia `existingEpisodeNumber === null`
+  (`publishService.ts:282-292`) suprime los reintentos de slug al republicar y los malgasta al
+  publicar; H4 la migración tiene que ir **backfill-primero-restringir-después**.
+- CAMBIOS EN EL PLAN: `E3a` reescrita y movida **fuera** del bloque de borradores; banner de
+  borradores reducido a `E3b` + `E4-spike` y limpiado de los huecos ya cerrados; fila de `E3a` en
+  §5 a *candidata a congelar*; META actualizada; **D22** nueva en §3; cuatro filas nuevas en §8.
+- CRITERIOS: **14** (`E3a.1`-`E3a.14`), dentro del tope de 15 del SOP §1.3. **9 ficheros**
+  previstos, dentro del tope de 10 y sin margen — declarado en Risks.
+- HIGIENE DEL ENTORNO: tras medir, `supabase db reset` dejó la tabla en el baseline exacto
+  (`…9000-…010 published`, `…9000-…011 draft`) y la columna desechable en **0** filas de
+  `information_schema`. Nada del sondeo sobrevive.
+- **NOTA DE ESTADO, honesta:** el Docker de esta máquina se purgó por completo entre la ronda
+  anterior y ésta, así que **los 11 contenedores del proyecto ajeno `sxlogxqzmarhqsblxmtj` y sus
+  volúmenes ya no existen**. Nuestro stack levantó limpio (12 contenedores, 62/62 migraciones),
+  pero el criterio I9 de `E-infra-impl` —"los 11 contenedores ajenos siguen vivos"— **no es
+  comprobable hoy** y no lo doy por cumplido.
+- FINDINGS RAISED: ninguno de código. H1-H4 son de plan y quedan absorbidos en la reescritura.
+- OPEN AFTER THIS ROUND: **`E3a` NO está congelada.** Le falta `CODEX REVIEW plan r15`. Sólo
+  después de un PASS se abre `/exec AUDIO E3a r1`.
