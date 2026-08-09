@@ -2418,3 +2418,68 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) `/exec UPGRADE P3a r1` — ahora sí. (2) En la revisión final de P3a,
   el prompt de Codex **debe declarar explícitamente el desplazamiento de diagnósticos de B-08**.
   (3) Backlog B-05, B-06, B-07 y B-08 abiertos; **B-06 hay que decidirlo antes de P8**.
+
+### 2026-08-08 — P3a r1 — claude-opus-5 (EXEC)
+- SESSION: UPGRADE · P3a · r1 · EXEC
+- CONTEXT PRESSURE: comfortable. La fase no se acercó al límite: el movimiento se hizo con un
+  script de extracción en vez de a mano, lo que evitó releer y retranscribir 490 líneas.
+- ACTION: seam cortado. `handler.ts` nuevo (536 líneas) con `createHandler(deps)` y `pick`
+  inyectable; `index.ts` reducido a adaptador fino de 21 líneas contra el import map (D13);
+  `handler_test.ts` nuevo con el doble de Supabase en memoria (D12) y los 10 goldens.
+  **Precondiciones verificadas antes de tocar nada**: `grep -c 'P2 | Módulo puro de
+  asignación.*DONE'` → `1`, y `npx tsc -p tsconfig.app.json --noEmit | grep -c "error TS"` →
+  `1039`. Node v22.22.0.
+- EL MOVIMIENTO ES LITERAL Y ES COMPROBABLE. El bloque se extrajo con un script que (a) verifica
+  siete anclas de línea contra la tabla del prompt, (b) corta las líneas 12–501, (c) borra la
+  estrofa de env+cliente (17–22), (d) reindenta +2 y (e) sustituye los 4 sitios de `shuffle`.
+  `diff -w` entre el bloque original y el movido muestra **exactamente** esas dos cosas y nada
+  más. Ninguno de los diagnósticos de B-08 se tocó.
+- COMMITS: `a345ce7` (movimiento), `50ca0e9` (doble + 10 goldens), `6e060e0` (comentario de C1).
+  Rama `feat/mesa-md-seam`.
+- TESTS: `cd supabase/functions && deno test --allow-all .` → **NO LLEGA A CORRER**: aborta en
+  `Type checking failed. Found 8 errors`, todos en `handler.ts`. Cero tests ejecutados.
+  Con `--no-check`: **438 passed / 0 failed** — exactamente el objetivo de C6 (428 + 10).
+  El fichero nuevo, aislado y con `--no-check`: **10 passed / 0 failed**.
+- FINDINGS RAISED: **dos, y el primero bloquea C6.**
+  - **F-1 — C6 y el desplazamiento declarado de B-08 son mutuamente excluyentes.** `deno test`
+    hace type-check de su grafo de importación. Hoy la base sale verde con `index.ts` cargando 6
+    errores porque **ningún test lo importa**, así que nunca se comprueba. En cuanto
+    `handler_test.ts` importa `handler.ts` —que es justo lo que pide la fase— esos errores
+    entran en el grafo y `deno test` se niega a ejecutar la suite entera. No es un problema de
+    mis tests: pasan los 10. Es que el plan pide a la vez «deja los diagnósticos donde están» y
+    «`deno test` da 438 passed», y no pueden ser ciertas las dos. **No lo he resuelto por mi
+    cuenta**: las salidas son cambiar el comando declarado a `--no-check` (debilita el
+    type-check de las otras seis suites), arreglar los 8 diagnósticos aquí (adelanta B-08 y
+    rompe la propiedad de «diff limpio» que justifica la fase), o partir P3a y aterrizar los
+    tests después de B-08. Es decisión del PM.
+  - **F-2 — la tabla de diagnósticos prevista no se cumple, en tres puntos.** Medido, no
+    estimado:
+    - `deno check` sobre `handler.ts` = **8**, no 6. Los dos extra son
+      `TS7006 Parameter 'p'` en `handler.ts:144,145` (`participants.filter((p) => …)`, que en
+      `index.ts` eran 121–122 y **no** estaban marcadas). Causa: `HandlerDeps.supabase:
+      SupabaseLike = any`, que es lo que el propio prompt prescribe. En `index.ts`, `supabase`
+      era el resultado tipado de `createClient(...)` y `participants` era un array, así que `p`
+      recibía tipo **contextual**; un `any` contextual no es un `any` implícito y `noImplicitAny`
+      callaba. Con `any` pelado no hay contexto y saltan. Total de proyecto `deno-check`
+      **46 → 48**.
+    - `eslint` sobre `handler.ts` = **1**, no 0:
+      `@typescript-eslint/no-explicit-any` en `handler.ts:26`. El
+      `// deno-lint-ignore no-explicit-any` que el prompt exige silencia **deno lint**, no
+      ESLint, que tiene su propia regla. No es una desviación mía del patrón: la casa ya carga
+      ese mismo error en `_shared/adminAuth.ts:13`, el fichero que el prompt cita como modelo.
+    - **La línea base de `eslint` del prompt (160) es incorrecta.** Medida sobre el commit padre
+      `1d6869d`: **346**. Mi punta da **347**, es decir **+1**, que es exactamente la línea de
+      arriba — no +187. Conviene corregir la base antes de la revisión de Codex.
+  - Lo que **sí** cuadró con la previsión: `deno-lint` **94 → 92** (los dos `no-import-prefix`
+    desaparecen al escribir `index.ts` contra el import map), `tsc` **1039 → 1039**, y
+    `index.ts` y `handler_test.ts` salen **0/0/0/0** los dos.
+- DECISIONS: ninguna que toque el plan. No he «arreglado» ningún diagnóstico de B-08 ni he
+  cambiado el comando de test declarado; ambas cosas son de F-1 y las decide el PM.
+- BACKLOG ADDED: ninguno nuevo. F-1 y F-2 son hallazgos de esta ronda, no backlog.
+- OPEN AFTER THIS ROUND: (1) **F-1 necesita una decisión del PM antes de que P3a pueda cerrarse**;
+  el código está entero y verde, lo único que falta es cómo se ejecuta el gate de tests.
+  (2) Corregir la línea base de `eslint` (160 → 346) en el plan. (3) El prompt de revisión de
+  Codex debe declarar el desplazamiento **con 8 diagnósticos y +1 de eslint**, no con 6/0.
+  (4) Vitest observado: **1063 passed / 6 failed**, los 6 en
+  `MesaAbiertaDashboard.test.tsx` — el conjunto base declarado por D8.2, sin séptimo flake.
+  `npm run build` exit 0.
