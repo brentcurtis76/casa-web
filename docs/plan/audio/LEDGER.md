@@ -1403,3 +1403,13 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno de código. H1-H4 son de plan y quedan absorbidos en la reescritura.
 - OPEN AFTER THIS ROUND: **`E3a` NO está congelada.** Le falta `CODEX REVIEW plan r15`. Sólo
   después de un PASS se abre `/exec AUDIO E3a r1`.
+
+### 2026-08-08 — corrección a la entrada anterior (r15) — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- La r15 dejó escrito que los contenedores del proyecto ajeno `sxlogxqzmarhqsblxmtj` "ya no
+  existen" y que I9 no era comprobable. **Al cerrar la sesión estaba desactualizado:** el proyecto
+  ajeno volvió a levantar y corre con **12 contenedores**, junto a los 12 nuestros. Era cierto
+  cuando lo escribí —tras la purga de Docker había cero— y dejó de serlo después.
+- **Lo que sigue en pie de aquella nota:** la purga borró los volúmenes, así que la base local del
+  proyecto ajeno se reconstruyó desde cero. Si tenía datos que no venían de sus migraciones y su
+  seed, no los recuperó. **Eso no lo puedo verificar desde aquí y no lo doy por bueno.**
