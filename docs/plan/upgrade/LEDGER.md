@@ -1916,3 +1916,478 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   anterior).
 - OPEN AFTER THIS ROUND: (1) **`/exec UPGRADE P2 r1`** — despachado. (2) Publicar `main`
   (Brent). (3) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
+
+### 2026-08-08 — P2 r1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P2 · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — el fichero de tests fue lo más pesado y entró de una sola
+  pasada; nunca hubo que recortar cobertura por espacio.
+- ACTION: Tres ficheros nuevos, nada más tocado.
+  - `supabase/functions/_shared/mainDish.ts` — módulo hoja, cero imports, sin generador de
+    aleatoriedad propio. Exporta `Carrier`, `TableInput`, `SIDE_FOODS`, `requiredMainDishes`,
+    `tablePeopleCount`, `balanceMainDishCarriers`, `allocateTableFood`, `allocateAll` (más los
+    tipos de resultado `SwapMove`, `BalanceResult`, `TableAllocation`, `AllocationResult`,
+    `TableShortfall`, `Food`, `SideFood`, `Pick`).
+  - `supabase/functions/_shared/mainDish_test.ts` — 19 tests Deno sobre una tabla de 11
+    fixtures de frontera, todos invocando el verificador de invariantes.
+  - `src/lib/mesa-abierta/__tests__/mainDishImport.test.ts` — test 20 (Vitest), import por
+    ruta relativa. **No hizo falta alias, entrada de tsconfig ni paso de build**: el import
+    entre runtimes resuelve tal como el PM había verificado.
+- **DECISIONES DE RECORRIDO** (lo que D5 dejaba abierto y P2 fija):
+  - `SIDE_FOODS = ["salad", "drinks", "dessert"]` — el enum de la base sin `main_course`.
+  - Mesas deficitarias en orden de entrada; mesas contraparte en orden de entrada; subconjuntos
+    de invitados primero los de tamaño 1 en orden ascendente, luego los pares en orden
+    lexicográfico. Gana el **primer** candidato aceptable y se reexplora desde arriba, porque
+    los déficits han cambiado.
+  - Al aplicar un intercambio, los invitados que se quedan conservan su orden relativo y los
+    que llegan se añaden al final.
+  - `pick` se consume por mesa en este orden y solo en este: cero o más extracciones del grupo
+    de invitados dispuestos, y después **exactamente una** para el desplazamiento de la
+    rotación de acompañamientos. Las mesas se recorren en el orden de entrada.
+  - **Déficits resolubles que este recorrido no alcanza, dicho explícitamente**: la garantía 5
+    («ningún intercambio deja a la donante en déficit») rechaza cualquier intercambio entre dos
+    mesas ambas deficitarias, aunque el total bajase. El fixture F4 lo enseña: los intercambios
+    T1↔T2 se rechazan uno a uno y el déficit solo se resuelve contra la mesa donante sana T3.
+    Es la garantía funcionando, no un fallo, y por eso existe la garantía 10.
+- **ARGUMENTO DE REVISIÓN DE CÓDIGO DE LA GARANTÍA D5.6** (ningún test lo establece): la
+  condición de aceptación de `findImprovingSwap` termina en
+  `const after = before - tableDeficit(receiver) - tableDeficit(donor) + tableDeficit(nextReceiver) + tableDeficit(nextDonor); if (after > before - 1) continue;`
+  Solo cambian esas dos mesas, así que `after` **es** el déficit total posterior. La guarda
+  descarta todo candidato que no cumpla `after ≤ before − 1`, es decir, exige decrecimiento
+  estricto de al menos 1. Como el déficit total es un entero `≥ 0`, a lo sumo se aplican `Δ₀`
+  intercambios — y el bucle de `balanceMainDishCarriers` declara ese mismo `Δ₀` como presupuesto.
+- TESTS: `deno test --allow-all .` → **428 pass / 0 fail** (409 + 19, exacto). `npm run build`
+  → exit 0. `npx vitest run --no-file-parallelism` → **1063 pass / 6 fail**, los 6 rojos son
+  los de `MesaAbiertaDashboard.test.tsx` de siempre; ningún `CuentacuentoEditor.ph.*` flakeó.
+  Gate D8 sobre los tres ficheros: `(0)(0)(0)(0)` en los cuatro para cada uno, **byte-idéntico
+  al padre** (`diff` = 0), exit 0. Totales del proyecto sin mover: `tsc=1039 eslint=160
+  deno-lint=94 deno-check=46`.
+- **OBSERVACIÓN PARA EL PM — la base de Vitest del plan está desfasada, la de Deno no.** Medí
+  el padre yo mismo (misma suite, apartando solo el fichero del test 20): **1062 pass / 6 fail**.
+  La punta da 1063 / 6. El delta es exactamente **+1**, que es lo que B7 pide. Pero
+  «Aritmética de tests» de `PLAN.md` parte de **1036**, no de 1062: la aritmética de Vitest de
+  ahí en adelante (`1036 + 32 = 1068`, `1074` tras P8) está 26 tests por debajo de la realidad.
+  La de Deno (409) sí es correcta: 409 + 19 = 428 medido. No cambio el plan; lo señalo.
+- FINDINGS RAISED: ninguno. El plan no resultó equivocado en nada de lo que P2 toca: la API
+  especificada satisface las once garantías, ninguna necesitó generación aleatoria de casos, y
+  el import del test 20 no necesitó configuración.
+- DECISIONS: ninguna que cambie el plan. Las de recorrido son las que D5 delega en P2 y quedan
+  arriba.
+- BACKLOG ADDED: ninguno.
+- OPEN AFTER THIS ROUND: (1) Revisión de P2 y merge de `feat/mesa-md-alloc` — decisión de
+  Brent. (2) Corregir la base de Vitest de «Aritmética de tests» (1036 → 1062) si el PM lo ve
+  bien. (3) Sigue abierto: `main` local por delante de `origin/main` (P1 sin publicar).
+  (4) Backlog B-05 y B-06 abiertos; B-06 hay que decidirlo antes de P8.
+
+### 2026-08-08 — P2 round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P2 · PM
+- ACTION: Verificación del reporte del ejecutor de P2 r1. **No leí el reporte como evidencia**:
+  reejecuté los cuatro gates yo mismo, leí los tres ficheros enteros, y comprobé cada criterio
+  contra el código. Rama `feat/mesa-md-alloc`@`6af5071`, un solo commit sobre `981c00f`,
+  `git diff --name-status main...` = exactamente los 3 ficheros nuevos + `LEDGER.md`.
+- **LO QUE MEDÍ YO, con el comando y el resultado:**
+  - Gate D8 sobre los tres ficheros → `EXIT=0`, `(0)(0)(0)(0)` en los cuatro linters para cada
+    uno. Totales del proyecto `tsc=1039 eslint=160 deno-lint=94 deno-check=46`, idénticos a los
+    que medí en `main` antes de despachar.
+  - `deno test --allow-all .` desde `supabase/functions/` → **428 passed / 0 failed**. 409 + 19,
+    exacto.
+  - `npm run build` → exit 0.
+  - `npx vitest run --no-file-parallelism` en la punta → **1063 pass / 6 fail**, y **volví a
+    medir el padre yo mismo** haciendo checkout de `main` y ejecutando la suite completa →
+    **1062 pass / 6 fail**. Delta **+1**, conjunto de rojos idéntico (los 6 de
+    `MesaAbiertaDashboard.test.tsx`) en ambos. No hubo flake de `CuentacuentoEditor.ph.*` en
+    ninguna de las dos pasadas. El ejecutor midió el padre moviendo el fichero del test 20 a un
+    lado; es equivalente, pero el criterio es mío y lo comprobé por el camino largo.
+  - B1 `grep -cE "^[[:space:]]*import"` → **0**. B2 `grep -n "Math.random"` → sin salida.
+    B3 `grep -rn "mainDish" supabase --include=index.ts` → sin salida; el **único** importador
+    en todo el repo es el test 20.
+  - B6 no lo di por bueno de palabra: extraje el cuerpo de los 19 `Deno.test` y comprobé cuáles
+    invocan `eachFixture`/`verifyInvariants`. **Los dieciséis tests 4–19 lo invocan; los 1–3
+    no, y no deben** — son contrato puro y no producen asignación. Leído el verificador entero:
+    **reproduce cada movimiento desde la entrada original** y recalcula personas, cuota,
+    dispuestos y déficit por su cuenta, en vez de creerse los números que el módulo reporta —
+    de hecho compara los del módulo contra los suyos. Es la diferencia entre un verificador y
+    un eco, y está del lado correcto.
+  - B4: los nombres de los tests mapean uno a uno sobre D5.1–D5.11 (4,5→G1 · 8→G2 · 9→G3 ·
+    10→G4 · 11→G5 · 12→G6 · 13→G7 · 14,15→G8 · 16,17→G9 · 18→G10 · 19→G11). Las once cubiertas.
+  - Las cinco clases de frontera que D5 exige están en la tabla de 11 fixtures: sin dispuestos
+    (F1, F11), todos dispuestos (F2), capacidad al límite (F3, F7), déficit simultáneo (F4),
+    `+1` en ambos lados (F5). F6 es el contraejemplo de Codex r2 y F7 su variante bloqueada por
+    capacidad — el par que enseña que G3 y G4 son condiciones distintas.
+- **EL ARGUMENTO DE LA GARANTÍA 6 SE SOSTIENE, y lo verifiqué contra el código, no contra la
+  cita.** `mainDish.ts:265-268`: `after` se calcula restando las dos contribuciones viejas y
+  sumando las dos nuevas, lo cual **es** el déficit total posterior y no una estimación, porque
+  las demás mesas no se tocan (las dos únicas escrituras del bucle son a `receiverIndex` y
+  `donorIndex`). La guarda `if (after > before - 1) continue` acepta solo `after ≤ before − 1`:
+  decrecimiento estricto. De ahí G7, y `budget = initialTotalDeficit` lo hace además explícito
+  en el bucle en vez de dejarlo como comentario.
+- **COMPROBÉ EL FALLO DE ALIAS QUE ESTA CLASE DE CÓDIGO YA TUVO** (el "invitado en dos cenas"
+  de `index.ts:305`, motivo de que G9 exista): en `balanceMainDishCarriers`, `receiver` y
+  `donor` se capturan **antes** de escribir, y `swappedTable` devuelve objetos nuevos, así que
+  el segundo `swappedTable` sigue leyendo la lista original del receptor. No hay aliasing. El
+  verificador lo cubre además por reproducción.
+- FINDINGS RAISED: **ninguno BLOCKING.**
+  - **SHOULD-FIX (contra el PLAN, no contra el código) → backlog B-07.** Los absolutos de
+    Vitest de la «Aritmética de tests» están desfasados: 1036 se midió en `1732bee` y el padre
+    real da 1062. Los **deltas** (+32) siguen bien y son lo único que D8 exige, así que no
+    bloquea nada. Corregido en el PLAN con nota al lado y fila de Decision Log, sin reescribir
+    los deltas ni borrar la tabla histórica.
+  - **NIT (observación, ninguna acción).** G5 está implementada como «la donante queda con
+    déficit 0», que cumple la garantía al pie de la letra y además prohíbe todo intercambio
+    entre dos mesas ambas deficitarias, aunque el total bajase. El ejecutor lo declaró él mismo
+    y señaló F4 como el caso. Es exactamente lo que D5 permite —ninguna garantía exige
+    exhaustividad— y G10 existe para que el déficit restante se reporte. **Lo dejo anotado para
+    P4**: si en producción aparece cobertura peor de lo aceptable, aquí está el margen, y sería
+    una enmienda del plan, no un parche.
+  - **NIT.** `Food` incluye `"none"`, que el módulo nunca emite. Es deliberado y documentado:
+    mantiene el test 7 como aserción real en vez de tautología, y el tipo espeja el enum de la
+    base. Correcto.
+- **LO QUE NO ENCONTRÉ Y BUSQUÉ**: ningún `Math.random`, ningún import, ningún consumidor
+  prematuro, ninguna mutación de la entrada (`balanceMainDishCarriers` clona antes de tocar),
+  ninguna escritura fuera de los tres ficheros, ningún fixture que haya dejado de ejercitar su
+  garantía (los tests 4, 5, 6, 7, 9, 11 y 12 llevan aserciones de no-vacuidad, así que una
+  tabla que dejara de cubrir un caso fallaría en vez de pasar en verde).
+- DECISIONS: una, la del Decision Log de arriba (B-07). El plan no cambia en nada sustantivo:
+  P2 se releyó sin enmienda antes de la ronda y sigue sin necesitarla.
+- BACKLOG ADDED: **B-07** — absolutos de Vitest del plan desfasados en 26. B-05 y B-06 siguen
+  abiertos; B-06 hay que decidirlo antes de P8.
+- CONTEXT PRESSURE: el ejecutor reportó "comfortable" y el resultado lo respalda — 19 tests con
+  verificador y 11 fixtures no es una suite recortada por espacio. La fase estaba bien
+  dimensionada pese a ser la mayor del plan.
+- **P2 ESTÁ LIMPIA. Lista para revisión final de Codex.** No la marco Done: eso lo hace el PASS
+  de Codex, no yo.
+- OPEN AFTER THIS ROUND: (1) Revisión final de Codex sobre P2. (2) Merge de
+  `feat/mesa-md-alloc` — decisión de Brent; el PM no mergea. (3) Publicar `main`, que sigue por
+  delante de `origin/main`. (4) Después de P2, **P3a** (`feat/mesa-md-seam`) — la sesión de
+  mayor riesgo del plan.
+
+### 2026-08-08 — P2 CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P2 · REVIEW
+- **VERDICT: PASS.** `feat/mesa-md-alloc`@`6363378`. Cero BLOCKING, cero SHOULD-FIX, dos NIT.
+  Review en `reviews/REVIEW-P2.md`, commiteada aquí — Codex la dejó sin stagear en su worktree.
+- **P2 queda DONE.** Es la primera fase del plan que pasa a la primera, sin una sola ronda de
+  remediación: r1 del ejecutor limpia, verificación del PM sin hallazgos, PASS de Codex.
+- LO QUE CODEX VERIFICÓ POR SU CUENTA, en worktree limpio con Node v22.22.0: gate acotado
+  exit 0 con `(0)(0)(0)(0)` por fichero · totales `1039/160/94/46` · Deno **428/0** · Vitest
+  **1062/6 en el padre y 1063/6 en la punta**, misma identidad de rojos · `npm run build`
+  exit 0. Reprodujo las dos medidas de Vitest por checkout completo, igual que yo.
+- **Y ADEMÁS HIZO ALGO QUE NADIE LE PIDIÓ Y QUE VALE LA PENA REGISTRAR: 2.000 configuraciones
+  adversariales generadas**, todas pasando, sin no-determinismo, sin violación de invariantes,
+  sin mutación de la entrada y sin discrepancia de shortfall. El plan había retirado
+  explícitamente el property-based testing del alcance de P2 (D5, «Cómo se establecen») porque
+  el repo no lo usa; Codex lo aportó **desde fuera del árbol**, como evidencia de revisión y no
+  como código commiteado. Es exactamente el reparto correcto: la suite de la fase sigue siendo
+  de ejemplos, y la generación aleatoria la puso quien revisa, no quien implementa.
+- **LAS TRES COSAS QUE LE SEÑALÉ, RESUELTAS UNA A UNA:**
+  1. **Independencia del verificador** (mi punto 2, el que más me preocupaba): la juzga
+     **contención suficiente, no confirmación circular**. Comparte solo `requiredMainDishes` y
+     `tablePeopleCount`, fijadas antes por los tests 1 y 2; no reutiliza ni la selección, ni el
+     intercambio, ni el déficit, ni el shortfall del allocator.
+  2. **G5 más estricta que su redacción** (mi punto 4, que yo había clasificado NIT): **me
+     corrige a mejor.** Su argumento es que no hay pérdida de cobertura en absoluto: en un
+     intercambio de igual número de personas, las cuotas y el total de portadores dispuestos del
+     par quedan fijos, así que **mientras ambas mesas sigan bajo cuota su déficit combinado es
+     invariante** — un decrecimiento estricto es imposible hasta que una deje de ser
+     deficitaria. La guarda que parecía más fuerte es *equivalente* a la condición de progreso
+     alcanzable. Mi NIT no era un margen de mejora para P4: no había margen. Lo doy por cerrado.
+  3. **La enmienda del plan en mi propia ronda** (mi punto 7): **legítima** bajo la regla de
+     control de cambios congelada. Corrige un absoluto obsoleto, conserva el valor histórico y
+     la identidad de los seis rojos, y no toca ningún criterio ni ningún resultado de gate.
+- NITS (ninguna acción, ninguno bloquea): **N1** — `boundedIndex` normaliza un `pick` inválido
+  en vez de fallar rápido; una integración futura podría preferir lanzar para destapar antes su
+  propio bug. **N2** — la cabecera del fichero de tests dice «EVERY test below» del verificador
+  y los tests 1–3 no lo llaman; es precisión documental, no hueco de cobertura. **Los dos son
+  exactamente los que yo había anotado**, lo cual dice algo bueno de la verificación previa y
+  nada nuevo del código.
+- **UNA IMPRECISIÓN EN LA PROPIA REVIEW, que anoto para quien la lea dentro de seis meses.** Su
+  tabla de ACCEPTANCE RULING usa etiquetas `[B1]`–`[B9]` **desplazadas** respecto a las del
+  plan: su `[B1]` describe la fórmula de la cuota (que en el plan es el test 1, no B1), su
+  `[B8]` describe el gate (que es B9), etc. **No falta ningún juicio** — los nueve criterios
+  reales están dictaminados en el cuerpo del documento: el módulo hoja sin imports y la API
+  (B1) en «REVIEW TARGET AND SCOPE», la ausencia de `Math.random` (B2) y el determinismo en
+  «Determinism and injected selection», los importadores (B3) en el mismo apartado de scope, y
+  gate, Deno y Vitest (B7, B9) en «INDEPENDENT RUNS». La correspondencia es una a una si se lee
+  el cuerpo en vez de la tabla. Lo registro porque un lector futuro podría creer que «B1» de
+  este plan es la fórmula de la cuota, y no lo es. **No cambia el veredicto y no reabre nada**;
+  yo mismo verifiqué los nueve criterios contra el código en la ronda anterior.
+- COSTE REAL DE LA FASE: **1 ronda de ejecutor, 1 verificación de PM, 1 revisión de Codex.**
+  Frente a P0 (5 rondas, 4 FAIL) y P1 (4 rondas, cero hallazgos, bloqueada por un canal humano),
+  P2 es la primera que sale por el camino corto — y era la mayor del plan. Lo que la distingue
+  no fue suerte: el prompt llevaba medido de antemano el import entre runtimes, la línea base
+  del padre y la ausencia de diagnósticos en los tres ficheros nuevos.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna nueva.
+- BACKLOG: **B-05**, **B-06** y **B-07** siguen abiertos. **B-06 hay que decidirlo antes de
+  P8.** Ninguno bloquea P3a.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc`** — decisión y ejecución de Brent;
+  el PM no mergea. (2) Después, **P3a** (`feat/mesa-md-seam`), la sesión de mayor riesgo del
+  plan: conviene arrancarla con contexto fresco. (3) `casa-web` está en `phase/E-infra-impl`
+  (workstream AUDIO) con cambios ajenos sin tocar; el trabajo de UPGRADE vive en el worktree
+  `casa-p2-review`.
+
+### 2026-08-08 — P3a round 1 — PM (Opus 5) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P3a · PM
+- ACTION: Bootstrap de PM para **P3a — Seam: `handler.ts` en `create-mesa-matches`**. Prompt
+  escrito y commiteado en `prompts/P3a-r1.md`. **No despacho todavía**: P3a debe salir de un
+  `main` con P2 dentro, y P2 sigue sin mergear en `feat/mesa-md-alloc`. Es exactamente la misma
+  precondición dura que P2 tuvo respecto a P1, por el mismo motivo, y el prompt la implementa
+  igual: un `grep` sobre `PLAN.md` que debe encontrar P2 marcada DONE, y si no, el ejecutor para
+  en seco y reporta `BLOCKED` antes de tocar nada. P3a **no depende del código de P2** — depende
+  solo de P0; la espera es únicamente para no bifurcar `LEDGER.md` (backlog **B-02**).
+- **P3a RELEÍDA (SOP §3.8.5): sin enmienda.** Alcance, criterios C1–C7, plan de test y tamaño
+  siguen bien. Lo que sí hago es medir por adelantado todo lo medible, porque el plan llama a
+  esta «la sesión de mayor riesgo» y las dos fases que salieron baratas (P2) fueron las que
+  llevaban el terreno medido en el prompt.
+- LO QUE MEDÍ YO MISMO SOBRE EL PADRE REAL (`feat/mesa-md-alloc`@`d98fa6d`, que es `main` + P2 en
+  fast-forward), no lo que dice ningún reporte:
+  - **Gate D8 sobre los tres ficheros de `F`**: `handler.ts` `(0)(0)(0)(0)` y `handler_test.ts`
+    `(0)(0)(0)(0)` — no existen todavía. **`index.ts` `(0)(0)(4)(6)`: diez diagnósticos
+    preexistentes.** Totales `1039/160/94/46`.
+  - **Deno: 428 passed / 0 failed.** Así que C6 («+10») significa **438/0** en la punta, no un
+    número que el ejecutor tenga que adivinar.
+  - **Vitest: 1063 passed / 6 failed**, y los 6 son todos de `MesaAbiertaDashboard.test.tsx` —
+    exactamente el conjunto base que declara D8.2. Esta pasada salió limpia del flake de B-05.
+  - **`npm run build` exit 0.**
+- **EL HALLAZGO QUE DECIDE LA FASE, Y POR QUÉ LO RESUELVO ASÍ.** De los diez diagnósticos de
+  `index.ts`, **ocho están pegados a código que P3a mueve**: los 6 de `deno check` (un TS18046
+  por `error.message` sobre `unknown` y cinco TS7006 por `any` implícito en `g`, `guest`, `j`) y
+  dos `no-unused-vars` (`TARGET_GUEST_SIDE_FOR_DINNER`, `count`). Cuando el bloque se mueve,
+  **aterrizan en `handler.ts`, cuya línea base es cero**. Leído al pie de la letra, D8.4 —«cero
+  diagnósticos nuevos en `F`», comparado por fichero— convierte eso en ocho BLOCKING y hace que
+  P3a suspenda su propio gate haciendo exactamente lo que el plan le manda hacer.
+  **Lo clasifico como desplazamiento, no como diagnóstico nuevo**, y esto **no es una enmienda al
+  plan**: D8.4 ya le da al revisor la clasificación a mano («desplazamiento de línea —mismo
+  mensaje, otra línea— aceptable»), y un movimiento verbatim entre dos ficheros que están **los
+  dos dentro de `F`** es la misma especie de cosa que un desplazamiento de línea: mismo mensaje,
+  otra ubicación, cero cambio neto en el proyecto. Los totales lo confirman —`deno-check` se
+  queda en 46— y `deno-lint` incluso **baja a 92**, porque el `index.ts` nuevo usa el import map
+  y pierde los dos `no-import-prefix`.
+  Lo que **no** hago es pedirle al ejecutor que los arregle de camino, y la razón no es pereza:
+  la regla dura de P3a es *conducta idéntica*, y la única forma práctica de verificarla es
+  diffear el bloque movido contra el original y no ver nada. Un ejecutor que además repare ocho
+  diagnósticos hace ese diff ilegible y deja la regla dura sin comprobar. Además los cinco TS7006
+  no son un arreglo de una línea: nacen de que el cliente de Supabase no está tipado, y la
+  reparación honesta es declarar una interfaz `Participant`, que es trabajo propio y con riesgo
+  de ripple. **Queda como backlog B-08, candidata a P4**, que ya toca `handler.ts`.
+  El prompt lleva la tabla exacta del estado final esperado —`handler.ts` `(0)(0)(2)(6)`,
+  `index.ts` `(0)(0)(0)(0)`, `handler_test.ts` `(0)(0)(0)(0)`, totales `1039/160/92/46`— para que
+  esto sea un criterio comprobable y no un juicio improvisado en la revisión. **Codex tiene que
+  recibir esto explícitamente en su prompt de revisión final**; si no, lo leerá estricto y hará
+  FAIL con razón aparente.
+- **LO OTRO QUE EL PLAN NO SABÍA Y ABARATA LA FASE: el seam ya existe cinco veces en este repo.**
+  `generate-oraciones`, `generate-story`, `generate-scene-images`, `refine-story` y
+  `process-reflexion-pdf` tienen exactamente el split `handler.ts` + `index.ts` delgado +
+  `handler_test.ts`, con la firma `createHandler(deps)`. La sección «Risks» de P3a no lo
+  menciona y describe la fase como si hubiera que inventar el patrón. El prompt inlinea
+  `generate-oraciones/index.ts` entero (27 líneas) como plantilla. Esto rebaja el riesgo real de
+  la fase bastante por debajo de lo que dice el plan.
+- **LO QUE SÍ SE CONFIRMA DEL RIESGO DECLARADO**: `_shared/testHelpers.ts` **no** tiene doble de
+  consultas —lo verifiqué: tiene `makeAuthzDeps`, `AUTH_HEADER`, spy de `fetch`, captura de logs
+  y fixtures de imagen, nada de query builder— y `wa-webhook/makeSupabase()` es una fábrica de
+  cliente real, no un doble. Hay que escribirlo desde cero, dentro de `handler_test.ts` (meterlo
+  en `_shared/` haría `F` de cuatro ficheros y tocaría un fichero del que dependen seis suites).
+  El prompt enumera las **diez formas de llamada exactas** que el handler hace, separadas en
+  lecturas y escrituras, para que el ejecutor no las derive leyendo. Y le calibra el umbral de
+  `FINDINGS`: el plan dice «si el doble supera al código que prueba»; el código que prueba son
+  ~470 líneas, así que un doble de 100–200 **no** es motivo de FINDINGS.
+- OTRAS DOS COSAS QUE PUSE EN EL PROMPT PARA QUE NO CUESTEN UNA RONDA: (1) la sustitución exacta
+  de `pick` —`Math.floor(Math.random() * (i + 1))` → `pick(i + 1)`, mismo rango, sin off-by-one—
+  y el aviso de que `shuffle` corre **cuatro veces o más** por request, con el orden de consumo,
+  que es la forma más probable de quemar una ronda en los goldens 5 y 6; sugiero `pick = () => 0`
+  para quitarse la contabilidad de encima. (2) El `// deno-lint-ignore no-explicit-any` sobre el
+  alias del cliente es **obligatorio**: `adminAuth.ts` ya lo hace, y sin él el ejecutor introduce
+  un `no-explicit-any` nuevo en `handler.ts` y suspende su propio gate.
+- **`index 2.ts`**: hay un duplicado obsoleto y **trackeado** en el mismo directorio, con cinco
+  diagnósticos propios que ya cuentan en los totales. Está fuera de `F`. El prompt dice
+  explícitamente que no se toca ni se borra — borrarlo es una decisión aparte, no un apaño de
+  paso. Lo dejo anotado aquí porque es la clase de cosa que un ejecutor «arregla» sin preguntar.
+- **Vitest, simplificación honesta**: `F` no contiene ningún fichero que Vitest cargue —P3a no
+  toca nada bajo `src/`— así que **por construcción** cualquier rojo es preexistente y D8.2 se
+  satisface sin dirimir nada en el commit padre. Se registra como observación y ya. Está en el
+  prompt para que nadie persiga el flake de B-05.
+- BACKLOG ADDED: **B-08** (los ocho diagnósticos desplazados; candidata P4). Y añado la **fila de
+  B-07**, que el Decision Log y la nota de la «Aritmética de tests» ya citaban dos veces pero que
+  nunca llegó a existir en la tabla del backlog.
+- FINDINGS RAISED: ninguno contra el código. El punto de D8.4 de arriba es una **ambigüedad del
+  plan que resuelvo dentro de su propia letra**, no un defecto de implementación.
+- DECISIONS: ninguna que enmiende el plan. La clasificación de los ocho diagnósticos como
+  desplazamiento se apoya en la cláusula de clasificación manual que D8.4 ya contiene.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent; el PM no mergea. Es lo único que retiene a P3a. (2) Después, `/exec UPGRADE P3a r1`.
+  (3) Cuando P3a llegue a revisión final, **el prompt de Codex debe declarar el desplazamiento de
+  B-08 explícitamente**. (4) Backlog B-05, B-06, B-07 y B-08 abiertos; **B-06 hay que decidirlo
+  antes de P8**.
+
+### 2026-08-08 — P3a r1 — Claude Opus 5 (EXEC) + PM (Opus 5) — VERIFICACIÓN
+- SESSION: UPGRADE · P3a · r1 · EXEC (reporte) · UPGRADE · P3a · PM (verificación)
+- CONTEXT PRESSURE: comfortable — el ejecutor paró en la puerta de precondición, antes de
+  cualquier trabajo de implementación.
+- **STATUS DEL EJECUTOR: BLOCKED, y es la conducta correcta.** La precondición dura del prompt
+  falló: P2 no está mergeada en `main`. No creó rama, no escribió código, no tocó el ledger.
+- **LO QUE VERIFIQUÉ YO MISMO, no lo que dice el reporte.** Las cuatro afirmaciones del
+  ejecutor, comprobadas una a una tras `git fetch`:
+  - `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P2 | Módulo puro…DONE'` → **0**.
+    Confirmado.
+  - Fila P2 en `origin/main`:321 → `TODO`. En `feat/mesa-md-alloc`:321 → `**DONE** · 6363378`.
+    Confirmado, no es un artefacto del patrón de grep.
+  - `git merge-base --is-ancestor origin/feat/mesa-md-alloc origin/main` → **no**. Sin mergear.
+  - La bifurcación del ledger es real y medible: `origin/main` termina en «P2 round 1 — PM —
+    DESBLOQUEO Y DESPACHO»; `feat/mesa-md-alloc` lleva **cuatro entradas más** (P2 exec,
+    verificación del PM, P2 CIERRE, bootstrap de P3a). Ramificar desde `main` y añadir una
+    quinta habría bifurcado exactamente esas cuatro. Es B-02 otra vez, literal.
+  El ejecutor también **omitió deliberadamente la entrada de ledger** que pide el «WHEN DONE»,
+  razonando que escribirla desde una rama del `main` actual causaría el daño que la precondición
+  existe para evitar. **Tiene razón y lo registro yo en su lugar**, que es lo que corresponde.
+- **LO QUE EL EJECUTOR NO VIO Y CAMBIA UNA INSTRUCCIÓN MÍA: `main` se movió durante la ronda.**
+  En mi bootstrap `origin/main` estaba en `981c00f`; ahora está en **`1c4490f`**
+  («feat(audio): E-infra-impl»), del workstream AUDIO. Consecuencias, las dos medidas:
+  1. **El merge de P2 ya no es fast-forward.** `981c00f` sigue siendo ancestro de `main`, pero
+     `main` tiene ahora un commit que `feat/mesa-md-alloc` no tiene. El
+     `git merge --ff-only` que di al cerrar el bootstrap **habría fallado**. Hace falta un merge
+     normal. Lo ensayé en una rama desechable (`tmp/p3a-parent`, ya borrada): **merge limpio,
+     cero conflictos** — AUDIO no tocó `docs/plan/upgrade/` en absoluto.
+  2. **Las líneas base NO cambian, y lo medí en vez de suponerlo.** Sobre el padre real
+     post-merge (`origin/main` + `feat/mesa-md-alloc`): gate por fichero idéntico —`handler.ts`
+     y `handler_test.ts` `(0)(0)(0)(0)`, `index.ts` `(0)(0)(4)(6)` con los mismos mensajes— y
+     totales **`tsc=1039 eslint=160 deno-lint=94 deno-check=46`**, iguales. AUDIO tocó
+     `.env.test.example`, `playwright.config.ts`, `scripts/gates/README.md`, `supabase/seed.sql`
+     y `tests/e2e/*`: nada bajo `supabase/functions/` ni `src/`. `tsconfig.app.json` solo incluye
+     `src`, y `vitest.config.ts` excluye `tests/e2e/**` explícitamente, así que Vitest sigue en
+     **1063/6** y Deno en **428/0**. **El prompt `P3a-r1.md` sigue correcto palabra por palabra;
+     no lo reescribo.**
+- FINDINGS RAISED contra el código: **ninguno** — no hay código; la ronda no llegó a existir.
+  Contra mi propio bootstrap, dos, ambas mías y ninguna del ejecutor:
+  - **SHOULD-FIX (proceso): el prompt quedó solo en `feat/mesa-md-alloc`, no en `main`.** Lo
+    commiteé ahí para no bifurcar el ledger, y esa parte era correcta, pero el efecto es que un
+    ejecutor que arranca de `main` no encuentra su propio prompt. Éste lo localizó en otro
+    checkout y siguió, pero le costó trabajo que no era suyo. **La regla correcta para adelante:
+    el prompt va a `main` —es un fichero nuevo, nunca conflictúa— y las ediciones de `LEDGER.md`
+    y `PLAN.md` van a la rama pendiente.** Se resuelve solo en cuanto entre el merge.
+  - **NIT: la orden de merge que di era `--ff-only`** y ha dejado de ser válida por el
+    movimiento de `main`. Corregida abajo.
+- DECISIONS: ninguna. El plan no cambia; P3a sigue releída sin enmienda y el prompt sin tocar.
+- BACKLOG ADDED: ninguno. B-05, B-06, B-07 y B-08 siguen abiertos; **B-06 antes de P8**.
+- **RONDAS CONSUMIDAS: cero.** Esta ronda no cuenta contra el tope de 3 del SOP §1.5: no hubo
+  intento de implementación que juzgar, solo una puerta que hizo su trabajo. El redespacho tras
+  el merge sigue siendo `r1`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent; ahora con merge normal, no `--ff-only`. Es lo único que retiene a P3a. (2) Después,
+  `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt
+  de Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
+
+### 2026-08-08 — P3a r1 (2.º redespacho) — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P3a · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — parada en la puerta de precondición, antes de crear rama.
+- **STATUS: BLOCKED. La misma puerta que la vez anterior: P2 sigue sin mergear en `main`.**
+  No creé `feat/mesa-md-seam`, no escribí código, no toqué `PLAN.md`.
+- ACTION: localicé el plan y el prompt, verifiqué la precondición dura del prompt y paré.
+  El prompt `P3a-r1.md` **sigue existiendo solo en `feat/mesa-md-alloc`** (checkout
+  `casa-p2-review`); no está en `main`. Es la SHOULD-FIX de proceso que el PM ya se anotó en
+  la ronda anterior, y sigue costando trabajo de búsqueda al ejecutor.
+- **LO QUE MEDÍ, tras `git fetch origin`:**
+  - `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P2 | Módulo puro…DONE'` → **0**.
+  - Fila P2 en `origin/main`:321 → `TODO`; en `origin/feat/mesa-md-alloc`:321 →
+    `**DONE** 2026-08-08 · 6363378`.
+  - `git merge-base --is-ancestor origin/feat/mesa-md-alloc origin/main` → **no**.
+  - `origin/main` sigue en **`1c4490f`** — no se ha movido desde la verificación del PM, así que
+    las líneas base que midió (gate por fichero, `tsc=1039 eslint=160 deno-lint=94 deno-check=46`,
+    Deno 428/0, Vitest 1063/6) siguen siendo las del padre correcto.
+  - `origin/main..origin/feat/mesa-md-alloc` = **6 commits** (1 de código P2 + 5 de docs), y el
+    ledger de la rama lleva **cinco entradas** que `main` no tiene. Ramificar de `main` y añadir
+    una sexta bifurcaría exactamente esas cinco: B-02 otra vez.
+  - Ensayo de merge sin tocar ningún worktree:
+    `git merge-tree --write-tree origin/main origin/feat/mesa-md-alloc` → **exit 0, sin
+    conflictos**. Confirma el ensayo del PM: el merge es limpio pero **no** fast-forward.
+- ENTRADA DE LEDGER: la escribo **en `feat/mesa-md-alloc`**, que es donde está la punta real del
+  ledger. Escribirla ahí no bifurca nada; lo que bifurcaba era escribirla desde una rama de
+  `main`, que es lo que la ronda anterior evitó correctamente omitiéndola.
+- TESTS: ninguno ejecutado — la fase no llegó a empezar.
+- FINDINGS RAISED: ninguno. El plan y el prompt siguen correctos palabra por palabra.
+- DECISIONS: ninguna.
+- BACKLOG ADDED: ninguno. B-05, B-06, B-07 y B-08 siguen abiertos; **B-06 antes de P8**.
+- **RONDAS CONSUMIDAS: cero**, por el mismo motivo que la anterior (SOP §1.5): no hubo intento de
+  implementación que juzgar. El redespacho tras el merge sigue siendo `r1`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent, con merge normal (no `--ff-only`). Es lo único que retiene a P3a. (2) Después,
+  `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt de
+  Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
+
+### 2026-08-08 — P3a r1 (3.er redespacho) — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P3a · r1 · EXEC
+- CONTEXT PRESSURE: comfortable — parada en la puerta de precondición, antes de crear rama.
+- **STATUS: BLOCKED. Tercera vez, misma puerta: P2 sigue sin mergear en `main`.**
+  No creé `feat/mesa-md-seam`, no escribí código, no toqué `PLAN.md`.
+- ACTION: resolví el plan por `workstreams.md` → `docs/plan/upgrade/` (verificado por META:
+  `SESSION PREFIX: UPGRADE`), localicé el prompt, verifiqué la precondición dura y paré.
+  El prompt `P3a-r1.md` **sigue existiendo solo en `feat/mesa-md-alloc`** (checkout
+  `casa-p2-review`); en `main` no está. Es la SHOULD-FIX de proceso que el PM ya se anotó hace
+  dos rondas y que sigue costando búsqueda al ejecutor en cada redespacho.
+- **LO QUE MEDÍ, tras `git fetch origin`:**
+  - `grep -c 'P2 | Módulo puro de asignación.*DONE' docs/plan/upgrade/PLAN.md` sobre `main` →
+    **0**. La precondición del prompt exige `1`.
+  - Fila P2 en `main`:321 → `TODO`; en `feat/mesa-md-alloc`:321 →
+    `**DONE** 2026-08-08 · 6363378`.
+  - `git merge-base --is-ancestor origin/feat/mesa-md-alloc origin/main` → **no**.
+  - `origin/main` sigue en **`1c4490f`**: **no se ha movido** desde la ronda anterior ni desde la
+    verificación del PM, así que las líneas base medidas sobre el padre post-merge siguen siendo
+    las correctas (gate por fichero `handler.ts`/`handler_test.ts` `(0)(0)(0)(0)`, `index.ts`
+    `(0)(0)(4)(6)`; totales `tsc=1039 eslint=160 deno-lint=94 deno-check=46`; Deno 428/0;
+    Vitest 1063/6).
+  - `origin/feat/mesa-md-alloc` está en **`62baca8`**, ahora **7 commits** por delante de `main`
+    (1 de código P2 + 6 de docs). El ledger de la rama lleva **seis entradas** que `main` no
+    tiene (60 vs 54); esta hace **siete**. Ramificar de `main` y escribir ahí las bifurcaría
+    todas: B-02 otra vez.
+  - Ensayo de merge sin tocar ningún worktree:
+    `git merge-tree --write-tree origin/main origin/feat/mesa-md-alloc` → **exit 0, sin
+    conflictos**. El merge sigue siendo limpio y sigue **sin** ser fast-forward.
+- ENTRADA DE LEDGER: escrita **en `feat/mesa-md-alloc`**, la punta real del ledger, por el mismo
+  motivo que la ronda anterior.
+- TESTS: ninguno ejecutado — la fase no llegó a empezar.
+- FINDINGS RAISED: ninguno. El plan y el prompt siguen correctos palabra por palabra; releídos
+  íntegros esta ronda y no requieren enmienda.
+- DECISIONS: ninguna.
+- BACKLOG ADDED: ninguno. B-05, B-06, B-07 y B-08 siguen abiertos; **B-06 antes de P8**.
+- **RONDAS CONSUMIDAS: cero**, por el mismo motivo que las dos anteriores (SOP §1.5): no hubo
+  intento de implementación que juzgar, solo una puerta que hizo su trabajo. El redespacho tras
+  el merge sigue siendo `r1`.
+- **OBSERVACIÓN DE PROCESO (no es un hallazgo del plan):** tres redespachos han terminado en la
+  misma puerta sin que cambiara nada entre ellos. La puerta es correcta y no propongo relajarla;
+  lo que no está funcionando es redespachar P3a antes de que exista el merge. Sugerencia para el
+  PM: no volver a lanzar `/exec UPGRADE P3a r1` hasta que
+  `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P2 | Módulo puro de asignación.*DONE'`
+  imprima `1`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent, con merge normal (no `--ff-only`). Es lo único que retiene a P3a. (2) Después,
+  `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt de
+  Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
+
+### 2026-08-08 — P3a r1 — PM (Opus 5) — SE DETIENEN LOS REDESPACHOS
+- SESSION: UPGRADE · P3a · PM
+- Verificado otra vez, y por última vez: `origin/main` sigue en `1c4490f` (sin moverse desde mi
+  medición), `origin/feat/mesa-md-alloc` en `fdbaa86` con **8 commits y 7 entradas de ledger**
+  que `main` no tiene, `--is-ancestor` → no, y `git merge-tree --write-tree` → **exit 0, sin
+  conflictos**. El ejecutor acertó en todo; sus recuentos (7 commits, 6 entradas) los tomó antes
+  de que aterrizara el suyo propio, lo cual no cambia nada.
+- **DEJO DE REDESPACHAR P3a. La culpa del bucle es mía, no de la puerta ni del ejecutor.** Tres
+  sesiones han muerto en la misma precondición sin que cambiara una sola cosa entre ellas, y las
+  tres murieron porque yo cerré el mensaje anterior con una línea `/exec` pegable. La puerta
+  hizo exactamente su trabajo las tres veces; lo que fallaba era despacharla antes de que
+  existiera la condición. **No habrá una cuarta hasta que el merge esté verificado en
+  `origin/main`.**
+- **El coste ya es visible en este fichero**: tres entradas de ejecutor y dos de PM describiendo
+  el mismo no-evento. El ledger es append-only y no las reordeno ni las borro, pero que quede
+  dicho para quien lo lea después: **las cinco entradas cuentan un solo hecho** — P2 no estaba
+  mergeada.
+- **CONDICIÓN DE REARME, explícita para que nadie la infiera.** Antes de volver a despachar,
+  esto tiene que imprimir `1`:
+  ```
+  git fetch origin && git show origin/main:docs/plan/upgrade/PLAN.md \
+    | grep -c 'P2 | Módulo puro de asignación.*DONE'
+  ```
+  Si imprime `0`, la respuesta correcta **no** es abrir una sesión de ejecutor.
+- Nada más cambia: el prompt `P3a-r1.md` sigue válido sin tocar, las líneas base siguen medidas
+  y vigentes (`1039/160/94/46`, Deno `428/0`, Vitest `1063/6`), y el merge está ensayado limpio.
+  **Rondas consumidas: cero.** El redespacho posterior al merge sigue siendo `r1`.
+- FINDINGS RAISED: ninguno contra el código. La única corrección de esta ronda es de proceso y
+  es contra mí.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — de Brent, merge normal,
+  no `--ff-only`. Único bloqueo. (2) Verificar la condición de rearme de arriba. (3) Solo
+  entonces, `/exec UPGRADE P3a r1`.

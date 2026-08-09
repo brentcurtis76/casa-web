@@ -318,7 +318,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | P0 | Script de gate por ficheros + línea base | **DONE** 2026-08-07 · `09a69d7` | `feat/mesa-md-gates` | — |
 | P1a | Esquema: ficheros (migración + `types.ts`) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P0, PR1, PR2 |
 | P1b | Esquema: aplicación y verificación (A3–A8) | **DONE** 2026-08-08 · `9cc637b` | `feat/mesa-md-schema` | P1a, PR3 |
-| P2 | Módulo puro de asignación | TODO | `feat/mesa-md-alloc` | P0 |
+| P2 | Módulo puro de asignación | **DONE** 2026-08-08 · `6363378` | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | TODO | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | TODO | `feat/mesa-md-core` | P3a |
 | P4 | Cablear allocator en el núcleo | TODO | `feat/mesa-md-wire` | **P1b**, P2, P3b |
@@ -499,19 +499,20 @@ dos precisiones que sí se congelan porque son contrato de tipos, no de recorrid
   Su orden es decisión de P2 (D5).
 - `pick(n)` devuelve un entero en `[0, n)` (D11).
 
-**Acceptance criteria:**
-- [ ] B1 — Exporta la API; `grep -cE "^[[:space:]]*import"` → 0.
-- [ ] B2 — `grep -n "Math.random"` → 0.
-- [ ] B3 — Nadie lo importa desde `supabase/functions/**/index.ts`.
-- [ ] B4 — Las **once garantías de D5** están cubiertas por los tests 4–19, una a una.
-- [ ] B5 — `SIDE_FOODS` no contiene `main_course` (test 3).
-- [ ] B6 — Existe el **verificador de invariantes reutilizable**, comprueba las garantías
+**Acceptance criteria.** Los nueve cumplidos en r1 y verificados de forma independiente por
+el PM (ledger 2026-08-08); `feat/mesa-md-alloc`@`6af5071`:
+- [x] B1 — Exporta la API; `grep -cE "^[[:space:]]*import"` → 0.
+- [x] B2 — `grep -n "Math.random"` → 0.
+- [x] B3 — Nadie lo importa desde `supabase/functions/**/index.ts`.
+- [x] B4 — Las **once garantías de D5** están cubiertas por los tests 4–19, una a una.
+- [x] B5 — `SIDE_FOODS` no contiene `main_course` (test 3).
+- [x] B6 — Existe el **verificador de invariantes reutilizable**, comprueba las garantías
   1–6, 8 y 9, y **todos** los tests de asignación y reequilibrio lo invocan sobre el
   resultado y sobre cada movimiento devuelto.
-- [ ] B7 — `deno test` **+19 tests, 0 fallos**; `vitest` **+1 test**, rojos sin cambios.
-- [ ] B8 — El test 20 importa el módulo desde `src/` por ruta relativa y pasa; la prueba de
+- [x] B7 — `deno test` **+19 tests, 0 fallos**; `vitest` **+1 test**, rojos sin cambios.
+- [x] B8 — El test 20 importa el módulo desde `src/` por ruta relativa y pasa; la prueba de
   `vite build` **no** es criterio aquí (D6).
-- [ ] B9 — Gate D8 sobre `F` = los 3 ficheros: cero diagnósticos nuevos, por mensaje
+- [x] B9 — Gate D8 sobre `F` = los 3 ficheros: cero diagnósticos nuevos, por mensaje
   completo contra la fase padre. Build ok.
 
 **Test plan** — `mainDish_test.ts` (19). Los tests 4–19 se ejecutan **sobre la tabla de
@@ -874,6 +875,8 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | **B-04** | Non-goals | `handleMoveGuest` (`MesaAbiertaAdmin.tsx:785`) y completar el mapa `Functions` de `types.ts` (D15) siguen fuera de alcance por decisión del plan. |
 | **B-05** | P1 r1 | **B-01 se queda corto: flakean tres ficheros, no uno.** `CuentacuentoEditor.ph.surfaces` (T-H.4), `ph.cancel` (T-H.9) y `ph.concurrency` (T-H.5), todos bajo carga y todos verdes en aislamiento. Medido por el ejecutor (3 pasadas en `main`: 6/8/6) y reproducido por el PM (padre `05dc4ca` sin cambios de P1: **7 rojos**). Mientras dure, el criterio D8.2 «el conjunto de rojos por nombre es exactamente el de base» no es comprobable de forma fiable en **ninguna** fase — ver el SHOULD-FIX S1 de P1 r1, pendiente de decisión de Brent. (El ejecutor lo numeró B-03 por error; B-03 ya estaba ocupado.) |
 | **B-06** | P1b r1 (corregido por Codex `REVIEW-P1` S1) | **Verificación de RPC por un agente.** El MCP `supabase-casa` **no** sirve: entra como `supabase_read_only_user`, fuera del ACL y no miembro de `authenticated` — y así debe seguir, es lo que A5 exige. Pero **sí existe** una vía de solo lectura: un login de revisión de la CLI enlazada asume `postgres` para resolver el `user_id`, fija la claim y asume `authenticated` para invocar dentro de `BEGIN … ROLLBACK`; Codex reprodujo A6–A8 así. **Decidir antes de P8**, que consume `get_my_dinner_summary` por `dinnerSummary.ts`: o se adopta esa vía, o una clave `service_role` en un `.env` no versionado, o pgTAP contra un Supabase local. **Conceder `EXECUTE` al usuario de solo lectura queda descartado**: debilitaría justo lo que A5 protege. |
+| **B-07** | P2 r1 (verificación del PM) | **Los absolutos de Vitest de la «Aritmética de tests» están desfasados.** El 1036 se midió en `1732bee`; el padre de P2 (`main`@`981c00f`) da **1062 pass / 6 fail**, y con P2 dentro **1063 / 6**. Los 26 de diferencia los trajeron otros workstreams. Los **deltas** siguen siendo correctos y son lo que D8 exige; caducaron solo los absolutos. Se anotó la corrección al lado de la tabla en vez de reescribirla. No bloquea nada. (Fila añadida el 2026-08-08 durante el bootstrap de P3a: el Decision Log y la nota de la tabla ya citaban «Backlog B-07», pero nunca llegó a existir la fila.) |
+| **B-08** | P3a (bootstrap del PM) | **Ocho diagnósticos preexistentes de `create-mesa-matches/index.ts` viajan a `handler.ts` con el código que P3a mueve**: `TS18046` (`error` de tipo `unknown`), 5× `TS7006` (`g`, `guest`, `j` con `any` implícito) y 2 `no-unused-vars` (`TARGET_GUEST_SIDE_FOR_DINNER`, `count`). P3a los mueve **verbatim y a propósito** — repararlos dentro del movimiento haría indiferenciable el bloque movido y volvería incomprobable la regla dura de la fase («conducta idéntica»). Arreglarlos es trabajo propio: los 5 `TS7006` nacen de que el cliente de Supabase no está tipado, así que la reparación honesta es declarar una interfaz `Participant`, no salpicar `any`. **Candidata natural: P4**, que ya toca `handler.ts`. No bloquea ninguna fase; el gate de P4 partirá de la línea base `(0)(0)(2)(6)` que deja P3a. |
 
 ---
 
@@ -904,6 +907,7 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-08 | **P1 se parte en P1a (ficheros) y P1b (aplicación + A3–A8); se añade PR3 como tercera puerta humana** | Tres rondas de ejecutor agotadas con **cero hallazgos contra el código**: las tres murieron contra el canal de escritura, y A3–A8 no llegaron a ejecutarse ni una vez. El plan modeló PR1 y PR2 como puertas de Brent pero trató la aplicación misma como trabajo de agente — autorizar un cambio y poder ejecutarlo no son lo mismo. Partir no invalida ninguna fase posterior ni cambia un solo criterio, y desbloquea P2/P3a/P3b, que nunca dependieron de P1 | PM (diagnóstico), Brent (decisión) |
 | 2026-08-08 | **D8 punto 2 se enmienda**: de «el conjunto de rojos por nombre es exactamente el de base» a «los rojos atribuibles a `F` no crecen; un rojo fuera de `F` se dirime reejecutando en el commit padre» | El criterio anterior no es comprobable: el PM midió **7 rojos en el propio commit padre**, sin cambios de ninguna fase, por el flake de B-05. Un criterio insatisfacible se convierte en juicio discrecional en cada fase, que es peor que no tenerlo. La regla del padre es la misma disciplina que el punto 4 ya usa para diagnósticos, y no se puede burlar: un rojo causado por la fase no se reproduce en el padre | PM (S1 de P1 r1; Brent delegó la decisión) |
 | 2026-08-08 | **PR3 incluye escribir la fila de `schema_migrations` a mano**, como sentencia aparte | El editor SQL no la escribe. Sin ella el remoto tendría la columna y la función pero no la versión, mientras el repo sí tiene el fichero: cualquier reconciliación futura la vería pendiente. El registro de migraciones debe reflejar la realidad. Es un `insert … on conflict do nothing`, aditivo e idempotente, y **no** se mete en el fichero de la migración, que sigue byte a byte igual al contrato congelado | PM (Brent delegó la decisión) |
+| 2026-08-08 | **Los absolutos de Vitest de la «Aritmética de tests» se anotan como desfasados; los deltas se conservan** | El 1036 se midió en `1732bee`. El PM midió el padre de P2 (`main`@`981c00f`): **1062 pass / 6 fail**. Los 26 de diferencia los trajeron otros workstreams, no este plan. Reescribir los deltas sería falsear el trabajo pendiente; borrar la tabla de base perdería un dato histórico correcto. Se añade la corrección al lado. No desbloquea ni bloquea nada: D8 no se dirime por absolutos. Backlog **B-07** | PM (verificación de P2 r1) |
 
 ---
 
@@ -915,6 +919,17 @@ Con las tres garantías nuevas de D5, que llevan P2 de 16 a 19 tests Deno:
   409 + 62 = **471 pass / 0 fail**.
 - **Vitest**: P2 +1 · P5a +10 · P6 +12 · P8 +9 = **+32** → 1036 + 32 = 1068, más los
   6 rojos reparados por P8 = **1074 pass / 0 fail**.
+
+> **Los absolutos de Vitest están desfasados desde el 2026-08-08** (Decision Log; backlog
+> **B-07**). Los **deltas siguen siendo correctos y son lo que D8 exige**; lo que ha caducado
+> es la base de la que parten. El 1036 se midió en `1732bee`; el PM midió el padre de P2
+> (`main`@`981c00f`) y da **1062 pass / 6 fail (80 ficheros)** — el repo ganó 26 tests por
+> trabajo de otros workstreams, no de este plan. Con eso, la proyección real es
+> `1062 + 32 = 1094`, y `1100 pass / 0 fail` tras las reparaciones de P8. **La base de Deno
+> (409) no se ha movido y sigue siendo exacta.** Ninguna fase se dirime por estos absolutos:
+> D8 punto 2 compara rojos atribuibles contra el padre, y el punto 5 registra los totales
+> como observación. Se corrigen aquí en vez de reescribirlos para no perder de vista que la
+> tabla de la línea base (`1732bee`) es un dato histórico correcto, no un error.
 
 ## Respuesta a la revisión de Codex (ronda 6)
 
