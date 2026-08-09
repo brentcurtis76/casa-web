@@ -2551,3 +2551,46 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   de Codex debe declarar el desplazamiento como **6 desplazados + 3 nuevos**, no 6 + 0, y advertir
   que el total de ESLint depende del checkout. (4) B-05, B-06, B-07, B-08, B-09 abiertos; **B-06
   antes de P8**.
+
+### 2026-08-08 — P3a round 1 — CIERRE DE RONDA · C6 ENMENDADA — Brent (decisión) + PM (Opus 5)
+- SESSION: UPGRADE · P3a · PM
+- **Brent resolvió F-1 por la opción recomendada: C6 pasa a `deno test --allow-all --no-check .`**
+  Enmendados **los dos** sitios donde vivía el comando —el **punto 3 de D8** (rige para todas las
+  fases) y el **C6 de P3a**— más una fila de Decision Log que deja escrita la causa raíz: fue un
+  fallo de bootstrap mío, no del ejecutor.
+- **Por qué la enmienda no debilita nada, verificado y no supuesto**: `deno check .` del paso 4
+  de D8 **enumera los ficheros `_test.ts`** (`handler_test.ts`, `availableMaterials_test.ts`,
+  `contract_test.ts`, `corpus_test.ts`, `imageFetch_test.ts`…) y `deno check
+  create-mesa-matches/handler_test.ts` a solas destapa los 8 errores del handler. El type-check
+  que hacía `deno test` era **duplicado del paso 4**, no cobertura adicional — y, mientras un
+  fichero importado arrastre diagnósticos, un duplicado que **se niega a ejecutar la suite** en
+  vez de reportar 0 fallos.
+- **C6 verificada bajo el comando enmendado, por mí:** `cd supabase/functions && deno test
+  --allow-all --no-check .` → **438 passed / 0 failed**. Los +10 exactos sobre la línea base de
+  428 que medí en el bootstrap.
+- **UNA COMPROBACIÓN MÁS QUE HICE ANTES DE DAR LA FASE POR LIMPIA**, porque yo mismo se la iba a
+  pedir a Codex: los goldens 5 y 6 comparan contra `referenceShuffle`, y había que descartar que
+  fuera circular. **No lo es**: está **definido en local en `handler_test.ts:85`**, y el fichero
+  importa únicamente `assertEquals` y `createHandler` — no reimporta el `shuffle` del handler, así
+  que no puede derivar con él en silencio. Es, eso sí, una **reimplementación línea por línea**:
+  fija la conducta de hoy, no valida el algoritmo, y un error conceptual compartido pasaría los
+  dos. Para una fase cuyo mandato es *conducta idéntica* lo doy por el instrumento correcto, y se
+  lo señalo a Codex por si discrepa.
+- **LA FASE ESTÁ LIMPIA Y LISTA PARA LA REVISIÓN FINAL DE CODEX.** Los siete criterios se cumplen:
+  C1 (`grep` → 0), C2 (default en `:38`, `pick(i + 1)` sin off-by-one), C3 (10 goldens contra el
+  doble en memoria, sin base real), C4 (comida en 5 y 6, redistribución parcial en 8), C5 (orden
+  de guardas intacto por el diff verbatim; ops/writes en cero afirmados en los cinco tests), C6
+  (438/0), C7 (tabla de gate medida y declarada, build exit 0). **Sin ronda de remediación: cero
+  hallazgos BLOCKING contra el trabajo del ejecutor.** Rondas consumidas: **1 de 3**.
+- Prompt de revisión final escrito y commiteado en `prompts/P3a-codex-review.md`. Lleva por
+  delante las **tres cosas que harían fallar la fase por el motivo equivocado**: que los 11
+  diagnósticos de `handler.ts` son 6 desplazados + 3 nuevos declarados (B-08 corregida) + 2
+  `no-unused-vars`, que el comando de Deno se enmendó a mitad de fase y por qué eso no reduce
+  cobertura, y que el total de ESLint **no es portable** entre checkouts (B-09). También le pide
+  que reproduzca él mismo la comparación de 484 líneas, que es donde vive la fase.
+- FINDINGS RAISED: ninguno nuevo. DECISIONS: la enmienda de C6/D8.3, con fila de Decision Log.
+- BACKLOG: B-05, B-06, B-07, **B-08 (corregida)**, **B-09** abiertos. **B-06 antes de P8.**
+- OPEN AFTER THIS ROUND: (1) **Revisión final de Codex** con `prompts/P3a-codex-review.md`.
+  (2) La fase **no** se marca DONE hasta que Codex pase — es lo único que la cierra. (3) Merge de
+  `feat/mesa-md-seam`, después y solo si Codex pasa: decisión de Brent. (4) Luego **P3b**
+  (`feat/mesa-md-core`), cuya regla dura es que **los 10 goldens de P3a pasen sin modificación**.

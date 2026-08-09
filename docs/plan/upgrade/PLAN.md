@@ -250,7 +250,12 @@ Para cada fase, siendo `F` la lista de ficheros que la fase modifica o crea:
    commit padre**, sin cambios de ninguna fase. La regla del padre no es una invención nueva:
    es la misma disciplina de comparación que el punto 4 ya usa para los diagnósticos, y no se
    puede burlar, porque un rojo que la fase haya causado no se reproduce en el padre.)
-3. `deno test --allow-all .` desde `supabase/functions/`: **0 fallos**.
+3. `deno test --allow-all --no-check .` desde `supabase/functions/`: **0 fallos**.
+   (Enmendado 2026-08-08, Decision Log. Era `deno test --allow-all .`. El type-check que
+   `deno test` hace de su grafo es **duplicado** del paso 4, que corre `deno check .` sobre
+   el árbol entero incluidos los `_test.ts`; y mientras un fichero importado arrastre
+   diagnósticos preexistentes, ese duplicado no reporta 0 fallos sino que **se niega a
+   ejecutar la suite**. Quitarlo no reduce la cobertura de tipos en un solo fichero.)
 4. **Cero diagnósticos nuevos en `F`**, comparando **mensajes crudos completos**, no
    recuentos ni códigos (Codex r6 B2). Se filtran las salidas de
    `npx tsc -p tsconfig.app.json --noEmit`, `npx eslint . -f json`, `deno lint` y
@@ -568,7 +573,12 @@ aleatoria de casos, es `FINDINGS` antes de improvisar un framework que el repo n
 - [ ] C4 — Cubren **comida** (5, 6) y **redistribución parcial** (8).
 - [ ] C5 — Los guardas de autorización, estado, plazo e idempotencia siguen en el mismo
   orden y antes de toda escritura (tests 1–4).
-- [ ] C6 — `deno test` **+10 tests, 0 fallos**.
+- [ ] C6 — `deno test --allow-all --no-check .` **+10 tests, 0 fallos** (438/0 en la punta).
+  **Enmendado 2026-08-08, Decision Log**: antes decía `deno test` a secas, y así es
+  incumplible — `deno test` type-checkea su grafo de importación, así que los 8
+  diagnósticos que B-08 desplaza a `handler.ts` abortan la suite entera en cuanto
+  `handler_test.ts` la importa. `--no-check` **no pierde cobertura**: el paso 4 de D8 ya
+  corre `deno check .` sobre todo el árbol, ficheros de test incluidos.
 - [ ] C7 — Gate D8 sobre `F` = los 3 ficheros. Build ok.
 
 **Test plan:** 1 `OPTIONS 200 sin tocar la base` · 2 `sin admin rechaza antes de leer el
@@ -909,6 +919,7 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-08 | **D8 punto 2 se enmienda**: de «el conjunto de rojos por nombre es exactamente el de base» a «los rojos atribuibles a `F` no crecen; un rojo fuera de `F` se dirime reejecutando en el commit padre» | El criterio anterior no es comprobable: el PM midió **7 rojos en el propio commit padre**, sin cambios de ninguna fase, por el flake de B-05. Un criterio insatisfacible se convierte en juicio discrecional en cada fase, que es peor que no tenerlo. La regla del padre es la misma disciplina que el punto 4 ya usa para diagnósticos, y no se puede burlar: un rojo causado por la fase no se reproduce en el padre | PM (S1 de P1 r1; Brent delegó la decisión) |
 | 2026-08-08 | **PR3 incluye escribir la fila de `schema_migrations` a mano**, como sentencia aparte | El editor SQL no la escribe. Sin ella el remoto tendría la columna y la función pero no la versión, mientras el repo sí tiene el fichero: cualquier reconciliación futura la vería pendiente. El registro de migraciones debe reflejar la realidad. Es un `insert … on conflict do nothing`, aditivo e idempotente, y **no** se mete en el fichero de la migración, que sigue byte a byte igual al contrato congelado | PM (Brent delegó la decisión) |
 | 2026-08-08 | **Los absolutos de Vitest de la «Aritmética de tests» se anotan como desfasados; los deltas se conservan** | El 1036 se midió en `1732bee`. El PM midió el padre de P2 (`main`@`981c00f`): **1062 pass / 6 fail**. Los 26 de diferencia los trajeron otros workstreams, no este plan. Reescribir los deltas sería falsear el trabajo pendiente; borrar la tabla de base perdería un dato histórico correcto. Se añade la corrección al lado. No desbloquea ni bloquea nada: D8 no se dirime por absolutos. Backlog **B-07** | PM (verificación de P2 r1) |
+| 2026-08-08 | **El comando de test de Deno pasa a `deno test --allow-all --no-check .`**, tanto en el punto 3 de D8 como en el C6 de P3a | `deno test` type-checkea su grafo de importación. La suite estaba verde con `index.ts` cargando 6 diagnósticos **solo porque ningún test lo importaba**; en cuanto P3a hace que `handler_test.ts` importe `handler.ts` —el objeto entero de la fase— esos diagnósticos entran en el grafo y `deno test` **se niega a ejecutar la suite completa**, devolviendo cero tests en vez de 0 fallos. Así, «desplazar los diagnósticos de B-08» y «`deno test` → 438 passed» no podían ser ciertas a la vez. De las tres salidas, ésta es la única que no cuesta nada: **`--no-check` no reduce la cobertura de tipos**, porque el paso 4 de D8 ya corre `deno check .` sobre el árbol entero y **enumera los `_test.ts`** (verificado: `deno check create-mesa-matches/handler_test.ts` destapa por sí solo los 8 errores del handler). El type-check de `deno test` era duplicado, no adicional. Las alternativas costaban mucho más: adelantar B-08 destruye la propiedad de diff limpio que es lo único que hace verificable la regla dura de P3a, y partir la fase deja el seam sin tests. **Causa raíz: fallo de bootstrap del PM** — midió `deno check` por fichero y `deno test` en el padre, pero nunca el caso «un test importa un fichero con errores de tipo», que era justo lo que su decisión de desplazamiento iba a provocar | Ejecutor P3a r1 (hallazgo F-1), PM (diagnóstico y medición), Brent (decisión) |
 
 ---
 
