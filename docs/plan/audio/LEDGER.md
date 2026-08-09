@@ -1595,3 +1595,65 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno.
 - OPEN AFTER THIS ROUND: **`/exec AUDIO E3a r1`.** Prompt de ejecutor commiteado en
   `prompts/E3a-r1.md`. Rama `phase/E3a-slug` desde el `main` del día, con su SHA anotado.
+
+### 2026-08-09 — E3a round 1 — EXEC (Opus)
+- SESSION: `AUDIO · E3a · r1 · EXEC`
+- STATUS: **COMPLETE**. `phase/E3a-slug@1d09b7d`, SHA padre **`4b44b5b`**. 7 ficheros, **+757/-39**.
+- CONTEXT PRESSURE: **comfortable** — la lectura del plan costó ~25 % y lo demás entró.
+- Construido: migración `20260808120000_church_podcast_episodes_slug.sql`, `slug.ts`,
+  `publishService.ts`, `supabase/tests/slug.sql`, los dos ficheros de test, y `slug` a mano en
+  `types.ts`. **Informe completo, sin truncar** — el primero de este workstream.
+- DESVIACIONES declaradas por el ejecutor, las cuatro aceptadas: `slug` además de `title` en el
+  select (necesario para el hueco 4); stubs de test ampliados sin tocar ninguna aserción vieja;
+  el guardia `existingEpisodeNumber === null` sale de la condición del bucle (es lo que pide
+  «Concurrencia» punto 2) pero se conserva para decidir si recalcular el número; trabajó en
+  worktree propio, y acertó — el checkout principal se movió a mitad de sesión.
+
+### 2026-08-09 — E3a round 1 — PM (Opus), verificación independiente
+- SESSION: `AUDIO · E3a · PM` (verifica `AUDIO · E3a · r1 · EXEC`, `1d09b7d`)
+- ACTION: verificación completa en **worktrees desechables propios** (base `4b44b5b` y HEAD
+  `1d09b7d`, ambos con symlink a `node_modules`). **No reutilicé el worktree del ejecutor**, para
+  medir el árbol commiteado y no su estado de trabajo.
+- **ALCANCE, medido:** `git diff --stat` → **7 ficheros, +757/-39**, idéntico al informe.
+  **Cero ficheros prohibidos**: la migración de junio de 2026 y `podcast-backfill/index.ts` no
+  aparecen en el diff. **`seed.sql` y `smoke-local.spec.ts` byte-idénticos al padre** (0 líneas).
+- **MIGRACIÓN, leída entera.** Los seis pasos en el orden obligatorio. El índice es parcial sobre
+  `slug IS NOT NULL`; el `CHECK` de longitud admite `NULL`; el trigger lanza **`23514`**, nunca
+  `23505`. `church_podcast_episode_slug_body` corta en el último `-` dentro del presupuesto y hace
+  corte duro si no hay ninguno. **Verifiqué la aritmética del hueco 1**: base de 80 con sufijo
+  `-2` → 78. Y verifiqué que **despublicar conserva el slug**: con `OLD.slug` no nulo el trigger
+  retorna antes de llegar al `NEW.slug := NULL`.
+- **PRUEBAS QUE CORRÍ YO:**
+  - `npx vitest run src/lib/sermon-editor` → **46/46 verdes**.
+  - `supabase db reset` desde el árbol de la rama → **63 migraciones**, y el baseline del seed
+    **sin modificar** sale con `slug = reflexion-2026-01-04`; el borrador, `NULL`.
+  - `supabase/tests/slug.sql` → **los 11 casos pasan**, T11 incluido.
+  - **LAS TRES MUTACIONES, APLICADAS POR MÍ**, que es la prueba de que los tests no son vacíos:
+    **M1** (derivar de `metadata.title`) → 2 rojos, `expected 'otro-titulo-del-formulario' to be
+    'titulo-persistido-el-senor'`. **M3** (resultado desde la preferencia) → 3 rojos,
+    **`expected 'x' to be 'x-2'`** — exactamente el defecto de URL canónica que Codex temía en
+    r16/B2. **M2** (sin `slug` en el payload) → 2 rojos, `expected undefined to be …`. Árbol
+    restaurado a cero modificaciones después.
+  - **Gate D18 por los dos lados**, mismos 7 ficheros y mismo orden: `diff base head` → **sin
+    diferencias**; totales idénticos `tsc=1039 eslint=161 deno-lint=92 deno-check=48`;
+    `GATE_EXIT=0` en ambas.
+  - `npm run build` → **verde** (`✓ built in 9.02s`).
+  - Suite completa → **6 rojos en `MesaAbiertaDashboard.test.tsx`**; corridos **en la base
+    `4b44b5b`** salen **los mismos 6, mismos nombres**. **Cero fallos nuevos.**
+  - `npx playwright test tests/e2e/smoke-local.spec.ts` → **1 passed (14.4s)** con `seed.sql` y el
+    spec byte-idénticos.
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[N1] NIT** — la migración usa `DROP TRIGGER IF EXISTS` antes de crear el suyo. Es el patrón
+    idempotente estándar y sólo puede afectar a un trigger que esta misma migración posee, pero
+    D9 prohíbe `DROP` sin matices. Se registra para que la lectura literal de D9 no lo convierta
+    en hallazgo más adelante.
+  - **[N2] NIT** — el backfill sólo toca `slug IS NULL` y numera con `ROW_NUMBER()` desde 1. Si la
+    columna ya existiera con valores (reejecución parcial), la base podría chocar con un slug
+    previo y el índice único —que se crea después— fallaría. Inalcanzable con migraciones
+    versionadas; queda escrito.
+- DECISIONS: la del backfill sin tope de 5 (asunción 3 del ejecutor) se acepta: el tope pertenece
+  al bucle del trigger, y tumbar una migración por un sexto histórico en la misma fecha sería peor
+  que emitir un `-6`. Longitud máxima ~23 caracteres, muy dentro del `CHECK`.
+- OPEN AFTER THIS ROUND: **`E3a` está limpia y lista para la review final de Codex.** No la marco
+  DONE: sólo un PASS de Codex cierra la unidad. Después: `E3b`.
