@@ -2594,3 +2594,60 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   (2) La fase **no** se marca DONE hasta que Codex pase — es lo único que la cierra. (3) Merge de
   `feat/mesa-md-seam`, después y solo si Codex pasa: decisión de Brent. (4) Luego **P3b**
   (`feat/mesa-md-core`), cuya regla dura es que **los 10 goldens de P3a pasen sin modificación**.
+
+### 2026-08-08 — P3a CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P3a · REVIEW
+- **VERDICT: PASS.** `feat/mesa-md-seam`@`76d2d5e`. **Cero BLOCKING, cero SHOULD-FIX, cero NIT** —
+  la primera fase del plan que sale sin una sola observación. Review en `reviews/REVIEW-P3a.md`.
+  **La había commiteado en local y sin publicar** (igual que en P2); la empujé yo tras leerla.
+  **P3a queda DONE.**
+- LO QUE CODEX VERIFICÓ POR SU CUENTA: **reprodujo la comparación mecánica de las 484 líneas** y
+  confirma que `diff -w` solo difiere en las cuatro llamadas a `shuffle` con `pick`, con
+  Fisher–Yates intacto y sin off-by-one · Deno **438/0** · gate acotado y build **exit 0** ·
+  `handler.ts` sin `serve` ni `Deno.env`, `index.ts` como adaptador fino · `index 2.ts` y
+  `_shared/testHelpers.ts` sin tocar · los 10 goldens con doble en memoria, sin base real ni
+  `auth.users`, con cero escrituras en los guardas exigidos.
+- **AVALA LAS DOS COSAS QUE MÁS ME PREOCUPABAN.** (1) La enmienda de C6/D8.3 a `--no-check`:
+  «coherente — la suite ejecutó 438/0 y `deno check` sigue cubriendo el grafo completo, incluido
+  `handler_test.ts`». Era el punto donde yo mismo le pedí que discrepara si no estaba de acuerdo.
+  (2) La clasificación de B-08: los seis desplazados conservan sus mensajes y **las únicas
+  consecuencias nuevas son las tres que el plan ya aceptaba**.
+- **Y EXPLICA LA DISCREPANCIA DE VITEST QUE YO NO HABÍA RESUELTO.** Midió **1055/14** en punta y
+  padre con idénticas identidades; yo había medido **1063/6** en el padre, en otro worktree. Las
+  ocho de diferencia son de `usePresentationState` por **`localStorage` ausente**, y se reproducen
+  sin P3a. **No es el flake de B-05**, es otra cosa con causa nombrada — mi prompt había dicho «si
+  ves 7, es B-05», y eso habría desorientado a quien viera 14. Backlog **B-10**. La regla del
+  padre de D8.2 hizo exactamente su trabajo.
+- **DE LAS DOS SORPRESAS DE MEDICIÓN DE ESTA FASE, NINGUNA ERA CÓDIGO Y LAS DOS ERAN EL ENTORNO**
+  (B-09, el total de ESLint inflado por `supabase/.temp/`; B-10, `localStorage`). Vale la pena
+  registrarlo como patrón: los recuentos por fichero fueron portables en todos los checkouts, los
+  totales de proyecto no lo fueron en ninguno.
+- COSTE REAL DE LA FASE: **1 ronda de ejecutor, 1 verificación de PM, 1 revisión de Codex** — más
+  tres redespachos muertos en la puerta de precondición, que fueron culpa mía y no de la fase.
+  «La sesión de mayor riesgo del plan» salió por el camino corto, y lo que la abarató fue
+  concreto: el seam ya existía cinco veces en el repo, y el prompt llevaba medida de antemano la
+  línea base por fichero.
+- **§3.8.5 — P3b RELEÍDA A LA LUZ DE LO CONSTRUIDO. UNA ENMIENDA HECHA Y UNA DECISIÓN QUE PROPONGO:**
+  - **Hecho:** D5e decía `deno test` a secas. Actualizado a `deno test --allow-all --no-check .`,
+    **446/0** en la punta. Es consecuencia directa de la enmienda de D8.3 ya aprobada, no un
+    criterio nuevo; lo escribo explícito para que ningún ejecutor lo redescubra a su costa.
+  - **Propuesto, y es de Brent: P3b es mejor sitio que P4 para B-08.** P3b vuelve a mover código
+    —los bucles de asiento— a un fichero nuevo con línea base cero, así que la pregunta de
+    desplazamiento de D8.4 se repite. Medido: de los 11 diagnósticos de `handler.ts`, **`:192`
+    (`TARGET_GUEST_SIDE_FOR_DINNER`) y `:333` (`g`) caen dentro del bloque que P3b extrae**, y
+    `:144–145` (`p`) están justo en la frontera; `:400`, `:419`, `:441`, `:467` y `:520` son ruta
+    de escritura y se quedan. **Pero D1e exige que `matching.ts` sea puro**, sin importar
+    `@supabase/supabase-js` — y un módulo puro tiene que nombrar sus tipos de entrada, igual que
+    `mainDish.ts` nombró `Carrier` y `TableInput` en P2. En cuanto lo haga, esos `TS7006`
+    **desaparecen por construcción en vez de desplazarse**. Es decir: P3b va a tener que declarar
+    la interfaz `Participant` que B-08 pide, quiera o no. Adelantar B-08 ahí cuesta poco y deja
+    `matching.ts` limpio; dejarlo para P4 arrastra el problema una fase más.
+  - Sin otras enmiendas: alcance, D1e–D4e, D6e y el tamaño de P3b siguen bien. Su regla dura
+    —los 10 goldens de P3a pasan **sin modificación**, `git diff` sobre `handler_test.ts` vacío—
+    es ahora concreta y comprobable contra `76d2d5e`.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna nueva; la de C6/D8.3 ya está en el Decision Log.
+- BACKLOG: **B-10** añadido. B-05, B-06, B-07, B-08 (corregida), B-09, B-10 abiertos. **B-06 hay
+  que decidirlo antes de P8.**
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-seam`** — decisión de Brent; fast-forward
+  posible mientras `main` no se mueva. (2) Decidir si B-08 se adelanta a P3b. (3) Después,
+  `/pm-boot UPGRADE P3b` con contexto fresco.
