@@ -1489,3 +1489,46 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno nuevo.
 - OPEN AFTER THIS ROUND: **`E3a` no está congelada.** Falta `CODEX REVIEW plan r16`. Es la ronda 2
   del bucle de review de este contrato; si vuelve FAIL, escribo propuesta de re-plan en vez de r17.
+
+### 2026-08-08 — CODEX REVIEW plan r16 → FAIL (3 BLOCKING) — TOPE DE BUCLE, ESCALA A BRENT
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `docs/plan-audio@d28223c` / `main@1d6869d`. 3 BLOCKING, 3 SHOULD-FIX,
+  0 NIT. **Acepto los seis. Verificados uno por uno por mí**, y los seis se sostienen.
+- **SEGUNDA RONDA CONSECUTIVA DE CODEX SOBRE ESTE CONTRATO ⇒ TOPE DEL SOP §1.5.** No escribo r17
+  por mi cuenta: la decisión (aceptar con enmiendas / re-planificar / backlog) es de Brent.
+- **LO QUE CODEX DA POR BUENO, y es la mayor parte:** el centro arquitectónico es correcto; las
+  enmiendas de B1/B4/B6 de la r15 están **arregladas**; la corrección de D22 está **completa**;
+  H4 **reproducido**; sacar el seed y el humo del scope es **seguro** siempre que E3a.12 siga
+  siendo obligatorio; no fijar SHA padre es **sólido**; 7 ficheros y 14 criterios son **creíbles**
+  para una sesión; y plpgsql es **el sitio correcto** para el invariante, con el índice único —no
+  el `NOT EXISTS`— como árbitro de concurrencia.
+- **LO QUE FALLA, verificado por mí:**
+  - **[B1]** Escribí *"el cliente **nunca ve** un `23505` de slug"* en la tabla de resolución,
+    mientras las líneas 910-912 del mismo documento describen bien la carrera. **El documento se
+    contradice y la frase es falsa.** Codex reprodujo la carrera: dos triggers pasan el
+    `NOT EXISTS`, el índice rechaza a uno con `23505`, y reintentar da `…-2`. **Matiza B2:**
+    `podcast-backfill/index.ts:353-367` **no tiene reintento**, así que una carrera hace fallar esa
+    invocación. La base preserva el invariante —ni fila inválida ni duplicado— pero **no garantiza
+    que todo publicador tenga éxito**.
+  - **[B2]** `publishService.ts:140` selecciona `id, guid, episode_number` — **sin `title`**.
+    "Derivar del título persistido" **no está cableado**, y ningún criterio lo exige. Peor:
+    E3a.11 no obliga a que `PublishResult.slug` sea **el que devolvió el trigger**, así que una
+    implementación puede proponer `x`, recibir `x-2` y devolver `/x`. **URL canónica equivocada,
+    que es justo lo que E3b y el enlace compartido necesitan correcto.**
+  - **[B3]** `PLAN.md:331-335` sigue diciendo que el cuerpo de E3a es borrador y no contrato, y
+    META sigue diciendo "revisión 14" en dos sitios. **Se me escaparon al empalmar.**
+  - **[S1]** `command -v psql` → **no existe en el host**; el comando del test plan no correría.
+  - **[S2]** Mi mutación SQL es imprecisa: quitar `RETURN NEW` puede dar error de retorno o, con
+    `RETURN NULL`, saltarse la fila entera. Lo correcto es dejar `RETURN NEW` y poner `slug NULL`.
+  - **[S3]** El delta `1c4490f..1d6869d` también trae `mainDishImport.test.ts` y docs de UPGRADE.
+- **CAUSA RAÍZ, sexta lectura, y es la misma que la quinta con otra cara.** La r15 fue medir por
+  la ruta equivocada. **Ésta es medir bien y luego generalizar de más:** mi sonda no vio ningún
+  `23505` de slug —cierto— y escribí que el cliente *nunca* lo ve, que es una afirmación distinta
+  y falsa. **Tres veces en dos rondas el fallo está en el salto de "lo que observé" a "lo que
+  siempre pasa", no en la medición.** La corrección no es medir más: es **que toda frase que diga
+  "nunca" o "siempre" lleve al lado o el argumento que lo demuestra, o el caso que lo acota.**
+- FINDINGS: B1, B2, B3 BLOCKING; S1, S2, S3. `E3a` **no se congela**.
+- OPEN AFTER THIS ROUND: **decisión de Brent bajo §1.5.** Las tres enmiendas están enumeradas por
+  Codex sin ambigüedad y son de PM, no de código: reescribir una frase y añadir un criterio de
+  concurrencia; añadir cuatro tests de cableado, dos mutaciones y `title` al `select`; y borrar el
+  texto obsoleto. **Ninguna exige medición nueva.**
