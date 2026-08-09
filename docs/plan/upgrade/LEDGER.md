@@ -2651,3 +2651,75 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-seam`** — decisión de Brent; fast-forward
   posible mientras `main` no se mueva. (2) Decidir si B-08 se adelanta a P3b. (3) Después,
   `/pm-boot UPGRADE P3b` con contexto fresco.
+
+### 2026-08-08 — P3b round 1 — PM (Opus 5) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P3b · PM
+- **Estado al arrancar:** P3a **DONE** (Codex PASS sin una sola observación, `76d2d5e`). P3b es
+  la siguiente fase por el índice: `TODO`, depende solo de P3a, y P4 depende de ella. Rondas de
+  ejecutor consumidas en P3b: **cero**.
+- **LO QUE MEDÍ YO MISMO, ejecutándolo, no heredándolo del ledger.** El abaratamiento de P3a se
+  atribuyó explícitamente a que el prompt llevaba la línea base medida de antemano; repito el
+  procedimiento:
+  - `cd supabase/functions && deno test --allow-all --no-check .` → **438 passed / 0 failed**.
+    Coincide con lo que dejó P3a. El objetivo de D5e (**446/0**) es por tanto exacto.
+  - `scripts/gates/changed-files-diagnostics.sh` sobre `handler.ts` → **`(0)(1)(2)(8)`**,
+    idéntico a la B-08 corregida. **Y con los mensajes crudos y sus líneas**, que es lo que hacía
+    falta: sin eso no se puede decir qué diagnóstico cae dentro del bloque extraído y cuál no.
+  - `_shared/mainDish.ts` (el módulo puro de P2) → **`(0)(0)(0)(0)`**. Es la prueba de que en
+    este repo un módulo puro llega a cero, así que exigírselo a `matching.ts` no es una
+    aspiración: es un listón ya alcanzado, y el prompt cita el fichero como patrón.
+  - Merge de `feat/mesa-md-seam` a `main`: **fast-forward posible** (`--is-ancestor` → sí),
+    `git merge-tree --write-tree` **exit 0 sin conflictos**, y el alcance de código son
+    **exactamente los tres ficheros de P3a** (`handler.ts` +536, `handler_test.ts` +511,
+    `index.ts` −506) más documentos de plan.
+- **EL BLOQUEO, DICHO ANTES QUE NADA: `feat/mesa-md-seam` NO ESTÁ EN `main`.** `origin/main`
+  sigue en `1d6869d` y `grep -c 'P3a | Seam.*DONE'` sobre `origin/main` → **0**. P3b no puede
+  ejecutarse: su regla dura es que los diez goldens de P3a pasen sin modificación, y esos
+  ficheros **no existen** fuera de la rama del seam.
+- **NO DESPACHO, Y ESO ES DELIBERADO.** El coste de P3a fue tres sesiones de ejecutor muertas en
+  esta misma puerta, y el PM de entonces dejó escrito que la culpa fue cerrar el mensaje con una
+  línea `/exec` pegable antes de que existiera la condición. No repito el patrón: la línea `/exec`
+  de este mensaje va explícitamente detrás del merge, con la condición de rearme verificable
+  incluida **dentro** del propio prompt (§0), de modo que aunque se despache antes de tiempo el
+  ejecutor se detenga en la primera orden en vez de gastar una sesión.
+- **B-08 — RESUELVO LA PREGUNTA QUE P3a DEJÓ ABIERTA, Y NO NECESITA DECISIÓN DE BRENT.** El PM de
+  P3a propuso «adelantar B-08 a P3b» como decisión de Brent. Al medirlo, la pregunta se disuelve:
+  - **D1e ya obliga a la mitad.** `matching.ts` no puede importar `@supabase/supabase-js`, así que
+    no hereda el tipado del cliente y **tiene que nombrar sus tipos de entrada**. En cuanto lo
+    haga, los `TS7006` de dentro del bloque desaparecen **por construcción**, no por una tarea
+    añadida. No es alcance nuevo: es consecuencia de un criterio ya congelado.
+  - **La otra mitad cae sola.** `:400` (×2), `:419` y `:441` son la ruta de escritura iterando
+    `host.assignedGuests`, que tras esta fase viene del **valor de retorno tipado** de
+    `matching.ts`. Dejan de ser `any` implícito sin que nadie los toque.
+  - **El residuo se queda donde estaba**: `:26` (`no-explicit-any` de `SupabaseLike`), `:467`
+    (`count`) y `:520` (`TS18046`) no son del bloque extraído. **Siguen en B-08 y siguen siendo
+    de P4.** Meterlos aquí sí sería alcance nuevo y ensuciaría el diff, que es justo lo que hace
+    verificable la fase.
+  - Por tanto **ningún criterio cambia y no hace falta fila de Decision Log**. Lo que sí hice fue
+    escribir en el prompt, explícito, que **las bajas de diagnósticos son un aprobado y no una
+    desviación** — D8.4 prohíbe diagnósticos *nuevos*, no premia conservarlos. Sin esa frase, un
+    ejecutor prudente vería `handler.ts` bajar de 11 y creería haber roto algo.
+- **LOS DOS RIESGOS QUE EL PROMPT LLEVA POR DELANTE**, porque son las dos formas realistas de
+  romper los goldens sin darse cuenta:
+  - **Aliasing.** `activeHosts` y `waitlistHosts` son `slice()` de `hostStatus`: copian el array,
+    **no los elementos**, y el segundo pase muta a través de ellos. Una extracción que rehaga los
+    objetos deja la redistribución invisible en `hostStatus`. El test 6 es el que lo caza y el
+    prompt pide escribirlo pronto.
+  - **La secuencia de `pick`.** `shuffle` se llama en cuatro sitios y **solo dos se van**: los de
+    comida (`:375`, `:399`) se quedan hasta P4. `shuffle` tiene que exportarse desde `matching.ts`
+    e importarse en `handler.ts` —**una sola implementación**, porque los goldens 5 y 6 comparan
+    contra una reimplementación local (`handler_test.ts:85`) y dos copias de la real podrían
+    derivar en silencio—. Cualquier cambio en el número u orden de llamadas a `pick` mueve la
+    salida.
+- Prompt escrito y **commiteado** en `prompts/P3b-r1.md`, en `feat/mesa-md-seam`, para que entre
+  en `main` con el merge y el ejecutor lo encuentre donde su propio prompt le dice — el coste de
+  búsqueda que pagaron los tres redespachos de P3a.
+- TESTS: `deno test --allow-all --no-check .` → 438/0 (línea base, verificada por mí). Ninguna
+  ejecución de fase todavía.
+- FINDINGS RAISED: ninguno — no hay trabajo de ejecutor que juzgar.
+- DECISIONS: ninguna que toque el plan. B-08 aclarada arriba **sin** enmienda.
+- BACKLOG: sin cambios. B-05, B-06, B-07, B-08, B-09, B-10 abiertos. **B-06 antes de P8.**
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-seam` a `main`** — decisión explícita de
+  Brent; fast-forward posible y ensayado limpio. **Único bloqueo.** (2) Verificar
+  `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P3a | Seam.*DONE'` → `1`.
+  (3) Solo entonces, `/exec UPGRADE P3b r1`.
