@@ -2818,3 +2818,75 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   comparar el bloque movido contra `main:handler.ts` 169–360 con el desangrado de 4 espacios.
   (2) Merge de `feat/mesa-md-core` — decisión de Brent; **no lo hago yo**. (3) Después, P4, que
   se lleva la comida a `matching.ts`/`mainDish.ts` y trae el opt-out del plato principal.
+
+### 2026-08-09 — P3b round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P3b · PM
+- **Ronda 1 de 3. Cero hallazgos BLOCKING. La fase está limpia.** El único hallazgo de la ronda
+  es contra **mi propio prompt**, no contra el ejecutor.
+- **LO QUE VERIFIQUÉ YO MISMO, ejecutándolo, no leyendo el reporte:**
+  - **El movimiento es verbatim, y es donde vive la fase.** Reconstruí `main:handler.ts` 169–360,
+    le quité los 4 espacios de indentación y lo comparé con `matching.ts` 75–266:
+    **192 líneas contra 192, y `diff` exacto —no `diff -w`— devuelve CERO diferencias.**
+    Ni una. Es un resultado **más fuerte que el de P3a**, que tenía cuatro líneas distintas por
+    la inyección de `pick`.
+  - **La ruta de escritura también es verbatim**: `main:handler.ts` 362–526 contra `handler.ts`
+    185–349 → **165 líneas idénticas**; la única diferencia del bloque es que las 10 líneas de
+    `shuffle` ya no están al final, porque se exportan desde `matching.ts`. Exactamente lo pedido.
+  - **D5e: `deno test --allow-all --no-check .` → 446 passed / 0 failed**, corrido por mí. Son
+    los +8 exactos sobre los 438 que yo mismo medí en el padre.
+  - **D4e: `git diff` sobre `handler_test.ts` → vacío.** Los diez goldens de P3a pasan sin tocar
+    una línea, que era la regla dura de la fase.
+  - D1e (`grep` → 0, y **cero imports en absoluto**: hoja pura como `mainDish.ts`), D2e (→ 0),
+    D3e (→ 0). `npm run build` → **exit 0**. Vitest **1063 pass / 6 fail**, los 6 del conjunto
+    base declarado en `MesaAbiertaDashboard.test.tsx`, ninguno fuera.
+  - **Gate D8 reproducido por mí**: `handler.ts` **(0)(1)(1)(3)** —bajó desde (0)(1)(2)(8)—,
+    `matching.ts` **(0)(0)(1)(0)**, `matching_test.ts` **(0)(0)(0)(0)**. **Cero diagnósticos
+    nuevos.** Los cinco mensajes que quedan en `handler.ts` son los cinco de mi tabla §6 con solo
+    desplazamiento de línea (`:26`→`:31`, `:467`→`:290`, `:520`→`:343`, `:144/145`→`:149/150`).
+  - **La aritmética de los totales cuadra sola, que es la mejor señal de que nadie maquilló nada**:
+    `deno check` del proyecto 48 → **43** (−5: los cinco `TS7006` eliminados) y `deno lint` **92
+    sin moverse** (uno desplazado de `handler.ts` a `matching.ts`, ni alta ni baja).
+  - **La predicción de §6 se cumplió entera**: los `TS7006` de `:400`×2, `:419` y `:441`
+    desaparecieron **solos** al tipar el valor de retorno, sin que nadie los tocara.
+- **HICE UNA PRUEBA DE MUTACIÓN, porque «los 8 tests pasan» no dice si muerden.** Copié
+  `matching.ts` y `matching_test.ts` a un directorio temporal —**no toqué el repo**— y rompí ahí
+  el aliasing que el prompt señalaba como riesgo nº1, cambiando
+  `hostStatus.slice(0, hostsToUse)` por `.slice(...).map(h => ({ ...h }))`. Resultado:
+  **de 8/0 a 4 passed / 4 failed**, y entre las cuatro caídas está
+  `el segundo pase redistribuye`, justo el test que yo había pedido que cazara ese fallo. Los
+  tests comprueban conducta, no ejecutan código. El test lee de vuelta por `hostStatus` y además
+  afirma `new Set(seated).size === 8`: cubre la clase de fallo «un invitado en dos cenas» que ya
+  mordió a este código una vez.
+- **LA DESVIACIÓN QUE REPORTA EL EJECUTOR ES CORRECTA Y EL FALLO ES MÍO.** Mi §3.2 decía que la
+  ruta de escritura consume «exactamente» `hostStatus` y `unassignedGuests`. **Falso, y lo
+  comprobé**: el cuerpo de la respuesta (`main:handler.ts:496`–`502`) usa además
+  `guestsAssignedCount`, `hostsConvertedToGuests.length` y `allGuests.length`, y los goldens los
+  fijan —`golden: sin cupo → lista de espera` afirma `guestsAssigned` y `guestsUnassigned`—. Mi
+  enumeración estaba incompleta. El ejecutor hizo lo correcto: **no** paró con `FINDINGS`, porque
+  el corte 169–360 seguía siendo limpio y solo fallaba mi lista; devolvió cinco miembros en
+  `SeatingPlan` y **los arrays en vez de los recuentos**, que es lo que deja esas tres líneas del
+  handler verbatim. Corrección hacia arriba, bien juzgada.
+- FINDINGS: **BLOCKING: ninguno.** **SHOULD-FIX: ninguno.** **NIT N1** — `matching.ts` se lleva el
+  `no-unused-vars` de `TARGET_GUEST_SIDE_FOR_DINNER`: declarado como desplazamiento con mensaje
+  idéntico, y yo mismo pedí moverlo verbatim porque documenta la heurística. Se queda.
+  **NIT N2** — los dos `TS7006` de `p` en `handler.ts:149/150` siguen ahí; el prompt permitía
+  cualquiera de las dos salidas y no castear mantiene el diff limpio. De B-08/P4.
+- **NOTA PARA P4: B-08 ENCOGIÓ SOLA.** La mitad de ruta de escritura **ya no existe** — los cuatro
+  `TS7006` de `:400`/`:419`/`:441` desaparecieron al tipar el retorno. Lo que queda de B-08 son
+  **tres** diagnósticos, no once: `:31` (`no-explicit-any` de `SupabaseLike`), `:290` (`count`) y
+  `:343` (`TS18046`). La línea base de P4 sobre `handler.ts` es **(0)(1)(1)(3)**, no (0)(1)(2)(8).
+  Actualizaré la fila B-08 del PLAN al cerrar la fase, no antes.
+- TESTS: `deno test --allow-all --no-check .` → **446/0** · `npm run build` → **exit 0** ·
+  `npx vitest run --no-file-parallelism` → **1063/6** (base declarada).
+- **LA FASE ESTÁ LIMPIA Y LISTA PARA LA REVISIÓN FINAL DE CODEX.** Los seis criterios se cumplen y
+  los verifiqué uno a uno contra el código, no contra el reporte. **Sin ronda de remediación.**
+  Rondas consumidas: **1 de 3**.
+- DECISIONS: ninguna que toque el plan. Ningún criterio congelado se modificó en esta fase — la
+  primera del plan de la que se puede decir eso.
+- BACKLOG: sin altas. B-05, B-06, B-07, B-08 (**encogida a 3**), B-09, B-10 abiertos. **B-06 antes
+  de P8.**
+- OPEN AFTER THIS ROUND: (1) **Revisión final de Codex**; el prompt debe pedirle que reproduzca él
+  mismo las dos comparaciones mecánicas (192 líneas y 165 líneas) y que juzgue si el desplazamiento
+  del `no-unused-vars` a un fichero nuevo le parece aceptable. (2) La fase **no** se marca DONE
+  hasta que Codex pase. (3) Merge de `feat/mesa-md-core` — de Brent, después y solo si Codex pasa.
+  (4) Luego P4.
