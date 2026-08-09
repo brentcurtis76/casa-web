@@ -2215,3 +2215,60 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   (3) Cuando P3a llegue a revisión final, **el prompt de Codex debe declarar el desplazamiento de
   B-08 explícitamente**. (4) Backlog B-05, B-06, B-07 y B-08 abiertos; **B-06 hay que decidirlo
   antes de P8**.
+
+### 2026-08-08 — P3a r1 — Claude Opus 5 (EXEC) + PM (Opus 5) — VERIFICACIÓN
+- SESSION: UPGRADE · P3a · r1 · EXEC (reporte) · UPGRADE · P3a · PM (verificación)
+- CONTEXT PRESSURE: comfortable — el ejecutor paró en la puerta de precondición, antes de
+  cualquier trabajo de implementación.
+- **STATUS DEL EJECUTOR: BLOCKED, y es la conducta correcta.** La precondición dura del prompt
+  falló: P2 no está mergeada en `main`. No creó rama, no escribió código, no tocó el ledger.
+- **LO QUE VERIFIQUÉ YO MISMO, no lo que dice el reporte.** Las cuatro afirmaciones del
+  ejecutor, comprobadas una a una tras `git fetch`:
+  - `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P2 | Módulo puro…DONE'` → **0**.
+    Confirmado.
+  - Fila P2 en `origin/main`:321 → `TODO`. En `feat/mesa-md-alloc`:321 → `**DONE** · 6363378`.
+    Confirmado, no es un artefacto del patrón de grep.
+  - `git merge-base --is-ancestor origin/feat/mesa-md-alloc origin/main` → **no**. Sin mergear.
+  - La bifurcación del ledger es real y medible: `origin/main` termina en «P2 round 1 — PM —
+    DESBLOQUEO Y DESPACHO»; `feat/mesa-md-alloc` lleva **cuatro entradas más** (P2 exec,
+    verificación del PM, P2 CIERRE, bootstrap de P3a). Ramificar desde `main` y añadir una
+    quinta habría bifurcado exactamente esas cuatro. Es B-02 otra vez, literal.
+  El ejecutor también **omitió deliberadamente la entrada de ledger** que pide el «WHEN DONE»,
+  razonando que escribirla desde una rama del `main` actual causaría el daño que la precondición
+  existe para evitar. **Tiene razón y lo registro yo en su lugar**, que es lo que corresponde.
+- **LO QUE EL EJECUTOR NO VIO Y CAMBIA UNA INSTRUCCIÓN MÍA: `main` se movió durante la ronda.**
+  En mi bootstrap `origin/main` estaba en `981c00f`; ahora está en **`1c4490f`**
+  («feat(audio): E-infra-impl»), del workstream AUDIO. Consecuencias, las dos medidas:
+  1. **El merge de P2 ya no es fast-forward.** `981c00f` sigue siendo ancestro de `main`, pero
+     `main` tiene ahora un commit que `feat/mesa-md-alloc` no tiene. El
+     `git merge --ff-only` que di al cerrar el bootstrap **habría fallado**. Hace falta un merge
+     normal. Lo ensayé en una rama desechable (`tmp/p3a-parent`, ya borrada): **merge limpio,
+     cero conflictos** — AUDIO no tocó `docs/plan/upgrade/` en absoluto.
+  2. **Las líneas base NO cambian, y lo medí en vez de suponerlo.** Sobre el padre real
+     post-merge (`origin/main` + `feat/mesa-md-alloc`): gate por fichero idéntico —`handler.ts`
+     y `handler_test.ts` `(0)(0)(0)(0)`, `index.ts` `(0)(0)(4)(6)` con los mismos mensajes— y
+     totales **`tsc=1039 eslint=160 deno-lint=94 deno-check=46`**, iguales. AUDIO tocó
+     `.env.test.example`, `playwright.config.ts`, `scripts/gates/README.md`, `supabase/seed.sql`
+     y `tests/e2e/*`: nada bajo `supabase/functions/` ni `src/`. `tsconfig.app.json` solo incluye
+     `src`, y `vitest.config.ts` excluye `tests/e2e/**` explícitamente, así que Vitest sigue en
+     **1063/6** y Deno en **428/0**. **El prompt `P3a-r1.md` sigue correcto palabra por palabra;
+     no lo reescribo.**
+- FINDINGS RAISED contra el código: **ninguno** — no hay código; la ronda no llegó a existir.
+  Contra mi propio bootstrap, dos, ambas mías y ninguna del ejecutor:
+  - **SHOULD-FIX (proceso): el prompt quedó solo en `feat/mesa-md-alloc`, no en `main`.** Lo
+    commiteé ahí para no bifurcar el ledger, y esa parte era correcta, pero el efecto es que un
+    ejecutor que arranca de `main` no encuentra su propio prompt. Éste lo localizó en otro
+    checkout y siguió, pero le costó trabajo que no era suyo. **La regla correcta para adelante:
+    el prompt va a `main` —es un fichero nuevo, nunca conflictúa— y las ediciones de `LEDGER.md`
+    y `PLAN.md` van a la rama pendiente.** Se resuelve solo en cuanto entre el merge.
+  - **NIT: la orden de merge que di era `--ff-only`** y ha dejado de ser válida por el
+    movimiento de `main`. Corregida abajo.
+- DECISIONS: ninguna. El plan no cambia; P3a sigue releída sin enmienda y el prompt sin tocar.
+- BACKLOG ADDED: ninguno. B-05, B-06, B-07 y B-08 siguen abiertos; **B-06 antes de P8**.
+- **RONDAS CONSUMIDAS: cero.** Esta ronda no cuenta contra el tope de 3 del SOP §1.5: no hubo
+  intento de implementación que juzgar, solo una puerta que hizo su trabajo. El redespacho tras
+  el merge sigue siendo `r1`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — decisión y ejecución de
+  Brent; ahora con merge normal, no `--ff-only`. Es lo único que retiene a P3a. (2) Después,
+  `/exec UPGRADE P3a r1`, con el prompt sin cambios. (3) En la revisión final de P3a, el prompt
+  de Codex debe declarar explícitamente el desplazamiento de diagnósticos de **B-08**.
