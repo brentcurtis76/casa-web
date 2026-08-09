@@ -1413,3 +1413,45 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - **Lo que sigue en pie de aquella nota:** la purga borró los volúmenes, así que la base local del
   proyecto ajeno se reconstruyó desde cero. Si tenía datos que no venían de sus migraciones y su
   seed, no los recuperó. **Eso no lo puedo verificar desde aquí y no lo doy por bueno.**
+
+### 2026-08-08 — CODEX REVIEW plan r15 → FAIL (6 BLOCKING) — triage del PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `docs/plan-audio@e611cf5` y código `main@1c4490f`. 6 BLOCKING, 0
+  SHOULD-FIX, 1 NIT. **Acepto los seis.** No discuto ninguno.
+- **VERIFICADO POR MÍ ANTES DE ACEPTAR** (una review es una afirmación, no evidencia):
+  - **B2 — CONFIRMADO.** `supabase/functions/podcast-backfill/index.ts:353` hace
+    `.update({ status: "published", … })` **sin `slug`**. Es un **tercer publicador** que H1 y H2
+    no vieron. Con el `CHECK` puesto, esa función queda rota.
+  - **B3 — CONFIRMADO, y es un error mío.** Repetí la sonda **por la ruta real de la app**
+    (usuario `admin@e2e.local` autenticado, RLS activa) en vez de con `service_role`:
+    `{"code":"23505","details":null,"hint":null,"message":"…unique constraint \"idx_podcast_episodes_slug\""}`.
+    **`details` es `null`.** Postgres suprime el valor de la clave cuando hay RLS. Mi medición usó
+    `service_role`, que **se salta RLS**, y por eso vi `Key (slug)=(…)`.
+    **El nombre del índice en `message` sí sobrevive en las dos rutas**, así que el núcleo de D22
+    aguanta; lo que escribí sobre `details` **es falso para la ruta que la app usa** y lo metí en
+    el contrato como hecho medido.
+  - **B6 — CONFIRMADO, y el plan ya lo había dictaminado.** §6 y el backlog dicen desde la r10 que
+    regenerar `types.ts` **es su propia unidad** por su blast radius sobre 128 tablas, y la r13
+    añadió que reimprime **~208 mensajes** de ficheros ajenos y **necesita comparación
+    normalizada** — el único caso donde §4.3 no aplica literal. Mi `E3a.14` pedía regeneración
+    completa: contradice el plan y además rompería el procedimiento del gate. `types.ts` son
+    **920 líneas** hoy; Codex midió **4079** generadas, `+3749/-590`.
+  - **B5 — CONFIRMADO.** `publishService.ts:282` es `retriesLeft = 3` **después** del intento
+    inicial: **4 intentos totales**, no 3. Mi "hasta 3 (comportamiento existente)" era ambiguo.
+  - **B1 y B4** — los acepto sin re-medir: son de lectura del propio contrato. B1: el scope no
+    exige una migración **nueva** con versión > 62, y mi propio prompt de review listó el fichero
+    de junio como "tocado", que es justo la confusión que permite editar una migración ya
+    aplicada. Y el rollback que escribí es inseguro: revertir el código dejando el `CHECK` hace
+    que el publicador viejo falle con `23514`. B4: `db reset` aplica la migración **antes** del
+    seed, así que E3a.11 no puede sembrar `published, slug=NULL` — el criterio es improbable tal
+    como está redactado.
+  - **NIT aceptado:** `reflexion-YYYY-MM-DD` son **20** caracteres, no 21.
+- **CAUSA RAÍZ, quinta lectura, y es distinta de las cuatro anteriores.** Las otras cuatro fueron
+  "escribo verificado sobre inferencias". **Ésta no: medí, y medí mal.** Elegí `service_role`
+  porque era el camino corto para que PostgREST me dejara escribir, y `service_role` es
+  precisamente el rol que no se parece a la app. **Una medición por la ruta equivocada da más
+  confianza que no medir, y por eso es peor.** La corrección no es "medir más": es **declarar en
+  qué rol y por qué ruta se mide, y que sea la que el código usa**.
+- FINDINGS: B1-B6 BLOCKING aceptados; 1 NIT. `E3a` **no se congela**.
+- OPEN AFTER THIS ROUND: r16. Hay una bifurcación de diseño que la review abre y que decide qué
+  unidades existen; está planteada a Brent antes de escribir nada.
