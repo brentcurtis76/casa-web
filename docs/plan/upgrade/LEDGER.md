@@ -2391,3 +2391,30 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-alloc` a `main`** — de Brent, merge normal,
   no `--ff-only`. Único bloqueo. (2) Verificar la condición de rearme de arriba. (3) Solo
   entonces, `/exec UPGRADE P3a r1`.
+
+### 2026-08-08 — P2 MERGE + P3a DESBLOQUEADA — Brent (autorización) + PM (ejecución)
+- SESSION: UPGRADE · P3a · PM
+- **Brent autorizó explícitamente el merge («go ahead and merge») y lo ejecuté yo.** Merge normal
+  (no `--ff-only`, imposible desde que `main` se movió a `1c4490f`): `415474b`, publicado en
+  `origin/main`. Rama aprobada `feat/mesa-md-alloc`@`92d6585`.
+- VERIFICACIONES PREVIAS AL MERGE, en este orden y todas antes de tocar nada: SHA aprobado ·
+  `--is-ancestor` → no mergeada · FF imposible → merge commit · `git merge-tree --write-tree` →
+  **exit 0, sin conflictos** · alcance del diff = **exactamente los tres ficheros de código de
+  P2** (`mainDish.ts`, `mainDish_test.ts`, `mainDishImport.test.ts`) más documentos de plan ·
+  worktrees sin actividad en conflicto (`main` estaba en `casa-web`, limpio salvo dos ficheros
+  sin trackear de AUDIO que el merge no toca).
+- VERIFICACIONES POSTERIORES, antes de publicar, porque un push a `main` dispara el despliegue de
+  Vercel: **Deno 428 passed / 0 failed** —idéntico a la línea base que yo había medido— y
+  `npm run build` **exit 0**. El merge no cambia nada de cara al usuario: dos módulos Deno de
+  `_shared/` (que no despliega Vercel), un test de Vitest y documentos.
+- **CONDICIÓN DE REARME CUMPLIDA**: sobre `origin/main`,
+  `grep -c 'P2 | Módulo puro de asignación.*DONE'` → **1**. Y `prompts/P3a-r1.md` **ya está en
+  `origin/main`**, así que el coste de búsqueda que pagaron los tres redespachos anteriores
+  desaparece: el próximo ejecutor lo encuentra donde le dice su propio prompt.
+- **P3a queda desbloqueada.** Prompt sin cambios, líneas base vigentes y medidas sobre este mismo
+  árbol (`1039/160/94/46`, Deno `428/0`, Vitest `1063/6`), **rondas consumidas: cero** — el
+  despacho sigue siendo `r1`.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna que toque el plan.
+- OPEN AFTER THIS ROUND: (1) `/exec UPGRADE P3a r1` — ahora sí. (2) En la revisión final de P3a,
+  el prompt de Codex **debe declarar explícitamente el desplazamiento de diagnósticos de B-08**.
+  (3) Backlog B-05, B-06, B-07 y B-08 abiertos; **B-06 hay que decidirlo antes de P8**.
