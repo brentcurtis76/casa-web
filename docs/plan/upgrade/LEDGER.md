@@ -2758,3 +2758,63 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   con `shuffle` exportado desde `matching.ts`) son lo primero que hay que mirar en la
   verificación. (3) `main` sigue tomado por el worktree `casa-p2-review`: cualquier operación
   futura sobre `main` va con `git -C`, no con `git checkout`.
+
+### 2026-08-08 — P3b round 1 — EXEC (Opus 5) — COMPLETE
+- SESSION: UPGRADE · P3b · r1 · EXEC
+- **Precondición §0 verificada antes de tocar nada:**
+  `git show origin/main:docs/plan/upgrade/PLAN.md | grep -c 'P3a | Seam.*DONE'` → **1**.
+  Rama `feat/mesa-md-core` cortada de `origin/main` (`4b44b5b`) con `git checkout -b … origin/main`;
+  no uso `git checkout main` porque `main` sigue tomado por el worktree `casa-p2-review`.
+  Commit: **`79e662e`**.
+- **LÍNEAS BASE RE-MEDIDAS SOBRE EL PADRE, y coinciden con el prompt §6 exactamente**: Deno
+  **438/0**; `handler.ts` **`(0)(1)(2)(8)`** con los ocho mensajes y sus líneas idénticos a la
+  tabla del prompt. Ninguna discrepancia que declarar.
+- **La extracción es mecánica y así se puede verificar.** Las 192 líneas 169–360 de `handler.ts`
+  están en `matching.ts` **byte a byte idénticas salvo el desangrado de 4 espacios**: comprobado
+  con `git show main:…/handler.ts | sed -n '169,360p' | sed 's/^    //'` contra el bloque movido →
+  `diff` vacío. Comentarios y `console.log` viajan verbatim, sin traducir (D10).
+- **`shuffle`**: exportada desde `matching.ts` e importada en `handler.ts`. **Una sola
+  implementación.** Las cuatro llamadas a `pick` siguen donde estaban: las dos de comida
+  (`shuffle([...foodAssignments], pick)` ×2) permanecen en `handler.ts` — `grep -c 'shuffle('`
+  sobre `handler.ts` → **2**, ni una más.
+- **Aliasing (el riesgo nº1 del prompt): preservado.** `activeHosts`/`waitlistHosts` siguen
+  siendo `slice()` del mismo `hostStatus` y los pases mutan a través de ellos. El test 6 lo
+  comprueba leyendo **por `hostStatus`**, no por los arrays de trabajo: el anfitrión pequeño
+  llega a `assignedGuests.length === 0` y el grande a 8. Escrito pronto, como pedía el prompt.
+- **CRITERIOS**: D1e `grep -cE 'supabase-js|Deno\.env'` → 0 · D2e `grep -c 'Math\.random'` → 0
+  (el default `pick` del composition root sigue en `handler.ts:43`) · D3e `grep -c 'hostsToUse'`
+  sobre `handler.ts` → 0 · **D4e `git diff --stat main..HEAD -- handler_test.ts` → vacío; los
+  diez goldens de P3a pasan sin tocar una línea** · D5e **446/0 (+8)** · D6e gate abajo,
+  `npm run build` exit 0.
+- **GATE.** `handler.ts` **`(0)(1)(1)(3)`**, por debajo de su línea base y **sin un solo mensaje
+  nuevo** — todos los que quedan están en la tabla del prompt. Bajas: el `TS7006` de `:333` (dentro
+  del bloque) y los cuatro de la ruta de escritura (`:400` ×2, `:419`, `:441`), que dejan de ser
+  `any` implícito solos, **exactamente como el PM predijo en §6**; B-08 se cierra sola en su mitad
+  de la ruta de escritura. `matching.ts` **`(0)(0)(1)(0)`**: el único mensaje es el
+  **desplazamiento declarado** de `TARGET_GUEST_SIDE_FOR_DINNER` (`no-unused-vars`, mensaje
+  idéntico, antes en `handler.ts:192`, ahora en `matching.ts:98`). `matching_test.ts`
+  **`(0)(0)(0)(0)`**. Totales del proyecto: `deno-check` 48 → **43**, el resto sin mover.
+- **DESVIACIÓN, una, y hay que registrarla: §3.2 del prompt enumera de menos.** Dice que la ruta
+  de escritura consume «exactamente» `hostStatus` y `unassignedGuests`. El cuerpo de la respuesta
+  (`:496`–`:502` del fichero original) consume además **`guestsAssignedCount`**,
+  **`hostsConvertedToGuests.length`** y **`allGuests.length`**, y los tres están **fijados por los
+  goldens** (`golden: sin cupo → lista de espera` comprueba `guestsAssigned` y `guestsUnassigned`).
+  `SeatingPlan` devuelve los cinco. Devuelvo los **arrays**, no los recuentos, para que esas tres
+  líneas de `handler.ts` queden verbatim. No es un plan roto —el corte 169–360 sigue siendo
+  limpio— así que no paré: es una enumeración incompleta, corregida hacia arriba.
+- TESTS: `cd supabase/functions && deno test --allow-all --no-check .` → **446 passed / 0 failed**.
+  `npm run build` → exit 0. Vitest `npx vitest run --no-file-parallelism` → **6 failed / 1063
+  passed**, las seis en `MesaAbiertaDashboard.test.tsx` = la base declarada hasta P8. En una
+  primera pasada cayó también `CuentacuentoEditor.ph.surfaces` (B-05, flaky bajo carga); pasó al
+  repetir. **Cero fallos de `usePresentationState` en este checkout** (B-10 no se reproduce aquí).
+  Nada rojo fuera de lo triado y nada rojo en mis tres ficheros.
+- FINDINGS RAISED: ninguno. DECISIONS: ninguna; no toqué ningún criterio congelado.
+- BACKLOG: sin cambios formales. Nota para P4: **la mitad de B-08 que vivía en la ruta de
+  escritura ya no existe** (los cuatro `TS7006` cayeron); queda el residuo declarado fuera de
+  alcance — `handler.ts:31` `no-explicit-any` de `SupabaseLike`, `:290` `count` sin usar,
+  `:343` `TS18046`. Los dos `TS7006` de `p` en `:149`/`:150` (la frontera) siguen ahí: no tipé
+  `participants` para no ensuciar el diff, y el prompt lo permitía explícitamente.
+- OPEN AFTER THIS ROUND: (1) Revisión de P3b — el diff está construido para que sea mecánica:
+  comparar el bloque movido contra `main:handler.ts` 169–360 con el desangrado de 4 espacios.
+  (2) Merge de `feat/mesa-md-core` — decisión de Brent; **no lo hago yo**. (3) Después, P4, que
+  se lleva la comida a `matching.ts`/`mainDish.ts` y trae el opt-out del plato principal.
