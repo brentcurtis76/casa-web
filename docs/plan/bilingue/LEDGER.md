@@ -635,3 +635,53 @@ npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to revi
  5 files changed, 563 insertions(+)
 tsc=0
 ```
+
+### 2026-08-10 — D1a round 1 — PM verification
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min (independent verification)
+- STAGE: executor (see executor entry) | PM verification 20m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — 1 BLOCKING found in PM verification. Phase is NOT clean; r2 required.
+- WHAT I VERIFIED MYSELF (not taken from the report):
+  - Re-ran the gate: diff confined to `docs/plan/bilingue/` (6 files, +634), `tsc=0`.
+  - **Verified all four manifest `sha256` values by recomputing them.** All match. The method lock
+    is real, not decorative.
+  - **A6 held:** grepped both prose artifacts for recorded-result shapes — no matches. The census
+    was not run for the record. D-L survived contact with an executor.
+  - **A3 held:** `census.sh` line 39 includes `src/types/shared/liturgy.ts`; line 54 defines
+    `PASS_B_ROOTS=("${PASS_A_ROOTS[@]}" src/lib/whatsapp)` — the 185-file set, not the 135 the PM
+    used. `export LC_ALL=en_US.UTF-8` once at line 11; all six external binaries absolute; **zero**
+    bare external processes.
+  - **A4 held and exceeded:** `audience` and `language-axis` are typed "non-empty set";
+    `channel-fixed` and `declaration/registry in source` are defined; the schema explicitly says
+    presentation chrome and projected content have independent axes and "do not collapse a mixed
+    presentation into one value."
+  - **A5 held — the criterion I called hardest.** My first grep looked in `CENSUS-METHOD.md` and
+    found nothing; the rule is in `SURFACE-SCHEMA.md:55`. **Both named probes are resolved:**
+    `whatsapp-signup` text is included only if it participates in the keyed reminder/status/reply
+    chain (onboarding, consent and marketing excluded); `children-ministry` admin text only if it
+    flows into the builder UI or a child packet (text on `/admin/ninos` alone excluded). Shared
+    data, module name, import and route are each explicitly declared insufficient.
+  - **A2 held:** 49 words, and no `...`/`…`/`etc.` in any artifact.
+
+- **[B1] BLOCKING — the locked census counts Deno test files.**
+  `bash -n` only parses; **I ran `census.sh`, and that is the only reason this was found.**
+  It exits 0 and works — and its output includes `handler_test.ts`, `prompt_test.ts`,
+  `handler_contract_test.ts` and others. The exclusion is `-not -name '*.test.*'`, which catches the
+  dot convention used under `src/` but **not the underscore convention `*_test.ts` used throughout
+  `supabase/functions/`**. Measured: **22 `_test.ts` files in `src`+`supabase`, none inside a
+  `__tests__` directory**, so nothing else excludes them; they contribute **12 hits / 12 no-accent
+  hits** to `PASS_B_SUMMARY files=186 hits=381 no_accent_hits=320`. Test files are not user-visible
+  copy surfaces. Locking this method means D1b's numbers and every downstream sizing decision
+  inherit the contamination, and fixing it afterwards invalidates the lock.
+- **THIS DEFECT IS MINE, NOT THE EXECUTOR'S.** `-not -name '*.test.*'` came from the script in
+  PLAN.md; the executor implemented the specification faithfully. My own measurements
+  (185/376/316) carry the same contamination. D1a is the correct phase to fix it — it is the method
+  phase, and the plan already tells the executor to correct a wrong method element here rather than
+  in D1b.
+- **THE D1a TEST PLAN I WROTE WAS INSUFFICIENT.** It specified `bash -n`, which cannot detect a
+  wrong file set. Corrected for r2: run the script, inspect the selected file list, and assert no
+  test file appears. Recorded because the same gap would recur in any future method-lock phase.
+- FINDINGS: BLOCKING 1 ([B1]) · SHOULD-FIX 0 · NIT 0.
+- OPEN AFTER THIS ROUND: D1a r2 prompt issued. Executor round 2 of max 3.
