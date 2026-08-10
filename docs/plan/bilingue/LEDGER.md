@@ -339,3 +339,56 @@
 - OPEN AFTER THIS ROUND: **Brent decides, second time past the cap.** Draft 4 under the two process
   fixes, or freeze a repaired D1 alone and convert the deadlock into execution. `PLAN.md` is not
   frozen and no phase may start.
+
+### 2026-08-10 — plan round 6 — PM (draft 4: one phase, not nine)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~25 min (executing commands 10m, rewrite 15m)
+- STAGE: rewrite 25m | fresh review 0m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** (round 5's FAIL stands). Draft 4 awaits Codex review of D1 alone.
+- CONTEXT PRESSURE: comfortable
+- ACTION: Brent chose to freeze one repaired phase rather than attempt draft 4 of nine, saying he
+  lacked the visibility to judge between the options. `PLAN.md` rewritten to **D1 only** plus a
+  re-plan gate. D2–D6 are not planned; their inputs are preserved in Appendix B.
+- COMMITS: see git log for the draft-4 SHA
+- TESTS: every command in the plan executed; outputs pasted into the plan itself.
+
+- **THE TWO PROCESS FIXES, APPLIED RATHER THAN PROMISED:**
+  - **D-K (new):** absolute binary paths, exported `LC_ALL`, invocation recorded verbatim, and
+    *suspect the instrument before defending the number*. Written to memory — it invalidates every
+    count taken in this repo through the wrapped shell, not only BILINGUE's.
+  - **D-B extended:** a command in a plan must have been **executed**. Draft 4 is the first draft
+    where that is true of every command it contains.
+- **WHAT EXECUTING THEM CHANGED.** The census moved from 166 files / 1,402 lines to
+  **180 files / 1,418 lines**, purely because three surfaces were silently missing
+  (`ConstructorLiturgiasPage.tsx`, `data/elementos-fijos`, `_shared/whatsapp`) and `.json` was not
+  covered. The locale question is settled and **demonstrated, not asserted**: `LC_ALL=C` returns
+  601 and `en_US.UTF-8` returns 596 on `CuentacuentoEditor.tsx`, and the five extra lines under `C`
+  are emoji and a middot (`🚨`, `✅`, `·`) whose UTF-8 lead bytes collide with the accent class.
+  `en_US.UTF-8` is therefore the correct semantic and is pinned.
+- **THE SINK-BASED SURFACE DERIVATION WORKS AND IS NOW IN THE PLAN, EXECUTED.** It returns **19
+  emitting surfaces**, including `canvasCompositor.ts` and `slideRenderer.tsx` — two the PM never
+  named across three drafts — and `whatsapp-signup`, which is probably out of the liturgy path and
+  is assigned to D1 for triage. This replaces draft 3's seven criteria that said "by a recorded
+  command" without supplying one ([D3-B1]).
+- **NEW DELIVERABLE, D1.9 — `D1-SUMMARY.md`.** One page, plain language, readable by someone who
+  has not read the codebase. Brent said he felt too blind to judge between the options; an
+  inventory he cannot read does not fix that, so the summary is a deliverable rather than a
+  courtesy. It is explicitly **not** script-checkable and the plan says so.
+- **APPENDIX B PRESERVES WHAT THE REVIEWS ALREADY PRODUCED** — JSON path counts, `(path, kind)`
+  pair counts, custom shapes incl. `blank-slide`, the 8 JSONB columns, the FK closure, the
+  `published_resources` uniqueness, the missing `WITH CHECK`, the baked-in preacher name — each
+  labelled **input, not fact**, requiring re-derivation under D-K. Recorded so the next planner
+  does not repay for them.
+- DECISIONS: plan one phase not nine · D-K · D-B extended to executed-commands · `en_US.UTF-8`
+  pinned as census locale · D2–D6 replaced by a re-plan gate · `D1-SUMMARY.md` as a deliverable ·
+  `BLOCKS-D6` renamed `BLOCKS-REPLAN` since D6 is no longer planned.
+- OPEN AFTER THIS ROUND:
+  - `PLAN.md` draft 4 is **not frozen.** Codex reviews D1 alone.
+  - Weakest point, named: D1.3's derivation is only as good as the sink regex. A surface emitting
+    text by a route the regex misses will not be caught by any criterion.
+  - Unverified: whether `npm ci` succeeds in `casa-pilot`. It is D1's first step and a BLOCKED
+    report if it fails.
+  - Still Brent's and now deferred to the re-plan with real data in hand: full feature vs
+    English-creation-only; default English Bible translation; English liturgical texts.
