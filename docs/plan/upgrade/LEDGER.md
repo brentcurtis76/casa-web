@@ -3051,3 +3051,85 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `handler_test.ts` hunk a hunk contra la allowlist de E6, y correr los tres greps de
   E1/E5/E6 yo mismo. (3) P4 es la primera fase que **quiere** cambiar conducta: tocar un
   tercer golden es `FINDINGS`, no una discusión.
+
+### 2026-08-10 — P4 round 1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P4 · r1 · EXEC
+- CONTEXT PRESSURE: comfortable. El prompt traía la línea base por fichero con los
+  mensajes crudos y nombraba los dos modos de fallo, así que no hubo que reconstruir
+  nada leyendo el repo entero. Se leyeron completos `mainDish.ts`, `matching.ts`,
+  `handler.ts` y los dos ficheros de test; con eso bastó.
+- ACTION: cableado `allocateAll` en `matching.ts` (no en `handler.ts`, D13). El plan
+  crece con `dinners`, `mainDishCoverage`, `tablesWithShortfall` y `mainDishMoves`;
+  `handler.ts` recorre `dinners` y escribe de un solo objeto. Los dos
+  `shuffle([...foodAssignments], pick)` y el import de `shuffle` **eliminados**.
+  `Participant` gana `can_bring_main_dish`. `console.warn` de déficit con **ids**.
+- **EL MODO DE FALLO 1 SE EVITÓ POR FORMA, NO POR DISCIPLINA.** `allocateAll` devuelve
+  `CarrierFood[]` —ids y comida—, así que el reequilibrio se dobla de vuelta mapeando
+  ids a `Participant` contra `allGuests`, y de ahí sale `dinners`, donde cada invitado
+  viaja pegado a su comida. El bucle de escritura no tiene ya cómo leer
+  `host.assignedGuests` y una asignación a la vez: no hay dos listas que cruzar.
+  `hostStatus` se actualiza con las listas post-swap **a propósito**, porque las tres
+  actualizaciones de participantes de más abajo leen de ahí y tienen que coincidir con
+  lo que se escribió en `mesa_abierta_assignments`.
+- **LA FIXTURE DE INTERCAMBIO SE ENCONTRÓ POR FUERZA BRUTA, NO POR TRAZA A MANO.** El
+  prompt advertía que era la parte peliaguda y tenía razón, pero por un motivo que no
+  estaba escrito: **el ejecutor no elige qué invitado cae en qué mesa** — eso lo decide
+  el reparto por ratio de llenado de `planSeating` sobre el orden barajado, así que
+  «pon los excluidos en la mesa deficitaria» no es algo que se pueda escribir en la
+  fixture. Se enumeraron los 256 repartos de willingness sobre 8 invitados con `+1` y
+  dos anfitriones, y 60 disparan swap. Se eligió el más limpio (excluidos `g3`, `g4`,
+  `g7`, más `hA`): hA queda a 10 personas → cuota 2 con **un** portador dispuesto, hB a
+  9 personas con 5, y la búsqueda cambia el `g3` de hA por el `g2` de hB —2 personas
+  cada subconjunto (G3)— con déficit total 1 → 0. **Recomendación para P6/P7/P8: si una
+  fase necesita un escenario concreto aguas abajo de `planSeating`, enumerar es más
+  barato que razonar.** La misma fixture sirve a tres tests (4, 5 y 12–14).
+- **LA PREDICCIÓN DEL PM SOBRE LOS GOLDENS 5 Y 6 SALIÓ EXACTA.** Antes de tocar los
+  tests, la suite falló en esos dos y **solo** en esos dos, con el diff que el prompt
+  anticipaba: el anfitrión pasa de `salad` a `main_course` y el primer invitado de
+  `main_course` a `salad`; los cuatro invitados quedan en `salad, drinks, dessert,
+  salad`. Los otros ocho pasaron sin tocarlos. Verificado además por extracción
+  programática: los ocho bloques son **byte-idénticos** contra `HEAD`.
+- **UN HUNK FUERA DE LA ALLOWLIST, Y ESTÁ FORZADO POR E8.** `FOODS` y
+  `referenceShuffle` solo los usaban los goldens 5 y 6. Al reescribirlos quedaban sin
+  uso, y `handler_test.ts` mide `deno lint (0)` en la línea base: dejarlos habría metido
+  dos `no-unused-vars` nuevos y roto E8. Se eliminan. **No tocan ninguno de los ocho**
+  —viven en la zona de helpers— pero es un hunk que la redacción de E6 no enumera, y se
+  declara aquí en vez de esconderlo. El PM decide si cuenta.
+- **TÍTULOS DE LOS GOLDENS 5 Y 6 CAMBIADOS.** Se llamaban `= shuffle([...4])[j % 4]` y
+  `= shuffle([...4])[0]`, que ya no es la regla. Ahora son `= guarniciones rotadas desde
+  el offset` y `= main_course por D7`. Está dentro de «estos dos pueden cambiar», pero
+  rompe el grep por nombre que el PM pensaba usar para auditar la allowlist; se avisa.
+- COMMITS: `0fad9ad` en `feat/mesa-md-wire`, desde `main` @ `3851e40`.
+- TESTS: `deno test --allow-all --no-check .` desde `supabase/functions/` → **456
+  passed, 0 failed** (446 + 6 en `matching_test.ts` + 4 en `handler_test.ts`). Gate D8
+  sobre los cuatro ficheros: **cero diagnósticos nuevos**, los cinco de la línea base
+  con el mismo texto y solo desplazamiento de línea (`matching.ts` 98→157, `handler.ts`
+  31→32, 290→299, 343→356, 149/150→150/151). Totales del proyecto **idénticos** a la
+  línea base del prompt: `tsc=1039 eslint=161 deno-lint=92 deno-check=43`.
+  `npm run build` exit 0.
+- **VITEST: 1063/6, Y LOS 6 NO SON B-05.** El fichero rojo es
+  `src/components/mesa-abierta/__tests__/MesaAbiertaDashboard.test.tsx` (6 de 7), no los
+  `CuentacuentoEditor.ph.*` que B-05 cataloga. Reejecutado **aislado en el commit padre**
+  (`3851e40`, worktree `casa-p2-review`): **6 failed / 1 passed, idéntico**. Es
+  preexistente y no lo toca esta fase —los cuatro ficheros son Deno y ningún test de
+  Vitest los importa— pero **no estaba catalogado**. Backlog nuevo.
+- FINDINGS RAISED: ninguno. El contrato de `allocateAll` soportó lo que P4 pedía sin
+  forzarlo; los tres avisos de §3.8.5 del cierre de P3b se cumplieron los tres
+  (`matching.ts` dejó de ser hoja sin coste de diagnósticos, `Participant` creció, y E6
+  se leyó como diff en vez de contarse).
+- DECISIONS: ninguna que toque el plan. Una elección de forma que el PM debería mirar:
+  `SeatingPlan` lleva **cuatro** campos nuevos, no dos. `dinners` es el vehículo del
+  modo de fallo 1 y `mainDishMoves` es lo único que permite a los tests 4 y 5 afirmar
+  «cuando ocurre un intercambio» sin adivinarlo. Solo los dos que exige E2 salen en la
+  respuesta HTTP; `dinners` y `mainDishMoves` no cruzan el borde.
+- BACKLOG ADDED: **B-12** — `MesaAbiertaDashboard.test.tsx` lleva 6 de sus 7 tests en
+  rojo en `main` @ `3851e40`, reproducido aislado y en dos worktrees. Ajeno a UPGRADE;
+  candidato natural a P6, que ya toca el panel de admin. B-11 sigue en el backlog por
+  decisión del PM de esta ronda (§8 del prompt), no se tocó.
+- OPEN AFTER THIS ROUND: (1) verificación independiente del PM: reejecutar `deno test`,
+  los tres greps de E1/E5/E6 y la lectura del diff de `handler_test.ts` hunk a hunk —
+  con el hunk de `FOODS`/`referenceShuffle` y el cambio de títulos como los dos puntos a
+  juzgar. (2) Decidir si el borrado de esos dos helpers cabe en E6 o si obliga a una
+  enmienda del criterio. (3) Merge de `feat/mesa-md-wire` a `main` — decisión de Brent,
+  tras revisión de Codex. (4) P5a queda desbloqueada por P4; P6/P7/P8 consumen
+  `mainDishCoverage` y `tablesWithShortfall` tal como salen hoy de `results`.
