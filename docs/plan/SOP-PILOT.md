@@ -39,7 +39,17 @@ first-pass rate is a rounds-scale problem. They are not the same size.
 
 ## 2. What changes
 
-### C1 — Effort is explicit, and held constant within a session
+### C1 — Effort is explicit, and held constant within a session — **NOT A VARIABLE**
+
+**Corrected 2026-08-10 by Brent, before phase 1 ran.** The config said `medium`, but in practice
+he had been raising effort manually on essentially every session. So the baseline below — 1/10
+first-review PASS, median 6.5 rounds — was already measured at high effort.
+
+That kills the tempting hypothesis. The rework is not an effort problem, and C1 cannot be
+credited with any improvement the pilot shows. Setting the global default to `high` is kept only
+so the config stops lying about what actually runs. **C2 and C3 carry the entire pilot.**
+
+Original rationale retained below for the record.
 
 `~/.claude/settings.json` was running `effortLevel: "medium"`. Anthropic's documented API
 default is `high` for both Fable 5 and Opus 5; effort governs *all* response tokens — thinking,
