@@ -3721,3 +3721,44 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   pendiente** — `prompts/P5a-codex-review.md` está commiteado y listo; se abre en Codex
   Sol, no con `/exec`. Si se aprueba r2, Codex revisa después de r2. (3) Merge a `main`,
   decisión de Brent, después del PASS de Codex.
+
+### 2026-08-10 — P5a round 2 — PM (Opus 5) — ENMIENDA APROBADA Y PROMPT
+- SESSION: UPGRADE · P5a · PM
+- **BRENT APRUEBA LA ENMIENDA.** P5a pasa de **10 a 12 tests** y de `vitest +10` a
+  **`+12`**; se añaden **F9** y **F10** a los criterios de aceptación. Fila escrita en el
+  Decision Log del PLAN y aritmética actualizada (Vitest total del plan +32 → **+34**).
+  Es la primera enmienda al PLAN desde que se congeló el 2026-08-06.
+- ACTION: escribí la fila del Decision Log, enmendé F7, el test plan y la aritmética de
+  P5a en `PLAN.md`, y escribí `prompts/P5a-r2.md`. Ninguna otra fase se toca.
+- **LO QUE LA ENMIENDA NO HACE, QUE ES LA MITAD DE SU VALOR.** No recoge B-15 —ésa tiene
+  casa natural en P6, cuyo `F` ya contiene `MesaAbiertaAdmin.tsx`—, no toca código de
+  producción, no reabre los diez tests de la ronda 1 y no ensancha la `F` de la fase.
+  Son **dos tests**. Este plan se quemó cinco revisiones por ensanchar alcance y P4
+  declinó ensancharse por B-11 y le salió gratis; la diferencia aquí, y es la que
+  justifica la excepción, es que a B-11 **la cerró el alcance propio de su fase** y a
+  B-16 **no la cierra nadie nunca**: grepeando el PLAN entero, `MesaAbiertaSignup.tsx` y
+  `AddParticipantDialog.tsx` **solo aparecen en el alcance de P5a**.
+- **EL PROMPT EXIGE PRUEBA POR MUTACIÓN, NO POR VERDE.** F9 y F10 no se satisfacen con un
+  test que pase: el ejecutor debe **aplicar la mutación a mano, enseñar el rojo, y
+  revertir** —con `git status` limpio antes de reportar—. Un test verde no demuestra que
+  guarde nada; que se ponga rojo bajo la mutación exacta, sí. Es la primera vez en este
+  plan que un criterio se escribe así, y viene directamente de que la ronda 1 tenía diez
+  tests verdes sobre un cable que no sujetaba nadie.
+- **EL PROMPT PROHÍBE EXPLÍCITAMENTE TOCAR PRODUCCIÓN**, y convierte la tentación en
+  `FINDINGS`: si el test 11 necesitara un `data-testid` o un helper exportado para poder
+  fallar, eso significaría que la enmienda está mal dimensionada, y eso lo arregla el PM,
+  no el ejecutor improvisando.
+- **AVISO DE MEDICIÓN QUE VA EN EL PROMPT.** Tres sesiones han medido esta suite y han
+  salido 6, 7 y 11 rojos en la misma punta según la carga de la máquina. El prompt fija
+  el objetivo en **1093/6** (+2 sobre 1091/6), manda reejecutar antes de concluir nada, y
+  advierte de que **la regla del padre de D8.2 no discrimina** cuando el padre corre
+  tranquilo y la punta bajo carga — el hueco que levantó la sesión de verificación.
+  Enmendar D8.2 es decisión aparte y no la meto en esta ronda.
+- BACKLOG: **B-16 y B-17 pasan de «sin dueño» a «asignadas a P5a r2»**. B-15 sigue
+  recomendada a P6. **B-13, B-14 y el N1 de P4 siguen sin dueño** — la decisión que P4
+  dejó abierta (ensanchar la `F` de P7) sigue sin tomarse y ahora tiene un precedente:
+  ésta. **B-06 antes de P8.** B-07 sin cambios.
+- OPEN AFTER THIS ROUND: (1) Ejecutar r2. (2) Verificación independiente del PM. (3)
+  **Revisión final de Codex, que sigue sin hacerse** — `prompts/P5a-codex-review.md`
+  necesitará una nota de que el alcance ahora son 12 tests y que F9/F10 se demuestran por
+  mutación. Se abre **en Codex Sol**, no con `/exec`. (4) Merge a `main` tras el PASS.

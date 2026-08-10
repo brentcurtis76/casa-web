@@ -682,14 +682,24 @@ meses sin matches.
 - [ ] F4 — `AddParticipantDialog` envía `canBringMainDish` en el body (test 10).
 - [ ] F5 — El resumen del paso 5 lo menciona solo si el usuario se excluyó.
 - [ ] F6 — **Guardar el diálogo de edición persiste el campo** (test 9).
-- [ ] F7 — Los 10 tests pasan; `vitest` **+10**, rojos sin cambios.
+- [ ] F7 — Los **12** tests pasan; `vitest` **+12**, rojos sin cambios.
+  (Enmendado 2026-08-10, Decision Log: eran 10 y `+10`.)
 - [ ] F8 — Gate D8 sobre `F` = los **9** ficheros (`participantPayload.ts` + su test, los
   tres componentes de formulario, `MesaAbiertaAdmin.tsx`, y los tres tests de componente).
   Build ok.
+- [ ] **F9 — El cableado del switch al builder queda fijado por un test**, no solo por
+  lectura: sustituir `cannotBringMainDish` por la constante `false` en la llamada a
+  `buildParticipantInsert` debe poner **algún test en rojo**. (Añadido 2026-08-10,
+  Decision Log. Antes de la ronda 2 esa mutación dejaba los diez tests verdes y cero
+  diagnósticos de `tsc` — medido por el PM.)
+- [ ] **F10 — `resetForm` de `AddParticipantDialog` devuelve el switch a apagado**, fijado
+  por un test. (Añadido 2026-08-10, Decision Log.)
 
 **Test plan:** `participantPayload.test.ts` (1–4). `MesaAbiertaSignup.mainDish.test.tsx`
-(5–7). `EditParticipantDialog.mainDish.test.tsx` (8 estado inicial · 9 el `update` incluye
-el campo). `AddParticipantDialog.mainDish.test.tsx` (10).
+(5–7 y **11**). `EditParticipantDialog.mainDish.test.tsx` (8 estado inicial · 9 el `update`
+incluye el campo). `AddParticipantDialog.mainDish.test.tsx` (10 y **12**).
+Tests **11** (el submit del asistente afirma el payload que recibe `.insert()`, cierra F9)
+y **12** (`resetForm` apaga el switch, cierra F10) añadidos en la **ronda 2**.
 
 **Risks:** los tests 5–10 montan Radix en jsdom, hoy solo probado para dos componentes. Si
 el wizard no se monta hasta el paso 5 sin andamiaje desproporcionado, `FINDINGS`: 1–4
@@ -928,6 +938,7 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-08 | **PR3 incluye escribir la fila de `schema_migrations` a mano**, como sentencia aparte | El editor SQL no la escribe. Sin ella el remoto tendría la columna y la función pero no la versión, mientras el repo sí tiene el fichero: cualquier reconciliación futura la vería pendiente. El registro de migraciones debe reflejar la realidad. Es un `insert … on conflict do nothing`, aditivo e idempotente, y **no** se mete en el fichero de la migración, que sigue byte a byte igual al contrato congelado | PM (Brent delegó la decisión) |
 | 2026-08-08 | **Los absolutos de Vitest de la «Aritmética de tests» se anotan como desfasados; los deltas se conservan** | El 1036 se midió en `1732bee`. El PM midió el padre de P2 (`main`@`981c00f`): **1062 pass / 6 fail**. Los 26 de diferencia los trajeron otros workstreams, no este plan. Reescribir los deltas sería falsear el trabajo pendiente; borrar la tabla de base perdería un dato histórico correcto. Se añade la corrección al lado. No desbloquea ni bloquea nada: D8 no se dirime por absolutos. Backlog **B-07** | PM (verificación de P2 r1) |
 | 2026-08-08 | **El comando de test de Deno pasa a `deno test --allow-all --no-check .`**, tanto en el punto 3 de D8 como en el C6 de P3a | `deno test` type-checkea su grafo de importación. La suite estaba verde con `index.ts` cargando 6 diagnósticos **solo porque ningún test lo importaba**; en cuanto P3a hace que `handler_test.ts` importe `handler.ts` —el objeto entero de la fase— esos diagnósticos entran en el grafo y `deno test` **se niega a ejecutar la suite completa**, devolviendo cero tests en vez de 0 fallos. Así, «desplazar los diagnósticos de B-08» y «`deno test` → 438 passed» no podían ser ciertas a la vez. De las tres salidas, ésta es la única que no cuesta nada: **`--no-check` no reduce la cobertura de tipos**, porque el paso 4 de D8 ya corre `deno check .` sobre el árbol entero y **enumera los `_test.ts`** (verificado: `deno check create-mesa-matches/handler_test.ts` destapa por sí solo los 8 errores del handler). El type-check de `deno test` era duplicado, no adicional. Las alternativas costaban mucho más: adelantar B-08 destruye la propiedad de diff limpio que es lo único que hace verificable la regla dura de P3a, y partir la fase deja el seam sin tests. **Causa raíz: fallo de bootstrap del PM** — midió `deno check` por fichero y `deno test` en el padre, pero nunca el caso «un test importa un fichero con errores de tipo», que era justo lo que su decisión de desplazamiento iba a provocar | Ejecutor P3a r1 (hallazgo F-1), PM (diagnóstico y medición), Brent (decisión) |
+| 2026-08-10 | **P5a pasa de 10 a 12 tests y de `vitest +10` a `+12`; se añaden F9 y F10** | La ronda 1 quedó correcta en el código pero con la cláusula central de F2 —«su estado llega al builder»— verificada **solo por lectura**. Medido por el PM como mutación real: sustituir `cannotBringMainDish` por `false` en la llamada a `buildParticipantInsert` deja **los diez tests verdes y cero diagnósticos de `tsc`**, es decir, la única guarda del camino principal de la funcionalidad no existía. Lo mismo, menor, con `resetForm` (B-17). **Por qué se enmienda en vez de mandarlo al backlog:** `MesaAbiertaSignup.tsx` y `AddParticipantDialog.tsx` aparecen **solo** en el alcance de P5a en todo el PLAN — ninguna fase posterior los vuelve a tocar, así que «al backlog» aquí significa «sin dueño para siempre», que es el residuo que P4 ya dejó con B-13. Los dos ficheros están hoy en la `F` de P5a, la rama está abierta y los mocks ya están escritos y probados. Se acota a dos tests y **no** se toca B-15, que sí tiene casa en P6 | PM (medición y propuesta), sesión de verificación de Claude (hallazgo S1/S2), Brent (decisión) |
 
 ---
 
@@ -937,8 +948,9 @@ Con las tres garantías nuevas de D5, que llevan P2 de 16 a 19 tests Deno:
 
 - **Deno**: P2 **+19** · P3a +10 · P3b +8 · P4 +10 · P5b +4 · P7 +11 = **+62** →
   409 + 62 = **471 pass / 0 fail**.
-- **Vitest**: P2 +1 · P5a +10 · P6 +12 · P8 +9 = **+32** → 1036 + 32 = 1068, más los
-  6 rojos reparados por P8 = **1074 pass / 0 fail**.
+- **Vitest**: P2 +1 · P5a **+12** · P6 +12 · P8 +9 = **+34** → 1036 + 34 = 1070, más los
+  6 rojos reparados por P8 = **1076 pass / 0 fail**.
+  (P5a enmendada de +10 a +12 el 2026-08-10, Decision Log.)
 
 > **Los absolutos de Vitest están desfasados desde el 2026-08-08** (Decision Log; backlog
 > **B-07**). Los **deltas siguen siendo correctos y son lo que D8 exige**; lo que ha caducado
