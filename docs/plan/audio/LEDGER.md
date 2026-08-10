@@ -1692,3 +1692,43 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS: **1 BLOCKING (B1)** → ronda de remediación r2. 1 NIT al backlog.
 - OPEN AFTER THIS ROUND: `/exec AUDIO E3a r2`, **de alcance mínimo**: sólo el fichero de test.
   Es la ronda 1 de 2 del bucle de Codex sobre esta fase.
+
+### 2026-08-09 — E3a round 2 — EXEC (Opus)
+- SESSION: `AUDIO · E3a · r2 · EXEC`
+- STATUS: **COMPLETE**. `phase/E3a-slug@6054d55` (padre `1d09b7d`). **1 fichero, +23/-5**, sólo el
+  de test, como exigía el alcance mínimo. Informe completo, sin truncar — el segundo seguido.
+- Cómo cerró B1: `Recorded` gana **`updateSelectCols`**, alimentado sólo cuando la cadena empezó
+  por `.update()`; `selectCols` se queda intacta con su semántica plana. La aserción de la 361
+  pasa a exigir **la proyección concreta del `UPDATE`**: exactamente una, con `slug` y con
+  `episode_number`.
+- **Encontró una segunda vuelta del mismo defecto, no pedida.** `single()` y `limit()` ahora
+  cierran la cadena (`_kind = null`). Sin eso, tras un `UPDATE` fallido `_kind` quedaba en
+  `'update'` y el `select('episode_number')` del recálculo de número se habría anotado como
+  proyección del `UPDATE`: **un falso verde con la forma exacta del defecto que venía a arreglar.**
+
+### 2026-08-09 — E3a round 2 — PM (Opus), verificación independiente
+- SESSION: `AUDIO · E3a · PM` (verifica `AUDIO · E3a · r2 · EXEC`, `6054d55`)
+- ACTION: verificación en worktree desechable propio sobre `6054d55`. Leí el diff entero —28
+  líneas— y corrí las cinco mutaciones yo mismo.
+- **ALCANCE:** `git diff --stat 1d09b7d..6054d55` → **1 fichero, +23/-5**. Cero producción tocada.
+- **LAS CINCO MUTACIONES, APLICADAS POR MÍ:**
+  - **A2, la de Codex** (`.select('episode_number, slug')` → `.select('episode_number')`) → **ROJA**:
+    `AssertionError: expected 'episode_number' to contain 'slug'`. **Era el punto entero de la
+    ronda y ahora cae.**
+  - **M1** (derivar de `metadata.title`) → 2 rojas · **M2** (sin `slug` en el payload) → 2 rojas ·
+    **M3** (resultado desde la preferencia) → 3 rojas. Las tres de r1 siguen cazando.
+  - Árbol restaurado a **0 ficheros modificados**; control 46/46.
+- **GATE D18** sobre el único fichero: `tsc(0) eslint(0) deno-lint(0) deno-check(0)`, `GATE_EXIT=0`,
+  totales `tsc=1039 eslint=161 deno-lint=92 deno-check=48` — **idénticos a los que medí en r1**.
+  `npm run build` → **verde** (`✓ built in 7.54s`). Suite completa: **1081 pasados, 6 rojos**, los
+  mismos preexistentes de `MesaAbiertaDashboard.test.tsx`.
+- **NO re-corrí `slug.sql`, el humo ni la ruta de upgrade**: ningún fichero de producción ni de
+  esquema cambió en esta ronda, así que su resultado de r1 sigue vigente. Queda dicho, no escondido.
+- FINDINGS RAISED:
+  - **BLOCKING: ninguno.**
+  - **[N3] NIT** — el cierre de cadena en `single()`/`limit()` **no está probado**: lo revertí solo
+    y los 46 tests siguen verdes, tal como el propio ejecutor advirtió. Leí las cuatro cadenas que
+    el mock soporta y el cambio es correcto, pero es la única línea de la ronda **sin evidencia en
+    rojo**. Se registra para que nadie lo lea como verificado.
+- OPEN AFTER THIS ROUND: **`E3a` está limpia otra vez y lista para la review final de Codex.**
+  Es la **ronda 2 de 2** del bucle de §1.5: si vuelve FAIL, decide Brent.
