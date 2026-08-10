@@ -3418,3 +3418,55 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Este commit de bootstrap va en `feat/mesa-md-wire` a propósito, para que un solo merge
   lleve P4 y el prompt de P5a juntos. Decisión de Brent. (2) `main` local sigue un commit
   por delante de `origin/main`. (3) B-13/N1 sin decidir.
+
+### 2026-08-10 — P5a round 1 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P5a · r1 · EXEC
+- CONTEXT PRESSURE: cómoda. Lo caro no fue el código —nueve ficheros, 489 líneas— sino
+  medir: cuatro corridas completas de Vitest a ~4 min cada una, tres de ellas solo para
+  averiguar cuál era la línea base de verdad.
+- ACTION: switch «No puedo traer el plato principal» en los tres formularios, detrás de
+  `buildParticipantInsert` (módulo puro, cero imports, dueño único de la conversión de
+  polaridad). `MesaAbiertaAdmin` gana la columna en el `select` y en su `interface`.
+  Los cinco `SelectQueryError` de ese fichero siguen nombrando `email` carácter por
+  carácter — que era lo que §3.5 mandaba comprobar al añadir la columna.
+- COMMITS: `7bb090e` en `feat/mesa-md-form`, ramificada de `main` @ `62e9158`.
+- TESTS: `npx vitest run --no-file-parallelism` → **1091 passed / 6 failed (1097)**. Los
+  6 rojos son los seis de `MesaAbiertaDashboard.test.tsx` que declara D8.2, ni uno más.
+- **LA LÍNEA BASE DEL PROMPT YA NO ERA LA DEL PADRE, Y POR POCO LO DOY POR ROTO.** §6.1
+  prometía 1063/6 = 1069 tests; salieron 1097. El prompt midió sobre `main` @ `3851e40`
+  y, entre ese momento y este, `main` recibió **dos** merges: el de P4 (`949b40a`, sin
+  tests de Vitest) y **el de `phase/E3a-slug` (`62e9158`), que es de otro workstream y
+  trae +18 tests**. Reconstruí la base corriendo la suite en el padre real, y ahí está
+  la cuenta: **padre 1080/7 (1087) → punta 1091/6 (1097) = +10 exactos**, mis diez.
+  **Lección para los prompts que quedan: el absoluto de Vitest caduca en cuanto otro
+  workstream mergea, y este repo tiene tres activos.** El delta y el conjunto de rojos
+  sobreviven; el absoluto no. Vale más citar el SHA del padre y el delta que el número.
+- **EL PADRE ES INESTABLE Y LA PUNTA NO.** Tres corridas sobre `62e9158` dieron 7, 9 y 7
+  fallos; las tres veces el excedente sobre los seis de `MesaAbiertaDashboard` fueron
+  ficheros `CuentacuentoEditor.ph.*` —**B-05**, tal cual está catalogado— y una vez
+  `usePresentationState` (**B-10**). Mi rama salió en 6 las dos veces que la corrí. Es
+  decir: **la punta tiene menos rojos que el padre**, y no porque yo arreglara nada.
+- DECISIONS: ninguna que toque el plan. Una desviación menor de la firma prescrita, en
+  el ledger porque cambia una línea del prompt: **§3.1 fijaba `status: string` en el
+  retorno de `buildParticipantInsert`, y ese `string` ancho produce un TS2769 NUEVO** en
+  `MesaAbiertaSignup.tsx:113` — el tipo `Insert` de la tabla exige la unión
+  `'pending' | 'confirmed' | 'cancelled' | 'waitlist'`. Lo medí con el gate antes y
+  después: con `string`, `MesaAbiertaSignup` pasa de `tsc (0)` a `tsc (1)` y el total del
+  proyecto de 1039 a 1040; estrechado a `status: 'pending'`, vuelve a `(0)` y a 1039.
+  La firma del prompt, aplicada al pie de la letra, era BLOCKING bajo D8.4.
+- GATE D8: cero diagnósticos nuevos sobre los nueve ficheros. Todo lo que aparece está en
+  la línea base de §6.2 con el mismo texto; solo se desplazan líneas (`MesaAbiertaSignup`
+  eslint 174→176, `EditParticipantDialog` tsc 100→104 y eslint 126→131,
+  `AddParticipantDialog` tsc 71→73 y eslint 148→151, `MesaAbiertaAdmin` +2). Los cinco
+  ficheros nuevos miden `(0)(0)(0)(0)`. `npm run build` sale 0.
+- FINDINGS RAISED: ninguno. Nada del plan resultó falso: la columna está en `types.ts`,
+  el `select` no renombró ningún `SelectQueryError`, y el asistente se monta en jsdom sin
+  andamiaje — no hizo falta la vía de escape que §5 concedía para los tests 5–7.
+- BACKLOG ADDED: ninguno. **B-05 y B-10 confirmadas otra vez** con tres corridas del
+  padre; **B-08 intacta**, no se tocó ni un diagnóstico heredado.
+- OPEN AFTER THIS ROUND: (1) `admin-add-participant` **aún no lee `canBringMainDish`** —
+  es el trabajo de P5b, y hasta entonces el alta manual sigue cayendo en el DEFAULT
+  `true`, o sea la conducta previa a P5a. Previsto por §3.4, no es defecto. (2) Verificar
+  `feat/mesa-md-form` y decidir el merge — de Brent. (3) **Al escribir el prompt de P5b,
+  reemplazar el absoluto de Vitest por «SHA del padre + delta»**; si no, la próxima
+  ronda repite mis tres corridas de diagnóstico.
