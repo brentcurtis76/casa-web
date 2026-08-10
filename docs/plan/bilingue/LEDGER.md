@@ -564,3 +564,74 @@
   **D1b-2** (UI/render/declarations + reconciliation + summary) → re-plan gate.
 - OPEN AFTER THIS ROUND: D1a executor prompt issued. Phase reviews (SOP §3.6) still apply — the
   override stops *plan* review, not per-phase review.
+
+### 2026-08-10 — D1a round 1 — EXEC
+
+- SESSION: `BILINGUE · D1a · r1 · EXEC`
+- ELAPSED: ~30 min
+- STAGE: contract/setup 5m | method implementation 20m | verification/reporting 5m
+- EFFORT: executor `high`
+- FIRST-PASS: **yes** — the required test command passed on its first run.
+- CONTEXT PRESSURE: comfortable
+- ACTION: committed the D1a counting, classification, boundary, and audit methods without running
+  `census.sh` or recording a census result. The locked set comprises `CENSUS-METHOD.md`, `census.sh`,
+  `SURFACE-SCHEMA.md`, `wordlist-passB.txt`, and `METHOD-MANIFEST.txt`.
+- COMMITS: `f4cea2c` (method artifacts); ledger commit follows this entry.
+- FROZEN DECISIONS: D-A confined the diff to `docs/plan/bilingue/`; D-B and D-M are satisfied by the
+  literal gate invocation and output below; D-K fixes absolute measurement processes and the locale;
+  D-D prevents source-line values in census output; D-G keeps locale and content language separate;
+  D-I fixes `UNVERIFIED` materiality; D-J and D-N make the sink search a candidate floor with an
+  extension path; D-L is preserved because the census implementation was syntax-checked only.
+- ACCEPTANCE: A1–A8 met. The method pins both passes and their shared selector; the complete Pass B
+  list is committed; the script includes every frozen root plus `src/lib/whatsapp`; the schema defines
+  the complete record with set-valued audience and language axis; the inclusion predicate requires a
+  concrete text-flow chain; prose contains no run output; every artifact carries provenance; the diff
+  is documentation-only.
+- WEAK POINT: the static call-path audit remains dependent on executor discipline at dynamic and
+  runtime boundaries. The locked procedure requires unresolved branches to become reviewer-approved
+  `UNVERIFIED` records and forbids treating the candidate regex as complete.
+
+```bash
+cd /Users/brentcurtis/dev/casa-pilot && npm ci && \
+  bash -n docs/plan/bilingue/evidence/census.sh && \
+  git diff --stat pilot/sop-v2...HEAD && \
+  npx tsc --noEmit; echo "tsc=$?"
+```
+
+```text
+added 538 packages, and audited 539 packages in 7s
+
+90 packages are looking for funding
+  run `npm fund` for details
+
+23 vulnerabilities (7 moderate, 14 high, 2 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+npm warn allow-scripts 8 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   @swc/core@1.15.8 (postinstall: node postinstall.js)
+npm warn allow-scripts   core-js@3.47.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+npm warn allow-scripts   esbuild@0.25.12 (postinstall: node install.js)
+npm warn allow-scripts   fsevents@2.3.2 (install: (install scripts present))
+npm warn allow-scripts   esbuild@0.21.5 (postinstall: node install.js)
+npm warn allow-scripts   fsevents@2.3.3 (install: (install scripts present))
+npm warn allow-scripts   esbuild@0.27.2 (postinstall: node install.js)
+npm warn allow-scripts   fsevents@2.3.3 (install: (install scripts present))
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+ docs/plan/bilingue/evidence/CENSUS-METHOD.md    | 198 ++++++++++++++++++++++++
+ docs/plan/bilingue/evidence/METHOD-MANIFEST.txt |  12 ++
+ docs/plan/bilingue/evidence/SURFACE-SCHEMA.md   | 140 +++++++++++++++++
+ docs/plan/bilingue/evidence/census.sh           | 157 +++++++++++++++++++
+ docs/plan/bilingue/evidence/wordlist-passB.txt  |  56 +++++++
+ 5 files changed, 563 insertions(+)
+tsc=0
+```
