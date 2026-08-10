@@ -4227,6 +4227,72 @@ starts truthful, not complete.
 - OPEN AFTER THIS ROUND: Brent dispatches the prompt to a fresh Opus session at effort xhigh;
   fresh-context reviewer (pilot C3) runs before any cross-family review.
 
+### 2026-08-10 — PD-REFINE round 1 — Opus (executor)
+- CONTEXT PRESSURE: comfortable — never approached a limit; the largest read was the PD
+  contract suite, and `generate-story/handler.ts` (~80 KB) was navigated by grep + targeted
+  reads rather than read whole.
+- ELAPSED: 35 min
+- STAGE: executor 1
+- EFFORT: xhigh
+- FIRST-PASS: n/a (set by the reviewer)
+- ACTION: `refine-story` brought under the PD contract, in two commits kept separate so the
+  move is reviewable apart from the behaviour change.
+  1. `5ffd59a` — PURE MOVE of the contract into `_shared/storyContract.ts`:
+     `validateAndNormalizeStory`, `ProviderOutputError`/`ProviderOutputReason`/
+     `PROVIDER_OUTPUT_MESSAGES`, the story types, `SCENE_COUNT_MIN/MAX`,
+     `describeValidationErrors` and — beyond the PM's list — `STORY_TOOL_SCHEMA`.
+     `generate-story` imports them and re-exports exactly the names it exported before;
+     `PROVIDER_OUTPUT_MESSAGES`, `describeValidationErrors` and `STORY_TOOL_SCHEMA` were
+     private there and stay unexported from it, so its surface is byte-for-byte the same.
+     Verbatim verified programmatically: each moved body diffed line-by-line against
+     `HEAD:generate-story/handler.ts` — 5/5 IDENTICAL (296-line validator included).
+  2. `87b0223` — the behaviour change: forced `emit_refined_story` tool with `strict: true`
+     top-level, `stop_reason` before content, typed 502, structural validation, one
+     scene-count source of truth.
+- COMMITS: `5ffd59a`, `87b0223` on `phase/pd-refine` (from `pilot/sop-v2`@`a1f2ac2`).
+- TESTS: `deno test --allow-all --no-check .` **446/0 → 482/0** (+36 = the new suite exactly);
+  `deno lint` **92 → 92** problems (78 → 80 files: the two new files add zero lint identities);
+  `deno check **/*.ts` **43 → 43** [ERROR] identities. deno 2.7.11.
+  New suite `refine-story/handler_contract_test.ts`, 36 cases PDR1a…PDR4e: **31 base-red**
+  against `5ffd59a` (verified by running the suite against the restored old handler), and the
+  5 that pass at base pinned by mutation M1–M5, each applied, killed and reverted.
+- FINDINGS RAISED:
+  1. **The prompt's baseline numbers are stale and its verbatim gate command is red at base.**
+     The prompt cites "deno test 325/0, lint 94, check 46"; those are PREL-era. The real
+     baseline at `a1f2ac2` is 446/0, lint 92, check 43. More importantly the prompt's command
+     omits `--no-check`, and `deno test --allow-all .` FAILS at base — 3 pre-existing errors
+     in `create-mesa-matches/handler.ts` (two `TS7006` at :149/:150, one `TS18046` at :343),
+     untouched by this phase and identical before and after. The repo already resolved this:
+     the mesa-md upgrade amended the gate to `deno test --allow-all --no-check .` (upgrade
+     LEDGER F-1, Brent's decision) precisely because `deno check` covers the same graph. The
+     SOP prompt template still carries the un-amended command.
+  2. **Behavioural consequence worth Brent's eye, not a defect:** a refined story must now
+     satisfy the FULL generated-story contract — 12–16 scenes, exactly one protagonist,
+     `props` present, no empty prose. A story already in the app with 10 scenes, or with two
+     protagonists, will now come back 502 instead of being refined into whatever the model
+     produced. That is the contract the phase asked for; it is also the only user-visible
+     regression risk in the diff.
+- DECISIONS:
+  - `STORY_TOOL_SCHEMA` moved too, beyond the PM's enumerated list. `refine-story` needs the
+    same 60-line schema plus one field; the alternative was a second hand-written copy, which
+    is the exact drift [A4] exists to remove. `REFINED_STORY_TOOL_SCHEMA` is built by
+    spreading it, so the two functions cannot disagree about the story shape.
+  - `refinementNotes` validated in `refine-story`, not in `_shared`: it is refinement's own
+    field and `generate-story` must not learn about it.
+  - The 502 envelope adds `code: "PROVIDER_OUTPUT_INVALID"`, matching `generate-story`.
+    Additive; no `src/` caller was touched (out of scope).
+  - Prompt edits held to the minimum the tool switch forces: the scene-count fix, and the
+    "Formato de Respuesta" block that told the model to answer with a JSON object — which
+    directly contradicts a forced tool. Everything else in SYSTEM_PROMPT is untouched.
+- BACKLOG ADDED:
+  - `generate-story`'s SYSTEM_PROMPT still hardcodes "12-16" / "EXACTAMENTE 15 escenas
+    (mínimo 12, máximo 16)" in prose (lines ~1114, ~1186) instead of citing
+    `SCENE_COUNT_MIN/MAX`. Left alone here because commit 1 had to be a pure move.
+  - The SOP executor-prompt template should carry the amended `--no-check` gate command and a
+    freshly measured baseline, or every future phase re-discovers finding 1.
+- OPEN AFTER THIS ROUND: fresh-context reviewer (pilot C3). Nothing deployed — no edge deploy,
+  no migration, no `main` merge. `refine-children-lesson` remains its own future phase.
+
 ### 2026-08-10 — PD-REFINE round 1 — fresh-context reviewer (pilot C3)
 - ELAPSED: ~10 min review
 - STAGE: fresh review ~10m
