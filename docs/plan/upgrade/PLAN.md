@@ -326,7 +326,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | P2 | Módulo puro de asignación | **DONE** 2026-08-08 · `6363378` | `feat/mesa-md-alloc` | P0 |
 | P3a | Seam: `handler.ts` en `create-mesa-matches` | **DONE** 2026-08-08 · `76d2d5e` | `feat/mesa-md-seam` | P0 |
 | P3b | Extraer `matching.ts` puro | **DONE** 2026-08-09 · `e2bf43a` | `feat/mesa-md-core` | P3a |
-| P4 | Cablear allocator en el núcleo | TODO | `feat/mesa-md-wire` | **P1b**, P2, P3b |
+| P4 | Cablear allocator en el núcleo | **IN PROGRESS** r1 (2026-08-10) | `feat/mesa-md-wire` | **P1b**, P2, P3b |
 | P5a | Captura en el frontend | TODO | `feat/mesa-md-form` | **P1b**, P4 |
 | P5b | Seam + captura en `admin-add-participant` | TODO | `feat/mesa-md-addp` | **P1b**, P5a |
 | P6 | Cobertura y diálogos del panel de admin | TODO | `feat/mesa-md-admin` | P4, P5a |

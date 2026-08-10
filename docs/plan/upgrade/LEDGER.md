@@ -2968,3 +2968,86 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `casa-p2-review`, así que va con `git -C`. (2) Después, `/pm-boot UPGRADE P4` con contexto
   fresco. **P4 es la primera fase que quiere cambiar conducta**, y la única con allowlist de
   goldens: tocar un tercer golden es `FINDINGS`. (3) Decidir si B-11 entra en P4.
+
+### 2026-08-10 — P4 round 1 — PM (Opus 5) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P4 · r1 · PM
+- ARRANQUE: `/pm-boot UPGRADE P4`. Fase elegida sin ambigüedad: P4 es la única `TODO`
+  con **todas** sus dependencias (`P1b`, `P2`, `P3b`) en **DONE**, y la primera de la
+  cadena de merge. Ronda **r1**: no hay ninguna entrada previa de P4 en este ledger.
+- **DEPENDENCIA VERIFICADA, NO SUPUESTA.** El punto (1) abierto al cierre de P3b —el
+  merge de `feat/mesa-md-core`— **está hecho**: `git merge-base --is-ancestor
+  feat/mesa-md-core main` sale 0, y los seis ficheros de las fases previas
+  (`matching.ts`, `matching_test.ts`, `handler.ts`, `handler_test.ts`, `mainDish.ts`,
+  `mainDish_test.ts`) están en `origin/main` @ `c712e85`. La columna
+  `can_bring_main_dish` está declarada en `src/integrations/supabase/types.ts:139` y la
+  migración `20260806000000_mesa_main_dish_optout.sql` está en el árbol. P4 no espera a
+  nadie.
+- **LÍNEA BASE DE P4 MEDIDA POR EL PM, no heredada de un reporte.** Corrida en el
+  worktree limpio `casa-p2-review` sobre `main` @ `c712e85`:
+  `matching.ts (0,0,1,0)` · `matching_test.ts (0,0,0,0)` · `handler.ts (0,1,1,3)` ·
+  `handler_test.ts (0,0,0,0)`. **Confirma exactamente la cifra que B-08 predijo al
+  cerrar P3b** (`(0)(1)(1)(3)` sobre `handler.ts`) — tercera fase seguida en que el
+  recuento por fichero es portable y el global no: totales `tsc=1039 eslint=161
+  deno-lint=92 deno-check=43`, con `tsc` en 1039 y no 1041 porque P1a eliminó los dos
+  de `MesaAbiertaAdmin.tsx` (la excepción medida de D8). `deno test --allow-all
+  --no-check .` → **446/0**, la punta que dejó P3b. `mainDish.ts` mide `(0,0,0,0)`, así
+  que el import nuevo que P4 le añade a `matching.ts` no debería costar diagnósticos
+  (Aviso 1 de P3b, comprobado).
+- ACTION: prompt de ejecutor escrito en `docs/plan/upgrade/prompts/P4-r1.md` y
+  commiteado a `main` (el ejecutor corre en otro worktree; un fichero sin commitear no
+  existe allí). Lleva inline la superficie exportada completa de `mainDish.ts`, el
+  bloque de escritura de `handler.ts:189–244` que P4 sustituye, la línea base de arriba
+  con los mensajes crudos, y los diez nombres de test.
+- **LAS TRES DECISIONES QUE TOMÉ AL REDACTARLO, Y POR QUÉ.**
+  1. **Aviso 3 de P3b resuelto: E6 deja de ser discrecional.** El plan decía «`git diff`
+     sobre ellos, vacío» de los otros ocho goldens, pero los diez viven en un fichero que
+     P4 sí toca, así que ese diff nunca sale vacío. El prompt lo reescribe como criterio
+     comprobable: los ocho conservan su **cuerpo de aserciones byte a byte**, y el
+     **único** hunk permitido fuera de los goldens 5 y 6 y de los tests nuevos es añadir
+     `can_bring_main_dish` a los helpers compartidos (`interface Participant`, `host()`,
+     `guest()`) con default `true`. Cualquier otro hunk es `FINDINGS`. Sin esa cláusula
+     el criterio se vuelve opinión, porque el ejecutor **no puede** evitar tocar los
+     helpers: `Participant` tiene que crecer.
+  2. **B-11 NO entra en P4.** El plan lista seis tests nuevos para `matching_test.ts` y
+     ninguno es el refuerzo de los dos `shuffle` iniciales. P4 es la primera fase que
+     cambia conducta y la única con allowlist de goldens; añadirle un endurecimiento de
+     tests ajeno amplía justo la superficie que hay que vigilar. **B-08 tampoco**: el
+     gate de P4 es «cero diagnósticos nuevos», no «reduce los cinco preexistentes».
+     Ambas siguen en backlog. Lo que abarató P3b fue alcance estrecho más línea base
+     medida; repito la receta en vez de improvisar otra.
+  3. **La llamada a `allocateAll` va en `matching.ts`, no en `handler.ts`** — y lo digo
+     en el prompt citando D13 y el cierre de P3b, no como preferencia mía. Codex ya
+     dictaminó que `SeatingPlan` puede crecer con `mainDishCoverage` y
+     `tablesWithShortfall` «sin devolver la decisión al handler», y que `hostStatus` ya
+     es el asiento final que `allocateAll` consume. Del resto de la forma —qué lleva
+     exactamente `mainDishCoverage`, cómo viaja la comida por portador— el prompt dice
+     el mínimo y deja elegir: **prescribir de más es lo que metió tres diagnósticos
+     nuevos en P3a**, y esa lección está pagada.
+- **LOS DOS MODOS DE FALLO NOMBRADOS POR ADELANTADO** (la práctica que hizo de P3b la
+  fase más barata del plan): (1) **comida y asiento salen de objetos distintos** —
+  `allocateAll` reequilibra, así que escribir `food_assignment` desde la asignación y
+  `guest_participant_id`/`guest_count` desde el `hostStatus` previo cuadra todos los
+  recuentos y es silenciosamente falso; E3 y los tests 12–13 existen por eso. (2)
+  **consumidores de `pick` supervivientes** — si los dos `shuffle([...foodAssignments],
+  pick)` no se **borran**, siguen sacando de `pick`, los goldens se vuelven ilegibles y
+  E1 es falso aunque la comida parezca correcta.
+- **TRAZA DE LOS GOLDENS 5 Y 6, hecha por el PM y puesta en el prompt como predicción
+  falsable.** Fixture `host("h1",5)` + 4 invitados, todos dispuestos, `pick = () => 0`:
+  `peopleCount 5` → `required 1`, `willing 5`, `mainDishCount 1`; D7 da el plato al
+  anfitrión; offset de acompañamientos `pick(3) = 0` → los cuatro invitados reciben
+  `salad, drinks, dessert, salad`. Bajo la regla vieja el anfitrión recibía `salad` y el
+  cuarto invitado `main_course`. El prompt dice explícitamente que si el código me
+  contradice, **gana el código** y el ejecutor lo reporta. Va ahí para que una primera
+  corrida muy distinta dispare una mirada, no una reescritura del golden.
+- TESTS: ninguno ejecutado por esta ronda salvo las mediciones de línea base de arriba.
+- FINDINGS RAISED: ninguno. DECISIONS: las tres de arriba; **ninguna toca el plan**, así
+  que no hay fila nueva de Decision Log. El único ajuste de redacción a un criterio (E6)
+  es la concreción que el propio cierre de P3b encargó al prompt, no una enmienda.
+- BACKLOG: sin cambios. **B-08 confirmada al milímetro** por la medición de hoy. B-11 se
+  queda fuera de P4 por la decisión 2. B-05, B-06, B-07, B-09, B-10 sin tocar.
+  **B-06 sigue habiendo que decidirlo antes de P8.**
+- OPEN AFTER THIS ROUND: (1) despachar `/exec UPGRADE P4 r1`. (2) Al volver el reporte,
+  verificación independiente del PM: reejecutar `deno test`, leer el diff de
+  `handler_test.ts` hunk a hunk contra la allowlist de E6, y correr los tres greps de
+  E1/E5/E6 yo mismo. (3) P4 es la primera fase que **quiere** cambiar conducta: tocar un
+  tercer golden es `FINDINGS`, no una discusión.
