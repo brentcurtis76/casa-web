@@ -22,7 +22,6 @@ import { createHandler } from "./handler.ts";
 
 const MONTH_ID = "month-1";
 const AUTH_HEADER = "Bearer test-token";
-const FOODS = ["main_course", "salad", "drinks", "dessert"];
 
 interface Participant {
   id: string;
@@ -31,6 +30,7 @@ interface Participant {
   has_plus_one: boolean;
   host_max_guests: number | null;
   status: string;
+  can_bring_main_dish: boolean;
 }
 
 interface Month {
@@ -52,7 +52,12 @@ function makeMonth(overrides: Partial<Month> = {}): Month {
   };
 }
 
-function host(id: string, maxGuests: number, plusOne = false): Participant {
+function host(
+  id: string,
+  maxGuests: number,
+  plusOne = false,
+  canBringMainDish = true,
+): Participant {
   return {
     id,
     month_id: MONTH_ID,
@@ -60,10 +65,11 @@ function host(id: string, maxGuests: number, plusOne = false): Participant {
     has_plus_one: plusOne,
     host_max_guests: maxGuests,
     status: "pending",
+    can_bring_main_dish: canBringMainDish,
   };
 }
 
-function guest(id: string, plusOne = false): Participant {
+function guest(id: string, plusOne = false, canBringMainDish = true): Participant {
   return {
     id,
     month_id: MONTH_ID,
@@ -71,24 +77,12 @@ function guest(id: string, plusOne = false): Participant {
     has_plus_one: plusOne,
     host_max_guests: null,
     status: "pending",
+    can_bring_main_dish: canBringMainDish,
   };
 }
 
 function guests(n: number): Participant[] {
   return Array.from({ length: n }, (_v, i) => guest(`g${i + 1}`));
-}
-
-/**
- * The rule tests 5 and 6 assert against, implemented independently of the
- * handler so a change to the handler's own `shuffle` makes them diverge.
- */
-function referenceShuffle<T>(array: T[], pick: (n: number) => number): T[] {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = pick(i + 1);
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
 }
 
 // ----------------------------------------------------- the Supabase double
@@ -257,12 +251,23 @@ class FakeSupabase {
 
 // ------------------------------------------------------------- test helpers
 
+interface TableCoverage {
+  tableId: string;
+  peopleCount: number;
+  requiredMainDishes: number;
+  willingCarriers: number;
+  mainDishCount: number;
+  shortfall: number;
+}
+
 interface MatchResults {
   totalMatches: number;
   hostsConvertedToGuests: number;
   guestsAssigned: number;
   guestsUnassigned: number;
   unassignedGuests: string[];
+  mainDishCoverage: TableCoverage[];
+  tablesWithShortfall: Array<{ tableId: string; shortfall: number }>;
 }
 
 interface HandlerBody {
@@ -318,6 +323,25 @@ function assignmentInserts(db: FakeSupabase): Array<Record<string, unknown>> {
     .filter((o) => o.verb === "insert" && o.table === "mesa_abierta_assignments")
     .flatMap((o) => o.payload as Array<Record<string, unknown>>);
 }
+
+/**
+ * The rebalancing fixture, the same one `matching_test.ts` traces: two tables of
+ * four guest units where every guest brings a `+1`, hA cannot bring the main
+ * dish and neither can g3, g4 or g7. hA lands one main dish short of its quota
+ * of two and the bounded search swaps its g3 for one of hB's willing guests.
+ */
+function swapFixture(): Participant[] {
+  return [
+    host("hA", 4, true, false),
+    host("hB", 4, false, true),
+    ...Array.from({ length: 8 }, (_v, i) => {
+      const id = `g${i + 1}`;
+      return guest(id, true, !["g3", "g4", "g7"].includes(id));
+    }),
+  ];
+}
+
+const EXCLUDED_IDS = ["hA", "g3", "g4", "g7"];
 
 // -------------------------------------------------------- 1-4, 10: guards
 
@@ -395,36 +419,48 @@ Deno.test("golden: idempotencia sin escribir", async () => {
 
 // ------------------------------------------------------------ 5-9: goldens
 
-Deno.test("golden: comida de invitados = shuffle([...4])[j % 4]", async () => {
-  const pick = () => 0;
+Deno.test("golden: comida de invitados = guarniciones rotadas desde el offset", async () => {
+  // The rule these two goldens pin changed in P4, and only these two.
+  //
+  // One table of 5 people → `requiredMainDishes = max(1, ceil(5/5)) = 1`, and
+  // D7 hands that one to the host, so every guest gets a side. `pick = () => 0`
+  // puts the rotation offset at 0 and `SIDE_FOODS` is
+  // ["salad","drinks","dessert"], so the four guests take them in order and
+  // wrap around: salad, drinks, dessert, salad.
   const db = adminDouble({ participants: [host("h1", 5), ...guests(4)] });
-  const handler = createHandler({ supabase: db, pick });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
 
   const res = await handler(makeRequest().req);
   assertEquals(res.status, 200);
 
-  const expected = referenceShuffle(FOODS, pick);
   const assignments = assignmentInserts(db);
 
   assertEquals(assignments.length, 4);
-  assignments.forEach((a, j) => {
-    assertEquals(a.food_assignment, expected[j % FOODS.length]);
-  });
+  assertEquals(
+    assignments.map((a) => a.food_assignment),
+    ["salad", "drinks", "dessert", "salad"],
+  );
+  // Under the old shuffle a guest drew the main dish here. The quota is 1 and
+  // the host took it, so now none of them can.
+  assertEquals(
+    assignments.some((a) => a.food_assignment === "main_course"),
+    false,
+  );
 });
 
-Deno.test("golden: comida del anfitrión = shuffle([...4])[0]", async () => {
-  const pick = () => 0;
+Deno.test("golden: comida del anfitrión = main_course por D7", async () => {
+  // Same table. The host is willing, so it is the first candidate for the
+  // table's single main dish (D7) — not a shuffle draw.
   const db = adminDouble({ participants: [host("h1", 5), ...guests(4)] });
-  const handler = createHandler({ supabase: db, pick });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
 
   const res = await handler(makeRequest().req);
   assertEquals(res.status, 200);
 
-  const expected = referenceShuffle(FOODS, pick);
   const inserts = matchInserts(db);
 
   assertEquals(inserts.length, 1);
-  assertEquals(inserts[0].host_food_assignment, expected[0]);
+  assertEquals(inserts[0].host_food_assignment, "main_course");
 });
 
 Deno.test(
@@ -486,6 +522,128 @@ Deno.test(
     assertEquals(new Set(seated).size, 8);
   },
 );
+
+// ------------------------------------------ 11-14: el plato principal (P4)
+
+Deno.test("la comida proviene del allocator", async () => {
+  // Six people at one table → quota 2 (D1), and six willing carriers, so two
+  // main dishes are persisted. The old rule could only ever persist one per
+  // table: the host drew `shuffle[0]` and the guests `shuffle[j % 4]`.
+  const db = adminDouble({ participants: [host("h1", 6), ...guests(5)] });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
+
+  const res = await handler(makeRequest().req);
+  const body = await res.json() as HandlerBody;
+  assertEquals(res.status, 200);
+
+  const persistedFoods = [
+    ...matchInserts(db).map((m) => m.host_food_assignment as string),
+    ...assignmentInserts(db).map((a) => a.food_assignment as string),
+  ];
+  assertEquals(persistedFoods.length, 6);
+  assertEquals(persistedFoods.filter((f) => f === "main_course").length, 2);
+  // Nothing is left without food: `allocateAll` never returns "none".
+  assertEquals(persistedFoods.includes("none"), false);
+
+  // ...and the response reports the same numbers it wrote (E2).
+  const coverage = body.results?.mainDishCoverage ?? [];
+  assertEquals(coverage.length, 1);
+  assertEquals(coverage[0].tableId, "h1");
+  assertEquals(coverage[0].peopleCount, 6);
+  assertEquals(coverage[0].requiredMainDishes, 2);
+  assertEquals(coverage[0].mainDishCount, 2);
+  assertEquals(body.results?.tablesWithShortfall, []);
+});
+
+Deno.test("se persiste el asiento reequilibrado", async () => {
+  const db = adminDouble({ participants: swapFixture() });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
+
+  const res = await handler(makeRequest().req);
+  const body = await res.json() as HandlerBody;
+  assertEquals(res.status, 200);
+
+  // The swap did fire: both tables end up covered, and the only way hA gets a
+  // second willing carrier is by receiving one.
+  assertEquals(body.results?.tablesWithShortfall, []);
+  for (const table of body.results?.mainDishCoverage ?? []) {
+    assertEquals(table.requiredMainDishes, 2);
+    assertEquals(table.mainDishCount, 2);
+  }
+
+  // What is persisted is the post-swap seating: g3 sits with hB, not with hA,
+  // and the guest that came back the other way sits with hA.
+  const assignments = assignmentInserts(db);
+  const matchIdOf = (guestId: string): string => {
+    const row = assignments.find((a) => a.guest_participant_id === guestId);
+    if (!row) throw new Error(`${guestId} no quedó sentado`);
+    return row.match_id as string;
+  };
+  const inserts = matchInserts(db);
+  assertEquals(inserts.length, 2);
+  // FakeSupabase hands out match ids in insertion order.
+  const matchIdByHost = new Map(
+    inserts.map((m, i) => [m.host_participant_id as string, `match-${i + 1}`]),
+  );
+  assertEquals(matchIdOf("g3"), matchIdByHost.get("hB"));
+  assertEquals(matchIdOf("g4"), matchIdByHost.get("hA"));
+
+  // Nobody duplicated, nobody lost (G9).
+  const seated = assignments.map((a) => a.guest_participant_id as string);
+  assertEquals(seated.length, 8);
+  assertEquals(new Set(seated).size, 8);
+});
+
+Deno.test("guest_count coincide", async () => {
+  const db = adminDouble({ participants: swapFixture() });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
+
+  const res = await handler(makeRequest().req);
+  assertEquals(res.status, 200);
+
+  const inserts = matchInserts(db);
+  const assignments = assignmentInserts(db);
+  assertEquals(inserts.length, 2);
+
+  // Every match declares as many guests as assignment rows were written for it.
+  inserts.forEach((m, i) => {
+    const matchId = `match-${i + 1}`;
+    const rows = assignments.filter((a) => a.match_id === matchId);
+    assertEquals(m.guest_count, rows.length, `${m.host_participant_id}`);
+    assertEquals(m.guest_count, 4);
+  });
+  assertEquals(assignments.length, 8);
+});
+
+Deno.test("ningún excluido con main_course persistido", async () => {
+  const db = adminDouble({ participants: swapFixture() });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
+
+  const res = await handler(makeRequest().req);
+  assertEquals(res.status, 200);
+
+  const persisted = [
+    ...matchInserts(db).map((m) => ({
+      id: m.host_participant_id as string,
+      food: m.host_food_assignment as string,
+    })),
+    ...assignmentInserts(db).map((a) => ({
+      id: a.guest_participant_id as string,
+      food: a.food_assignment as string,
+    })),
+  ];
+
+  const excluded = persisted.filter((p) => EXCLUDED_IDS.includes(p.id));
+  // The fixture would be vacuous if none of them made it into a dinner.
+  assertEquals(excluded.length, EXCLUDED_IDS.length);
+  for (const carrier of excluded) {
+    assertEquals(
+      carrier.food === "main_course",
+      false,
+      `${carrier.id} está excluido y se persistió con el plato principal`,
+    );
+  }
+});
 
 Deno.test("golden: sin cupo → lista de espera", async () => {
   const db = adminDouble({ participants: [host("h1", 2), ...guests(6)] });

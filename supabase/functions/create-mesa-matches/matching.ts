@@ -7,12 +7,24 @@
  * guards, the reads and the writes; this module reads nothing and writes
  * nothing.
  *
- * It is a LEAF: zero imports. Randomness enters exclusively through the
- * injected `pick` (D11) — this file calls no random-number generator of its
- * own, so the same input and the same `pick` give the same plan (D13).
+ * Randomness enters exclusively through the injected `pick` (D11) — this file
+ * calls no random-number generator of its own, so the same input and the same
+ * `pick` give the same plan (D13).
  *
- * Food is NOT decided here. `handler.ts` still assigns it.
+ * Food IS decided here, as of P4, but not by this file: `_shared/mainDish.ts`
+ * owns the canonical rule (D6) and this module only feeds it the tables and
+ * folds the answer back into the seating. That is the single import; D1e
+ * forbids `@supabase/supabase-js` and `Deno.env` here, not imports in general,
+ * and `mainDish.ts` is itself a pure leaf.
  */
+
+import {
+  allocateAll,
+  type Food,
+  type SwapMove,
+  type TableInput,
+  type TableShortfall,
+} from "../_shared/mainDish.ts";
 
 /**
  * Injected source of randomness (D11). `pick(n)` returns an integer in `[0, n)`.
@@ -32,6 +44,8 @@ export interface Participant {
   has_plus_one: boolean;
   host_max_guests: number | null;
   status: string;
+  /** D2 polarity is positive: `true` means "can bring the main dish". */
+  can_bring_main_dish: boolean;
 }
 
 /** A host plus the running state the two seating passes mutate. */
@@ -46,9 +60,46 @@ export interface HostSeat extends Participant {
   assignedGuests: Participant[];
 }
 
+/** One seated guest and the food they were allocated. */
+export interface SeatedGuest {
+  participant: Participant;
+  food: Food;
+}
+
+/**
+ * A dinner that will be written: one host, its food, and its guests with
+ * theirs — all of it post-rebalance.
+ *
+ * Seating and food travel together on purpose. `allocateAll` moves guests
+ * between tables, so a write path that read the guest list from one object and
+ * the food from another would tell someone to bring the salad to a dinner they
+ * are not sitting at, with every count still adding up.
+ */
+export interface Dinner {
+  host: HostSeat;
+  hostFood: Food;
+  guests: SeatedGuest[];
+}
+
+/** Main-dish coverage for one seated table. Ids and numbers only — no PII. */
+export interface TableCoverage {
+  /** The table is its host: `mesa_abierta_participants.id`. */
+  tableId: string;
+  /** Host + host's `+1` + each guest + each guest's `+1` (D1). */
+  peopleCount: number;
+  /** `max(1, ceil(peopleCount / 5))` (D1). */
+  requiredMainDishes: number;
+  /** Carriers at this table willing to bring it, host included. */
+  willingCarriers: number;
+  /** How many were actually handed out. */
+  mainDishCount: number;
+  /** `requiredMainDishes - mainDishCount`. Never negative. */
+  shortfall: number;
+}
+
 /** Everything the write path in `handler.ts` consumes from the decision. */
 export interface SeatingPlan {
-  /** Every host, active and waitlisted, after both passes. */
+  /** Every host, active and waitlisted, after both passes and the rebalance. */
   hostStatus: HostSeat[];
   /** Guest units left without a seat; these go to the waitlist. */
   unassignedGuests: Participant[];
@@ -58,6 +109,14 @@ export interface SeatingPlan {
   hostsConvertedToGuests: HostSeat[];
   /** The original guests plus the converted hosts. */
   allGuests: Participant[];
+  /** The dinners to write, in the order they should be written. */
+  dinners: Dinner[];
+  /** One entry per dinner, in the same order. */
+  mainDishCoverage: TableCoverage[];
+  /** G10 / D4: every table under quota. A deficit is reported, never swallowed. */
+  tablesWithShortfall: TableShortfall[];
+  /** The swaps the rebalance applied, in order. Empty when none was needed. */
+  mainDishMoves: SwapMove[];
 }
 
 /**
@@ -261,6 +320,12 @@ export function planSeating(
     host.currentGuestPeople = 0;
   }
 
+  // Third pass: the main dish. `allocateAll` may move guests between tables to
+  // cover a quota, so this has to run before the totals are read back — the
+  // seating it returns is the seating that gets persisted.
+  const { dinners, mainDishCoverage, tablesWithShortfall, mainDishMoves } =
+    allocateMainDish(hostStatus, allGuests, pick);
+
   // Recalculate totals after redistribution
   guestsAssignedCount = activeHosts.reduce((sum, h) => sum + h.currentGuestPeople, 0);
   console.log(`After redistribution: Assigned ${guestsAssignedCount} guest-side people.`);
@@ -271,6 +336,103 @@ export function planSeating(
     guestsAssignedCount,
     hostsConvertedToGuests,
     allGuests,
+    dinners,
+    mainDishCoverage,
+    tablesWithShortfall,
+    mainDishMoves,
+  };
+}
+
+/** The part of the plan `allocateMainDish` produces. */
+interface MainDishOutcome {
+  dinners: Dinner[];
+  mainDishCoverage: TableCoverage[];
+  tablesWithShortfall: TableShortfall[];
+  mainDishMoves: SwapMove[];
+}
+
+/**
+ * Hand the seated tables to `_shared/mainDish.ts` and fold its answer back in.
+ *
+ * A host with no guests is not a dinner — `handler.ts` has always skipped it —
+ * so it is not a table either, and it neither draws from `pick` nor appears in
+ * the coverage.
+ *
+ * `hostStatus` is MUTATED here, deliberately: the rebalance is the final word on
+ * who sits where, and the participant updates downstream (`assigned_role`,
+ * `status`) read the same guest lists the assignments were written from.
+ */
+function allocateMainDish(
+  hostStatus: HostSeat[],
+  allGuests: Participant[],
+  pick: Pick,
+): MainDishOutcome {
+  const seatedHosts = hostStatus.filter((h) => h.assignedGuests.length > 0);
+
+  const tables: TableInput[] = seatedHosts.map((host) => ({
+    id: host.id,
+    host: {
+      id: host.id,
+      hasPlusOne: host.has_plus_one,
+      canBringMainDish: host.can_bring_main_dish,
+    },
+    guests: host.assignedGuests.map((guest) => ({
+      id: guest.id,
+      hasPlusOne: guest.has_plus_one,
+      canBringMainDish: guest.can_bring_main_dish,
+    })),
+    maxGuestUnits: host.maxGuests,
+  }));
+
+  const allocation = allocateAll(tables, pick);
+
+  // Guests can arrive from another table, so the lookup spans every seated
+  // participant, not just this host's previous list.
+  const byId = new Map<string, Participant>();
+  for (const guest of allGuests) byId.set(guest.id, guest);
+
+  const hostById = new Map<string, HostSeat>();
+  for (const host of seatedHosts) hostById.set(host.id, host);
+
+  const dinners: Dinner[] = [];
+
+  for (const table of allocation.tables) {
+    // A table IS its host (G2: hosts never move), so `tableId` is the host id.
+    const host = hostById.get(table.tableId);
+    if (!host) {
+      throw new Error(`Allocator returned unknown table ${table.tableId}`);
+    }
+
+    const guests: SeatedGuest[] = table.guests.map((carrier) => {
+      const participant = byId.get(carrier.carrierId);
+      if (!participant) {
+        throw new Error(`Allocator returned unknown guest ${carrier.carrierId}`);
+      }
+      return { participant, food: carrier.food };
+    });
+
+    host.assignedGuests = guests.map((g) => g.participant);
+    host.currentGuests = guests.length;
+    host.currentGuestPeople = guests.reduce(
+      (sum, g) => sum + (g.participant.has_plus_one ? 2 : 1),
+      0,
+    );
+
+    dinners.push({ host, hostFood: table.host.food, guests });
+  }
+
+  return {
+    dinners,
+    mainDishCoverage: allocation.tables.map((table) => ({
+      tableId: table.tableId,
+      peopleCount: table.peopleCount,
+      requiredMainDishes: table.requiredMainDishes,
+      willingCarriers: table.willingCarriers,
+      mainDishCount: table.mainDishCount,
+      shortfall: table.shortfall,
+    })),
+    tablesWithShortfall: allocation.tablesWithShortfall,
+    mainDishMoves: allocation.moves,
   };
 }
 

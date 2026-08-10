@@ -11,13 +11,14 @@
  * The only injected seam is `pick`, which `shuffle` uses in place of
  * `Math.random` so tests can make the shuffles deterministic.
  *
- * The seating decision itself now lives in `matching.ts` (D13): this file
- * reads the participants, calls `planSeating`, and writes the result. Food is
- * still assigned here.
+ * The seating decision itself lives in `matching.ts` (D13): this file reads the
+ * participants, calls `planSeating`, and writes the result. As of P4 the food
+ * comes from there too — `matching.ts` delegates it to `_shared/mainDish.ts`,
+ * the canonical rule (D6). Nothing here decides who brings what.
  */
 
 import { requireMesaAdmin } from "../_shared/adminAuth.ts";
-import { planSeating, shuffle } from "./matching.ts";
+import { planSeating } from "./matching.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -180,23 +181,32 @@ export function createHandler(
         guestsAssignedCount,
         hostsConvertedToGuests,
         allGuests,
+        dinners,
+        mainDishCoverage,
+        tablesWithShortfall,
       } = planSeating(hosts, guests, pick);
+
+      // D4 — a deficit is reported, never resolved in silence. Ids only: no
+      // member PII reaches a log line.
+      if (tablesWithShortfall.length > 0) {
+        console.warn(
+          `Main dish shortfall on ${tablesWithShortfall.length} table(s): ` +
+            tablesWithShortfall
+              .map((t) => `${t.tableId} short ${t.shortfall}`)
+              .join(", "),
+        );
+      }
 
       // Track created matches for potential rollback
       const createdMatchIds: string[] = [];
       const matches: Array<{matchId: string; hostId: string; guestCount: number; totalPeople: number; guests: string[]}> = [];
 
       try {
-        // Create DB records for matches and assignments
-        const foodAssignments = ["main_course", "salad", "drinks", "dessert"];
-
-        for (const host of hostStatus) {
-          if (host.assignedGuests.length === 0) continue;
-
-          // Create match record with host food assignment
-          // Shuffle food options and assign one to the host
-          const hostFoodOptions = shuffle([...foodAssignments], pick);
-          const hostFoodAssignment = hostFoodOptions[0];
+        // Create DB records for matches and assignments. Every dinner carries
+        // its own guests and their food in one object, so the row that says
+        // who sits here and the row that says what they bring cannot drift.
+        for (const dinner of dinners) {
+          const host = dinner.host;
 
           const { data: match, error: matchError } = await supabase
             .from("mesa_abierta_matches")
@@ -205,8 +215,8 @@ export function createHandler(
               host_participant_id: host.id,
               dinner_date: month.dinner_date,
               dinner_time: month.dinner_time || "19:00:00",
-              guest_count: host.assignedGuests.length,
-              host_food_assignment: hostFoodAssignment,
+              guest_count: dinner.guests.length,
+              host_food_assignment: dinner.hostFood,
             })
             .select()
             .single();
@@ -216,14 +226,13 @@ export function createHandler(
           }
 
           createdMatchIds.push(match.id);
-          console.log(`Created match ${match.id} with host ${host.id} and ${host.assignedGuests.length} guest units (${host.currentGuestPeople} people)`);
+          console.log(`Created match ${match.id} with host ${host.id} and ${dinner.guests.length} guest units (${host.currentGuestPeople} people)`);
 
           // Batch create assignments for this match
-          const shuffledFoodAssignments = shuffle([...foodAssignments], pick);
-          const assignmentsToInsert = host.assignedGuests.map((guest, j) => ({
+          const assignmentsToInsert = dinner.guests.map((seated) => ({
             match_id: match.id,
-            guest_participant_id: guest.id,
-            food_assignment: shuffledFoodAssignments[j % shuffledFoodAssignments.length],
+            guest_participant_id: seated.participant.id,
+            food_assignment: seated.food,
           }));
 
           const { error: assignmentError } = await supabase
@@ -237,9 +246,9 @@ export function createHandler(
           matches.push({
             matchId: match.id,
             hostId: host.id,
-            guestCount: host.assignedGuests.length,
+            guestCount: dinner.guests.length,
             totalPeople: host.hostSidePeople + host.currentGuestPeople,
-            guests: host.assignedGuests.map(g => g.id),
+            guests: dinner.guests.map((seated) => seated.participant.id),
           });
         }
 
@@ -330,7 +339,11 @@ export function createHandler(
               hostId: m.hostId,
               guestCount: m.guestCount,
             })),
-            unassignedGuests: unassignedGuests.map(g => g.id)
+            unassignedGuests: unassignedGuests.map(g => g.id),
+            // D4 / D14: coverage is reported, never persisted as an aggregate
+            // column. P6, P7 and P8 read it from here.
+            mainDishCoverage,
+            tablesWithShortfall,
           },
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
