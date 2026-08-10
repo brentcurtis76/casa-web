@@ -7,7 +7,14 @@ META
   locale `en_US.UTF-8` available and used. Numbers are OS- and locale-dependent — see D-K.
 - PLAN ROOT: `docs/plan/bilingue/`. **Never write BILINGUE entries into `docs/plan/LEDGER.md`.**
 - BRANCHES: `phase/d1a-method`, then `phase/d1b-census`, base `pilot/sop-v2`.
-- PLAN FROZEN: **NO — draft 5, 2026-08-10.**
+- PLAN FROZEN: **YES — draft 5 + review-6 corrections, 2026-08-10, by Brent's explicit decision.**
+  Codex review 6 returned FAIL (6 BLOCKING). Brent elected to **stop the plan-review loop and
+  execute**, after six reviews and a trajectory of 11 → 10 → 8 → 7 → 5 → 6 findings. This is a
+  logged SOP §1.5 override: the reviewer does not agree this plan is ready, and that disagreement
+  stands on the record. All six findings were verified by the PM and **corrected in place below**
+  rather than deferred — none is a new PM assertion; each is a reviewer-confirmed fact.
+  **Known accepted risk:** D1's inventory is best-effort, not provably complete. See "What D1 does
+  not claim".
 - HISTORY: drafts 1–4 (`5ee2f17`, `98ab364`, `eaed6f5`, `e0c9342`) FAILed with 10, 8, 7 and 5
   BLOCKING. Reviews in `reviews/`. Draft 4 was the first whose numeric claims all reproduced for
   the reviewer.
@@ -138,9 +145,22 @@ WORDS='Guardar|Guardando|Cancelar|Cerrar|Buscar|Eliminar|Editar|Nuevo|Nueva|Crea
 # matched with \b(...)\b, comment lines excluded, over the same file set as Pass A plus src/lib/whatsapp
 ```
 
-Executed over 135 files: **338 hits**, of which **285 are on lines carrying no accent at all** —
-i.e. **285 lines of Spanish copy Pass A cannot see.** That is roughly a 20% undercount against Pass
-A's 1,418, and it is now measured rather than asserted.
+**⚠ These numbers are superseded and must be re-derived in D1b.** The PM ran Pass B over **135**
+files (nine roots) while describing it as "the same file set as Pass A plus `src/lib/whatsapp`",
+which is **185** files — the run silently omitted `src/pages/ConstructorLiturgiasPage.tsx`,
+`src/data/elementos-fijos`, `src/hooks/presentation` and all twelve edge-function directories.
+Measured both ways:
+
+| File set | Files | Pass B hits | Of those, no accent on the line |
+|---|---:|---:|---:|
+| What the PM ran (9 roots) | 135 | 338 | 285 |
+| What the PM described (Pass A ∪ `lib/whatsapp`) | **185** | **376** | **316** |
+
+Both are honest counts; the prose was not. **D1b uses the 185-file set** and re-derives all three
+numbers. The finding that survives either way: **Pass A cannot see roughly 300 lines of Spanish
+copy**, ~20% above its own 1,418 — the "lower bound" caveat is measured, not asserted.
+*(Review 6 [D5-B1]. This was the third consecutive draft in which a command's prose drifted from
+the command actually run; D-M below is the response.)*
 
 ### The corrected sink derivation
 
@@ -197,7 +217,9 @@ npx tsc --noEmit; echo $?                                    # -> 0  (clean base
 | **D-G** | **UI locale and liturgy content language are independent axes.** | D1's entire classification rests on this. Both reviewers found it sound. |
 | **D-I** | **Every `UNVERIFIED` carries `materiality: BLOCKS-REPLAN \| DETAIL`**, checked mechanically, classification approved by the phase reviewer rather than self-applied. | Confirmed a real gate by review 4. |
 | **D-J** | **A derived list beats an asserted list; the derivation command is supplied in full and executed.** A derivation that has been wrong once is a **candidate floor**, and must be paired with an audit that can exceed it. | The sink regex was wrong by 3×. Treating a regex as a contract is how `wa-webhook` was missed. |
-| **D-L** | **Method before measurement.** Any counting or classification method is committed and independently reviewed in a phase that produces **no results**, before the phase that produces results. | Review 5 [D4-B4]: an executor who writes the method and runs it in one phase can tune the method after seeing the totals, and no verify script can detect that. |
+| **D-L** | **Method before measurement.** Any counting or classification method is committed and independently reviewed in a phase that produces **no results**, before the phase that produces results. What this buys is **method immutability after review** — it does **not** prove measurement never happened, and this plan does not claim it does: preliminary totals are already published above. | Review 5 [D4-B4]; overclaim corrected per review 6 [D5-B2]. |
+| **D-M** | **Never describe a command in prose. Paste the literal script and its literal output.** A summary of what a command did is not evidence that it did it; three consecutive drafts had prose that drifted from the run, most recently Pass B's file set (135 vs the 185 described). | Review 6 [D5-B1]. This is the last surviving form of the failure that produced six FAILed reviews. |
+| **D-N** | **D1 produces a best-effort inventory with a measured blind spot, not a proven-complete one.** Every artifact states what the method provably cannot see, and how to extend it. | Six reviews each found a further missed surface, because finding surfaces is the work. Claiming completeness is unprovable in advance; characterising the gap is not. |
 
 ---
 
@@ -220,6 +242,15 @@ npx tsc --noEmit; echo $?                                    # -> 0  (clean base
    results but is **not run for the record in this phase.**
 3. **`evidence/SURFACE-SCHEMA.md`** — the surface record definition (below).
 4. **`evidence/wordlist-passB.txt`** — the Pass B list as a committed file.
+5. **`evidence/METHOD-MANIFEST.txt`** — `sha256` of every artifact above, so D1b can verify the
+   whole method rather than only `census.sh`. *(Review 6 [D5-B2]: locking one file left the word
+   list, the schema, the inclusion rule and the audit procedure mutable.)*
+
+**Roots must include `src/types/shared/liturgy.ts`.** It declares `LITURGY_ORDER` with
+user-visible Spanish labels (`'Portada Principal'`, `'Oración de Invocación'`) that
+`ConstructorLiturgias.tsx:50` imports and renders. Neither the census roots nor the sink regex
+reaches it, because it is a **declaration**, not an emission — which is why the schema now has a
+`declaration/registry in source` origin. *(Review 6 [D5-B4].)*
 
 ### The surface record — review 5 [D4-B3]
 
@@ -231,13 +262,19 @@ path · symbol-or-line · sink/channel · audience · text-origin · language-ax
 ```
 
 - **sink/channel** — PDF · email · WhatsApp · slide render · toast/UI · file download · print
-- **audience** — operator · congregation · recipient (a named person) · none
-- **text-origin** — literal in source · database content · AI-generated · canonical JSON · external
-  registry (e.g. an approved WhatsApp template)
-- **language-axis** — `UI copy` (operator locale) · `stored-or-output copy` (liturgy language) ·
-  `generation instruction` (neither) · `UNVERIFIED` + `materiality:`
+- **audience** — a **set**, not a single value: operator · congregation · recipient (a named person)
+- **text-origin** — literal in source · **declaration/registry in source** (e.g. `LITURGY_ORDER`
+  labels, `WA_TEMPLATES` bodies — text that is *declared* in one file and *rendered* in another) ·
+  database content · AI-generated · canonical JSON · external registry
+- **language-axis** — a **set**: `UI copy` (operator locale) · `stored-or-output copy` (liturgy
+  language) · `channel-fixed` (recipient-facing copy whose language is fixed by an external
+  registry — approved WhatsApp templates follow *neither* axis) · `generation instruction` ·
+  `UNVERIFIED` + `materiality:`
 
-**Multiple records per file are expected and correct.**
+**Multiple records per file are expected and correct.** Where a single emission genuinely carries
+two axes — presentation surfaces combine operator chrome with projected liturgy content — the
+record takes both values rather than being forced into one or into `UNVERIFIED`.
+*(Review 6 [D5-B5]: scalar fields could not express the presentation or WhatsApp cases.)*
 
 ### Out of scope
 
@@ -256,8 +293,13 @@ path · symbol-or-line · sink/channel · audience · text-origin · language-ax
   explicitly that one file may yield many records.
 - [D1a.5] It states the **inclusion rule** for "the liturgy path" — precise enough that two people
   applying it to `whatsapp-signup` and to `children-ministry` admin get the same answer.
-- [D1a.6] **No artifact contains a count, total, or file number.** Verified by
-  `git diff` review and a grep for digit-bearing result lines.
+- [D1a.6] **No artifact records a measurement result.** The mechanical check applies **only to the
+  prose artifacts** (`CENSUS-METHOD.md`, `SURFACE-SCHEMA.md`) and looks for recorded-result shapes —
+  a digit adjacent to `files`/`lines`/`hits`/`matches`/`total`, a Markdown table row of counts, or a
+  JSON `count` field. **`census.sh` is excluded**: it necessarily contains its own output format
+  strings (`files=`, `copy=`, `TOTAL`), and draft 5's grep flagged it twice. The **authoritative**
+  check is independent diff review confirming D1a contains methodology and no run output — a grep
+  cannot prove absence of tuning and is not claimed to. *(Review 6 [D5-B3].)*
 - [D1a.7] Every artifact records the source SHA and the OS/locale it targets (D-K, [D4-S1]).
 - [D1a.8] `git diff --stat pilot/sop-v2...HEAD` lists only `docs/plan/bilingue/`.
 
@@ -297,7 +339,17 @@ None.
 
 ## Phase D1b — Run it and classify
 
-**Branch:** `phase/d1b-census` from `pilot/sop-v2`, after D1a merges.
+**Pre-split into two phases** — review 6 [D5-B6] measured 62 sink files ∪ 180 census files =
+**211 unique candidates** (215 with `lib/whatsapp`), already past draft 5's ~200-record trigger
+before execution began. "Split and report when it runs long" is not a plan; this is the split:
+
+| ID | Branch | Covers | Owns |
+|---|---|---|---|
+| **D1b-1** | `phase/d1b1-output` | Recipient-facing channels: PDF, email, WhatsApp, print/download | its own records + fixture |
+| **D1b-2** | `phase/d1b2-ui` | Operator-facing: UI/toast, slide render, and source **declarations/registries** | its records, **plus** the combined fixture, `D1-verify.sh` and `D1-SUMMARY.md` |
+
+D1b-2 depends on D1b-1 and performs the reconciliation. Criteria below apply to **both** unless
+marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its half.
 
 **One question:** what does the locked method actually find, and how does each emission classify?
 
@@ -326,7 +378,15 @@ None.
   template registry's 24–48h re-approval lead time is recorded as a constraint.
 - [D1b.6] Every record carries all seven schema fields. No blanks.
 - [D1b.7] Every `UNVERIFIED` carries `materiality:` (D-I); `D1-verify.sh` fails on a missing field.
-- [D1b.8] `D1-verify.sh` asserts `census.sh` is byte-identical to D1a's merged version.
+- [D1b.8] `D1-verify.sh` verifies **every** artifact in `METHOD-MANIFEST.txt` against its `sha256`
+  from D1a's merge commit, and records that commit SHA. Checking `census.sh` alone would leave the
+  word list, schema, inclusion rule and audit procedure mutable ([D5-B2]).
+- [D1b.11] Pass B is run over the **185-file** set (Pass A ∪ `src/lib/whatsapp`), not the 135-file
+  set the PM used, and all three of its numbers are re-derived ([D5-B1]).
+- [D1b.12] **The blind spot is stated and, where possible, measured** (D-N): what the method
+  structurally cannot see. Known already — text *declared* in one file and *rendered* in another
+  (`LITURGY_ORDER`, `WA_TEMPLATES`), and unaccented Spanish outside the frozen word list. Say what
+  else, and say how a future pass would extend the method.
 - [D1b.9] `git diff --stat pilot/sop-v2...HEAD` lists only `docs/plan/bilingue/`.
 - [D1b.10] **`D1-SUMMARY.md`**: one page, no jargon, readable by someone who has not read the
   codebase. States how many **surfaces** (records, not files), which follow which language axis,
@@ -378,6 +438,20 @@ D1a, merged and Codex-passed.
 
 ---
 
+## What D1 does not claim
+
+D-N, stated plainly because it is the accepted risk in freezing this plan over a FAIL verdict.
+
+**D1 does not produce a provably complete inventory of every emission of user-visible text.** No
+method fixed in advance can. Six adversarial reviews each found one more surface the method missed —
+`wa-webhook`'s `sendText` reply in review 5, `LITURGY_ORDER`'s labels in review 6 — because finding
+surfaces *is* the work, and a root list plus a regex is incomplete by construction.
+
+What D1 does produce: a reproducible method, an inventory built by it, and **an explicit statement
+of what that method structurally cannot see.** The next plan treats the inventory as a floor that
+grows, not a closed set. Any phase that assumes D1 found everything is built on a false premise, and
+that premise is recorded here rather than discovered later.
+
 ## The re-plan gate
 
 When D1b passes and merges, a **fresh `/plan-new BILINGUE-2`** drafts the remaining discovery,
@@ -422,6 +496,7 @@ mechanism the next plan must choose, since **D-K governs shell hygiene, not SQL*
 | Assets | `Portadas.tsx` bakes `subtitle: context.preacher` into cover pixels, `textBakedIn: true` | PII-in-asset; no column census finds it |
 | `edited_slides` / `custom_content` | zero rows populated / 54 rows, all `oracion-*`, zero `custom-*` | Codex-reproduced |
 | WhatsApp templates | `src/lib/whatsapp/templates.ts` hardcodes `language: 'es'`; body edits need **24–48h re-approval** | a lead-time constraint on any English rollout |
+| **Bible text rights** | The ten frozen English translations (NIV, KJV, NKJV, ESV, NLT, NASB, NRSVCE, MSG, AMP, WEB) are **available** via bolls.life — availability is not permission | **Redistribution and attribution rights are unverified.** Storing copyrighted translation text in slides and exporting it to PDF is a different act from fetching it for display. Flagged in three reviews; dropped from draft 5's handoff. Re-verify before any phase depends on a specific translation. ([D5-S1]) |
 
 ---
 

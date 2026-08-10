@@ -511,3 +511,56 @@
   and a growth mechanism — and that pastes literal scripts with literal output and no prose
   description of any command. Bounded: if that draft fails, run D1 anyway with the findings as
   recorded caveats rather than continuing to buy reviews.
+
+### 2026-08-10 — plan round 9 — PM (PLAN FROZEN by Brent; §1.5 override logged)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min
+- STAGE: corrections 20m | fresh review 0m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: n/a — no further plan review will be run. **Final plan-review record: 6 reviews,
+  6 FAILs, findings 11 → 10 → 8 → 7 → 5 → 6.**
+- CONTEXT PRESSURE: comfortable
+- ACTION: Brent said "run it". **PLAN.md is frozen over a FAIL verdict — a logged SOP §1.5
+  override.** The reviewer does not agree the plan is ready and that disagreement stands on the
+  record. Before freezing, all six review-6 BLOCKING findings were **corrected in place**, because
+  one of them ([D5-B3]) made an acceptance criterion provably unsatisfiable and an executor must
+  not be sent into a phase carrying it. None of the corrections is a new PM assertion; each is a
+  reviewer-confirmed fact the PM independently verified.
+- COMMITS: see git log for the frozen SHA
+
+- CORRECTIONS APPLIED AT FREEZE:
+  - **[D5-B1]** Pass B's two file sets recorded side by side — 135 (run) vs 185 (described),
+    338/285 vs 376/316 — with D1b.11 requiring the **185-file** set. The surviving finding is
+    unchanged: Pass A cannot see ~300 lines of Spanish copy, ~20% above its own 1,418.
+  - **[D5-B2]** New `evidence/METHOD-MANIFEST.txt` with `sha256` of every method artifact; D1b.8
+    verifies all of them against D1a's merge commit, not `census.sh` alone.
+  - **[D5-B3]** D1a.6's grep rewritten: it applies only to the prose artifacts, **excludes
+    `census.sh`** (which necessarily contains its own format strings and tripped the old grep
+    twice), and independent diff review is named as the authoritative check.
+  - **[D5-B4]** `src/types/shared/liturgy.ts` added to roots, and the schema gains a
+    `declaration/registry in source` text-origin for text declared in one file and rendered in
+    another.
+  - **[D5-B5]** `language-axis` and `audience` are now **sets**, plus a new `channel-fixed` axis for
+    recipient-facing copy whose language is fixed by an external registry — approved WhatsApp
+    templates follow neither the operator locale nor the liturgy language.
+  - **[D5-B6]** D1b **pre-split**: D1b-1 (recipient-facing channels) and D1b-2 (operator-facing +
+    declarations), with D1b-2 owning reconciliation, the combined fixture, `D1-verify.sh` and the
+    summary. 211 unique candidates were already past the old trigger before execution.
+  - **[D5-S1]** Bible redistribution and attribution rights restored to Appendix B — availability
+    via bolls.life is not permission, and storing translation text in slides and exports is a
+    different act from fetching it for display.
+- NEW FROZEN DECISIONS:
+  - **D-M** — never describe a command in prose; paste the literal script and its literal output.
+    This is the last surviving form of the failure behind six FAILed reviews.
+  - **D-N** — D1 produces a **best-effort inventory with a measured blind spot**, not a
+    proven-complete one, and every artifact states what the method cannot see.
+  - **D-L corrected** — the phase split buys method immutability after review; it does **not** prove
+    measurement never happened, and the plan no longer claims it does.
+- **ACCEPTED RISK, ON THE RECORD:** D1's inventory is a floor that grows, not a closed set. Any
+  later phase assuming D1 found everything is built on a false premise. New section
+  "What D1 does not claim" states this in the plan itself rather than only here.
+- PHASE SEQUENCE NOW: **D1a** (lock the method, no numbers) → **D1b-1** (output channels) →
+  **D1b-2** (UI/render/declarations + reconciliation + summary) → re-plan gate.
+- OPEN AFTER THIS ROUND: D1a executor prompt issued. Phase reviews (SOP §3.6) still apply — the
+  override stops *plan* review, not per-phase review.
