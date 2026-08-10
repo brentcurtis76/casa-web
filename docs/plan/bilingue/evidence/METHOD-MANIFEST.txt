@@ -1,0 +1,12 @@
+# CASA BILINGUE D1a method manifest
+# SOURCE_SHA=e0c9342edcd1d9eddea0662244bf1934bfdb5cb0
+# PLAN_SHA=c842161d0edcba560a077fdb81b31edad2f23396
+# TARGET_OS=macOS Darwin 24.3.0
+# TARGET_LOCALE=en_US.UTF-8
+# ALGORITHM=SHA-256 via /usr/bin/shasum -a 256
+# BLIND_SPOT=Integrity locks these static methods but does not prove complete surface coverage.
+# EXTENSION_RULE=Commit and review a replacement manifest with every changed method artifact.
+f09796cdff305813e8e4fce33344c60677d6b2097ca231ade081672e2ed95d09  CENSUS-METHOD.md
+41db4714e60f9c5e18a5a7a66f57a974e7d742fa485503a9826e9e0e742a888c  census.sh
+aa2d85d5e0fb71303ede4d66cabfdaf463940bf62f74a0a4324018e197d4dd83  SURFACE-SCHEMA.md
+41c477a3137cb5841e632678d30754e0f04be77abbe64bf8a3fa3a01ee25bacb  wordlist-passB.txt

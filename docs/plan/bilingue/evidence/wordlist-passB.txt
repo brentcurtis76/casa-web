@@ -1,0 +1,56 @@
+# CASA BILINGUE Pass B word list
+# SOURCE_SHA=e0c9342edcd1d9eddea0662244bf1934bfdb5cb0
+# PLAN_SHA=c842161d0edcba560a077fdb81b31edad2f23396
+# TARGET_OS=macOS Darwin 24.3.0
+# TARGET_LOCALE=en_US.UTF-8
+# BLIND_SPOT=Does not match unaccented Spanish outside this case-sensitive frozen list.
+# EXTENSION_RULE=Review and lock a new list or AST method before collecting new evidence.
+Guardar
+Guardando
+Cancelar
+Cerrar
+Buscar
+Eliminar
+Editar
+Nuevo
+Nueva
+Crear
+Agregar
+Borrar
+Aceptar
+Volver
+Siguiente
+Anterior
+Enviar
+Enviando
+Descargar
+Cargando
+Cargar
+Seleccionar
+Elegir
+Filtrar
+Ordenar
+Mostrar
+Ocultar
+Copiar
+Confirmar
+Continuar
+Salir
+Ayuda
+Nombre
+Fecha
+Archivo
+Imagen
+Todos
+Todas
+Ninguno
+Ninguna
+Mensaje
+Correo
+Usuario
+Cantidad
+Actualizar
+Activar
+Desactivar
+Duplicar
+Vista previa
