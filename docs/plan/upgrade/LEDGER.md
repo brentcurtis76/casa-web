@@ -3562,3 +3562,85 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   cacen, y darle B-15 ya encontrada para que busque otro. (2) Merge de
   `feat/mesa-md-form` a `main` — decisión de Brent, después del PASS. (3) B-13/B-14/N1
   sin dueño; la recomendación de P4 sigue siendo ensanchar la `F` de P7.
+
+### 2026-08-10 — P5a REVIEW round 1 — Claude Opus 5 (REVIEW)
+
+- SESSION: UPGRADE · P5a · REVIEW · r1
+- CONTEXT PRESSURE: cómoda. Lo caro volvió a ser medir, no leer: cuatro corridas
+  completas de Vitest (dos por commit) más dos pasadas del gate.
+- **VEREDICTO: PASS. CERO BLOCKING.** Dos SHOULD-FIX (ambos huecos de cobertura, ninguno
+  defecto en el código) y tres NIT. Revisión completa en
+  `docs/plan/upgrade/reviews/REVIEW-P5a.md`.
+- **POLARIDAD (D2): CORRECTA EN LOS CUATRO SITIOS**, leídos contra la tabla de verdad, no
+  contra los tests. El ancla se sostiene: quien no toca el switch aterriza en
+  `can_bring_main_dish: true`, igual que las 31 filas de producción. Ningún test fija el
+  default en `false`. Añadido a la evidencia un detalle que nadie había escrito: en el
+  asistente el switch vive en el bloque **común** (`MesaAbiertaSignup.tsx:345–387`), no
+  dentro de la rama `host ? … : …`, así que los anfitriones también pueden excluirse —
+  que importa, porque `host_food_assignment` puede valer `'main_course'`.
+- **SE PIDIÓ OTRO CAMBIO QUE LOS DIEZ TESTS NO CACEN Y APARECIÓ, MÁS CENTRAL QUE B-15.**
+  **S1: sustituir `cannotBringMainDish,` por `cannotBringMainDish: false,` en
+  `MesaAbiertaSignup.tsx:125` compila sin un diagnóstico nuevo y deja los diez tests en
+  10/10** — y con eso **ningún miembro puede excluirse jamás**, que es literalmente el
+  objeto de la fase. El hueco es estructural: los tests 5–7 nunca envían el formulario
+  (`advanceToStep5()` se detiene en «¡Casi listo!») porque ese fichero no mockea el
+  cliente de Supabase, a diferencia de los ficheros de los tests 9 y 10. **F2 se cumple,
+  pero su tercera cláusula está verificada solo por lectura**, exactamente como F3 lo
+  estaba en B-15. Mutación ejecutada sobre el árbol y revertida; árbol limpio verificado.
+  **S2 (menor): borrar `setCannotBringMainDish(false)` de `resetForm()`
+  (`AddParticipantDialog.tsx:46`) deja el test 10 verde**; sin esa línea, un admin que
+  inscribe a alguien excluido excluye también, sin verlo, a la persona siguiente.
+- **NO SE REPARAN AQUÍ.** El plan congela P5a en diez tests y `vitest +10`. **S1 y S2 van
+  al backlog y su sitio es P6**, junto a B-15: son el mismo defecto de forma —costura sin
+  montar— en los dos extremos, miembro→BD y admin→diálogo. P6 hereda ahora **tres** huecos,
+  no uno.
+- **VITEST — CUATRO CORRIDAS, DELTA +10 EXACTO EN TODAS.** Punta `1cf9bb7`: **1097**
+  totales (corrida 1 bajo carga, 606 s: 11 fallos; corrida 2, 226 s: **6 fallos**, solo
+  `MesaAbiertaDashboard`). Padre `62e9158`: **1087** totales (corrida 1, 234 s: 6 fallos;
+  corrida 2 bajo carga, 254 s: 8 fallos). **1097 − 1087 = +10.** El conjunto de rojos
+  atribuibles a `F` no crece: siguen siendo los 6 de `MesaAbiertaDashboard.test.tsx`.
+- **LOS CINCO ROJOS EXCEDENTES DE LA PRIMERA CORRIDA, DIRIMIDOS BAJO D8.2.** Cuatro son
+  `CuentacuentoEditor.*` y **reproducen en el padre bajo carga** (corrida 2 del padre) ⇒
+  preexistentes, B-05. El quinto, `pbBaseCapture`, **no reprodujo en ninguna corrida del
+  padre**, que por la letra de D8.2 apuntaría a BLOCKING. No lo es, y la prueba está en la
+  propia punta: **la corrida 2 de la punta, mismo árbol, máquina en reposo, da 6/1097 sin
+  ese fichero.** Un rojo causado por la fase no desaparece al repetir sobre el mismo
+  commit. Además los cinco pasan **28/28 en aislamiento sobre la punta** y ninguno importa
+  nada de `src/lib/mesa-abierta/` ni de `src/components/mesa-abierta/`.
+  **Lección para D8.2: la regla del padre necesita una segunda corrida de la PUNTA cuando
+  el padre sale limpio.** Comparar una corrida bajo carga con una en reposo no dirime nada;
+  fue el azar de mi orden de ejecución lo que puso a la punta en el peor caso y al padre en
+  el mejor.
+- **GATE D8: CERO DIAGNÓSTICOS NUEVOS**, comparado contra el padre **real** `62e9158` (no
+  contra `3851e40` de §6.2). Normalizando `(línea,columna)`, el `diff` de los conjuntos de
+  mensajes entre padre y punta **está vacío**. Los cinco ficheros nuevos a `(0)(0)(0)(0)`.
+  Totales idénticos en ambos commits: `tsc=1039 eslint=161 deno-lint=92 deno-check=43`.
+  **Los cinco `SelectQueryError` de `MesaAbiertaAdmin.tsx` siguen nombrando `email`**, que
+  era la guarda de §3.5. `npm run build` → **exit 0** (`✓ built in 24.95s`).
+- **LA DESVIACIÓN, MEDIDA POR MÍ Y NO DADA POR BUENA.** Apliqué la firma que prescribía
+  §3.1 (`status: string`) y corrí `tsc`: aparece
+  `MesaAbiertaSignup.tsx(113,17): error TS2769: No overload matches this call.` y el total
+  del proyecto sube de **1039 a 1040**. Diagnóstico nuevo en un fichero de `F` ⇒ BLOCKING
+  bajo D8.4. `status: 'pending'` lo devuelve a 1039. **El ejecutor tenía razón y el prompt
+  estaba mal**; queda confirmada la recomendación del PM de que P5b, P6 y P8 no prescriban
+  tipos de retorno sin haberlos compilado.
+- ALCANCE: **exactamente los nueve ficheros de `F`**, ninguno más. Sin `types.ts`, sin
+  `supabase/functions/**`, sin migración, sin `* 2.tsx`. `MesaAbiertaAdmin.tsx` recibe las
+  dos ediciones previstas. Verificado además que `EditParticipantDialog` **solo** se monta
+  desde `MesaAbiertaAdmin.tsx:1271`, así que B-15 cubre la única costura de esa clase.
+- P5b: `admin-add-participant/index.ts:119–129` desestructura una lista fija e **ignora
+  claves desconocidas**, así que enviar `canBringMainDish` hoy es inerte y no rompe el alta
+  manual. El nombre y la polaridad que P5b leerá (`body.canBringMainDish`, positivo) son
+  los que `AddParticipantDialog.tsx:137` envía. Confirmado.
+- BACKLOG AÑADIDO: **B-16** (S1: el cableado asistente→constructor sin test; recomendado a
+  P6, junto a B-15). **B-17** (S2: el reseteo del switch en `resetForm` sin test;
+  recomendado a P6). **B-05 se queda corta otra vez**: flakearon cinco ficheros, uno de
+  ellos `pg.cancel`, y **`src/lib/cuentacuentos/__tests__/pbBaseCapture.test.tsx` no es de
+  esa familia** — falla por comparación de fixture, no por timeout, y no consta como flaky
+  en ningún registro (`docs/plan/reviews/PB-review-2.md:98` lo da verde). Es del workstream
+  CUENTOS y conviene que lo sepan.
+- FINDINGS RAISED: ninguno contra el plan. P5a se ejecutó tal como está escrita.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-form` a `main` — decisión de Brent**;
+  la fase pasa. (2) B-15, B-16 y B-17 apuntan las tres a P6: conviene decidirlo al escribir
+  su bootstrap, porque son tres tests, no uno. (3) B-13, B-14 y el N1 de P4 siguen sin
+  dueño. (4) **B-06 hay que decidirlo antes de P8.**
