@@ -453,3 +453,61 @@
   - Unverified: whether `npm ci` succeeds in `casa-pilot`; whether the D1b.4 audit fits one session.
   - Brent's, deferred to the re-plan with real data: full feature vs English-creation-only; default
     English Bible translation; English liturgical texts.
+
+### 2026-08-10 — plan round 8 — PM (triage; sixth review, findings rose)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~15 min (triage + verification; no draft 6 pending Brent's call)
+- STAGE: triage 15m | rewrite 0m | fresh review 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — Codex FAIL on draft 5 (`e89db76`), 6 BLOCKING · 1 SHOULD-FIX · 0 NIT.
+  Trajectory: **11 → 10 → 8 → 7 → 5 → 6.** First round where findings ROSE.
+- CONTEXT PRESSURE: comfortable
+- COMMITS: ledger + review only; `PLAN.md` stays at draft 5
+
+- **[D5-B1] PASS B DOES NOT REPRODUCE, AND THE REVIEWER IS RIGHT.** Verified: I ran Pass B over
+  **135** files (9 roots) while the plan describes "the same file set as Pass A plus
+  `src/lib/whatsapp`" — which is **185**. The run silently omitted
+  `src/pages/ConstructorLiturgiasPage.tsx`, `src/data/elementos-fijos`, `src/hooks/presentation`
+  and all twelve edge-function directories. The reviewer's 185/376/316 is correct for the described
+  method; my 135/338/285 is correct for the method I actually ran. **Both numbers are honest; the
+  prose is not.**
+- **THIS IS THE THIRD CONSECUTIVE DRAFT WITH THE SAME CLASS OF ERROR**, and it happened in the
+  draft whose central claim was that every command had been executed. Instrument: fixed. Execution:
+  mostly fixed — Pass A and the sink derivation both reproduce exactly. What remains is narrower and
+  more insidious: **I run a command, then describe it in prose, and the prose drifts from the run.**
+  The only mechanical fix is to stop describing commands at all — paste the literal script and its
+  literal output, no summary.
+- **[D5-B4] A SECOND MISSED SURFACE, CONFIRMED.** `src/types/shared/liturgy.ts:261` defines
+  `LITURGY_ORDER` with user-visible Spanish labels — `'Portada Principal'`,
+  `'Oración de Invocación'`, `'Primera canción'` — imported by `ConstructorLiturgias.tsx:50`. Both
+  derivations miss it: it is outside every census root and matches no sink pattern, because it is a
+  **declaration**, not an emission. After `wa-webhook` in round 7, that is two concrete misses found
+  by review rather than by the method.
+- **[D5-B3] MY OWN "NO RESULTS" GREP IS SELF-DEFEATING.** `census.sh` contains the literals
+  `files=`, `copy=` and `TOTAL` in its `printf`, so D1a.6 flags the method source it is meant to
+  protect — measured: 2 hits. And it misses ordinary result formats (`There were 338 matches.`,
+  a Markdown row, `{"count":338}`). Another check written and never run.
+- **[D5-B2] The lock covers only `census.sh`.** `CENSUS-METHOD.md`, `wordlist-passB.txt`,
+  `SURFACE-SCHEMA.md`, the inclusion rule and the audit procedure all remain mutable in D1b. The
+  reviewer is also right that D-L overclaims: the split gives **method immutability after review**,
+  not proof that measurement never happened — this base plan already publishes preliminary totals.
+- **[D5-B5]** `language-axis` and `audience` are scalars and cannot express presentation surfaces
+  (operator chrome + projected liturgy content) or WhatsApp copy (recipient-facing, fixed channel
+  language, following neither axis). **[D5-B6]** 62 sink files ∪ 180 census files = **211 unique**
+  (215 with `lib/whatsapp`) — already past the ~200 split trigger before execution starts.
+  **[D5-S1]** Bible redistribution/attribution feasibility was dropped from the handoff; only the
+  WhatsApp half survived.
+
+- **THE STRUCTURAL DIAGNOSIS, STATED PLAINLY.** D1 claims *"an inventory of every emission."* That
+  claim cannot be discharged by any pre-specified method. Six reviews have each found another
+  surface the method misses, because **finding surfaces is the work** — a root list plus a regex is
+  provably incomplete in advance, and the reviewer said so outright: trace every candidate origin to
+  a sink, "or explicitly admit sampling and stop claiming an inventory of every emission." Six
+  drafts have tried to specify completeness. That is the loop, and it is not converging: findings
+  went 5 → 6.
+- OPEN AFTER THIS ROUND: **Brent decides.** PM recommendation is one further draft that changes
+  D1's *contract* — from "every emission" to a best-effort inventory with a **measured** blind spot
+  and a growth mechanism — and that pastes literal scripts with literal output and no prose
+  description of any command. Bounded: if that draft fails, run D1 anyway with the findings as
+  recorded caveats rather than continuing to buy reviews.
