@@ -33,6 +33,8 @@ import ChildrenMinistryPage from "./pages/ChildrenMinistryPage";
 import LeadershipPage from "./pages/LeadershipPage";
 import RecorderPopupPage from "./pages/RecorderPopupPage";
 import AdminSignupsPage from "./pages/AdminSignups";
+import ReflexionesPage from "./pages/Reflexiones";
+import ReflexionEpisodioPage from "./pages/ReflexionEpisodio";
 
 // Real route registration mounted by App.tsx (createBrowserRouter(appRoutes)).
 // Lives in its own module so tests can assert guards on the actual routes
@@ -63,6 +65,10 @@ export const appRoutes = [
   { path: "/admin/sermon-editor", element: <SermonEditorPage /> },
   { path: "/test/sermon-editor", element: <SermonEditorTestPage /> },
   { path: "/recursos/archivo", element: <ArchivoRecursosPage /> },
+  // PÚBLICAS a propósito (E3b): sin ProtectedRoute. Lo que se puede ver lo decide la RLS
+  // `podcast_episodes_public_read`, que sólo expone `status = 'published'`.
+  { path: "/reflexiones", element: <ReflexionesPage /> },
+  { path: "/reflexiones/:slug", element: <ReflexionEpisodioPage /> },
   { path: "/admin/finanzas", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><FinancialPage /></ProtectedRoute> },
   { path: "/admin/finanzas/nomina", element: <ProtectedRoute requires={{ resource: 'financial', action: 'read' }}><PersonnelPage /></ProtectedRoute> },
   { path: "/admin/musica/biblioteca", element: <ProtectedRoute requires={{ resource: 'canciones', action: 'read' }}><MusicLibraryPage /></ProtectedRoute> },
