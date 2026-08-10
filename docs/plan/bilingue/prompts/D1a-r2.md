@@ -1,12 +1,11 @@
-# EXECUTOR — BILINGUE D1a round 2
+# EXECUTOR PROMPT — BILINGUE D1a round 2
 
-> Paste below the line into a **fresh** Claude Code session (Opus, `high` effort).
-> Run from `/Users/brentcurtis/dev/casa-pilot` (branch `phase/d1a-method`, HEAD `3984fbd`).
-> The first line is the session title — paste it as the opening text, not as a follow-up.
+> Loaded by `/exec BILINGUE D1a r2` from a **fresh** Claude Code session (Opus, `high` effort).
+> Run from `/Users/brentcurtis/dev/casa-pilot`. Pilot phase under `docs/plan/SOP-PILOT.md`.
+> This file is the complete instruction set for the round; the report format at the end
+> extends the `/exec` default with the SOP-PILOT C2 self-review section.
 
 ---
-
-SESSION: BILINGUE · D1a · r2 · EXEC
 
 You are the executor for CASA BILINGUE, phase D1a round 2. You have no prior context.
 Round 1 was largely correct — the method lock held, the manifest verifies, and the inclusion
