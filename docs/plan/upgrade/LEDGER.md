@@ -3644,3 +3644,80 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   la fase pasa. (2) B-15, B-16 y B-17 apuntan las tres a P6: conviene decidirlo al escribir
   su bootstrap, porque son tres tests, no uno. (3) B-13, B-14 y el N1 de P4 siguen sin
   dueño. (4) **B-06 hay que decidirlo antes de P8.**
+
+### 2026-08-10 — P5a — LA REVISIÓN FINAL NO SE HA HECHO · ERROR DE DESPACHO DEL PM
+- SESSION: UPGRADE · P5a · PM
+- CONTEXT PRESSURE: comfortable.
+- **ERROR MÍO, Y HAY QUE DEJARLO ESCRITO.** Cerré mi turno con `/exec UPGRADE P5a
+  REVIEW`. **`/exec` abre una sesión de Claude**, no de Codex. La §3.6 del SOP es una
+  revisión de **Codex Sol**, otro proveedor, y la independencia entre vendors es
+  justamente lo que compra el eslabón. Lo que corrió fue una **tercera sesión de Claude**
+  ejecutando `prompts/P5a-codex-review.md`. Su propio reporte declara la suposición.
+  **P5a NO cierra con esto**: el PLAN solo pasa a DONE con un PASS de Codex, y un Claude
+  revisando a un Claude no es esa firma. La entrada `REVIEW-P5a.md` commiteada en
+  `e83a92b` queda en el repo **etiquetada como lo que es**: una segunda verificación
+  independiente de Claude, no la revisión final.
+- **AUN ASÍ RINDIÓ, Y RINDIÓ MÁS QUE YO.** Sesión fresca, sin memoria de la mía, y
+  encontró el hueco que a mí se me pasó. No lo tomo por bueno: **reproduje S1 yo mismo
+  como mutación real sobre el árbol y lo revertí** (árbol limpio, verificado).
+- **S1 (B-16) — EL HUECO CENTRAL, CONFIRMADO POR MÍ.** Sustituir
+  `cannotBringMainDish,` por `cannotBringMainDish: false` en la llamada al builder
+  (`MesaAbiertaSignup.tsx:125`) **deja los diez tests en 10/10 y no produce ni un
+  diagnóstico de `tsc`** (medido: 0 mensajes sobre el fichero mutado). Es decir: la
+  única guarda del camino **principal** de toda la funcionalidad —el miembro que declara
+  que no puede traer el plato— **no existe**. La UI seguiría comportándose bien (el
+  switch conmuta, el resumen del paso 5 cambia) mientras la base recibe `true` para
+  todos. **Es peor que mi B-15**, que ataca el camino de admin. La tercera cláusula de F2
+  («su estado llega al builder») es el único criterio de esta fase verificado **solo por
+  lectura**.
+- **S2 (B-17).** Quitar `setCannotBringMainDish(false)` de `resetForm` deja el test 10
+  verde y el switch se filtra al siguiente alta manual.
+- **LA RECOMENDACIÓN DEL REVISOR ESTÁ MAL, Y ESO ES LO GRAVE.** Propuso B-15, B-16 y
+  B-17 «a P6». Verifiqué el alcance de P6 en el PLAN (línea 726–730): su `F` contiene
+  `MesaAbiertaAdmin.tsx` —así que **B-15 sí cae ahí**— pero **no** `MesaAbiertaSignup.tsx`
+  ni `AddParticipantDialog.tsx`. Grepeando el PLAN entero, esos dos ficheros **solo
+  aparecen en el alcance de P5a** (línea 670–671). **Ninguna fase posterior los vuelve a
+  tocar.** Si P5a cierra tal cual, B-16 y B-17 son residuo sin dueño **el mismo día en
+  que nacen**.
+- **ES LA SEGUNDA VEZ Y YA ES PATRÓN, NO ANÉCDOTA.** P4 cerró con B-13 y N1 sin dueño por
+  esta misma razón y la decisión sigue sin tomarse. Ahora se suman B-14, B-16 y B-17:
+  **cuatro ítems huérfanos**. El mecanismo es siempre el mismo —la ronda de revisión
+  encuentra un hueco de costura en un fichero que ninguna fase posterior incluye en su
+  `F`— y el backlog, que el SOP supone que se drena, aquí demostrablemente no se drena.
+  La regla del SOP «SHOULD-FIX va al backlog, sin ronda de remediación» presupone un
+  backlog con salida.
+- **PROPUESTA DE ENMIENDA AL PLAN (requiere aprobación de Brent, y una fila de Decision
+  Log).** Ampliar el test plan de P5a de **10 a 12** tests y su aritmética de
+  `vitest +10` a **`+12`**, y correr **r2** para añadir dos:
+  - un test que dispare el submit real del asistente y afirme el payload que recibe
+    `.insert()` — cierra B-16 y convierte la tercera cláusula de F2 en criterio
+    comprobable;
+  - un test de `resetForm` en `AddParticipantDialog` — cierra B-17.
+  **Por qué ahora y no después:** los dos ficheros están **hoy** en la `F` de P5a, la
+  rama está abierta y el andamiaje de mocks ya está escrito y probado. Después no hay
+  «después»: ninguna fase los vuelve a tocar, y cerrarlos costaría una fase propia.
+  **Por qué no lo hago yo:** el PLAN está congelado desde 2026-08-06 y las enmiendas las
+  aprueba Brent. **B-15 no entra en la propuesta**: ésa sí tiene casa natural en P6.
+  **El contraargumento honesto**, y pesa: este plan se quemó cinco revisiones por
+  ensanchar alcance, y P4 declinó ensancharse por B-11 y le salió gratis. La diferencia
+  es que a B-11 la cerró el alcance propio de su fase; a B-16 no la cierra nadie nunca.
+- **SI BRENT DECLINA LA ENMIENDA**, la alternativa correcta **no** es «al backlog» —eso
+  es dejarlo sin dueño con otro nombre— sino decidir explícitamente qué fase posterior
+  ensancha su `F` para recogerlos, que es la misma decisión pendiente desde B-13.
+- OTROS HALLAZGOS DEL REVISOR QUE REGISTRO SIN AMPLIFICAR: (a) el switch queda **fuera**
+  del ternario anfitrión/invitado, así que un anfitrión también puede excluirse —
+  correcto y deseable, D3 lo contempla y P4 lo mapea (`matching.ts:377`); (b) **D8.2
+  tiene un hueco**: su regla del padre no discrimina cuando la corrida del padre sale
+  tranquila y la de la punta sale bajo carga; el discriminador real fue repetir la punta.
+  Es enmienda a una decisión congelada, decisión de Brent, no la toco. (c)
+  `src/lib/cuentacuentos/__tests__/pbBaseCapture.test.tsx` es un rojo inestable **no
+  registrado** y **no** de la familia B-05 (comparación de fixture, no timeout); es del
+  workstream CUENTOS y aquí solo queda anotado.
+- BACKLOG: **B-16 añadida** (S1: el cableado del switch al builder sin test; **sin dueño**).
+  **B-17 añadida** (S2: `resetForm`; **sin dueño**). B-15 sin cambios, recomendada a P6.
+  B-13, B-14 y el N1 de P4 **siguen sin dueño**. B-06 antes de P8.
+- OPEN AFTER THIS ROUND: (1) **Decisión de Brent sobre la enmienda** (r2 con dos tests, o
+  ensanchar la `F` de una fase posterior). (2) **La revisión final de Codex sigue
+  pendiente** — `prompts/P5a-codex-review.md` está commiteado y listo; se abre en Codex
+  Sol, no con `/exec`. Si se aprueba r2, Codex revisa después de r2. (3) Merge a `main`,
+  decisión de Brent, después del PASS de Codex.
