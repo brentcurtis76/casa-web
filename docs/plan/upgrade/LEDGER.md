@@ -3762,3 +3762,54 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   **Revisión final de Codex, que sigue sin hacerse** — `prompts/P5a-codex-review.md`
   necesitará una nota de que el alcance ahora son 12 tests y que F9/F10 se demuestran por
   mutación. Se abre **en Codex Sol**, no con `/exec`. (4) Merge a `main` tras el PASS.
+
+### 2026-08-10 — P5a round 2 — Claude Opus 5 (EXEC)
+- SESSION: UPGRADE · P5a · r2 · EXEC
+- CONTEXT PRESSURE: comfortable — la ronda cabía entera; el gasto no fue de contexto sino
+  de reloj: la suite completa se corrió tres veces (una perdida por un `tail` en el
+  comando, otra por `--reporter=basic`, que no existe en vitest 4).
+- ACTION: añadidos los dos tests de la enmienda. **Cero cambios en producción**; el `git
+  diff` contra `27a22a4` toca solo los dos ficheros de test.
+  - **Test 11** `el estado del switch llega al insert` — conduce el submit real del
+    asistente («Completar Inscripción») y afirma sobre el payload capturado en
+    `.insert()`, en las dos polaridades: switch intacto ⇒ `can_bring_main_dish: true`;
+    switch encendido ⇒ `false`. Requiere un `vi.mock` local de
+    `@/integrations/supabase/client` porque el global de `src/test/setup.ts` resuelve los
+    terminadores a `undefined`; se sigue el patrón de captura de
+    `EditParticipantDialog.mainDish.test.tsx`, con la fábrica llaveada por nombre de
+    tabla para cubrir también `profiles.update` y las restricciones dietarias. Entre las
+    dos polaridades se llama a `cleanup()`: `advanceToStep3()` renderiza, y dos renders
+    vivos duplicarían el switch en el DOM.
+  - **Test 12** `resetForm devuelve el switch a apagado` — enciende el switch, envía con
+    éxito y espera a que vuelva a `aria-checked="false"`.
+- COMMITS: `2018e06` (tests). Sobre `27a22a4`, sin rebase ni squash.
+- TESTS: `npx vitest run --no-file-parallelism` → **1093 passed / 6 failed (1099)**. Los
+  6 rojos son íntegramente `MesaAbiertaDashboard.test.tsx`, los mismos de la línea base.
+  **Confirmado el aviso de medición del prompt**: la primera pasada de esta sesión dio
+  **10 rojos en 5 ficheros** (los 6 del dashboard más 4 de la familia B-05
+  `CuentacuentoEditor`) y tardó **626 s**; la reejecución en máquina tranquila tardó
+  **218 s** y dio 6. El total de 1099 fue idéntico en ambas, así que la aritmética `+2`
+  nunca estuvo en duda — solo la lista de rojos. Reejecutar antes de concluir no era una
+  precaución retórica.
+- MUTATION EVIDENCE:
+  - **F9** — `MesaAbiertaSignup.tsx:125`, `cannotBringMainDish,` → `cannotBringMainDish:
+    false,`. Test 11 en rojo: `AssertionError: expected { user_id: 'test-user-id', …(12) }
+    to match object { can_bring_main_dish: false }`, recibido `true`, en
+    `MesaAbiertaSignup.mainDish.test.tsx:142`. Los otros tres tests del fichero siguieron
+    **verdes** — que es exactamente el agujero que la enmienda vino a tapar. Revertido con
+    `git checkout --`; la línea 125 vuelve a leer `cannotBringMainDish,`.
+  - **F10** — borrada `setCannotBringMainDish(false)` de `AddParticipantDialog.tsx:46`.
+    Test 12 en rojo: `expect(element).toHaveAttribute("aria-checked", "false")`, recibido
+    `"true"`. El test 10 siguió verde. Revertido; la línea 46 vuelve a existir.
+  - **Ambas revertidas antes de commitear**: `git status` limpio salvo los dos ficheros de
+    test, y el commit `2018e06` contiene solo esos dos.
+- GATE D8 sobre los dos ficheros: `tsc (0) eslint (0) deno lint (0) deno check (0)` en
+  ambos. Totales del proyecto: `tsc=1039 eslint=161 deno-lint=92 deno-check=43`.
+  `npm run build` → exit 0.
+- FINDINGS RAISED: ninguno. La enmienda estaba bien dimensionada: ninguno de los dos tests
+  necesitó un `data-testid`, un helper exportado ni ningún otro cambio de producción.
+- OPEN AFTER THIS ROUND: (1) Verificación independiente del PM. (2) Revisión final de
+  Codex, todavía sin hacer — `prompts/P5a-codex-review.md` sigue describiendo 10 tests y
+  necesita la nota de los 12 y de la demostración por mutación. (3) Merge a `main` tras el
+  PASS. (4) Sin tocar y sin dueño nuevo: B-15 (recomendada a P6), B-13, B-14 y el N1 de
+  P4; B-06 antes de P8.
