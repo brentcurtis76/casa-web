@@ -685,3 +685,80 @@ tsc=0
   test file appears. Recorded because the same gap would recur in any future method-lock phase.
 - FINDINGS: BLOCKING 1 ([B1]) · SHOULD-FIX 0 · NIT 0.
 - OPEN AFTER THIS ROUND: D1a r2 prompt issued. Executor round 2 of max 3.
+
+### 2026-08-10 — D1a round 2 — EXEC
+
+- SESSION: `BILINGUE · D1a · r2 · EXEC`
+- ELAPSED: ~25 min
+- STAGE: locate plan/prompt 6m | convention survey 7m | fix + docs 8m | verification/reporting 4m
+- EFFORT: executor `high`
+- FIRST-PASS: **yes** — every command in the prompt's test block passed on its first run.
+- CONTEXT PRESSURE: comfortable
+- ACTION: closed [B1]. `census.sh` now carries `-not -name '*_test.*'` on both selectors, so the
+  Deno underscore convention used throughout `supabase/functions/` is excluded alongside the dot
+  convention used under `src/`. `CENSUS-METHOD.md` states the complete four-predicate exclusion rule
+  and why a test file is not a copy surface. `METHOD-MANIFEST.txt` carries recomputed `sha256` for
+  the two changed artifacts; all four entries verify.
+- COMMITS: `734c8f6` (method fix); ledger commit follows this entry.
+- SURVEY BEFORE FIXING: over the candidate set produced by the frozen roots and the extension
+  filter, every path whose name contains `test` in any case is covered by `__tests__`, `*.test.*` or
+  `*_test.*`; `.spec.`, `_spec.`, `__mocks__` and `test/`/`tests/` directory segments match nothing.
+  The `*Fixtures.ts` helpers all sit inside `src/lib/cuentacuentos/__tests__/` and were already
+  excluded. No predicate was added for a convention that matches no file — against a SOURCE_SHA-locked
+  tree such an exclusion could not be justified against any file, and the extension rule governs a
+  convention that appears later.
+- NO COPY SURFACE WAS DROPPED: every selected `*_test.ts` declares `Deno.test`, and no non-test
+  module under `src/` or `supabase/` imports a `*_test` module. Both checks are pasted into
+  `CENSUS-METHOD.md` as literal commands.
+- FROZEN DECISIONS: D-A — diff is `docs/plan/bilingue/` only, no source, schema or DB change.
+  D-K — every process in every command is an absolute binary path and `LC_ALL` is exported once;
+  `type -a grep` confirms `grep` and `find` are shell functions in this environment, so the absolute
+  paths are load-bearing rather than ceremonial. D-L — the census was run **only** to verify file
+  selection; no count, total or file number appears in any prose artifact, and the two prose
+  artifacts that previously claimed the script is never executed in D1a were corrected to say what
+  actually happens. D-M — every command below is literal, with its literal output.
+- ACCEPTANCE: A1–A5 met.
+- WEAK POINT: the fix is verified by a negative assertion — that the census output contains no
+  test-shaped path. That proves the excluded set is clean; it does not prove the *retained* set is
+  complete. A root that should have been configured and was not would produce the same zero.
+
+```bash
+cd /Users/brentcurtis/dev/casa-pilot
+export LC_ALL=en_US.UTF-8
+bash docs/plan/bilingue/evidence/census.sh 2>/dev/null \
+  | /usr/bin/grep -cE '_test\.|\.test\.|\.spec\.|__mocks__'
+cd docs/plan/bilingue/evidence && /usr/bin/grep -vE '^#' METHOD-MANIFEST.txt | /usr/bin/shasum -a 256 -c
+cd /Users/brentcurtis/dev/casa-pilot && git diff --stat pilot/sop-v2...HEAD
+npx tsc --noEmit; echo "tsc=$?"
+```
+
+```text
+0
+CENSUS-METHOD.md: OK
+census.sh: OK
+SURFACE-SCHEMA.md: OK
+wordlist-passB.txt: OK
+ docs/plan/bilingue/LEDGER.md                    | 121 +++++++++++++++
+ docs/plan/bilingue/evidence/CENSUS-METHOD.md    | 198 ++++++++++++++++++++++++
+ docs/plan/bilingue/evidence/METHOD-MANIFEST.txt |  12 ++
+ docs/plan/bilingue/evidence/SURFACE-SCHEMA.md   | 140 +++++++++++++++++
+ docs/plan/bilingue/evidence/census.sh           | 157 +++++++++++++++++++
+ docs/plan/bilingue/evidence/wordlist-passB.txt  |  56 +++++++
+ docs/plan/bilingue/prompts/D1a-r2.md            | 128 +++++++++++++++
+ 7 files changed, 812 insertions(+)
+tsc=0
+```
+
+The `git diff --stat` above was captured before this entry was committed, so its line counts predate
+it. Re-run at the round-2 HEAD it lists the same seven paths, every one under `docs/plan/bilingue/`:
+
+```bash
+cd /Users/brentcurtis/dev/casa-pilot && git diff --name-only pilot/sop-v2...HEAD \
+  | /usr/bin/grep -v '^docs/plan/bilingue/'
+```
+
+```text
+(exit 1, no output)
+```
+
+- OPEN AFTER THIS ROUND: D1a awaits PM verification of round 2. Executor round 2 of max 3.
