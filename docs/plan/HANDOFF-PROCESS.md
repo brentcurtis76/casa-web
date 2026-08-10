@@ -103,11 +103,28 @@ Two deep-research runs, 50 claims adversarially verified, 22 killed. Load-bearin
   CI gates.** Untested in either direction. Brent's ledger is better instrumented on this question
   than the published literature is.
 
-## How you observe lane 1
+## Where you run, and how you observe lane 1
+
+**Run this conversation from `/Users/brentcurtis/dev/casa-pilot`** — the worktree on `pilot/sop-v2`.
+It holds `SOP-PILOT.md`, both handoffs, the pilot ledger entries and the reviews. You write here.
+
+**Lane 1 runs in `/Users/brentcurtis/dev/casa-web`** on a branch cut from `pilot/sop-v2`. Two
+worktrees cannot share a branch, so you will never see its files in your own tree. Read them
+directly off disk — same machine, different directory:
+
+```
+/Users/brentcurtis/dev/casa-web/docs/plan/bilingue/LEDGER.md      ← lane 1's ledger
+/Users/brentcurtis/dev/casa-web/docs/plan/bilingue/reviews/       ← what each reviewer caught
+/Users/brentcurtis/dev/casa-web/docs/plan/bilingue/PLAN.md        ← the plan as it stands
+```
+
+No fetching, no branch juggling. If a path is missing, `/plan-new BILINGUE` has not run yet.
+Confirm with `git -C /Users/brentcurtis/dev/casa-web worktree list` if you need to see where lane 1
+actually is.
 
 The ledger is the interface. Lane 1 writes an entry per round with `ELAPSED`, `STAGE`, `EFFORT`
-and `FIRST-PASS`; you read them and update the scoreboard above. Also read `docs/plan/reviews/`
-for what each reviewer actually caught.
+and `FIRST-PASS`; you read them and update the scoreboard above. Also read the root
+`docs/plan/reviews/` in your own tree for the PD-REFINE and BILINGUE-v2 history.
 
 **You do not direct lane 1.** If you conclude the SOP needs changing, amend `SOP-PILOT.md` and tell
 Brent; he decides whether lane 1 adopts it. A process lane that starts steering the feature lane
