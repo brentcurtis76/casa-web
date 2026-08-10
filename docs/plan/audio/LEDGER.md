@@ -2016,3 +2016,60 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - OPEN AFTER THIS ROUND:
   1. **Decisión de Brent sobre el push**, que arrastra los 7 commits de UPGRADE.
   2. `/exec AUDIO E3b r1` — ya ejecutable.
+
+### 2026-08-09 — E3b round 1 — EXEC (Opus)
+- SESSION: `AUDIO · E3b · r1 · EXEC`
+- STATUS: **COMPLETE** con un `NOT DONE` que resulta ser bloqueante. `phase/E3b-pages@d95b90d`,
+  SHA padre **`62e9158`** (el merge de `E3a`). **8 ficheros, +1629**, exactamente el alcance
+  congelado. Informe completo, sin truncar — el tercero seguido.
+- La precondición fail-closed **pasó**: `git merge-base --is-ancestor 6054d55 main` → OK.
+- **Escaló en vez de arreglar lo que no era suyo**, que es lo correcto: detectó que la fase deja
+  roja la suite completa de Playwright y **no tocó `smoke-local.spec.ts`**, que está fuera de
+  alcance. Lo reportó con la reproducción hecha.
+- ASUNCIÓN QUE MERECE REGISTRO, porque la midió: las 13 filas del fixture llevan preferencia de
+  slug distinta **porque el trigger de `E3a` sólo admite cinco candidatos** («Hueco 3»), así que 13
+  filas compartiendo `episode_date` agotarían el fallback y la sexta fallaría con `23514`. El
+  arreglo congelado fija `published_at` e `id`, no el slug.
+
+### 2026-08-09 — E3b round 1 — PM (Opus), verificación independiente
+- SESSION: `AUDIO · E3a · PM` (verifica `AUDIO · E3b · r1 · EXEC`, `d95b90d`)
+- ACTION: verificación en worktrees desechables propios (base `62e9158`, HEAD `d95b90d`).
+- **ALCANCE:** 8 ficheros, +1629/-0, padre correcto. **Cero ficheros prohibidos**: `smoke-local`,
+  `seed.sql`, `publishService`, `NotFound` y la migración del slug no aparecen en el diff.
+- **CORRIDO POR MÍ:** unitarios **38/38**; `db reset` → 63 migraciones; **los dos specs del
+  contrato → 5 passed**; smoke **solo** → 1 passed; gate D18 base vs HEAD → **sin diferencias**,
+  totales idénticos `tsc=1039 eslint=161 deno-lint=92 deno-check=43`, `GATE_EXIT=0` ambos;
+  `npm run build` → **verde**.
+- **LAS TRES MUTACIONES, APLICADAS POR MÍ, las tres ROJAS:**
+  - **M1** quitar `.order('id', {ascending:true})` → `queries.test.ts` rojo en la aserción de
+    cableado de los dos `.order()`.
+  - **M2** keyset → offset real (`.range(12, …)`, reconstruida por mí porque mi primer intento
+    salió JS inválido y no probaba nada) → **`[PAG] 112 se repite ⇒ la paginación es por offset`**.
+  - **M3** `CANONICAL_ORIGIN` mutado → e2e rojo con `Expected "https://www.anglicanasanandres.cl/…"`
+    / `Received "https://ejemplo-mutado.invalid/…"`. *Nota: M3 sólo muere por e2e; los unitarios
+    de `src/pages` pasan con ella puesta, porque la aserción literal vive en el spec.*
+- FINDINGS RAISED:
+  - **[B1] BLOCKING — la fase deja roja la suite completa, y lo reproduje.** Los tres specs juntos:
+    **1 failed / 5 passed**, siempre `smoke-local.spec.ts` paso 1, *"El entorno está sucio"*. Smoke
+    **solo**: verde. SOP §1.3 exige que una fase termine en estado verde y mergeable.
+    **NO ES DEFECTO DEL EJECUTOR — ES DEL PLAN, Y ES MÍO.** La partición de ids que escribí en la
+    r20 venía de Codex r19/B3, que hablaba de **colisiones de limpieza**. Pero
+    `smoke-local.spec.ts:126-129` no afirma sobre su rango: **afirma sobre la tabla entera**
+    (`anon debería ver sólo el baseline publicado`). Partir los ids no arregla una aserción global,
+    y con `fullyParallel: true` las 13 filas de paginación son visibles para smoke.
+    **Quinta vez que arreglo el problema nombrado sin revisar lo que lo enmarca.**
+  - **[N1] NIT** — M3 sólo cae por e2e. Una aserción unitaria de la URL canónica en la página del
+    episodio la haría detectable sin levantar navegador. No bloquea.
+  - **[N2] NIT** — tras `supabase db reset`, Kong sirvió 502 en auth hasta un `docker restart` del
+    contenedor. Ambiental, reproducido por el ejecutor; merece una línea en el runbook de
+    `E-infra`.
+- DESVIACIONES del ejecutor, **las cuatro aceptadas**: 14 ids en vez de 13 en paginación (la fila
+  que se inserta entre peticiones necesita un id; `…0100` enumerado y sin colisión); página 2
+  afirmada como "las dos primeras filas exactamente" en vez de una sola, porque el baseline del
+  seed es un episodio real más antiguo que legítimamente cae ahí — **y la aserción de orden exacto
+  que mata M1 está en la página 1, que sí es exacta**; helpers en `queries.ts` para no abrir un
+  noveno fichero; y `E3b.7` no afirma que el seed esté en la página 1 del índice, porque las 13
+  filas nuevas lo empujan a la 2.
+- OPEN AFTER THIS ROUND: **ronda de remediación r2**, y **exige enmendar el plan primero**: hay que
+  meter `smoke-local.spec.ts` en el alcance de `E3b`, que es un fichero de una fase DONE y pasada
+  por Codex. Entrada de Decision Log incluida.
