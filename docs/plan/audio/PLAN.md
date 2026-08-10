@@ -316,7 +316,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 |----|--------|------|--------|-----------|
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
-| E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ CONGELADA — r17, `CODEX REVIEW E3a ROUND 3: PASS` el 2026-08-08. Ejecutable** | E-infra-impl ✅ |
+| E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **NO CONGELADA** | E3a, E-infra-impl |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
@@ -844,7 +844,12 @@ compartida. **No revertir `165e5f2`**: eso rompería `supabase start` para todo 
 
 ## Phase E3a — `slug`: invariante en la base, derivación y `publishService`
 
-**Revisión 17 (2026-08-08) — ✅ CONGELADA.** `CODEX REVIEW E3a ROUND 3: PASS`, 0 BLOCKING, 2
+**✅ DONE — 2026-08-09.** `phase/E3a-slug@6054d55`, SHA padre `4b44b5b`.
+**`CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** — 0 BLOCKING, 0 SHOULD-FIX, 0 NIT. Dos rondas de
+ejecución: la r1 cayó por una aserción de cableado vacua (Codex B1), la r2 la cerró tocando
+**un solo fichero de test**. **Pendiente:** merge a `main`, cuando Brent lo autorice.
+
+**Revisión 17 (2026-08-08) — congelada ese día.** `CODEX REVIEW E3a ROUND 3: PASS`, 0 BLOCKING, 2
 SHOULD-FIX de contabilidad aplicados en este mismo commit. **Tres rondas de review de plan:** la
 r15 falló con 6 BLOCKING, la r16 con 3, la r17 pasó. **Reescrita tras `CODEX REVIEW plan r15: FAIL`
 (6 BLOCKING, los seis aceptados) y corregida tras la r16 (3 BLOCKING, los tres aceptados).** La r15 puso el slug como responsabilidad del cliente: cada publicador
@@ -1824,6 +1829,9 @@ resuelta antes del primer envío).
 
 | Item | Origen | Por qué no es fase |
 |---|---|---|
+| **`DROP TRIGGER IF EXISTS` en la migración de `slug`** | `E3a` r1, NIT del PM y de Codex | Línea 138 de `20260808120000…`. Codex confirmó que en todo estado de upgrade soportado el trigger nuevo no puede existir y el statement es no-op, pero quitarlo encajaría mejor con la letra de D9 |
+| **El backfill numera desde 1 sobre `slug IS NULL`** | `E3a` r1, NIT del PM | En una reejecución parcial —columna ya presente con valores— la base podría chocar con un slug previo y el índice único, que se crea después, fallaría. Inalcanzable con migraciones versionadas |
+| **El cierre de cadena de `single()`/`limit()` no está probado** | `E3a` r2, NIT del PM | Revertirlo solo deja los 46 tests verdes. Codex dictaminó que D18 no exige que cada línea del mock mate una mutación propia, así que **no es hallazgo**; queda por si alguien añade un test del camino de recálculo |
 | **Reintento en `podcast-backfill` ante carrera de slug** | `E3a` r17, Codex r16/B1 | `index.ts:353-367` no reintenta, así que una carrera de slug hace fallar esa invocación. **La integridad queda intacta** —ni duplicado ni fila inválida— y es lote administrativo: la reejecución reutiliza el borrador por su GUID y las subidas son `upsert`. Codex r17 lo declaró **defendible sin arreglar antes de ejecutar `E3a`**. Meterlo en `E3a` obligaría a tocar la edge function que el invariante existe para no tocar |
 | `podcast:transcript` + VTT reutilizando `transcribe-meeting` | A14 | Pipeline propio; el mayor beneficio de accesibilidad, pero merece su propio plan |
 | `podcast:chapters`, `podcast:person` | A14 | Dependen de marcar capítulos, que no existe en el editor |
@@ -2029,6 +2037,10 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-08 | **`seed.sql` y `smoke-local.spec.ts` SALEN del scope de `E3a`** | Medido: con el trigger creado por migración, el seed corre después y recibe slug solo. H1 y H2 eran reales para el diseño de la r15 y sobran para el de la r16 | PM (medición) |
 | 2026-08-08 | **La regeneración de `types.ts` sale de `E3a`**; se añade `slug` a mano | Codex r15/B6: contradecía §6, que la declara su propia unidad desde la r10, y disparaba el diff a +3749/-590 | Codex r15/B6 |
 | 2026-08-08 | **El rollback de `E3a` es consciente del esquema** | Codex r15/B1: revertir sólo el código dejando el `CHECK` rompe al publicador antiguo con `23514`. Primero migración aditiva que quita `CHECK` y trigger, después `git revert` | Codex r15/B1 |
+| 2026-08-09 | **`E3a` DONE con PASS de Codex en la ronda 2** | Tres rondas de review de plan (r15 FAIL 6, r16 FAIL 3, r17 PASS) y dos de ejecución. **El invariante de base fue la decisión que lo desatascó**: disolvió tres de los seis BLOCKING de la r15 en vez de parchearlos | Codex |
+| 2026-08-09 | **El backfill histórico no aplica el tope de 5 intentos** | Asunción 3 del ejecutor, aceptada por PM y Codex: el tope pertenece al bucle del trigger en vivo. Tumbar una migración por un sexto episodio histórico en la misma fecha sería peor que emitir `-6`, que sigue siendo válido y cabe de sobra en el `CHECK` | Ejecutor / Codex |
+| 2026-08-09 | **`publishService` selecciona `slug` además de `title`** | Sin saber si la fila ya tiene slug, republicar mandaría una preferencia distinta de la asignada y el trigger respondería `23514`. Desviación 1 del ejecutor, aceptada | Ejecutor |
+| 2026-08-09 | **El guardia `existingEpisodeNumber === null` sale de la condición del reintento** | Decía que republicar un número conocido no puede competir consigo mismo: cierto para el número, falso para el slug desde que existe. Se conserva para decidir si recalcular el número. Es lo que exige «Concurrencia» punto 2 | Ejecutor / Codex |
 
 ---
 

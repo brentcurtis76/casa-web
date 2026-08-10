@@ -1732,3 +1732,65 @@ es exactamente el error que dejó a `E-infra` en borrador.**
     rojo**. Se registra para que nadie lo lea como verificado.
 - OPEN AFTER THIS ROUND: **`E3a` está limpia otra vez y lista para la review final de Codex.**
   Es la **ronda 2 de 2** del bucle de §1.5: si vuelve FAIL, decide Brent.
+
+### 2026-08-09 — E3a CIERRE DE UNIDAD — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: cierre tras `CODEX REVIEW E3a ROUND 2/2 FINAL` → **PASS**, 0 BLOCKING, 0 SHOULD-FIX,
+  **0 NIT**, sobre `phase/E3a-slug@6054d55`, SHA padre `4b44b5b`. **`E3a` marcada DONE.** Tercera
+  unidad ejecutada del plan.
+- QUÉ SE CONSTRUYÓ: el slug público del episodio **como invariante de base**. Un trigger lo asigna
+  al publicar, resuelve unicidad con `-2`…`-5`, aplica el fallback `reflexion-<episode_date>` si
+  ningún publicador aporta base, y lo congela con `23514`. TypeScript sólo normaliza y propone.
+  `PublishResult` devuelve `slug` y `canonicalUrl` con el host de D19.
+- **LA DECISIÓN QUE DESATASCÓ LA UNIDAD.** La r15 hacía del slug responsabilidad del cliente y
+  Codex la falló con 6 BLOCKING, uno de ellos un **tercer publicador** que el scope no cubría.
+  Mover la responsabilidad a la base **disolvió tres de los seis** en vez de parchearlos: B2
+  (`podcast-backfill` recibe slug sin tocar una línea), B3 (el cliente ya no lee `message`) y B5
+  (no hay contadores dobles). **Parchear cada publicador habría dejado el cuarto para el año que
+  viene.**
+- CIFRAS: **3 rondas de review de plan** (r15 FAIL 6, r16 FAIL 3, r17 PASS) y **2 de ejecución**
+  (r1 FAIL 1, r2 PASS). 12 hallazgos de plan y 1 de código, **los trece aceptados y ninguno
+  discutido**. Alcance final: 7 ficheros, +757/-39, más +23/-5 en la r2.
+- **VERIFICACIÓN POR TRES PARTES**, que es lo que da valor al PASS: el ejecutor midió, **el PM
+  aplicó las cinco mutaciones por su cuenta** y Codex añadió dos propias (quitar `episode_number`
+  de la proyección, y restaurar el recorder plano). Las tres partes coincidieron.
+- **LO QUE ESTA UNIDAD ME ENSEÑÓ A MÍ, y va escrito porque se repitió.** Tres veces fallé por
+  **generalizar más allá de lo medido**: medir con `service_role` y escribir sobre la ruta
+  autenticada (r15/B3); ver que mi sonda no produjo un `23505` de slug y escribir que el cliente
+  *nunca* lo ve (r16/B1); y probar las tres mutaciones declaradas y dar E3a.12 por cumplido cuando
+  el criterio nombraba una proyección que nunca intenté romper (r1/B1). **D21 decía "medir primero".
+  Le falta la otra mitad: la frase no puede ser más ancha que la medición, y una lista de
+  mutaciones es una ayuda, no el contrato — el contrato es el criterio, cláusula por cláusula.**
+- BACKLOG AÑADIDO: `DROP TRIGGER IF EXISTS` (NIT de D9 literal); el backfill numerando desde 1 en
+  reejecución parcial; el cierre de cadena del mock sin probar. **Sigue vivo:** reintento en
+  `podcast-backfill` ante carrera de slug; `supabase/.branches/` sin ignorar; `ALTER DEFAULT
+  PRIVILEGES`; el SHOULD-FIX de E2 (`REASON_NOT_SAVED`, `liturgyCover.ts:55`).
+- MERGE: **pendiente de autorización explícita de Brent.** `main` avanzó a `3851e40`, así que
+  **no hay fast-forward**. Verificado: **cero intersección de ficheros** entre lo que `main` tocó
+  desde `4b44b5b` y lo que toca `E3a`, y `git merge-tree` da **0 conflictos**.
+- OPEN AFTER THIS ROUND:
+  1. Merge de `phase/E3a-slug` a `main`, cuando Brent lo autorice.
+  2. **`E3b` es la siguiente y sigue EN BORRADOR.** Ver la nota de relectura abajo.
+
+### 2026-08-09 — relectura de `E3b` a la luz de lo construido — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- **`E3b` necesita enmiendas antes de ejecutarse. No es congelable tal como está.** Lo que cambió:
+  1. **`E3b.2` arrastra el hueco r9/B5, todavía abierto.** Dice "por offset" y afirma que el
+     desempate por `id` "impide solapes entre páginas". **Es falso**: el desempate ordena de forma
+     determinista, pero con inserciones entre peticiones el offset sigue solapando o saltando
+     filas. Hay que **elegir keyset sobre `(published_at DESC, id ASC)` o declarar el límite**.
+     Es el único hueco de plan que el banner de borradores todavía lista.
+  2. **`E3b.8` pide "el SHA de E0-gates"** — unidad retirada en la r10. Pasa a ser el SHA padre de
+     la propia fase, como en `E3a`.
+  3. **"Depende de: nada, ni siquiera de E0-gates. Es lo primero que puede arrancar"** sigue
+     huérfana al final del bloque y **contradice la tabla de olas**: `E3b` depende de `E3a` y de
+     `E-infra-impl`. Ahora además es materialmente falso, porque sin `slug` no hay ruta.
+  4. **Su riesgo dice que la tabla está vacía y que hay que usar datos sintéticos.** Ya no hace
+     falta inventarlos: el seed de `E-infra-impl` deja dos filas del rango `9000`, y desde `E3a`
+     **la publicada trae `slug = reflexion-2026-01-04`** y la borrador `NULL`. Eso sirve tal cual
+     para `E3b.4` y `E3b.5` — el borrador sin slug es exactamente el caso negativo.
+  5. **`E3b.3` puede usar `canonicalUrl`** de `PublishResult` en vez de construir la URL a mano.
+     Existe desde `E3a` y lleva el host de D19.
+- **Recomendación:** una ronda de plan para `E3b` —cerrar B5, corregir 2, 3 y 4, y aprovechar 5—
+  seguida de review de plan de Codex, antes de cualquier `/exec`. Es una ronda corta: el cuerpo ya
+  existe y ninguna de las cinco es de diseño nuevo salvo la elección de paginación.
