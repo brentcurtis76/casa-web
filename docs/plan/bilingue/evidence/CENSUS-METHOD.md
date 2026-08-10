@@ -8,8 +8,9 @@ METHOD METADATA
 - TARGET_LOCALE: `en_US.UTF-8`
 - IMPLEMENTATION: `docs/plan/bilingue/evidence/census.sh`
 
-This document fixes the method that D1b will run. It contains no run output. The implementation is
-syntax-checked but not executed in D1a.
+This document fixes the method that D1b will run. It contains no run output. D1a executes the
+implementation only to verify which files it selects; no count, total or file number from that run
+is recorded in this or any other D1a artifact.
 
 ## Process and locale rules
 
@@ -26,9 +27,62 @@ Every configured root must exist before collection begins.
 ## Shared file-selection rules
 
 Both passes use the same selector, except that Pass B adds `src/lib/whatsapp` to the Pass A roots.
-The accepted extensions are `.ts`, `.tsx`, and `.json`. Paths containing `__tests__`, names matching
-`*.test.*`, and copied TypeScript artifacts whose basename ends in a space followed by a decimal
-digit are excluded.
+The accepted extensions are `.ts`, `.tsx`, and `.json`.
+
+The complete exclusion rule is these four `/usr/bin/find` predicates, in this order:
+
+```text
+-not -path '*__tests__*'
+-not -name '*.test.*'
+-not -name '*_test.*'
+-not -regex '.* [0-9]\.(ts|tsx)'
+```
+
+The first three exclude test code under the two conventions this repository actually uses:
+`__tests__/` directories and `*.test.ts`/`*.test.tsx` under `src/`, and the Deno underscore
+convention `*_test.ts` used throughout `supabase/functions/`. **Test files are excluded because the
+census measures user-visible copy surfaces, and a test file emits nothing to a user.** Its Spanish
+literals are assertions and fixtures — expected values quoted from the module under test — so
+counting them double-counts the production string and inflates every sizing decision D1b feeds.
+The fourth predicate excludes copied TypeScript artifacts whose basename ends in a space followed by
+a decimal digit.
+
+`*_test.*` was absent from the rule until D1a round 2. Only the dot convention was excluded, so the
+Deno test files inside the roots were selected and counted. Every selected `*_test.ts` was confirmed
+to be a test — each declares `Deno.test` — and no non-test module in `src/` or `supabase/` imports
+any `*_test` module, so excluding the convention drops no copy surface:
+
+```bash
+/usr/bin/grep -rnE "from ['\"][^'\"]*_test(\.ts)?['\"]" src supabase \
+  '--include=*.ts' '--include=*.tsx' | /usr/bin/grep -vE '_test\.ts:'
+# exit 1, no output — no production importer
+```
+
+No other test, spec, mock or fixture convention occurs in the configured roots at SOURCE_SHA. That
+is a measured claim, not an assumption: over the candidate set produced by the roots and the
+extension filter, every path whose name contains `test` in any case is covered by one of the three
+predicates above, and `.spec.`/`_spec.`, `__mocks__`, and `test/` or `tests/` directory segments
+match nothing.
+
+```bash
+export LC_ALL=en_US.UTF-8
+ROOTS=$(/usr/bin/sed -n '/^PASS_A_ROOTS=(/,/^)/p' docs/plan/bilingue/evidence/census.sh \
+  | /usr/bin/grep -vE '^(PASS_A_ROOTS=\(|\))' | /usr/bin/tr -d ' ')
+/usr/bin/find -E $(echo $ROOTS) src/lib/whatsapp -type f -regex '.*\.(ts|tsx|json)$' \
+  -not -regex '.* [0-9]\.(ts|tsx)' | /usr/bin/sort -u > /tmp/candidates.txt
+/usr/bin/grep -iE 'test' /tmp/candidates.txt \
+  | /usr/bin/grep -vE '__tests__|/[^/]*\.test\.[^/]*$|_test\.(ts|tsx|json)$'
+# exit 1, no output
+/usr/bin/grep -iE '__mocks__|[._]spec\.|/tests?/' /tmp/candidates.txt
+# exit 1, no output
+```
+
+The fixture helpers that do exist — `pbImageFixtures.ts`, `pcuiWarningFixtures.ts` and
+`phFixtures.ts` — all sit inside `src/lib/cuentacuentos/__tests__/` and are already excluded by the
+first predicate. No predicate is added for a convention that matches no file: the method is locked
+against SOURCE_SHA, so an exclusion that removes nothing could never be justified against a file,
+and adding one would be untestable decoration. A new convention appearing later is an extension, and
+the extension rule below governs it.
 
 The copied-artifact exclusion is implemented with BSD extended regular expressions by invoking
 `/usr/bin/find -E` and applying `.* [0-9]\.(ts|tsx)`. Bare `find -regex` is not interchangeable with

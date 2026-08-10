@@ -1,5 +1,6 @@
 #!/bin/bash
-# CASA BILINGUE locked census implementation. D1a syntax-checks but does not run this file.
+# CASA BILINGUE locked census implementation. D1a runs this file only to verify file selection;
+# no run output is recorded in any D1a artifact.
 # SOURCE_SHA=e0c9342edcd1d9eddea0662244bf1934bfdb5cb0
 # PLAN_SHA=c842161d0edcba560a077fdb81b31edad2f23396
 # TARGET_OS=macOS Darwin 24.3.0
@@ -86,7 +87,8 @@ while IFS= read -r file; do
   PASS_A_FILES+=("$file")
 done < <(
   "$FIND" -E "${PASS_A_ROOTS[@]}" -type f -regex "$FILE_ERE" \
-    -not -path '*__tests__*' -not -name '*.test.*' -not -regex "$ORPHAN_ERE" \
+    -not -path '*__tests__*' -not -name '*.test.*' -not -name '*_test.*' \
+    -not -regex "$ORPHAN_ERE" \
     | "$SORT" -u
 )
 
@@ -95,7 +97,8 @@ while IFS= read -r file; do
   PASS_B_FILES+=("$file")
 done < <(
   "$FIND" -E "${PASS_B_ROOTS[@]}" -type f -regex "$FILE_ERE" \
-    -not -path '*__tests__*' -not -name '*.test.*' -not -regex "$ORPHAN_ERE" \
+    -not -path '*__tests__*' -not -name '*.test.*' -not -name '*_test.*' \
+    -not -regex "$ORPHAN_ERE" \
     | "$SORT" -u
 )
 
