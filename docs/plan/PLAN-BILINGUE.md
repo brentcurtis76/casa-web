@@ -42,6 +42,9 @@ Let a church run services in more than one language from one system:
 | Bible source | bolls.life, **7 Spanish translations wired, 0 English** | API has **43 English** (NIV, ESV, NKJV, NLT, NASB, KJV…) — config, not integration |
 | `liturgia_elementos.source_id` | exists, semantics unknown | **must be understood before P-DUP** — may already be a copy mechanism |
 | Existing duplication | none found at liturgy level | P-DUP builds it |
+| Song catalog | `music_songs` — **83 rows, all with lyrics, 0 CCLI numbers**, no language column | songs are selected from a catalog, not authored inline (L8) |
+| Song selection UI | `liturgia-builder/editors/CancionSelector.tsx` reads `music_songs` | one file to make language-aware |
+| `church_songs` | **0 rows, read by no source file — dead table** | backlog cleanup, out of scope here |
 
 ## Frozen architectural decisions
 
@@ -54,6 +57,7 @@ Let a church run services in more than one language from one system:
 | **L5** | Translation produces an **independent** liturgy: `origen_liturgia_id` is nullable, records provenance only, and carries no sync, no cascade, no FK-driven behaviour. | Brent's decision, 2026-08-10. Keeps P-DUP a copy operation rather than a distributed-state problem. |
 | **L6** | Every generator takes language as an **explicit parameter**, defaulting to `es`. No generator infers language from content, user, or context. | Implicit inference is untestable and fails silently. An explicit parameter is assertable in a contract test. |
 | **L7** | No column renames, no destructive migrations, no changes to the 11 Life OS tables. | Existing hard rule (CLAUDE.md). |
+| **L8** | **Songs are selected from the catalog, never translated.** The four `cancion-*` element types carry real worship songs with lyrics (`music_songs`, 83 rows). Translation must never render song lyrics into the target language. An English liturgy gets songs chosen from English catalog entries. | The English "version" of a song is a *different song*, or does not exist. Translated lyrics do not scan to the melody, and the result is unsingable. There is also licensing: the table has a `ccli_number` column (currently unpopulated) precisely because these are licensed works, not free text. Caught 2026-08-10 — v1 of this plan would have machine-translated them. |
 
 ## Phase index
 
@@ -72,10 +76,15 @@ Let a church run services in more than one language from one system:
 | B7b | Generators: oraciones | TODO | B1 |
 | B7c | Generators: children lesson | TODO | B1 |
 | B8 | Canonical liturgical text table (L3) | TODO | B1 |
-| B9 | Translate + duplicate | TODO | B1, B5, B8 |
+| B10 | Song catalog language + filtered selection (L8) | TODO | B1 |
+| B9 | Translate + duplicate | TODO | B1, B5, B8, B10 |
 
-Independent tracks: **{B1→B2, B6, B7*}**, **{B3→B4*, B5}**, **B8**. B9 is the only true join.
+Independent tracks: **{B1→B2, B6, B7*, B10}**, **{B3→B4*, B5}**, **B8**. B9 is the only true join.
 Three tracks can run in parallel worktrees — the shape the research supports.
+
+**Start B8 and B10 first despite their numbers.** Both block B9 and both block on a human:
+B8 needs Brent's English liturgical texts, B10 needs him to upload English songs. Engineering
+can finish and the phase still sits waiting on content.
 
 ---
 
@@ -106,14 +115,19 @@ Three tracks can run in parallel worktrees — the shape the research supports.
 ## Phase B2 — Language chosen at creation
 
 **Scope:** `LiturgiaForm` asks the language; the value persists to `liturgias.idioma`.
-**Out of scope:** anything downstream *honouring* it — that is B6/B7. Editing language after
-creation is out (see Risks).
+**Out of scope:** anything downstream *honouring* it — that is B6/B7.
+
+**Language is fixed at birth** (Brent, 2026-08-10). Once a liturgy exists its `idioma` never
+changes. Wanting the other language means duplicating via B9, which is the whole point of B9.
 
 **Acceptance criteria**
 - [B2.1] Creation form offers exactly `es` / `en`, defaulting to `es`.
 - [B2.2] The chosen value is persisted and re-read correctly.
 - [B2.3] Creating without touching the control yields `es` — existing behaviour unchanged.
 - [B2.4] The control is keyboard reachable and labelled.
+- [B2.5] **After creation the language control is absent or disabled in every edit surface**, and
+  an update that attempts to change `idioma` is rejected. Fixed at birth must be enforced, not
+  merely un-offered in the UI.
 
 **Test plan:** component tests on `LiturgiaForm`; one Playwright path creating an `en` liturgy.
 **Rollback:** hide the control; column keeps its default.
@@ -179,14 +193,22 @@ user-authored titles and are **not** in the map.
 **Scope:** add English translations to `BIBLE_VERSIONS` in `fetch-bible-passage`; pick the default
 by liturgy language; persist the chosen version to `liturgia_lecturas.version`.
 
-**Acceptance criteria**
-- [B6.1] An `en` liturgy defaults to an English translation; `es` still defaults to NVI.
-- [B6.2] The version actually used is persisted per reading.
-- [B6.3] An unknown version falls back to the language's default, not to NVI unconditionally.
-- [B6.4] Existing Spanish readings are byte-identical to before.
+**Translations to wire** (Brent, 2026-08-10 — all confirmed present on bolls.life, which carries 43):
 
-**Risk:** which English translation is the pastoral default is **Brent's call, not the executor's** —
-NIV, ESV and NRSVCE carry different denominational expectations. Blocked until he answers.
+```
+NIV · KJV · NKJV · ESV · NLT · NASB · NRSVCE · MSG · AMP · WEB
+```
+
+**Default for `en`: NIV** — pending Brent's confirmation. Flagged because NRSV is the usual
+Anglican lectionary translation, and the default is a pastoral choice, not an engineering one.
+`es` keeps NVI unchanged.
+
+**Acceptance criteria**
+- [B6.1] All ten English translations resolve and return text.
+- [B6.2] An `en` liturgy defaults to the chosen English default; `es` still defaults to NVI.
+- [B6.3] The version actually used is persisted per reading.
+- [B6.4] An unknown version falls back to the *language's* default, not to NVI unconditionally.
+- [B6.5] Existing Spanish readings are byte-identical to before.
 
 ---
 
@@ -196,6 +218,9 @@ NIV, ESV and NRSVCE carry different denominational expectations. Blocked until h
   so language belongs beside it.
 - **B7b** `generate-oraciones`
 - **B7c** `generate-children-lesson` + `refine-children-lesson`
+- **B7d** `process-reflexion-pdf` + `transcribe-meeting` — **both confirmed in the liturgy path**
+  by Brent, 2026-08-10. `process-reflexion-pdf` feeds `liturgias.reflexion_texto`, so an `en`
+  liturgy with a Spanish-processed reflection fails the goal.
 
 **Acceptance criteria (each)**
 - [B7x.1] Language is an explicit parameter defaulting to `es` (L6).
@@ -227,6 +252,33 @@ start until Brent provides the English texts. It is the most likely phase to blo
 
 ---
 
+## Phase B10 — Song catalog language + filtered selection (L8)
+
+**Scope:** `music_songs.idioma text NOT NULL DEFAULT 'es'` with a CHECK constraint (same shape as
+L4); `CancionSelector.tsx` filters the catalog by the liturgy's `idioma`; the music-library editor
+lets a song's language be set on upload.
+
+**Out of scope:** the rest of the 22-table music module — setlists, rehearsals, stems,
+arrangements, musicians. Only the catalog gains a language. Also out: `church_songs`, which has
+0 rows and no readers (backlog: drop it).
+
+**Acceptance criteria**
+- [B10.1] All 83 existing songs read `idioma = 'es'` after migration; no lyrics are altered.
+- [B10.2] `CancionSelector` in an `es` liturgy shows exactly the songs it shows today.
+- [B10.3] `CancionSelector` in an `en` liturgy shows only `en` songs — and shows an explicit empty
+  state, not a blank list, when none exist yet.
+- [B10.4] A song's language is settable on create and edit in the music library.
+- [B10.5] No setlist, rehearsal, or packet behaviour changes.
+
+**Test plan:** pgTAP for B10.1; component tests for B10.2–B10.4; the existing music suites must
+stay green for B10.5.
+**Rollback:** drop the column; the selector filter is behind it.
+**Risk:** B10.3's empty state is the phase's real content. Until Brent uploads English songs, every
+English liturgy has empty song slots — that is correct behaviour, and the UI must say so clearly
+rather than looking broken.
+
+---
+
 ## Phase B9 — Translate + duplicate
 
 **Scope:** duplicate a liturgy into the other language — `liturgias` row, `liturgia_elementos`
@@ -243,6 +295,11 @@ start until Brent provides the English texts. It is the most likely phase to blo
 - [B9.6] Element `orden` and structure are preserved.
 - [B9.7] Duplicating an `en` liturgy to `es` works symmetrically.
 - [B9.8] A partial failure leaves **no** half-built liturgy.
+- [B9.9] **No `cancion-*` element carries lyrics across (L8).** Song elements are duplicated as
+  empty slots that preserve position, `tipo` and `orden`, and are visibly marked as needing a
+  song from the target-language catalog.
+- [B9.10] A duplicate containing unfilled song slots **cannot be published or exported** as
+  finished. It must be impossible to project a liturgy with blank song slides by accident.
 
 **Risk — the largest in the plan:** `liturgia_elementos.source_id` already exists and its semantics
 are unknown. It may already encode a copy relationship that conflicts with `origen_liturgia_id`.
@@ -253,16 +310,25 @@ wrong and images need regeneration for those element types.
 
 ---
 
-## Open questions for Brent (blocking the phases named)
+## Open questions
 
-1. **Which English Bible translation is the default?** NIV, ESV, NRSVCE and NLT carry different
-   denominational expectations. — blocks **B6**
-2. **The English canonical texts** — BCP, Common Worship, or CASA's own? Please supply them.
-   — blocks **B8**
-3. **Can a liturgy's language be changed after creation, or is it fixed at birth?** Currently
-   planned as fixed; changing it later means re-running every generator. — affects **B2**
-4. **`process-reflexion-pdf` and `transcribe-meeting`** — part of the liturgy path or not?
-   — affects **B7** sizing
+**Answered 2026-08-10 (Brent):**
+1. ~~Which English Bible translations?~~ → NIV, KJV, NKJV, ESV, NLT, NASB, NRSVCE, MSG, AMP, WEB.
+2. ~~Language changeable after creation?~~ → **Fixed at birth.** B2.5 enforces it.
+3. ~~`process-reflexion-pdf` / `transcribe-meeting` in the liturgy path?~~ → **Yes, both.** B7d.
+4. ~~Songs?~~ → English songs will be **uploaded to the catalog**, not translated. L8 + B10.
+
+**Still blocking:**
+1. **The default English Bible translation.** NIV is planned; NRSV is the usual Anglican
+   lectionary choice. One word from Brent. — blocks **B6**
+2. **The English canonical liturgical texts** — BCP, Common Worship, or CASA's own wording, for
+   the Lord's Prayer, the Peace, the communion dialogue, the blessing, and any creed in use.
+   Please supply the actual text. — blocks **B8**
+3. **English songs uploaded to `music_songs`.** Engineering can finish B10 without them, but no
+   English liturgy is usable until the catalog has entries. — blocks **useful** B9 output
+4. **Unverified surfaces** — print/PDF export, presentation-mode slide rendering, and
+   email/WhatsApp notification copy. Nobody has checked whether these emit Spanish independently
+   of the builder. If they do, this plan is missing phases. — **must be checked before freeze**
 
 ## Decision log
 
@@ -273,6 +339,10 @@ wrong and images need regeneration for those element types.
 | 2026-08-10 | Independent copies, no sync | simplest model that meets the need | Brent |
 | 2026-08-10 | L1 — UI locale and content language are independent axes | a Spanish speaker must be able to build an English liturgy | PM |
 | 2026-08-10 | L3 — canonical liturgical texts are curated, never machine-translated | Anglican congregations expect the received text | PM |
+| 2026-08-10 | Language is fixed at birth; duplication is the only route to the other language | avoids re-running every generator on an existing liturgy | Brent |
+| 2026-08-10 | Ten English Bible translations wired; default still open | breadth over a single opinionated choice | Brent |
+| 2026-08-10 | `process-reflexion-pdf` and `transcribe-meeting` are in the liturgy path | reflexion feeds `liturgias.reflexion_texto` | Brent |
+| 2026-08-10 | L8 — songs are selected from the catalog, never translated; English songs get uploaded | a translated worship song is unsingable and licensed separately | Brent + PM |
 
 ---
 
@@ -303,3 +373,21 @@ wrong and images need regeneration for those element types.
   is not the same as a received one.
 - **Weakest part of this plan:** B9. It joins every track, its main risk (`source_id`) is unresolved,
   and its rollback story is the thinnest. If anything forces a re-plan, it will be B9.
+
+### v2 addendum (2026-08-10, after Brent's answers)
+
+- **A real defect in v1, caught by asking rather than by review:** v1 would have machine-translated
+  worship-song lyrics. Four of the eighteen element types are `cancion-*`, and they hold licensed
+  songs with lyrics on slides (`music_songs`, 83 rows). Translated lyrics do not scan to a melody
+  and the English "version" of a song is usually a different song. This produced L8 and B10, and
+  changed B9. **I did not catch this by reading the schema — I only found it because I queried the
+  actual rows and saw song titles.** The general lesson for this plan: element *types* look
+  homogeneous in the schema and are not homogeneous in content.
+- **Content-vs-engineering blockers are now the critical path, not the code.** B8 needs Brent's
+  English liturgical texts; B10 needs him to upload English songs. Both can be engineered to
+  completion and still deliver nothing usable. They carry high phase numbers and should start
+  first — that inversion is stated in the phase index and is easy to lose.
+- **What I still have not verified, and it is the same gap as v1:** print/PDF export,
+  presentation-mode rendering, and notification copy. If they emit Spanish independently, phases
+  are missing. This should be the plan reviewer's first target — a reviewer that only checks the
+  phases I wrote will not find the phases I failed to write.
