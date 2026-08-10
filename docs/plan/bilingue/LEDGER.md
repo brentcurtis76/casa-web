@@ -392,3 +392,64 @@
     report if it fails.
   - Still Brent's and now deferred to the re-plan with real data in hand: full feature vs
     English-creation-only; default English Bible translation; English liturgical texts.
+
+### 2026-08-10 — plan round 7 — PM (draft 5: D1 splits into D1a + D1b)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~30 min (executing 12m, rewrite 18m)
+- STAGE: rewrite 30m | fresh review 0m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — Codex FAIL on draft 4 (`e0c9342`), 5 BLOCKING · 4 SHOULD-FIX · 1 NIT.
+  Review at `reviews/BILINGUE-PLAN-review-5.md`. Trajectory: **11 → 10 → 8 → 7 → 5.**
+- CONTEXT PRESSURE: comfortable
+- COMMITS: see git log for the draft-5 SHA
+
+- **FIRST ROUND WHERE EVERY NUMERIC CLAIM REPRODUCED FOR THE REVIEWER.** Census 180/1,418;
+  601 vs 596; the five C-only line numbers exactly; 0 without `find -E` and 18 with; all 19
+  sink files. The instrument fix (D-K) worked. That is the pilot's first clean measurement round.
+- **[D4-B2] CONFIRMED, AND IT IS THE BIG ONE.** The sink regex had `sendTemplate` but not
+  `sendText`, and missed a live human-facing emission:
+  `supabase/functions/wa-webhook/index.ts` ~137 sends `"¡Gracias! Quedó registrada tu respuesta."`
+  over WhatsApp. It also missed `src/lib/whatsapp/templates.ts`, the approved-template registry —
+  which hardcodes `language: 'es'` and whose own header notes that editing a body triggers
+  **24–48h WhatsApp re-approval.** That is a lead-time constraint on any English rollout, not a
+  string. Corrected regex: **62 liturgy-path files, against 19.** My derivation was wrong by 3×.
+- **[D4-B4] Pass B was never actually frozen** — the word list ended in an ellipsis, and the same
+  executor would have written the method and run it. Now committed in full, and **executed**:
+  338 hits over 135 files, of which **285 sit on lines with no accent at all** — 285 lines of
+  Spanish copy Pass A cannot see, ~20% above its 1,418. The "lower bound" claim is now measured.
+- **[D4-B3] A file is not a surface.** One file emits on several language axes
+  (`CuentacuentoEditor.tsx` has toast copy *and* story content); `downscaleImage.ts` matches a
+  canvas sink and emits no text. New seven-field surface record — path · symbol/line ·
+  sink/channel · audience · text-origin · language-axis · reason — with many records per file
+  expected. This also corrects the sizing: D1's real work is triaging 62 sink files plus 180
+  census files, not "producing four documents".
+- **[D4-B1] Draft 4 claimed every command was executed and omitted the census command itself** —
+  the one that mattered most. Now inline in full. D-K also extended: absolute paths for *every*
+  process in a pipeline (draft 4 still used bare `wc`, `sort`, `cut`, `comm`) and `LC_ALL`
+  **exported once** rather than prefixed on the first command only.
+- **[D4-B5] The shrink dropped Brent's product decisions.** Restored as **Appendix A** — scope,
+  independent copies, language fixed at creation, the ten Bible translations, songs uploaded not
+  translated, and the narrowed "translate rather than regenerate". These are decisions, not failed
+  methodology, and a fresh planner must not reopen them.
+- **I WAS WRONG ON [D4-S2] AND THE REVIEWER WAS RIGHT.** I claimed all five C-locale extras collide
+  on lead bytes. Measured per line: 🚨 matches continuation byte `9a` (shared with `Ú`=c39a), ✅
+  matches `9c` (shared with `Ü`=c39c), and only `·` matches a lead byte `c2` (shared with `¿`,`¡`).
+  Conclusion unchanged; explanation corrected.
+- **THE STRUCTURAL FIX: D-L, method before measurement.** D1 splits — **D1a locks the method and
+  produces no numbers**, is Codex-reviewed and merged first; **D1b runs the locked method**.
+  `D1a.6` makes "no counts present" a greppable criterion, and `D1b.1`/`D1b.8` require `census.sh`
+  to be byte-identical to D1a's merged version. An executor cannot tune a method frozen in a
+  previous phase, which is what review 5 asked for and what no verify script could otherwise catch.
+- DECISIONS: D-L (method before measurement) · D-J extended (a derivation wrong once is a
+  *candidate floor*, paired with a call-path audit) · D-K extended to every process + source SHA +
+  OS/locale recorded · surface record schema · Appendix A restores Brent's product decisions ·
+  `D1-SUMMARY.md` needs **recorded** human acceptance, not merely to exist.
+- OPEN AFTER THIS ROUND:
+  - `PLAN.md` draft 5 is **not frozen.** Codex reviews D1a and D1b.
+  - Weakest point, named: **D1b.4**, the call-path audit. The regex output will look complete, and
+    the audit is the only thing between that appearance and another 3× miss. No script can tell a
+    shallow audit from a real one.
+  - Unverified: whether `npm ci` succeeds in `casa-pilot`; whether the D1b.4 audit fits one session.
+  - Brent's, deferred to the re-plan with real data: full feature vs English-creation-only; default
+    English Bible translation; English liturgical texts.
