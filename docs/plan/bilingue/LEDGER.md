@@ -205,3 +205,81 @@
 - OPEN AFTER THIS ROUND: **Brent decides** — accept draft 2 with the eight findings as D1's opening
   corrections; approve a targeted draft 3 (SOP §1.5 override, logged); or backlog BILINGUE.
   `PLAN.md` is not frozen and no phase may start until he does.
+
+### 2026-08-10 — plan round 4 — PM (draft 3)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~30 min (rewrite; verification done in round 3)
+- STAGE: rewrite 30m | fresh review 0m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** (round 3's FAIL stands as the measurement). Draft 3 awaits Codex round 3.
+- CONTEXT PRESSURE: comfortable
+- ACTION: Brent chose option B past the SOP §1.5 cap and directed that **Codex review draft 3
+  rather than take the override** — the recorded reason being that Codex has caught 4 of 4 of the
+  PM's unverified assertions while the PM caught 0 before submitting, so removing the review stage
+  would optimise the wrong variable. Rewrote `PLAN.md` end to end. Phases 8 → 9.
+- COMMITS: see git log for the draft-3 SHA
+- TESTS: none re-run this round (zero source diff; verification was round 3)
+
+- **THE STRUCTURAL CHANGE, which is the point of this draft.** Across drafts 1–2 the PM asserted an
+  inventory fact without checking it four times — `custom-*` homogeneity, `find -regex` behaviour,
+  D-C's consistency with its own test plans, and the code-declared custom subtypes. Fixing eight
+  instances would have produced a fifth. Draft 3 therefore **asserts less**: a fact appears only if
+  a phase's *size* depends on it, and everything an executor could derive became an acceptance
+  criterion with the derivation command attached (**D-J**). `blank-slide` is the argument — had D2c
+  said "union live shapes with code-declared shapes, by these two commands", the plan would have
+  been right without the PM knowing the answer.
+- **THE VERIFIED-STATE TABLE SHRANK TO TEN SIZING FACTS.** Deliberately no longer asserted, each now
+  a derivation criterion: the element-kind taxonomy, the `custom-*` shape set, the PII field list,
+  baked-asset counts, the `source_id` contract, per-table row counts, and the surface
+  classification. Draft 2 asserted several and was wrong about two.
+
+- FIXES, by finding:
+  - **[R2-B1]** D2c's shape inventory is now the **union** of a live query and a code grep, both
+    printed, both required to run. Untyped rows characterised individually rather than folded in.
+  - **[R2-B2]** New resolution schema across D2a–D2d: every field/path carries a **default
+    disposition plus kind-keyed exceptions**, and **every observed `(field, kind)` pair must
+    resolve through exactly one**. The verify enumerates pairs and fails on unresolved or
+    doubly-resolved ones. This is the deepest fix in the draft and the load-bearing new mechanism.
+  - **[R2-B3]** D-C tightened: **shell verifiers never touch the database.** Every DB fact reaches a
+    fixture through the MCP step. D3's leak check is split into a shell-side pattern scan (email /
+    phone / WhatsApp shapes) and a manual MCP value cross-check recording only a boolean.
+  - **[R2-B4]** Mandatory fixture provenance header — project ref, `query_sha256`, `captured_at`,
+    `transaction_read_only`, `captured_by` — plus a **required refresh at D6**; `D6-verify.sh` fails
+    on any fixture predating the D6 branch point.
+  - **[R2-B5]** D-I strengthened: every `UNVERIFIED` carries `materiality: BLOCKS-D6 | DETAIL`,
+    reviewer-approved, verify fails on a missing field, D6 fails on an unclassified entry.
+  - **[R2-B6]** **D4 now precedes D3**, and D4.6 emits an explicit asset hand-off list that D3.6
+    must consume in full.
+  - **[R2-B7]** **Definition of done and Rollback restored on all nine phases.**
+  - **[R2-B8]** Appendix A carries every command and query in full, runnable as written; the
+    abbreviated citations are gone.
+  - **[R2-S1]** D1's first deliverable is `CENSUS-METHOD.md`, pinning shell, `LC_ALL`, character
+    class as codepoints, comment regex, extensions incl. `.json`, tokenisation, case-folding, the
+    stopword list as a committed file, and the union policy — **before any counting**.
+  - **[R2-S2]** D6.7 names all eight verifiers explicitly; "D1–D5" banned as shorthand.
+  - **[R2-S3]** D3 scope now includes `published_resources.published_by` and non-FK
+    notification-recipient sources.
+- NEW PHASE: **D2d** — `liturgias.portadas_config`, `liturgias.presentation_styles`,
+  `liturgia_oraciones.tiempos`, `cuentacuentos_drafts.story`. Draft 2 had no home for these four
+  JSON columns, and `presentation_styles` is precisely the column that cannot be dispositioned
+  atomically (overlay content translates; ids, geometry, visibility, scope and styling copy).
+- **THE 596 vs 601 DISPUTE IS ABANDONED, NOT WON.** The PM's 596 is stable across five methods, two
+  locales and a widened character class, with no combining accents in the file and 683 total
+  non-ASCII lines; 601 is not reproducible here. Rather than assert either, V6n records the
+  disagreement itself as the finding and **no line total in the plan is load-bearing.** Two parties
+  unable to reproduce each other's count is exactly what the census exists to prevent.
+- **AND THE PM WAS WRONG ABOUT `find -regex`, AS RECORDED IN ROUND 3.** Under `bash` — the script's
+  shebang — the orphan filter returns 0; under `zsh` it returns 18. V10 records it and D1.1 requires
+  the shell be pinned.
+- DECISIONS: **D-J** (derived lists beat asserted lists; union live data with code declarations) ·
+  D-C tightened · D-I strengthened · fixture provenance protocol · `(field, kind)` resolution
+  schema · D2d added · D4 before D3 · census method frozen before counting.
+- OPEN AFTER THIS ROUND:
+  - `PLAN.md` draft 3 is **not frozen.** Codex round 3, by Brent's direction.
+  - Unrun and assigned rather than asserted: whether `npm ci` succeeds in `casa-pilot`; the contents
+    of the 90 `config` paths and D2d's four columns; whether `church_podcast_episodes` holds
+    language-dependent content; the Bible redistribution position.
+  - Weakest points, named: D6.10(b) neutrality read is not script-closable; the `(field, kind)`
+    coverage enumeration is new, load-bearing across four phases, and has never been run.
+  - Blocking on Brent, carried to D6: default English Bible translation; English liturgical texts.

@@ -3,207 +3,74 @@
 META
 - REPO / ROOT: `casa-web`. Plan docs live on branch `pilot/sop-v2`, checked out at
   `/Users/brentcurtis/dev/casa-pilot`.
-- PLAN ROOT: `docs/plan/bilingue/` — own `LEDGER.md`, `reviews/`, `evidence/`, `prompts/`.
-  **Never write BILINGUE entries into `docs/plan/LEDGER.md`**; that file is shared by CUENTOS
-  and MATERIALES and both are appending to it.
-- BRANCH CONVENTION: `phase/<id>-<slug>`, base `pilot/sop-v2`, ≤20 chars (Vercel preview DNS).
-- PLAN FROZEN: **NO — draft 2, 2026-08-10.** Draft 1 (`5ee2f17`) failed Codex plan review round 1
-  with 10 BLOCKING (`reviews/BILINGUE-PLAN-review-2.md`). This draft answers all ten.
-- SOP: `~/.claude/agent-workflow/AGENT-WORKFLOW.md` (canonical). Amendments:
-  `docs/plan/SOP-PILOT.md` (C1–C4 active).
-- SUPERSEDES: nothing. `docs/plan/PLAN-BILINGUE.md` failed review
-  (`docs/plan/reviews/BILINGUE-PLAN-review-1.md`, 11 BLOCKING) and is retained as history only.
-  **No phase, decision or estimate from that document is carried forward.**
+- PLAN ROOT: `docs/plan/bilingue/`. **Never write BILINGUE entries into `docs/plan/LEDGER.md`** —
+  that file is shared by CUENTOS and MATERIALES, both appending concurrently.
+- BRANCH CONVENTION: `phase/<id>-<slug>`, base `pilot/sop-v2`, ≤20 chars.
+- PLAN FROZEN: **NO — draft 3, 2026-08-10.** Draft 1 (`5ee2f17`) FAIL, 10 BLOCKING. Draft 2
+  (`98ab364`) FAIL, 8 BLOCKING (`reviews/BILINGUE-PLAN-review-3.md`). SOP §1.5's 2-round cap was
+  reached; Brent authorised draft 3 **and** directed that Codex review it rather than override.
+- SOP: `~/.claude/agent-workflow/AGENT-WORKFLOW.md`. Amendments: `docs/plan/SOP-PILOT.md`.
+- SUPERSEDES: nothing. `docs/plan/PLAN-BILINGUE.md` is history only.
+
+---
+
+## What changed in draft 3, and why it is not just another pass
+
+Across drafts 1 and 2 I asserted an inventory fact without checking it **four times** — `custom-*`
+homogeneity, `find -regex` behaviour, D-C's consistency with its own test plans, and the
+code-declared custom subtypes. Each was caught by one command. Fixing eight instances would produce
+a fifth.
+
+**So this draft asserts less.** A fact appears in this plan only if a phase's *size* depends on it.
+Everything else — every list, every taxonomy, every count that an executor could derive — is now an
+**acceptance criterion with the derivation command attached**, not a statement of the answer.
+
+The `blank-slide` miss is the argument. Draft 2 listed five `custom-*` shapes from production data
+and missed a sixth that exists in seven source files with zero rows. Had D2c said *"union the live
+shapes with the code-declared shapes, by these two commands"*, the plan would have been right
+without my knowing the answer. **A plan that asserts less cannot be wrong in this way.**
 
 ---
 
 ## Goal
 
-Produce the verified inventory that a bilingual-liturgy feature plan can be built on, and put the
-scope decision in front of Brent with costs attached.
+Produce the verified inventory a bilingual-liturgy feature plan can be built on, and put the scope
+decision in front of Brent with costs attached. This plan **does not build the feature.**
 
-That is the whole goal. This plan **does not build the feature.** It ends at a decision point.
-
-### Why this plan is discovery-only
-
-The previous attempt was rejected for asserting facts nobody had checked — six of which were each
-answerable by one query. Writing feature phases now would repeat that, because the phases depend on
-answers nobody has: which surfaces emit stored output copy, what each field does on duplication,
-where personal data flows, which images have text baked into their pixels, and what publishing a
-second language does to the first.
-
-**The scope decision — full feature vs English-creation-only — is made in D6 from D1–D5, not
-before.** Roughly four of the eleven original blockers live in the duplication half, so narrowing
-scope reduces the feature plan but does not remove the need for any discovery phase.
-
----
+Feature phases are deliberately absent: each depends on an answer D1–D5 produces. Both reviewers
+agreed the discovery-only boundary is sound and that no new top-level phase is required.
 
 ## Non-goals
 
-- **Any source-code change.** Every phase touches `docs/plan/bilingue/**` and nothing else.
-  A diff touching `src/`, `supabase/functions/` or `supabase/migrations/` is an automatic BLOCKING
-  finding, whatever else it does.
-- **Any schema change**, and any database write. Discovery is read-only.
-- **Deciding scope.** D6 presents options with costs; Brent decides.
-- **Choosing an i18n library, a translation provider, or a storage model.**
-- **Writing the feature plan.** After D6, a fresh `/plan-new` drafts it from the evidence pack.
+- **Any source change, schema change, or database write.** Discovery is read-only.
+- Deciding scope (D6 presents; Brent decides), choosing an i18n library, translation provider or
+  storage model, or writing the feature plan.
 
 ---
 
-## Verified current state
+## Verified current state — sizing facts only
 
-Everything below carries the command or query that produced it, run on 2026-08-10 against
-`pilot/sop-v2` and the live CASA project (`mulsqxfhxxdsadxsljss`). Facts corrected in round 2 are
-marked ⚠ with what draft 1 got wrong.
+Every row's exact command is in **Appendix A**, keyed by ID. Nothing here is recalled. Anything an
+executor could derive has been moved into a phase criterion instead of asserted here.
 
-### Schema
+| ID | Sizing fact | Value | Why the plan needs it |
+|---|---|---|---|
+| V1 | Liturgies · elements · distinct `tipo` | 30 · 574 · 52 | scopes every DB phase |
+| V2 | `liturgia_elementos.slides` normalized paths | **55** | sizes D2b |
+| V3 | `liturgia_elementos.config` normalized paths | **90** | sizes D2c |
+| V4 | Other JSON columns in the liturgy path | `liturgias.portadas_config`, `liturgias.presentation_styles`, `liturgia_oraciones.tiempos`, `cuentacuentos_drafts.story` | **these have no home in D2b/D2c** — they size D2d |
+| V5 | Recursive FK closure of `liturgias` | **15 tables** (9 direct, +4 at depth 2, +2 at depth 3) | sizes D5 |
+| V6 | Census surfaces / candidate lines | **166 files** (line total is **disputed — see V6n**) | sizes D1 |
+| V6n | The line count does **not** reproduce between reviewers | PM measures 1,402; Codex measures a different total; on `CuentacuentoEditor.tsx` PM gets 596 accent-bearing lines across five methods and two locales, Codex gets 601 | **This is the finding, not the number.** Two parties cannot reproduce each other's census — which is what the census exists to prevent. D1 freezes the method byte-for-byte before counting. No line total in this plan is load-bearing. |
+| V7 | `psql` is not installed | `which psql` → not found | forces the two-mechanism verification model (D-C) |
+| V8 | `casa-pilot` has no `node_modules` | 0 entries | forces `npm ci` before gates |
+| V9 | `npx tsc --noEmit` passes on the base | exit 0 | makes the source-leak gate meaningful |
+| V10 | Shell dialects differ on `find -regex` | under `bash` the orphan filter returns 0; under `zsh`, 18; `find -E` returns 18 in both | **draft 2's census was wrong because of this, and so was my rebuttal of the finding** — D1 must pin the shell |
 
-| Fact | Value | Query |
-|---|---|---|
-| `liturgias` has no language column | 16 columns | `information_schema.columns` |
-| PII-bearing columns on `liturgias` | `celebrante` 21/30 non-null, `predicador` 29/30, `created_by` always | `count(*) filter (where … is not null)` |
-| `liturgia_elementos` columns | 13, incl. `source_id`, `slides jsonb`, `edited_slides jsonb`, `config jsonb`, `custom_content text` | `information_schema.columns` |
-| `published_resources` has no language column | 14 columns | `information_schema.columns` |
-| One active published resource per type, **system-wide** | `CREATE UNIQUE INDEX idx_published_resources_active_unique ON published_resources (resource_type) WHERE (is_active = true)` | `select indexdef from pg_indexes where tablename='published_resources'` |
-| `published_resources.resource_type` constrained | `CHECK (resource_type = ANY ('{cuentacuento,reflexion}'))` | `pg_get_constraintdef` |
-| `liturgias` UPDATE policy has **no `WITH CHECK`** | `USING (auth.uid() = created_by)`, `with_check = null` | `pg_policies` |
-| `music_songs` has no language column | 17 columns; `ccli_number`, `lyrics jsonb` | `information_schema.columns` |
-| Nine **direct** FK children of `liturgias` | `liturgia_elementos`, `liturgia_lecturas`, `liturgia_oraciones`, `cuentacuentos_drafts`, `presentation_sessions` (CASCADE); `church_children_lessons`, `church_children_publication_state`, `church_podcast_episodes`, `music_publication_state` (SET NULL) | `pg_constraint where confrelid='public.liturgias'::regclass` |
-| ⚠ **The reachable graph is 15 tables, not 9** — draft 1 stopped at depth 1 | +`church_children_calendar`, `church_children_lesson_materials`, `church_children_packet_deliveries`, `music_packet_deliveries` (depth 2); `church_children_attendance`, `church_children_session_assignments` (depth 3) | recursive CTE over `pg_constraint`, depth ≤4 — recorded in full in D5 |
-
-`church_podcast_episodes` appears in no prior document.
-
-### Data
-
-| Fact | Value | Query |
-|---|---|---|
-| Liturgies · elements · distinct `tipo` · songs | 30 · 574 · 52 · 83 | `count(*)` / `count(distinct tipo)` |
-| 52 decomposes to 18 + 32 + 2 | 18 fixed slugs at 30 rows each; 32 `custom-<uuid>` at 1 row each; `contenido-adicional` (1), `anuncio-adicional` (1) | `group by case when tipo like 'custom-%' …` |
-| ⚠ **The 32 `custom-*` rows are five shapes, not one kind** — draft 1 asserted homogeneity it had not checked | `title-slide` 12 · `image-slide` 11 · `text-slide` 5 · `call-response` 2 · untyped 2 | `select coalesce(config->>'customType','(none)'), count(*) from liturgia_elementos where tipo like 'custom-%' group by 1` |
-| `source_id` non-null | 142 | `count(*) where source_id is not null` |
-| `slides` is a JSON **object**, not an array | 539/539 `jsonb_typeof='object'` | `select jsonb_typeof(slides), count(*) … group by 1` |
-| `edited_slides` populated on **zero** rows | 0 | `count(*) where edited_slides is not null` |
-| ⚠ **145 normalized JSON paths**, not the "11 config keys" draft 1 implied | `slides` 55 + `config` 90 | recursive CTE, single recursive term (see D2b) |
-| `custom_content` is not used by `custom-*` types | 54 non-null rows, all `oracion-gratitud` / `oracion-invocacion` / `oracion-arrepentimiento` (18 each); zero `custom-*` | `count(*) filter (where custom_content is not null) group by tipo-group` |
-| Related artifacts | children lessons 18 · children publication state 18 · lesson materials 18 · children packet deliveries 1 · music publication state 2 · music packet deliveries 0 · cuentacuentos drafts 3 · presentation sessions 0 · reflexion PDFs 2 · covers 15 | per-table `count(*)` |
-
-### Code
-
-| Fact | Value | Command |
-|---|---|---|
-| No i18n dependency of any kind | zero matches | `node -e` over `package.json` deps |
-| Gate commands | `npx tsc --noEmit` · `npm run lint` · `npm test` (vitest) · `npm run build` (vite) · `npx playwright test` | `package.json` `scripts` |
-| `npx tsc --noEmit` passes today | exit 0 | run in a checkout with deps |
-| `/Users/brentcurtis/dev/casa-pilot` has **no `node_modules`** | 0 entries | `ls node_modules \| wc -l` |
-| Builder creates through `ContextoTransversal` | `src/components/liturgia-builder/ContextoTransversal.tsx` (938 lines) | `find` |
-| `LiturgiaForm` is a separate surface | `src/components/liturgia/LiturgiaForm.tsx` — antifonal-prayer flow | `find` |
-| ⚠ Canonical texts are repo JSON: **6 content files + `index.json`** (7 files), 46 slides | `src/data/elementos-fijos/` — `la-paz`, `padre-nuestro`, `santa-cena`, `accion-de-gracias`, `ofrenda`, `bendicion-final` | `cat src/data/elementos-fijos/index.json` |
-| PDF generators in the liturgy path | `lib/liturgia/exportService.ts` · `lib/cuentacuentos/storyPdfExporter.ts` · `lib/children-ministry/childrenLessonPdfExporter.ts` · `components/liturgia/SlideGenerator.tsx` | `grep -rln 'jsPDF\|jspdf'` |
-| Music packet | `lib/music-planning/packetGenerationService.ts` + `supabase/functions/send-music-service-packet` | `grep` |
-| **Cover generation bakes the preacher's name into pixels** | `Portadas.tsx:449` `subtitle: context.preacher`; `:458` `textBakedIn: true` | `grep -nE 'subtitle\|textBakedIn' src/components/liturgia-builder/Portadas.tsx` |
-| `textBakedIn` honoured by compositor | `templateCompositor.ts:2067`; declared `types/shared/slide.ts:77` | `grep -rn 'textBakedIn'` |
-| Orphan duplicate files (spaces in name) | 18 repo-wide; 8 inside census surfaces | `find -E src -regex '.* [0-9]\.tsx?'` |
-
-### The string census
-
-⚠ **Draft 1's census was wrong twice and the reviewer caught both.**
-
-1. **The orphan exclusion silently failed.** `find … -not -regex '.* [0-9]\.tsx?'` works when run
-   standalone but does not exclude inside the script's function; the census counted 8 orphan files
-   it claimed to exclude. Verified by dumping the script's own file list: 21 files for
-   `liturgia-builder`, against 19 from the same `find` run directly. The fix is to stop relying on
-   `find -regex` dialect behaviour and filter the stream with `grep -vE`, which has no such
-   ambiguity. **Corrected totals: 166 files / 1,402 copy-lines** (was 174 / 1,414).
-2. **The metric was described backwards.** Draft 1 called accent-bearing lines an "upper bound on
-   inspection cost". They are a **lower-bound candidate set**: `Guardar`, `Cancelar`, `Presentar`,
-   `Error desconocido` are Spanish with no accent and are invisible to this heuristic. The census
-   therefore *undercounts* and cannot be the sole sizing input.
-
-```bash
-#!/usr/bin/env bash
-# docs/plan/bilingue/evidence/string-census.sh
-# Lower-bound candidate set: NON-COMMENT lines bearing Spanish-only orthography.
-# Orphan filtering is done with grep -vE on the stream — find -regex dialects differ.
-set -euo pipefail
-ACCENT='[áéíóúñüÁÉÍÓÚÑÜ¿¡]'
-COMMENT='^[[:space:]]*(//|\*|/\*)'
-ORPHAN=' [0-9]\.tsx?$'
-TOT=0; TOTF=0
-surface () {
-  local name="$1"; shift
-  local n=0 f=0
-  while IFS= read -r file; do
-    f=$((f+1)); n=$(( n + $(grep -E "$ACCENT" "$file" | grep -vcE "$COMMENT" || true) ))
-  done < <(find "$@" -type f \( -name '*.ts' -o -name '*.tsx' \) \
-             -not -path '*__tests__*' -not -name '*.test.*' 2>/dev/null \
-           | grep -vE "$ORPHAN" | sort)
-  TOT=$((TOT+n)); TOTF=$((TOTF+f))
-  printf '%-32s files=%-4s copy-lines=%s\n' "$name" "$f" "$n"
-}
-surface "liturgia-builder"        src/components/liturgia-builder
-surface "liturgia (antifonal)"    src/components/liturgia
-surface "lib/liturgia"            src/lib/liturgia
-surface "presentation components" src/components/presentation
-surface "presentation lib+hooks"  src/lib/presentation src/hooks/presentation
-surface "cuentacuentos lib"       src/lib/cuentacuentos
-surface "children-ministry lib"   src/lib/children-ministry
-surface "music-planning lib"      src/lib/music-planning
-surface "edge: liturgy content"   supabase/functions/generate-story supabase/functions/refine-story \
-        supabase/functions/generate-oraciones supabase/functions/generate-children-lesson \
-        supabase/functions/refine-children-lesson supabase/functions/fetch-bible-passage \
-        supabase/functions/process-reflexion-pdf
-surface "edge: packets/notify"    supabase/functions/send-children-service-packet \
-        supabase/functions/send-music-service-packet supabase/functions/wa-send \
-        supabase/functions/wa-reminders
-printf '%-32s files=%-4s copy-lines=%s\n' "TOTAL" "$TOTF" "$TOT"
-```
-
-Output on `pilot/sop-v2`, 2026-08-10:
-
-| Surface | Files | Copy-lines |
-|---|---:|---:|
-| liturgia-builder | 19 | 439 |
-| liturgia (antifonal) | 11 | 56 |
-| lib/liturgia | 3 | 33 |
-| presentation components | 43 | 153 |
-| presentation lib+hooks | 16 | 25 |
-| cuentacuentos lib | 15 | 75 |
-| children-ministry lib | 11 | 24 |
-| music-planning lib | 19 | 29 |
-| edge: liturgy content | 25 | 567 |
-| edge: packets/notify | 4 | 1 |
-| **TOTAL** | **166** | **1,402** |
-
-**Known gaps in this script**, which D1 must close: `supabase/functions/_shared/whatsapp/`,
-`src/pages/ConstructorLiturgiasPage.tsx`, and the canonical JSON in `src/data/elementos-fijos/`
-are all outside the surface list. The `.json` files are not covered by the `*.ts`/`*.tsx` filter at
-all.
-
-**Why the number still cannot size a phase alone.** Excluding comments changes the raw accent count
-3× (2,728 → 1,402) because this codebase is commented in Spanish — in `CuentacuentoEditor.tsx`, 434
-of 596 accent-bearing lines are comments. So any census that does not state its comment policy is
-incomparable to any other, which is why the earlier "~362" and "396 + 120" cannot be reconciled with
-each other or with this. And 567 of the 1,402 are edge-function AI prompts — generation
-instructions, not extractable copy.
-
----
-
-## Corrections to the handoff brief
-
-One claim in the brief is contradicted by query, and is corrected here rather than worked around:
-
-**"Every field that can hold personal data, including inside `custom_content`."** Correct that
-`custom_content` matters, but not where implied: all 54 populated rows are on the three `oracion-*`
-types and **zero** `custom-*` rows use it.
-
-The brief's other framing — "a field-by-field translation matrix across all **52** distinct `tipo`
-values" — is closer to right than draft 1 allowed. Draft 1 reduced 52 to "20 kinds plus one custom
-rule" on an assumption it had not tested. The `custom-*` family is **five** shapes, so the matrix
-is **25 rows minimum** (18 fixed + 2 stragglers + 5 custom shapes), and that is before the 145 JSON
-paths are counted. See D2a–D2c.
-
-Also worth stating: **`edited_slides` is populated on zero rows.** Whether that means "unused
-feature" or "recently added" is D2a's to establish.
+**Facts deliberately NOT asserted here**, each now a derivation criterion: the element-kind
+taxonomy, the `custom-*` shape set, the PII field list, the baked-asset counts, the `source_id`
+contract, per-table row counts, and the surface classification. Draft 2 asserted several of these
+and was wrong about two.
 
 ---
 
@@ -211,18 +78,18 @@ feature" or "recently added" is D2a's to establish.
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D-A** | **No phase modifies source, schema or configuration, and no phase writes to the database.** Diffs are confined to `docs/plan/bilingue/**`. | Any code in the diff means the executor answered a question by changing the answer. |
-| **D-B** | **Every numeric or structural claim carries the command or query that produced it, inline.** A claim without one is labelled `UNVERIFIED` in place. | This is the failure that sank both prior drafts. Making it frozen makes violating it BLOCKING. |
-| **D-C** | **Verification is two mechanisms, and the plan claims only what each can do.** (1) `D<n>-verify.sh` mechanically diffs the evidence document against committed **JSON fixtures** under `evidence/fixtures/`, and re-runs all filesystem and grep claims. It exits non-zero on any mismatch. (2) Fixtures are refreshed from the database by re-running the recorded queries through the Supabase MCP — a documented manual step, because `psql` is not installed (`which psql` → not found) and a shell script cannot call an MCP. **The shell script proves the document matches its evidence; it does not prove the evidence matches the database.** That second link is a reviewer step, named as such. | Draft 1's D-C promised automation its own test plans could not perform — the reviewer's sharpest finding. Splitting the claim is the honest fix. |
-| **D-D** | **Discovery records field paths, shapes and counts — never personal-data values**, in documents, fixtures, ledger entries or prompts. Examples are synthetic or redacted to shape. | Discovery reads exactly the fields the feature must protect. An evidence file quoting real values is read by every later agent. |
-| **D-E** | **D1–D5 findings are descriptive, not prescriptive.** They record what is true and what the options cost. They do not choose. | A discovery phase that recommends gets its recommendation frozen without review. |
-| **D-F** | Brent's product decisions stand: scope is liturgy output **and** builder UI; independent copies, no sync; language fixed at birth with duplication the only route to the other language; ten English Bible translations; English songs uploaded to the catalog, never machine-translated. **"Translate rather than regenerate" applies to generated devotional prose only** — not to Bible text (re-fetched in the target edition), canonical liturgical texts (curated), songs (re-selected), or assets (recomposed). | Decided 2026-08-10. The narrowing is round 2: the blanket form contradicted D2's own `re-fetch` and `human-select` dispositions and D4's recomposition outcomes. |
-| **D-G** | **UI locale and liturgy content language are independent axes.** The operator's interface language and the liturgy's language are never coupled; either can be set without changing the other. | D1's whole taxonomy depends on this distinction, so leaving it unfrozen made the classification rest on an unstated product rule. The prior review found this sound as `L1`; it is the one decision from the failed plan worth carrying forward, and it is carried forward explicitly rather than by inheritance. |
-| **D-H** | **The PII classification is fixed here, not chosen by an executor.** Personal data = any value identifying or contactable to a natural person: names (celebrant, preacher, presenter, volunteer, musician, member, podcast speaker), contact details (email, phone, WhatsApp number), auth/user identifiers (`created_by`, `published_by`, any `*_by`/`user_id`/`volunteer_id`/`musician_id`), free text authored by or about an identified person, and any of the above rendered into an asset or a log line. **Member PII never reaches a translation provider, an AI prompt, or a log.** | Draft 1 let D3 invent the definition during the census — the census would then be scoped by the definition it was meant to test. |
-| **D-I** | **An unresolved fact that materially changes feasibility, scope, or phase count blocks D6.** `UNVERIFIED` is a legitimate output for a detail; it is not a legitimate output for anything that moves the scope decision. Each phase lists such facts under `BLOCKS-D6` in its report. | Draft 1 allowed every phase to mark itself Done with open `UNVERIFIED` rows, so the workstream could close without producing the verified inventory in its own goal. |
+| **D-A** | **No phase modifies source, schema or configuration, and no phase writes to the database.** Diffs confined to `docs/plan/bilingue/**`. | Code in the diff means the executor answered a question by changing the answer. |
+| **D-B** | **Every claim carries the exact command or query that produced it, in full, runnable as written.** Abbreviations (`find`, `count(*)`, "the recursive CTE") do not satisfy this. A claim without one is labelled `UNVERIFIED` in place. | Draft 2 violated this inside its own verified-state table. |
+| **D-C** | **Two mechanisms, and each claims only what it can do.** (1) `D<n>-verify.sh` is **pure shell — it never touches the database.** It diffs the evidence document against committed JSON fixtures and re-runs filesystem/grep claims. (2) **Every database fact reaches a fixture through the manual MCP step**, which runs the recorded query in a read-only transaction and writes the result plus a provenance header. The shell script proves *document ↔ fixture*; the MCP step proves *fixture ↔ database*. Neither claims the other's job. | `psql` is absent (V7) and a shell script cannot call an MCP. Draft 2 stated this correctly and then let D3.10 and D5's test plan violate it. |
+| **D-D** | **Discovery records paths, shapes and counts — never personal-data values**, in documents, fixtures, ledger entries or prompts. Examples are synthetic or redacted to shape. | Discovery reads exactly the fields the feature must protect. |
+| **D-E** | **D1–D5 describe; they never prescribe.** They record what is true and what options cost. They do not choose. | A discovery phase that recommends gets its recommendation frozen without review. |
+| **D-F** | Brent's product decisions stand: liturgy output **and** builder UI; independent copies, no sync; language fixed at birth, duplication the only route to the other language; ten English Bible translations; English songs uploaded, never machine-translated. **"Translate rather than regenerate" applies to generated devotional prose only** — not Bible text (re-fetched), canonical liturgical texts (curated), songs (re-selected) or assets (recomposed). | Decided 2026-08-10; narrowed in draft 2. |
+| **D-G** | **UI locale and liturgy content language are independent axes.** Either can be set without changing the other. | D1's taxonomy rests on this; carried forward from the failed plan's `L1` on its merits. |
+| **D-H** | **The PII classification is fixed here, not chosen by an executor.** Personal data = any value identifying or contactable to a natural person: names (celebrant, preacher, presenter, volunteer, musician, member, podcast speaker), contact details (email, phone, WhatsApp number), auth identifiers (`created_by`, `published_by`, any `*_by` / `user_id` / `volunteer_id` / `musician_id`), free text authored by or about an identified person, and any of these rendered into an asset or a log line. **Member PII never reaches a translation provider, an AI prompt, or a log.** | A census scoped by the definition it was meant to test proves nothing. |
+| **D-I** | **Every `UNVERIFIED` entry carries `materiality: BLOCKS-D6 \| DETAIL`.** The verify script fails on any `UNVERIFIED` lacking the field. The classification is approved by the phase's independent reviewer, not self-applied. D6 fails on any unclassified entry and on any open `BLOCKS-D6`. | Draft 2 let executors choose whether to raise the blocking label, which is circular. |
+| **D-J** | **Where the plan could assert a list and instead requires derivation, the derivation is the contract.** An executor that copies a list out of this plan rather than running the command has not met the criterion. Where a derivation must union *live data* with *code declarations*, both commands are named and both must run. | `blank-slide` exists in seven source files with zero production rows. Data-only enumeration misses real behaviour; code-only enumeration misses legacy rows. |
 
-**Explicitly not carried forward:** L1–L8 from `docs/plan/PLAN-BILINGUE.md`, except L1, which is
-re-frozen on its merits as D-G above.
+**Not carried forward:** L2–L8 from `PLAN-BILINGUE.md`. L1 is re-frozen on its merits as D-G.
 
 ---
 
@@ -230,162 +97,552 @@ re-frozen on its merits as D-G above.
 
 | ID | Name | Status | Branch | Depends on |
 |----|------|--------|--------|-----------|
-| D1 | Output-surface inventory + two-method string census | TODO | `phase/d1-surfaces` | — |
-| D2a | Stored-field contract: scalar columns, all liturgy tables | TODO | `phase/d2a-scalars` | D1 |
-| D2b | `slides` schema: 55 paths × element kind | TODO | `phase/d2b-slides` | D2a |
-| D2c | `config`, `custom_content` and the five `custom-*` shapes | TODO | `phase/d2c-config` | D2a |
-| D3 | PII dataflow audit and translator boundary | TODO | `phase/d3-pii` | D1 |
-| D4 | Asset reality — text baked into pixels | TODO | `phase/d4-assets` | D1, D3 |
-| D5 | Downstream policy — the recursive 15-table graph | TODO | `phase/d5-downstream` | D1 |
-| D6 | Scope decision memo and re-plan input pack | TODO | `phase/d6-scope` | D1–D5 |
+| D1 | Surface inventory + frozen-method census | TODO | `phase/d1-surfaces` | — |
+| D2a | Scalar columns, four liturgy tables + JSON delegation register | TODO | `phase/d2a-scalars` | D1 |
+| D2b | `liturgia_elementos.slides` — 55 paths | TODO | `phase/d2b-slides` | D2a |
+| D2c | `liturgia_elementos.config`, `custom_content`, custom shapes | TODO | `phase/d2c-config` | D2a |
+| D2d | The other four JSON columns | TODO | `phase/d2d-json` | D2a |
+| D4 | Asset reality — text baked into pixels | TODO | `phase/d4-assets` | D1 |
+| D3 | PII dataflow audit and translator boundary | TODO | `phase/d3-pii` | D1, **D4** |
+| D5 | Downstream policy — the recursive table closure | TODO | `phase/d5-downstream` | D1 |
+| D6 | Scope decision memo and re-plan input pack | TODO | `phase/d6-scope` | all |
 
-**Parallelism:** D1 first. Then D2a, D3 and D5 in parallel; D2b and D2c both follow D2a and are
-parallel to each other; D4 follows D3 (it cross-references the PII classification). D6 joins.
+**Sequencing.** D1 first. Then D2a, D4 and D5 in parallel. D2b/D2c/D2d follow D2a and are parallel
+to each other; **D3 follows D4**, because D3's dataflow audit consumes D4's asset inventory — an
+asset discovered after the PII audit closed would leave the audit incomplete. D6 joins everything.
 
-**"One architectural concern" for a discovery phase means one question answered.** Each phase below
-answers exactly one and touches at most four files.
+*(Draft 2 had this dependency backwards.)*
 
-### The gate set for this workstream
+### The gate set
 
-No phase changes source, so the full project gate set does not apply and pretending it does would
-be theatre. The **document gate set** is:
+No phase changes source, so the full project suite would re-test the base branch, not the phase.
+The **document gate set**, run in `casa-pilot` at the phase commit after `npm ci`:
 
 ```bash
-git diff --stat pilot/sop-v2...HEAD    # must show only docs/plan/bilingue/
+git diff --stat pilot/sop-v2...HEAD          # must list only docs/plan/bilingue/
 bash docs/plan/bilingue/evidence/D<n>-verify.sh
-npx tsc --noEmit                        # proves no source leaked into the diff
+npx tsc --noEmit                              # catches a source file that leaked into the diff
 ```
 
-`npm run lint`, `npm test`, `npm run build` and Playwright are **deliberately excluded**: with a
-zero-line source diff they re-test `pilot/sop-v2`, not the phase. `npx tsc --noEmit` is kept
-precisely because it would catch a source file that leaked in.
+`npm run lint`, `npm test`, `npm run build` and Playwright are excluded deliberately. If `npm ci`
+fails, report BLOCKED — do not run gates in a different checkout.
 
-`/Users/brentcurtis/dev/casa-pilot` has no `node_modules` (verified). The executor must run
-`npm ci` there and run the gates **against the phase commit** — not in another checkout. If
-`npm ci` cannot complete, that is a BLOCKED report, not a reason to run gates elsewhere.
+### The fixture protocol (D-C, mandatory for every DB-derived fact)
+
+Every fixture under `evidence/fixtures/` opens with a provenance header:
+
+```json
+{"_provenance": {
+  "project_ref": "mulsqxfhxxdsadxsljss",
+  "query_sha256": "<sha256 of the exact query text>",
+  "captured_at": "<ISO-8601>",
+  "transaction_read_only": true,
+  "captured_by": "<SESSION line>"
+}, "rows": [ ... ]}
+```
+
+The MCP step runs `SET TRANSACTION READ ONLY;` before the query and records that it did.
+`D<n>-verify.sh` checks the header is present and well-formed, that `query_sha256` matches the
+query text committed in the evidence document, and that the document's tables agree with `rows`.
+**It does not and cannot check the fixture is current** — that is the refresh step, required again
+at D6.
 
 ---
 
-## Phase D1 — Output-surface inventory + two-method string census
+## Phase D1 — Surface inventory + frozen-method census
 
-**One question:** which code paths emit user-visible text, and does each follow the *operator's*
-locale (D-G) or the *liturgy's* language?
+**One question:** which code paths emit user-visible text, and does each follow the operator's
+locale or the liturgy's language (D-G)?
 
-**Scope**
-- `evidence/D1-surfaces.md` — every surface emitting user-visible text in the liturgy path: path,
-  what it emits, who reads it, and the classification **UI copy** / **stored-or-output copy** /
-  **generation instruction** (an AI prompt — neither).
-- `evidence/string-census.sh` — the script above, committed, with the three known gaps closed
-  (`_shared/whatsapp/`, `src/pages/ConstructorLiturgiasPage.tsx`, `src/data/elementos-fijos/*.json`).
-- **A second census method**, because the accent heuristic is a lower bound: a Spanish-stopword and
-  known-UI-verb pass (`Guardar`, `Cancelar`, `Presentar`, `Cerrar`, `Error`, `Buscar`, …) over the
-  same file set. Both numbers reported; neither presented as *the* count.
-- `evidence/D1-verify.sh`, `evidence/fixtures/D1-*.json`.
+**Scope** — `evidence/D1-surfaces.md`, `evidence/census.sh`, `evidence/D1-verify.sh`, fixtures.
 
-Surfaces known to exist and needing a row: celebrant guide (`lib/liturgia/exportService.ts`), story
-PDF (`lib/cuentacuentos/storyPdfExporter.ts`), children-activity PDF
-(`lib/children-ministry/childrenLessonPdfExporter.ts`), slide generator
-(`components/liturgia/SlideGenerator.tsx`), music packet
-(`lib/music-planning/packetGenerationService.ts` + `send-music-service-packet`), children packet
-(`send-children-service-packet`), WhatsApp (`wa-send`, `wa-reminders`, `_shared/whatsapp/`),
-presentation mode (43 components + 16 lib/hooks), the seven liturgy-content edge functions, and the
-canonical JSON. A floor, not a ceiling.
+**The census method is frozen before any counting** (this is the phase's first deliverable, and
+V6n is why). `evidence/CENSUS-METHOD.md` must pin, and `census.sh` must implement:
+shell (`#!/usr/bin/env bash`, and `find -E` or a `grep -vE` stream filter — never bare
+`find -regex`, per V10) · `LC_ALL` · the exact character class as codepoints · comment-line
+regex · file extensions **including `.json`** · tokenisation and case-folding for the second pass ·
+the stopword/verb list as a committed file · and whether the two passes are unioned or reported
+separately. Both passes report; **neither is presented as "the" count.**
 
-**Out of scope**
-- How any surface should be made bilingual (D-E). Classify and count only.
-- Non-liturgy surfaces: financial, mesa, member-facing, RBAC admin.
-- Fixing the 18 orphan `* N.tsx` duplicates. Record, leave.
+Surfaces requiring a row, each classified **UI copy** / **stored-or-output copy** / **generation
+instruction**: the four PDF generators, music and children packets, WhatsApp (including
+`supabase/functions/_shared/whatsapp/`), presentation mode, the seven liturgy-content edge
+functions, `src/pages/ConstructorLiturgiasPage.tsx`, and `src/data/elementos-fijos/*.json`. This
+list is a floor; D1 derives the ceiling.
+
+**Out of scope:** how any surface should be made bilingual (D-E); non-liturgy surfaces; fixing the
+orphan `* N.tsx` duplicates.
 
 **Acceptance criteria**
-- [D1.1] Every surface above has a row, or the document states why it emits no copy.
-- [D1.2] Every path in the document exists — `D1-verify.sh` exits non-zero on any miss.
-- [D1.3] Every row is classified against D-G, with a one-line reason. No blank rows.
-- [D1.4] Both census methods run from a clean checkout; both outputs pasted verbatim with the SHA.
-- [D1.5] The three known gaps are closed, evidenced by the surface list diff before/after.
-- [D1.6] The document states, near the numbers, that the accent method is a **lower bound** and why.
-- [D1.7] Any surface whose classification would change the scope decision is listed under
-  `BLOCKS-D6` (D-I), not left as a bare `UNVERIFIED` row.
+- [D1.1] `CENSUS-METHOD.md` pins every element listed above; `census.sh` implements it; the shell is
+  declared and the `find -regex` trap (V10) is demonstrably avoided.
+- [D1.2] Both passes run from a clean checkout; both outputs pasted verbatim with the commit SHA.
+- [D1.3] The surface list is **derived**, not copied from this plan (D-J), by a recorded command;
+  the floor list above is a subset of the result or the document says why not.
+- [D1.4] Every path in the document exists — `D1-verify.sh` exits non-zero on any miss.
+- [D1.5] Every surface classified against D-G with a one-line reason. No blank rows.
+- [D1.6] The document states, adjacent to the numbers, that the accent pass is a **lower bound**
+  and why (`Guardar`, `Cancelar` are Spanish without accents).
+- [D1.7] Every `UNVERIFIED` carries `materiality:` (D-I).
 - [D1.8] Document gate set passes; raw output pasted.
 
-**Test plan**
-- `bash evidence/D1-verify.sh` — asserts every path exists, re-runs both census methods, diffs
-  totals against `fixtures/D1-census.json`. Exit 0 required.
-- `git diff --stat pilot/sop-v2...HEAD`; `npx tsc --noEmit`.
+**Test plan:** `bash evidence/D1-verify.sh` — asserts every path exists, re-runs both passes, diffs
+totals against `fixtures/D1-census.json`, and fails on any `UNVERIFIED` without `materiality:`.
+Then `git diff --stat pilot/sop-v2...HEAD` and `npx tsc --noEmit`.
 
-**Definition of done:** criteria checked, verify exits 0, gates green, no open `BLOCKS-D6` item
-left unlisted.
+**Definition of done:** all criteria checked, `D1-verify.sh` exits 0, gates green, reviewer has
+approved every `materiality:` classification, branch mergeable.
 
-**Risks / unknowns**
-- The presentation module (59 files) is genuinely ambiguous: it renders liturgy content inside an
-  operator chrome. Expect rows that need both classifications; if the taxonomy cannot express that,
-  add a category and say why.
-- The stopword method will produce false positives (Spanish words in identifiers). Report precision
-  informally rather than tuning until the number looks good.
-- **Guess:** that three categories suffice. A surface fitting none is a finding worth having.
+**Risks / unknowns:** the presentation module renders liturgy content inside operator chrome and may
+need both classifications — if the taxonomy cannot express that, add a category and say why. The
+stopword pass will produce false positives; report precision rather than tuning until the number
+looks good.
+
+**Rollback:** delete the branch. Nothing outside the plan tree was touched.
+
+---
+
+## Phase D2a — Scalar columns, four liturgy tables + JSON delegation register
+
+**One question:** for every scalar column a liturgy owns, what happens on duplication — and which
+phase owns each JSON column's interior?
+
+**Scope** — `evidence/D2a-scalars.md` covering all scalar columns of `liturgias`,
+`liturgia_elementos`, `liturgia_lecturas` and `liturgia_oraciones`, plus a **delegation register**
+naming every JSON column in those tables and the phase that dispositions its interior. No JSON
+column is dispositioned atomically; `presentation_styles` alone mixes translatable overlay content
+with copied identifiers and styling, so an atomic verdict would be wrong either way.
+
+**The disposition vocabulary**, used by D2a–D2d: **translate** · **re-fetch** · **copy verbatim** ·
+**clear** · **human-select** · **regenerate**.
+
+**The resolution schema**, used by D2a–D2d and the fix for the deepest defect in draft 2: a single
+disposition per field is insufficient, because `source_id`, `titulo` and shared slide paths resolve
+differently for songs, readings, canonical texts, announcements and generated prose. Each field or
+path therefore carries **a default disposition plus an explicit exception list keyed by element
+kind**, and **every observed `(field, kind)` pair must resolve** through exactly one of them.
+
+**Out of scope:** JSON interiors (D2b/D2c/D2d); designing the copy mechanism, transaction or RPC.
+
+**Acceptance criteria**
+- [D2a.1] The column list is derived into `fixtures/D2a-columns.json` via the MCP step and diffed
+  against the document. A column in one and not the other fails the verify.
+- [D2a.2] Every scalar column carries a default disposition plus its exception list; every observed
+  `(column, kind)` pair resolves through exactly one. The verify enumerates pairs and fails on any
+  unresolved or doubly-resolved pair.
+- [D2a.3] The delegation register names every JSON column in the four tables and its owning phase;
+  a JSON column with no owner fails the verify.
+- [D2a.4] The `source_id` contract is **derived**, not inherited (D-J): the join is run fresh and
+  its result pasted. Prior documents claim 116 song slugs + 26 cuentacuentos ids — treat that as a
+  hypothesis to test, not a fact to repeat.
+- [D2a.5] `edited_slides` is dispositioned with both its population count **and** whether code reads
+  it, each with its command.
+- [D2a.6] Every **clear** carries a one-line reason.
+- [D2a.7] No personal-data value anywhere (D-D). Every `UNVERIFIED` carries `materiality:` (D-I).
+- [D2a.8] Document gate set passes.
+
+**Test plan:** `bash evidence/D2a-verify.sh` — fixture-header validation, column-list diff,
+`(column, kind)` coverage enumeration, vocabulary check, no-blank-cell check, `materiality:` check.
+Then `git diff --stat` and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0, gates green, `materiality:` classifications
+reviewer-approved, branch mergeable.
+
+**Risks:** six dispositions are my taxonomy, not one the codebase implies — a field needing a
+seventh is a finding worth having, not a criterion to force-fit.
 
 **Rollback:** delete the branch.
 
 ---
 
-## Phase D2a — Stored-field contract: scalar columns, all liturgy tables
-
-**One question:** for every scalar column a liturgy owns, what happens to it on duplication?
-
-⚠ Draft 1 scoped D2 to `liturgia_elementos` alone and named `liturgia_lecturas` /
-`liturgia_oraciones` only in passing. That is not a field-by-field contract.
-
-**Scope** — `evidence/D2a-scalars.md`, one row per column across:
-- `liturgias` — including `titulo`, `resumen`, `reflexion_texto`, `reflexion_pdf_url`,
-  `portada_imagen_url`, `portadas_config`, `presentation_styles`, `celebrante`, `predicador`,
-  `estado`, `porcentaje_completado`, `fecha`, timestamps, `created_by`
-- `liturgia_elementos` scalars — `titulo`, `tipo`, `orden`, `status`, `source_id`, `custom_content`,
-  timestamps, ids/FKs
-- `liturgia_lecturas` — `cita`, `texto`, `version`, `orden`
-- `liturgia_oraciones` — `tipo`, `tiempos`, `aprobada`
-
-Each cell is one of: **translate** · **re-fetch** · **copy verbatim** · **clear** ·
-**human-select** · **regenerate**. Plus `evidence/D2a-verify.sh` and fixtures.
-
-**Out of scope:** JSON interiors of `slides` (D2b) and `config`/`custom_content` (D2c). Designing
-the copy mechanism, transaction or RPC (D-E).
-
-**Acceptance criteria**
-- [D2a.1] The column list is re-derived by query into `fixtures/D2a-columns.json`; the document is
-  diffed against it. A column in one and not the other fails the verify.
-- [D2a.2] Every column has exactly one disposition or `UNVERIFIED` + the question. No blanks.
-- [D2a.3] The `source_id` contract is stated with the join that proves it, **run fresh** — 142
-  non-null rows, expected to resolve to `music_songs.slug` plus `cuentacuentos` ids. Do not inherit.
-- [D2a.4] `edited_slides`'s disposition accounts for zero population **and** states whether code
-  reads it, with the grep.
-- [D2a.5] Every **clear** carries a one-line reason. A bare "clear" is not a finding.
-- [D2a.6] `portadas_config` and `presentation_styles` are dispositioned, not deferred as "JSON".
-- [D2a.7] No personal-data value anywhere (D-D).
-- [D2a.8] Scope-moving unknowns listed under `BLOCKS-D6` (D-I).
-- [D2a.9] Document gate set passes.
-
-**Test plan:** `bash evidence/D2a-verify.sh` (column-list diff, disposition-vocabulary check, no
-blank cells); `git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** the six dispositions are my taxonomy, not one the codebase implies; a field needing a
-seventh is a finding. `tiempos` is jsonb on a table I have only counted (3 rows) — it may belong in
-D2b instead, and moving it is correct behaviour if so.
-
-**Depends on:** D1.
-
----
-
-## Phase D2b — `slides` schema: 55 paths × element kind
+## Phase D2b — `liturgia_elementos.slides`: 55 paths
 
 **One question:** what is in the `slides` object, and what happens to each path on duplication?
 
-**Scope** — `evidence/D2b-slides.md`: the 55 normalized `slides` paths (verified by the recursive
-CTE below), each dispositioned, and each attributed to the element kinds that use it. Plus
-`evidence/D2b-verify.sh` and `fixtures/D2b-paths.json`.
+**Scope** — `evidence/D2b-slides.md`, organised **by path** with kind-keyed exceptions (a dense
+55 × kinds grid would be thousands of cells and is not the artifact). Each path carries a default
+disposition plus exceptions, per D2a's resolution schema.
 
-The path enumeration query, which must be re-run rather than trusted — note the **single**
-recursive term, since Postgres rejects two references to the recursive CTE:
+The enumeration query — note the **single** recursive term, since Postgres rejects two references
+to a recursive CTE — is in Appendix A as `V2`. Run it; do not copy its result from this plan (D-J).
+
+**Out of scope:** `config`, `custom_content` (D2c); other tables' JSON (D2d); scalars (D2a).
+
+**Acceptance criteria**
+- [D2b.1] The path set is derived into `fixtures/D2b-paths.json` via the MCP step and diffed against
+  the document. Drift in the path count is reported with both values.
+- [D2b.2] **Every observed `(path, kind)` pair resolves** through exactly one default or exception.
+  The verify enumerates the pairs from the fixture and fails on any unresolved pair — this is the
+  coverage check, and it is what makes the by-path organisation safe rather than merely smaller.
+- [D2b.3] The pair count is stated. If it materially exceeds the path count — many paths shared
+  across many kinds — the document says so, since that is what determines the real work.
+- [D2b.4] Paths holding text are distinguished from paths holding ids, URLs, ordering or styling.
+- [D2b.5] Asset-bearing paths are cross-referenced to D4 by path name.
+- [D2b.6] Code-declared paths with zero production rows are included, derived by a recorded grep and
+  unioned with the live set (D-J).
+- [D2b.7] No personal-data value (D-D); every `UNVERIFIED` carries `materiality:` (D-I).
+- [D2b.8] Document gate set passes.
+
+**Test plan:** `bash evidence/D2b-verify.sh` — fixture-header validation, path-set diff,
+`(path, kind)` coverage enumeration, vocabulary check, `materiality:` check. Then `git diff --stat`
+and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0 including the coverage enumeration, gates
+green, classifications reviewer-approved, branch mergeable.
+
+**Risks / split trigger:** if the resolved pair count exceeds ~700, split by top-level `slides` key
+and report — do not truncate. This trigger is on **pairs**, not paths, because draft 2's
+path-based trigger measured the wrong thing.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D2c — `liturgia_elementos.config`, `custom_content`, and the custom shapes
+
+**One question:** what is in `config` and `custom_content`, and how many distinct custom shapes
+exist across data *and* code?
+
+**Scope** — `evidence/D2c-config.md`: the `config` path set (Appendix A `V3`), each dispositioned
+per D2a's schema; the `custom_content` contract; and the custom-shape inventory.
+
+**The custom-shape inventory is derived, not given** (D-J). Draft 2 asserted five shapes from
+production data and missed `blank-slide`, which exists in source with zero rows. The inventory is
+the **union** of:
 
 ```sql
+-- live shapes
+select coalesce(config->>'customType','(untyped)') as shape, count(*)
+from liturgia_elementos where tipo like 'custom-%' group by 1 order by 2 desc;
+```
+```bash
+# code-declared shapes
+grep -rhoE "'[a-z]+-(slide|response)'" src --include='*.ts' --include='*.tsx' | sort | uniq -c | sort -rn
+```
+
+Untyped rows are characterised by their actual slide shape, not folded into a declared type they do
+not claim.
+
+**Out of scope:** `slides` (D2b); other tables' JSON (D2d); scalars (D2a).
+
+**Acceptance criteria**
+- [D2c.1] The `config` path set derived into a fixture and diffed; every observed `(path, kind)`
+  pair resolves (coverage enumeration, as D2b.2).
+- [D2c.2] The custom-shape inventory is the **union of live and code-declared** shapes, both
+  commands run and both outputs pasted. A shape present in code with zero rows is included and
+  marked as such.
+- [D2c.3] Untyped custom rows are characterised individually by slide shape; the document states
+  whether they are legacy data or corruption, or marks it `UNVERIFIED` with `materiality:`.
+- [D2c.4] `custom_content`'s contract states what its populated rows hold **structurally** — shape
+  only, no values (D-D) — with the query that establishes both the population and the shape.
+- [D2c.5] Paths that are ids, URLs or styling are **copy verbatim** with a reason.
+- [D2c.6] Every `UNVERIFIED` carries `materiality:` (D-I).
+- [D2c.7] Document gate set passes.
+
+**Test plan:** `bash evidence/D2c-verify.sh` — fixture-header validation, path-set and shape-set
+diffs, coverage enumeration, `materiality:` check. Then `git diff --stat` and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0, gates green, classifications
+reviewer-approved, branch mergeable.
+
+**Risks / split trigger:** same pair-count trigger as D2b (~700). The two untyped rows may be
+corruption rather than a shape; either answer is acceptable, asserting the convenient one is not.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D2d — The other four JSON columns
+
+**One question:** what is inside the JSON columns that D2b and D2c do not cover?
+
+This phase exists because draft 2 had no home for them: `liturgias.portadas_config`,
+`liturgias.presentation_styles`, `liturgia_oraciones.tiempos`, and `cuentacuentos_drafts.story`
+(V4). `presentation_styles` is the reason atomic dispositions fail — it mixes translatable overlay
+content with copied identifiers, positions, visibility, scope and styling.
+
+**Scope** — `evidence/D2d-json.md`: the path set for each of the four columns, each dispositioned
+per D2a's schema, with kind-keyed exceptions where the column varies by element kind.
+
+**Out of scope:** `liturgia_elementos.slides`/`config` (D2b/D2c); scalars (D2a); designing the copy
+mechanism.
+
+**Acceptance criteria**
+- [D2d.1] All four columns covered; the path set for each derived into a fixture via the MCP step
+  and diffed against the document.
+- [D2d.2] `presentation_styles` is dispositioned **per path**, distinguishing overlay content from
+  identifiers, geometry, visibility, scope and styling. A single verdict for the column fails.
+- [D2d.3] Code-declared paths with zero production rows are unioned in by a recorded grep (D-J) —
+  overlay content in particular may be declared in types but unpopulated.
+- [D2d.4] `tiempos` and `story` paths holding prose are distinguished from structural paths.
+- [D2d.5] Every path resolves through a default or an exception; coverage enumerated by the verify.
+- [D2d.6] No personal-data value (D-D); every `UNVERIFIED` carries `materiality:` (D-I).
+- [D2d.7] Document gate set passes.
+
+**Test plan:** `bash evidence/D2d-verify.sh` — fixture-header validation, four path-set diffs,
+coverage enumeration, `materiality:` check. Then `git diff --stat` and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0, gates green, classifications
+reviewer-approved, branch mergeable.
+
+**Risks:** `cuentacuentos_drafts.story` may be the largest of the four and may belong in its own
+phase; splitting it out and reporting is correct behaviour if the pair count runs high.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D4 — Asset reality: text baked into pixels
+
+**One question:** which images carry text in their pixels, and what does the generator do?
+
+**Runs before D3**, which consumes its inventory.
+
+**Scope** — `evidence/D4-assets.md`: every image-bearing surface in the liturgy path; per surface,
+the image's origin, whether text is composited into pixels or overlaid at render, and how many
+existing assets are affected. The cover generator characterised from source.
+
+Known entry points, to be **derived and extended**, not copied (D-J): `Portadas.tsx` sets
+`textBakedIn` and a `subtitle` drawn from liturgy context; `templateCompositor.ts` branches on the
+flag; `types/shared/slide.ts` declares it; `GraphicsGeneratorV2.tsx` defaults it. Prior documents
+claim 60 cover elements with images and 30 baked — a hypothesis to test.
+
+**Out of scope:** designing a fix (D-E); non-liturgy image pipelines; creating, modifying or
+deleting any asset; the PII reading of baked-in names (that is D3, which this phase feeds).
+
+**Acceptance criteria**
+- [D4.1] The image-bearing surface list is derived by a recorded command, not copied.
+- [D4.2] The baked-in-text asset count is derived into a fixture via the MCP step; not inherited.
+- [D4.3] Generator behaviour is described with file:line references that `D4-verify.sh` confirms
+  still contain the cited symbol, matched **within a ±10-line window** so an unrelated upstream edit
+  does not fail the phase.
+- [D4.4] Per surface: does producing the same asset in another language require regeneration,
+  recomposition, or nothing?
+- [D4.5] Story covers and liturgy covers are distinguished — different pipelines.
+- [D4.6] **The document emits an explicit hand-off list for D3**: every asset path that can carry
+  personal data in pixels, so D3 consumes a complete inventory rather than discovering one later.
+- [D4.7] Read-only is asserted by mechanism, not by counts — a count cannot detect update-in-place.
+  If storage objects cannot be enumerated read-only, the claim is `UNVERIFIED` with `materiality:`.
+- [D4.8] Every `UNVERIFIED` carries `materiality:` (D-I).
+- [D4.9] Document gate set passes.
+
+**Test plan:** `bash evidence/D4-verify.sh` — windowed symbol assertions, fixture-header validation,
+asset-count diff, hand-off list non-empty-or-justified, `materiality:` check. Then `git diff --stat`
+and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0, gates green, the D4.6 hand-off list is
+committed, classifications reviewer-approved, branch mergeable.
+
+**Risks:** whether a Spanish-baked cover is *acceptable* on an English liturgy is a taste question —
+D4 records the fact, Brent decides at D6. Image storage location is unestablished, which is why
+D4.7 has an explicit escape.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D3 — PII dataflow audit and translator boundary
+
+**One question:** where does personal data *flow*, and what must never leave the system?
+
+**Consumes D4's hand-off list** (D4.6).
+
+**Scope** — `evidence/D3-pii.md`:
+- **Field census** across the tables in D5's closure plus `liturgias`, **plus non-FK sources**:
+  `published_resources.published_by`, and the notification-recipient records supplying musician,
+  volunteer and WhatsApp contact data. These sit outside the FK closure and draft 2 missed them.
+- **Dataflow** — per PII-bearing field, where its value can travel: AI prompts, translation
+  providers, email, WhatsApp, PDFs, images (from D4.6), logs, derived records.
+- **Translator boundary** — every field bucketed **sendable** / **never** / **redact-first**, with a
+  reason. Descriptive (D-E).
+
+**Out of scope:** designing redaction, placeholders or provider selection; non-liturgy PII.
+
+**Acceptance criteria**
+- [D3.1] The column list for every in-scope table is derived into a fixture via the MCP step and
+  diffed against the triage.
+- [D3.2] Every column triaged against **D-H's** definition, quoted rather than restated.
+- [D3.3] Free-text fields identified with populated-row counts.
+- [D3.4] The announcement path is covered — unbounded operator-authored text.
+- [D3.5] The dataflow section covers every destination listed above per PII field; a destination
+  that is not applicable is stated as such rather than omitted.
+- [D3.6] D4.6's hand-off list is consumed in full: every asset path on it is triaged here.
+- [D3.7] Non-FK sources (`published_resources.published_by`, notification recipients) are included.
+- [D3.8] Every field bucketed sendable / never / redact-first with a reason. None unbucketed.
+- [D3.9] Prompt-injection surface noted: which free-text fields reach an AI prompt.
+- [D3.10] **Existing D-H violations are raised immediately as `BLOCKS-D6`**, not filed. If a current
+  prompt already receives celebrant or preacher data, Brent needs that during the phase.
+- [D3.11] **Leak check, in two layers, neither of which violates D-C.** (a) `D3-verify.sh` is pure
+  shell and scans the plan tree for *value-shaped* strings — email, phone and WhatsApp-number
+  patterns — failing on any hit. (b) The manual MCP step cross-checks the tree against actual
+  values in a read-only transaction and records **only a boolean result plus provenance**, never a
+  value. Draft 2 put (b) inside the shell script, which cannot reach the database.
+- [D3.12] Document gate set passes.
+
+**Test plan:** `bash evidence/D3-verify.sh` — fixture-header validation, column-list diff, bucket
+completeness, D4.6 hand-off coverage, the shell-side pattern leak scan, `materiality:` check. Then
+the manual MCP value cross-check, recorded as a boolean. Then `git diff --stat` and
+`npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0, both leak layers run and recorded, gates
+green, classifications reviewer-approved, branch mergeable.
+
+**Risks:** phone numbers may live in JSON paths rather than columns, so the field census alone will
+not find them — the dataflow pass is what catches that. The pattern scan will produce false
+positives on synthetic examples; that is the correct direction to fail.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D5 — Downstream policy: the recursive table closure
+
+**One question:** what happens to everything hanging off a liturgy when a second liturgy in another
+language exists?
+
+**Scope** — `evidence/D5-downstream.md`: one row per table in the recursive FK closure of
+`liturgias` (V5 sizes it at 15; the executor derives the set, per D-J), plus `published_resources`,
+which has no FK but is keyed by `liturgy_id`. Per row: depth and FK path, current count, delete
+behaviour, whether it holds language-dependent content, and the disposition options —
+**copy / translate / detach / clear** — with cost and consequence. Options, not a choice (D-E).
+
+**Out of scope:** designing language-aware uniqueness or a migration; choosing dispositions;
+notification copy (D1).
+
+**Acceptance criteria**
+- [D5.1] The table set is the **recursive** closure, derived into `fixtures/D5-graph.json` via the
+  MCP step and diffed. A table in the graph but not the document fails the verify.
+- [D5.2] Each row states depth and the FK path from `liturgias`.
+- [D5.3] Each row states count, delete behaviour and language-dependence, each with its query.
+- [D5.4] Each row lists ≥2 dispositions with consequences; a single-option row says why.
+- [D5.5] The `published_resources` uniqueness behaviour is characterised: what a user sees today and
+  what they would see if a second-language resource were activated. **Observed or `UNVERIFIED` with
+  `materiality:`** — never inferred from the index definition alone, and never established by
+  publishing a test resource (D-A wins over any criterion).
+- [D5.6] **Structural claims and observations are separated.** Table set, FK paths and delete
+  behaviour are invariants — the verify fails on change. Row counts are timestamped observations —
+  the verify reports old and new and does **not** fail. This is what lets D6 require exit 0 without
+  a legitimate production insert blocking the workstream.
+- [D5.7] Read-only is evidenced by the fixture provenance header (`transaction_read_only: true`),
+  not by comparing counts — counts cannot detect update-in-place.
+- [D5.8] Every `UNVERIFIED` carries `materiality:` (D-I).
+- [D5.9] Document gate set passes.
+
+**Test plan:** `bash evidence/D5-verify.sh` — fixture-header validation including the read-only
+flag, recursive table-set diff (fails on structural drift), count comparison (reports, never fails),
+`materiality:` check. Then `git diff --stat` and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, verify exits 0 on invariants, gates green, classifications
+reviewer-approved, branch mergeable.
+
+**Risks:** a zero-row table is weak evidence about behaviour — read the code path rather than
+concluding from the count. Barely-exercised delivery paths are probably under-tested, which is a
+finding for the next plan, not this one.
+
+**Rollback:** delete the branch.
+
+---
+
+## Phase D6 — Scope decision memo and re-plan input pack
+
+**One question:** given D1–D5, what are the options, what does each cost, and what must Brent decide?
+
+**Scope** — `evidence/D6-scope-memo.md`, in a **fixed symmetric structure** so neutrality is partly
+structural rather than purely tonal. Every option carries every heading, in the same order:
+
+```
+### Option <X> — <name>
+- Surfaces touched:            (from D1)
+- Stored fields/paths affected:(from D2a–D2d, as resolved pairs)
+- Downstream tables affected:  (from D5)
+- PII exposure introduced:     (from D3)
+- Asset work implied:          (from D4)
+- Estimated phases:            (n, at ≤10 files / ≤600 net lines — ESTIMATE, not measured)
+- Human-dependency blockers:
+- Original BLOCKING findings removed / reduced / intact: (B1–B11 by ID)
+- Open questions this option leaves:
+- Strongest argument against this option:
+```
+
+Options: **A — full feature** (English creation + duplication); **B — English creation only**. A
+third is welcome if the evidence suggests one. Plus the questions only Brent can answer — known
+already: the default English Bible translation, and the English liturgical texts for the canonical
+elements in `src/data/elementos-fijos/`.
+
+**Out of scope:** recommending an option (D-E); writing the feature plan; re-opening D-F.
+
+**Acceptance criteria**
+- [D6.1] Every option uses the template with every heading present and non-empty.
+- [D6.2] Every claim traces to a D1–D5 evidence file by filename and section; an untraceable claim
+  is removed or promoted to a new finding with its own command.
+- [D6.3] All eleven original BLOCKING findings addressed by ID (B1–B11) under each option.
+- [D6.4] Questions for Brent are numbered, each tagged with the phase it blocks, each answerable
+  without reading the codebase — no question that a query could answer.
+- [D6.5] The memo states which findings **surprised** the workstream — where reality differed from
+  what the handoff or any review assumed. Highest-value output for the next planner.
+- [D6.6] **Every fixture is refreshed before the verifiers run** — the MCP step re-runs each
+  recorded query in a read-only transaction and rewrites provenance headers. `D6-verify.sh` fails on
+  any fixture whose `captured_at` predates the D6 branch point. Draft 2 could pass against stale
+  fixtures; this closes it.
+- [D6.7] All **eight** verifiers exit 0, named explicitly so a missing one is visible:
+  `D1-verify.sh`, `D2a-verify.sh`, `D2b-verify.sh`, `D2c-verify.sh`, `D2d-verify.sh`,
+  `D4-verify.sh`, `D3-verify.sh`, `D5-verify.sh`. "D1–D5" is not an acceptable shorthand after
+  the D2 split.
+- [D6.8] **Every `UNVERIFIED` entry across all phases carries a reviewer-approved `materiality:`,
+  and every `BLOCKS-D6` item is resolved or explicitly accepted by Brent** (D-I). An unclassified
+  entry fails the phase.
+- [D6.9] **External feasibility inventoried, not assumed:** Bible text redistribution and
+  attribution rights for the ten frozen translations in stored slides and exports; availability and
+  approval lead time for English WhatsApp templates.
+- [D6.10] **Neutrality, in two parts.** (a) `D6-verify.sh` asserts structural symmetry — every
+  option has every heading and a non-empty "strongest argument against". (b) A **fresh-context
+  neutrality read** by Brent or an independent reviewer judges whether framing, ordering or
+  omission advocates. Part (b) is explicitly **not** script-verifiable and this plan does not claim
+  otherwise; executor self-rereading does not satisfy it.
+- [D6.11] Document gate set passes.
+
+**Test plan:** the fixture refresh (D6.6), then `bash evidence/D6-verify.sh` — runs all eight
+verifiers and fails on any non-zero; checks fixture recency; checks every referenced evidence file
+exists; greps for `B1`–`B11`; asserts structural symmetry; fails on any unclassified `UNVERIFIED`.
+Then the D6.10(b) neutrality read, recorded. Then `git diff --stat` and `npx tsc --noEmit`.
+
+**Definition of done:** criteria checked, `D6-verify.sh` exits 0 against freshly refreshed fixtures,
+the neutrality read is done and recorded, no open `BLOCKS-D6`, and the memo is in front of Brent.
+**This phase closes the workstream.** The next step is a fresh `/plan-new` for the feature, seeded
+by the evidence pack — not a continuation of any session here.
+
+**Risks:** D6.10 is the criterion most likely to be violated in good faith; the structural half
+catches crude cases, the read catches the rest. Phase-count estimates are estimates, labelled in the
+template, and are the number most likely to be quoted back as measured. If D1–D5 make both options
+untenable, saying so is the correct output — a memo that manufactures two viable options because the
+template has two slots is worse than one saying the shape is wrong.
+
+**Rollback:** delete the branch. The decision is not made until Brent makes it.
+
+---
+
+## Appendix A — exact commands for the verified-state table (D-B)
+
+```bash
+# V6, V10 — census surfaces and the shell trap. Run under bash, not zsh.
+bash -c "cd /Users/brentcurtis/dev/casa-pilot && find src -regex '.* [0-9]\.tsx?' | wc -l"   # -> 0
+bash -c "cd /Users/brentcurtis/dev/casa-pilot && find -E src -regex '.* [0-9]\.tsx?' | wc -l" # -> 18
+# V6n — the disputed line count, five ways, all agreeing at 596 for this file:
+f=src/components/liturgia-builder/editors/CuentacuentoEditor.tsx
+grep -cE '[áéíóúñüÁÉÍÓÚÑÜ¿¡]' "$f"; grep -E '[áéíóúñüÁÉÍÓÚÑÜ¿¡]' "$f" | wc -l
+LC_ALL=C grep -cE '[áéíóúñüÁÉÍÓÚÑÜ¿¡]' "$f"; LC_ALL=en_US.UTF-8 grep -cE '[áéíóúñüÁÉÍÓÚÑÜ¿¡]' "$f"
+grep -cE '[áéíóúñüÁÉÍÓÚÑÜ¿¡ºª«»]' "$f"
+# V7, V8, V9
+which psql; ls /Users/brentcurtis/dev/casa-pilot/node_modules | wc -l; npx tsc --noEmit; echo $?
+```
+
+```sql
+-- V1
+select (select count(*) from liturgias), (select count(*) from liturgia_elementos),
+       (select count(distinct tipo) from liturgia_elementos);
+
+-- V2 / V3 — normalized JSON paths. ONE recursive term: Postgres rejects two references
+-- to the recursive CTE (error 42P19). Swap e.slides for e.config to get V3.
 with recursive paths(path, val) as (
   select k, v from liturgia_elementos e, jsonb_each(e.slides) as t(k,v)
     where jsonb_typeof(e.slides)='object'
@@ -395,327 +652,23 @@ with recursive paths(path, val) as (
     union all
     select '[]', t.v from jsonb_array_elements(p.val) as t(v) where jsonb_typeof(p.val)='array'
   ) c(suffix, v)
-) select count(distinct path) from paths;   -- 55 on 2026-08-10
+) select count(distinct path) from paths;
+
+-- V4 — JSON columns outside liturgia_elementos
+select table_name, column_name from information_schema.columns
+where table_schema='public' and data_type='jsonb'
+  and table_name in ('liturgias','liturgia_lecturas','liturgia_oraciones','cuentacuentos_drafts');
+
+-- V5 — recursive FK closure
+with recursive g(depth, tbl, path) as (
+  select 1, conrelid::regclass::text, conrelid::regclass::text
+  from pg_constraint where contype='f' and confrelid='public.liturgias'::regclass
+  union all
+  select g.depth+1, c.conrelid::regclass::text, g.path||' <- '||c.conrelid::regclass::text
+  from g join pg_constraint c on c.confrelid = g.tbl::regclass
+  where c.contype='f' and g.depth < 4 and c.conrelid::regclass::text <> g.tbl
+) select depth, tbl, min(path) from g group by depth, tbl order by depth, tbl;
 ```
-
-**Out of scope:** `config` and `custom_content` (D2c); scalar columns (D2a); the copy mechanism.
-
-**Acceptance criteria**
-- [D2b.1] All 55 paths present; the set is re-derived into the fixture and diffed. Drift in the
-  path count is reported with the new number, not silently absorbed.
-- [D2b.2] Each path carries a disposition from the D2a vocabulary, or `UNVERIFIED` + the question.
-- [D2b.3] Paths holding text are distinguished from paths holding ids, URLs, ordering or styling —
-  this is the distinction the whole matrix exists to make.
-- [D2b.4] Image/asset paths are cross-referenced to D4 by path name.
-- [D2b.5] Paths that appear in only some element kinds say which, with the query.
-- [D2b.6] No personal-data value anywhere (D-D).
-- [D2b.7] Scope-moving unknowns listed under `BLOCKS-D6`.
-- [D2b.8] Document gate set passes.
-
-**Test plan:** `bash evidence/D2b-verify.sh` (path-set diff against fixture, vocabulary check);
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** 55 paths × 25 kinds is a large grid if filled densely. If most paths are kind-independent
-the document should be organised by path with kind exceptions noted, not as a full cross-product —
-choosing that shape is the executor's call and should be stated up front. If the grid still exceeds
-one session, split by top-level `slides` key and report it.
-
-**Depends on:** D2a (for the disposition vocabulary).
-
----
-
-## Phase D2c — `config`, `custom_content`, and the five `custom-*` shapes
-
-**One question:** what is in `config` and `custom_content`, and are the `custom-*` rows one thing
-or several?
-
-⚠ This phase exists because draft 1 asserted the 32 `custom-*` rows were one homogeneous kind
-without looking. They are five shapes: `title-slide` 12, `image-slide` 11, `text-slide` 5,
-`call-response` 2, and 2 rows with no `customType`.
-
-**Scope** — `evidence/D2c-config.md`: the 90 normalized `config` paths (same recursive query,
-`e.config` in place of `e.slides`), each dispositioned; the `custom_content` contract for the 54
-`oracion-*` rows; and a per-shape rule for each of the five `custom-*` shapes plus the two untyped
-rows. Plus `evidence/D2c-verify.sh` and fixtures.
-
-**Out of scope:** `slides` (D2b); scalar columns (D2a); the copy mechanism.
-
-**Acceptance criteria**
-- [D2c.1] All 90 `config` paths present; re-derived into the fixture and diffed.
-- [D2c.2] The five `custom-*` shapes each have a rule; the two untyped rows are accounted for
-  explicitly, not folded into a shape they do not declare.
-- [D2c.3] The shape breakdown is re-derived by the recorded query, not typed.
-- [D2c.4] `custom_content`'s contract states what the 54 `oracion-*` rows hold structurally — shape
-  only, no values (D-D).
-- [D2c.5] Every path and rule carries a disposition or `UNVERIFIED` + the question.
-- [D2c.6] Paths that are ids, URLs or styling are marked **copy verbatim** with the reason.
-- [D2c.7] Scope-moving unknowns listed under `BLOCKS-D6`.
-- [D2c.8] Document gate set passes.
-
-**Test plan:** `bash evidence/D2c-verify.sh` (path-set and shape-set diffs, vocabulary check);
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** the two untyped `custom-*` rows may be data corruption rather than a shape. Either
-answer is fine; asserting the convenient one is not. 90 paths is the larger half of D2 — if it runs
-long, split at the top-level `config` key and report.
-
-**Depends on:** D2a.
-
----
-
-## Phase D3 — PII dataflow audit and translator boundary
-
-**One question:** where does personal data *flow*, and what must never leave the system?
-
-⚠ Draft 1 asked only "which fields hold PII" and let the executor define the term. D-H now fixes the
-definition, and this phase follows values rather than listing columns.
-
-**Scope** — `evidence/D3-pii.md`:
-- **Field census** — every column across the 15 reachable tables (D5's graph) plus `liturgias`,
-  triaged against D-H's definition. Free text flagged as unbounded, with populated-row counts.
-- **Dataflow** — for each PII-bearing field, where its value can travel: AI prompts, translation
-  providers, email, WhatsApp, PDFs, images, logs, derived records. This is the part draft 1 missed.
-- **Translator boundary** — every field bucketed **sendable** / **never** / **redact-first**, with
-  a reason each. Descriptive (D-E): the constraint, not its enforcement design.
-- `evidence/D3-verify.sh`, fixtures.
-
-Known starting facts: `celebrante` 21/30, `predicador` 29/30, `created_by` always; `custom_content`
-free text on 54 `oracion-*` rows; `Portadas.tsx:449` writes `context.preacher` into cover **pixels**
-— PII in an asset, which no column-level census finds.
-
-**Out of scope:** designing redaction, placeholders or provider selection. Non-liturgy PII.
-
-**Acceptance criteria**
-- [D3.1] Column list for all 16 tables re-derived into a fixture and diffed against the triage.
-- [D3.2] Every column triaged against **D-H's** definition; the document quotes D-H rather than
-  restating it in the executor's own words.
-- [D3.3] Free-text fields identified with populated-row counts.
-- [D3.4] The announcement path (`Anuncios.tsx`, `anuncios` / `anuncio-adicional`) covered — it is
-  unbounded operator-authored text.
-- [D3.5] The dataflow section covers, per PII field: AI prompts, translation providers, email,
-  WhatsApp, PDFs, images, logs, derived records. A destination not applicable is stated as such.
-- [D3.6] The baked-into-pixels case recorded with file:line, and **D3 owns this cross-reference**
-  (D4 records the asset fact; D3 owns the PII reading of it).
-- [D3.7] Every field bucketed sendable / never / redact-first, with a reason. None unbucketed.
-- [D3.8] Prompt-injection surface noted: which free-text fields reach an AI prompt, since
-  operator-authored text becomes model input.
-- [D3.9] **Existing violations of D-H are reported immediately as `BLOCKS-D6`, not filed.** If a
-  current prompt already receives `celebrante` or `predicador`, that predates this work and Brent
-  needs to know during the phase, not at D6.
-- [D3.10] **Leak check:** `D3-verify.sh` reads PII values from the database at run time, greps the
-  plan tree for them, stores nothing, and exits non-zero on any hit. It covers names, emails and
-  phone numbers across all triaged fields — not only celebrant and preacher. If it cannot be
-  implemented without persisting a value, the executor reports BLOCKED and proposes an alternative
-  rather than embedding one.
-- [D3.11] Document gate set passes.
-
-**Test plan:** `bash evidence/D3-verify.sh` (column-list diff, bucket completeness, leak check);
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** D3.10 is awkward by construction — a leak check for real names must not record them.
-The intended shape is read-from-DB-at-runtime, grep, discard. Phone numbers may live in JSON paths
-rather than columns, so the field census alone will not find them; the dataflow pass is what
-catches that.
-
-**Depends on:** D1.
-
----
-
-## Phase D4 — Asset reality: text baked into pixels
-
-**One question:** which images carry text in their pixels, and what does the generator do?
-
-**Scope** — `evidence/D4-assets.md`: every image-bearing surface in the liturgy path; per surface,
-where the image comes from, whether text is composited into pixels or overlaid at render, and how
-many existing assets are affected. The cover generator characterised from code. Plus
-`evidence/D4-verify.sh` and fixtures.
-
-Starting facts: `Portadas.tsx` sets `textBakedIn: true` at 327, 436, 458, with `subtitle: seasonName`
-at 427 and `subtitle: context.preacher` at 449. `templateCompositor.ts:2067` branches on the flag;
-`slide.ts:77` declares it; `GraphicsGeneratorV2.tsx:348` defaults it to `true`. 15/30 liturgies have
-a `portada_imagen_url`. The prior review reported 60 cover elements with images and 30 with
-`textBakedIn=true` — **re-derive, do not inherit.**
-
-**Out of scope:** designing a fix (D-E). Non-liturgy image pipelines. Creating, regenerating or
-deleting any asset. The PII reading of baked-in names — that is D3.6.
-
-**Acceptance criteria**
-- [D4.1] Every image-bearing surface has a row with its source path.
-- [D4.2] The baked-in-text asset count re-derived by recorded query into a fixture; not inherited.
-- [D4.3] Generator behaviour described with file:line refs that `D4-verify.sh` confirms still
-  contain the cited symbol — matched within a ±10-line window, not an exact line, so an unrelated
-  edit upstream does not fail the phase.
-- [D4.4] Per surface: does producing the same asset in another language require regeneration,
-  recomposition, or nothing?
-- [D4.5] Story covers and liturgy covers distinguished — different pipelines.
-- [D4.6] The `subtitle: context.preacher` fact is recorded and **handed to D3**, which owns its PII
-  classification.
-- [D4.7] Read-only confirmed: no asset created, modified or deleted. If storage-object counts
-  cannot be read, the document states why and the claim is `UNVERIFIED` — a count alone would not
-  prove it anyway, since update-in-place preserves counts.
-- [D4.8] Scope-moving unknowns listed under `BLOCKS-D6`.
-- [D4.9] Document gate set passes.
-
-**Test plan:** `bash evidence/D4-verify.sh` (windowed symbol assertions, asset-count fixture diff);
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** whether a cover with baked Spanish text is *acceptable* on an English liturgy is a taste
-question. D4 records the fact; Brent decides at D6. I do not know whether images live in Supabase
-Storage, an external CDN, or both — which is why D4.7 has an explicit escape.
-
-**Depends on:** D1, D3 (D4.6 hands off to D3's classification).
-
----
-
-## Phase D5 — Downstream policy: the recursive 15-table graph
-
-**One question:** what happens to everything hanging off a liturgy when a second liturgy in another
-language exists?
-
-⚠ Draft 1 stopped at depth 1. The reachable graph is 15 tables.
-
-**Scope** — `evidence/D5-downstream.md`: one row per table in the recursive FK closure of
-`liturgias` (depth ≤4, verified: 9 direct + `church_children_calendar`,
-`church_children_lesson_materials`, `church_children_packet_deliveries`, `music_packet_deliveries`
-at depth 2; `church_children_attendance`, `church_children_session_assignments` at depth 3), plus
-`published_resources` (no FK, keyed by `liturgy_id`). Per row: depth and path from `liturgias`,
-current count, delete behaviour, whether it holds language-dependent content, and the disposition
-options — **copy / translate / detach / clear** — with cost and consequence. Options, not a choice
-(D-E). Plus `evidence/D5-verify.sh` and fixtures.
-
-The closure query is recorded in the document; the verify script diffs the document's table list
-against `fixtures/D5-graph.json`.
-
-**Out of scope:** designing language-aware uniqueness or writing a migration. Choosing dispositions.
-Notification *copy* (that is D1).
-
-**Acceptance criteria**
-- [D5.1] The table list is the **recursive** closure, re-derived into the fixture and diffed. A
-  table in the graph but not the document fails the verify.
-- [D5.2] Each row states depth and the FK path from `liturgias`.
-- [D5.3] `church_podcast_episodes` included with its row count — it appears in no prior document.
-- [D5.4] Each row states count, delete behaviour, and language-dependence, each with its query.
-- [D5.5] Each row lists ≥2 dispositions with consequences; a single-option row says why.
-- [D5.6] The `published_resources` conflict described concretely: what a user sees today, and what
-  they would see if an English resource were activated. **Stated as observed behaviour or labelled
-  `UNVERIFIED`** — never inferred from the index definition alone, and never established by
-  publishing a test resource against production (D-A wins).
-- [D5.7] **Read-only is proven by mechanism, not by counts.** The phase runs its queries in a
-  read-only transaction (`SET TRANSACTION READ ONLY`) or under a read-only role, and says which.
-  Counts are recorded as timestamped observations, not invariants.
-- [D5.8] **Drift handling is explicit:** structural claims (table set, FK paths, delete behaviour)
-  are invariants and fail the verify on change; row counts are observations and are reported with
-  both values, never failing the verify. This is why D6.6 can require exit 0 without a legitimate
-  production insert blocking the workstream.
-- [D5.9] Scope-moving unknowns listed under `BLOCKS-D6`.
-- [D5.10] Document gate set passes.
-
-**Test plan:** `bash evidence/D5-verify.sh` — diffs the recursive table set against the fixture
-(fails on structural drift), re-runs counts and prints old-vs-new without failing.
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Risks:** `presentation_sessions` is at 0 rows and cascades; a zero count is weak evidence about
-behaviour, so read the code path rather than concluding from the count. `music_packet_deliveries` 0
-and `church_children_packet_deliveries` 1 mean those paths are barely exercised and probably
-under-tested — a finding for the next plan.
-
-**Depends on:** D1.
-
----
-
-## Phase D6 — Scope decision memo and re-plan input pack
-
-**One question:** given D1–D5, what are the scope options, what does each cost, and what does Brent
-need to decide?
-
-**Scope** — `evidence/D6-scope-memo.md`, in a **fixed symmetric structure** so that neutrality is
-partly structural rather than purely a matter of tone. Every option gets the same headings, in the
-same order, and no option may have a heading the others lack:
-
-```
-### Option <X> — <name>
-- Surfaces touched:            (list, from D1)
-- Stored fields affected:      (count, from D2a–D2c)
-- Downstream tables affected:  (count, from D5)
-- PII exposure introduced:     (from D3)
-- Asset work implied:          (from D4)
-- Estimated phases:            (n, at ≤10 files / ≤600 net lines — ESTIMATE, not measured)
-- Human-dependency blockers:   (list)
-- Original BLOCKING findings removed / reduced / intact: (B1–B11 by ID)
-- Open questions this option leaves:
-- Strongest argument against this option:
-```
-
-Options: **A — full feature** (English creation + duplication); **B — English creation only**.
-A third is welcome if the evidence suggests one. Plus: the questions only Brent can answer, each
-tagged with the option and phase it blocks — known already are the default English Bible translation
-and the English liturgical texts for the six canonical elements in `src/data/elementos-fijos/`.
-Plus `evidence/D6-verify.sh`.
-
-**Out of scope:** recommending an option (D-E). Writing the feature plan. Re-opening D-F.
-
-**Acceptance criteria**
-- [D6.1] Every option uses the template above with every heading present and non-empty.
-- [D6.2] Every claim traces to a D1–D5 evidence file by filename and section. An untraceable claim
-  is removed or promoted to a new finding with its own command.
-- [D6.3] All eleven original BLOCKING findings addressed by ID (B1–B11) under each option.
-- [D6.4] Questions for Brent are numbered, each with the phase it blocks, each answerable without
-  reading the codebase — no question is asked that a query could answer.
-- [D6.5] The memo states which findings **surprised** the workstream — where reality differed from
-  what the handoff or either prior review assumed. Highest-value output for the next planner.
-- [D6.6] `D1`–`D5` verify scripts all exit 0 at D6's commit. Per D5.8 this tests structural
-  invariants only, so ordinary production drift does not block.
-- [D6.7] **Every `BLOCKS-D6` item raised by D1–D5 is resolved or explicitly accepted by Brent**
-  (D-I). An open one blocks the phase.
-- [D6.8] **External feasibility is inventoried, not assumed:** Bible text redistribution and
-  attribution rights for the ten frozen translations in stored slides and exports; availability and
-  approval lead time for English WhatsApp templates. Both affect cost and feasibility even though
-  implementation is out of scope.
-- [D6.9] **Neutrality:** the memo recommends nothing. Checked in two parts — (a) `D6-verify.sh`
-  asserts structural symmetry: every option has every heading, and the "strongest argument against"
-  section is non-empty for each; (b) a **fresh-context human or reviewer read** judges whether the
-  framing, ordering or omissions advocate. Part (b) is explicitly **not** script-verifiable, and
-  this plan does not claim otherwise.
-- [D6.10] Document gate set passes.
-
-**Test plan:** `bash evidence/D6-verify.sh` — runs D1–D5's verifiers in sequence and fails on any
-non-zero; checks every referenced `evidence/D*.md` exists; greps for `B1`–`B11`; asserts the
-structural symmetry in D6.9(a). Then the D6.9(b) neutrality read, by Brent or a fresh reviewer.
-`git diff --stat`; `npx tsc --noEmit`.
-
-**Definition of done:** criteria checked, `D6-verify.sh` exits 0, the neutrality read is done and
-recorded, and the memo is in front of Brent. **This phase closes the workstream.** The next step is
-a fresh `/plan-new` for the feature, seeded by the evidence pack.
-
-**Risks / unknowns**
-- D6.9 is the criterion most likely to be violated in good faith: presenting two options with honest
-  costs makes one look better, and "presenting" drifts into "advocating" gradually. The structural
-  half catches the crude cases; the read catches the rest. Executor self-rereading is self-grading
-  and does not count.
-- The phase-count estimates in D6.1 are estimates, labelled as such in the template, and are the
-  number most likely to be quoted back as though measured.
-- If D1–D5 make both options untenable, saying so is the correct output. A memo that manufactures
-  two viable options because the template has two slots is worse than one that says the shape is
-  wrong.
-
-**Depends on:** D1–D5, all complete and merged.
-
----
-
-## What this plan does not cover, and why that is not a missing phase
-
-Judged against the goal — the inventory and the decision — D1–D6 are complete, and round 1's
-reviewer agreed the discovery-only boundary is sound.
-
-Against the *feature*, this plan is missing everything the first review named: builder language
-propagation, DB immutability enforcement, canonical text integration, English Bible parsing,
-content-locale output, notification localisation, cover handling, language-aware publication, the
-duplication split, related-artifact policy, and the end-to-end matrix. **Deliberately absent** —
-each depends on an answer D1–D5 produces.
-
-The four gaps round 1's reviewer identified *within* the narrower goal are now closed by splitting
-rather than by new top-level phases: the complete stored-field contract is D2a–D2c; the recursive
-downstream graph is D5; the PII dataflow audit is D3; external feasibility is D6.8.
 
 ---
 
@@ -723,59 +676,63 @@ downstream graph is D5; the PII dataflow audit is D3; external feasibility is D6
 
 | Date | Decision | Rationale | Raised by |
 |---|---|---|---|
-| 2026-08-10 | BILINGUE gets its own plan root at `docs/plan/bilingue/` | The shared `docs/plan/LEDGER.md` has two other workstreams appending to it | SOP §1.2 |
-| 2026-08-10 | Discovery-only plan, ending at a decision | Every feature phase depends on an unanswered question | PM |
-| 2026-08-10 | L2–L8 not carried forward; **L1 re-frozen as D-G** | Two were disputed on the merits; L1 was found sound and D1's taxonomy depends on it | PM, per reviews 1 and 2 |
-| 2026-08-10 | D-B/D-C: every claim carries its command; verification is two named mechanisms | Draft 1's D-C promised automation its test plans could not perform | Codex review 2 [B6] |
-| 2026-08-10 | D-D: record shapes and counts, never personal-data values | Discovery reads exactly the fields the feature must protect | PM |
-| 2026-08-10 | D-E: D1–D5 describe, never prescribe | A discovery phase that recommends gets it frozen without review | PM |
-| 2026-08-10 | **D-F narrowed:** "translate not regenerate" applies to generated devotional prose only | The blanket form contradicted re-fetch, human-select and recomposition | Codex review 2 [S1] |
-| 2026-08-10 | **D-G:** UI locale and content language are independent axes | D1's taxonomy rested on an unstated product rule | Codex review 2 [S2] |
-| 2026-08-10 | **D-H:** the PII classification is fixed in the plan, not chosen by an executor | A census scoped by the definition it was meant to test | Codex review 2 [B8] |
-| 2026-08-10 | **D-I:** scope-moving unknowns block D6; `UNVERIFIED` is for details only | Draft 1 could close without producing the inventory in its own goal | Codex review 2 [B9] |
-| 2026-08-10 | **D2 pre-split into D2a/D2b/D2c** | 145 JSON paths against a ~40 split trigger — known blown before the phase starts | Codex review 2 [B3] |
-| 2026-08-10 | **The `custom-*` family is five shapes, not one kind** — draft 1's "20 kinds" correction retracted | `title-slide` 12 · `image-slide` 11 · `text-slide` 5 · `call-response` 2 · untyped 2 | Codex review 2 [B2], verified |
-| 2026-08-10 | **Document-only gate set defined and justified** | Running the full suite on a zero-line source diff re-tests the base branch, not the phase | Codex review 2 [S4] |
+| 2026-08-10 | Own plan root at `docs/plan/bilingue/` | shared ledger has two other workstreams appending | SOP §1.2 |
+| 2026-08-10 | Discovery-only plan ending at a decision | every feature phase depends on an unanswered question | PM |
+| 2026-08-10 | L2–L8 dropped; **L1 re-frozen as D-G** | disputed on the merits / never evidence-tested; L1 sound and D1 depends on it | reviews 1–2 |
+| 2026-08-10 | D-F narrowed to generated devotional prose | blanket form contradicted re-fetch, human-select, recomposition | review 2 [S1] |
+| 2026-08-10 | D-H fixes the PII classification in the plan | a census scoped by the definition it tests proves nothing | review 2 [B8] |
+| 2026-08-10 | **D-I strengthened:** every `UNVERIFIED` carries reviewer-approved `materiality:` | executor-chosen blocking labels are circular | review 3 [R2-B5] |
+| 2026-08-10 | **D-C tightened:** shell verifiers never touch the DB; every DB fact reaches a fixture through the MCP step with a provenance header | draft 2 stated the rule then let D3.10 and D5 violate it | review 3 [R2-B3] |
+| 2026-08-10 | **Fixture provenance + mandatory D6 refresh** | D6 could pass against stale fixtures | review 3 [R2-B4] |
+| 2026-08-10 | **Default + kind-keyed exceptions; every `(field, kind)` pair must resolve** | one disposition per field cannot express songs vs readings vs canonical text vs prose | review 3 [R2-B2] |
+| 2026-08-10 | **D2d added** for `portadas_config`, `presentation_styles`, `tiempos`, `story` | draft 2 had no home for them; `presentation_styles` cannot be dispositioned atomically | review 3 [R2-B4/B2] |
+| 2026-08-10 | **D4 now precedes D3** | D3 consumes D4's asset inventory; draft 2 had it backwards | review 3 [R2-B6] |
+| 2026-08-10 | **Definition of done + Rollback restored on every phase** | draft 2's rewrite dropped them against the SOP skeleton | review 3 [R2-B7] |
+| 2026-08-10 | **D-J: derived lists beat asserted lists; unions of live data and code declarations** | `blank-slide` exists in 7 files with 0 rows; four asserted facts were wrong across two drafts | PM, review 3 [R2-B1] |
+| 2026-08-10 | **Census method frozen byte-for-byte before counting; no line total is load-bearing** | two reviewers cannot reproduce each other's count — that is the finding | review 3 [R2-S1] |
+| 2026-08-10 | Brent authorised draft 3 past the §1.5 cap **and** directed that Codex review it | the reviewer caught 4 of 4 unverified assertions; the PM caught 0 | Brent |
 
 ---
 
-## PRE-SUBMISSION SELF-REVIEW (pilot C2, applied to planning)
+## PRE-SUBMISSION SELF-REVIEW
 
-**Round 2 changed the plan substantially. What I got wrong in draft 1, verified myself before
-accepting:**
+**What I got wrong in draft 2, verified before accepting:**
 
-- **[B1] My own census was broken in the way I was criticising.** The orphan exclusion silently
-  failed inside the script — 21 files where the same `find` run directly gives 19. Corrected to
-  166/1,402 and rewritten to filter with `grep -vE`. I also had the metric backwards: accent-bearing
-  lines are a *lower* bound, not an upper one. The reviewer's stated cause (that the command
-  "returns no files") is not what I observed — it returns 18 standalone — but the conclusion and
-  the corrected numbers are exactly right, and the mechanism is now one without dialect ambiguity.
-- **[B2] I asserted the 32 `custom-*` rows were one kind while my own risk section said I had not
-  looked.** That contradiction is the same failure that sank the first plan. Verified: five shapes.
-- **[B3] 145 JSON paths against my ~40 split trigger.** I counted 11 *top-level* config keys and let
-  that imply the surface was small. D2 is now pre-split three ways.
-- **[B5] I stopped at depth 1 of the FK graph.** 15 tables, not 9.
-- **[B6] D-C promised shell verification of database facts a shell script cannot reach.** Rewritten
-  to claim only what each mechanism does: fixtures make document↔evidence mechanical; evidence↔DB
-  is a named manual MCP step.
-- **[B7] D5's drift handling contradicted D6.6.** Now split into invariants (fail) and observations
-  (report), which resolves it without weakening either.
+- **[R2-B1]** `blank-slide` is supported across seven source files with zero production rows. My
+  five-shape list came from data alone. This is the fourth asserted-without-checking fact across
+  three drafts, and it is why D-J now exists.
+- **[R2-B7]** The rewrite dropped Definition of done and Rollback from six phases. Mechanical
+  regression against the SOP skeleton; restored on all nine.
+- **[R2-B6]** I added the D3/D4 dependency backwards. D4 now precedes D3 and hands off an explicit
+  asset list (D4.6) that D3 must consume in full (D3.6).
+- **[R2-B3] / [R2-B8]** I wrote D-C honestly and then let two phases violate it, and cited
+  abbreviated commands in a table whose own rule forbids that. Both closed: shell verifiers never
+  touch the database, and Appendix A carries every command in full.
+- **[B1], again.** I told Brent the reviewer's `find -regex` diagnosis was wrong because it returned
+  18 for me. It does — under zsh. Under bash, which the script's shebang selects, it returns 0. I
+  generalised from one shell while correcting an error of exactly that kind. V10 records it and D1.1
+  requires the shell be pinned.
 
-**Where I did not simply defer:** on the CuentacuentoEditor detail the review says 434 of 601; I
-measure 434 of 596 and the 596 stands. It changes nothing.
+**The 596 vs 601 disagreement is unresolved and I have stopped trying to win it.** My number is
+stable across five methods, two locales and a widened character class; no combining accents exist in
+the file; all non-ASCII lines total 683. I cannot reproduce 601. Rather than assert either, V6n
+records the disagreement as the finding and **no line total in this plan is load-bearing** — D1
+freezes the method before counting.
 
-**Remaining honest weaknesses:**
-- **D6.9 is still not fully mechanical, and the plan now says so** rather than claiming every
-  criterion is executable. Structural symmetry is checkable; framing is not. This is the likeliest
-  place to lose a round.
-- **D2b's 55 paths × 25 kinds** could still be too large. The phase is told to choose an
-  organisation up front and to split by top-level key if it runs long, rather than truncating.
-- **D3.10's leak check** is awkward by construction and may come back BLOCKED. That is an acceptable
-  outcome; embedding a real value to make it pass is not.
-- **Guesses, labelled:** that six dispositions suffice; that three surface categories suffice; that
-  the two untyped `custom-*` rows are meaningful rather than corrupt; that D5.6 can be established
-  without a production write.
+**Where I am still guessing, labelled:**
+- That six dispositions suffice. A field needing a seventh is a finding, not a criterion to bend.
+- That the ~700-pair split trigger for D2b/D2c is set near the right place. It is a guess on a
+  better-chosen quantity than draft 2's path count, but still a guess.
+- That D2d's four columns fit one phase. `cuentacuentos_drafts.story` may need its own; the phase is
+  told to split and report rather than truncate.
+- That the D3.11(a) pattern scan is implementable without unacceptable false positives.
 
-**What I did not verify this round:** whether `npm ci` succeeds in `casa-pilot`; the contents of the
-90 `config` paths; whether `church_podcast_episodes` holds language-dependent content; the Bible
-redistribution rights position. Each is assigned to the phase that needs it.
+**Weakest part of this plan:** D6.10(b), the neutrality read. It is the one criterion no script can
+close, and the plan now says so plainly instead of claiming full executability. Second weakest: the
+`(field, kind)` coverage enumeration is the load-bearing new mechanism across four phases and has
+never been run — if it turns out expensive to compute, four phases feel it at once.
+
+**What I did not verify this draft:** whether `npm ci` succeeds in `casa-pilot`; the contents of the
+90 `config` paths or D2d's four columns; whether `church_podcast_episodes` holds language-dependent
+content; the Bible redistribution position. Each is assigned to the phase that needs it, and none is
+asserted here.
