@@ -4167,3 +4167,27 @@ starts truthful, not complete.
 - OPEN AFTER THIS ROUND: nothing is scheduled. Two standing post-release options remain
   Brent's alone: the RLS-hardening pass and `PD-REFINE`. Rollback targets stay recorded in
   PLAN item 6 (`main`@f5cfc7d, edge v17/v33).
+
+### 2026-08-10 — SOP-PILOT round 0 — Fable (PM)
+- CONTEXT PRESSURE: comfortable
+- ACTION: opened `docs/plan/SOP-PILOT.md` — an amendment layer over AGENT-WORKFLOW.md tested on
+  CASA only, targeting rework rounds rather than per-run latency. Baseline measured from this
+  repo's own artifacts, not from external claims: first-review PASS rate 1/10 phases (only M1);
+  median rounds per phase 6.5 (PH 10, PFE 8, PD/M3a/M3b/M2 7). Four changes: C1 effort raised to
+  the documented default `high` globally and held constant per session; C2 the §3.6 reviewer
+  rubric moves into the executor prompt as a pre-submission self-review gate; C3 the PM's
+  self-verification pass is replaced by a fresh-context adversarial reviewer at `high` effort —
+  no stage removed, an ineffective one replaced; C4 every round entry now records ELAPSED,
+  STAGE, EFFORT, FIRST-PASS.
+- COMMITS: this entry + SOP-PILOT.md on `pilot/sop-v2` (worktree `~/dev/casa-pilot`)
+- TESTS: none — docs only, no application file touched
+- FINDINGS RAISED: none blocking. Noted for Brent: `.claude/skills/pipeline-*.md` (10 files) are
+  stale copies last modified 2026-02-11, differ from canonical `~/SecondBrain/pipeline/`, and
+  violate CLAUDE.md's own "do NOT copy pipeline agents into this repo" rule. Removal staged but
+  BLOCKED — needs Brent to run it.
+- DECISIONS: pilot runs on CASA only; GENERA unchanged until the stopping rule resolves. Primary
+  metric first-review PASS rate, guardrail is BLOCKING findings escaping to final cross-family
+  review — if that guardrail rises the pilot reverts regardless of speed.
+- BACKLOG ADDED: ablate C1/C2/C3 separately if the bundle works (n=4 cannot separate them)
+- OPEN AFTER THIS ROUND: next 4 CASA phases run under the pilot; second research pass on
+  AI-productivity evidence and harness tooling still in flight.
