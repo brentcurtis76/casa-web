@@ -1990,3 +1990,29 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   implementación, sólo una precondición que paró. La siguiente sigue siendo `r1`.
 - OPEN AFTER THIS ROUND: **una sola cosa** — el merge de `phase/E3a-slug` a `main`, pendiente de
   la autorización explícita de Brent. Con eso hecho, `/exec AUDIO E3b r1` arranca de verdad.
+
+### 2026-08-09 — `E3a` MERGEADA A `main` (local) — PM (Opus), por autorización explícita de Brent
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: merge **`--no-ff`** de `phase/E3a-slug` (`6054d55`) a `main` → **`62e9158`**. Cierra el
+  punto 1 del cierre de `E3a` **y** satisface la precondición fail-closed de `E3b`.
+- **VERIFICACIÓN PREVIA:**
+  - SHA aprobado por Codex intacto: `6054d55`, dos commits (`1d09b7d`, `6054d55`).
+  - `main` había avanzado a `949b40a`: **no había fast-forward**, de ahí el merge commit.
+  - **Cero solape de ficheros** entre lo que `main` tocó desde `4b44b5b` y lo que toca `E3a`.
+  - El worktree que tiene `main` (`casa-p2-review`) estaba **limpio y sin operación en curso**;
+    comprobado antes de tocarlo, porque lo usa otra sesión.
+- **VERIFICACIÓN POSTERIOR, sobre el árbol ya mergeado:** `npm run build` → **verde**
+  (`✓ built in 15.94s`); `npx vitest run src/lib/sermon-editor` → **46/46**; **63 migraciones**;
+  `git merge-base --is-ancestor 6054d55 main` → **verdadero**.
+- **NO EMPUJADO A `origin`, y es deliberado.** `main` local va **7 commits por delante de
+  `origin/main`**, todos del workstream **UPGRADE** (P4 cerrada y P5a arrancada), e incluyen
+  **código productivo** en `supabase/functions/create-mesa-matches/`. Un `git push origin main`
+  publicaría también ese trabajo y **dispararía su despliegue en Vercel**. Brent autorizó el merge
+  de `E3a`, no la publicación de otro workstream: **la autorización de un contexto no se extiende
+  al siguiente.** Queda pendiente de su decisión, planteada aparte.
+- **CONSECUENCIA PARA `E3b`:** la precondición comprueba `main` **local**, así que **`E3b` ya está
+  desbloqueada** aunque no se empuje. `/exec AUDIO E3b r1` arranca.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND:
+  1. **Decisión de Brent sobre el push**, que arrastra los 7 commits de UPGRADE.
+  2. `/exec AUDIO E3b r1` — ya ejecutable.
