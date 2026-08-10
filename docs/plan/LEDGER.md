@@ -4355,3 +4355,44 @@ starts truthful, not complete.
   refine-children-lesson same prose-JSON shape.
 - OPEN: merge is Brent's. Pilot phase 2 must exercise the PLANNING loop — C2 and C3 touch only
   execution, and PD-REFINE reused a plan frozen months ago.
+
+### 2026-08-10 — PLAN-BILINGUE plan review — Codex — **FAIL**
+- **FIRST-PASS: NO.** 11 BLOCKING · 10 SHOULD-FIX · 4 NITS · 11 missing phases · 2 frozen
+  decisions disputed. The verdict is correct and is not contested.
+- **PILOT RESULT — this is the informative half.** Execution loop: 1/1 first-review PASS against a
+  1/10 baseline. Planning loop: 0/1. C2 (self-review before submission) works on execution and
+  DOES NOT work on planning. The planner's self-review named its own blind spot verbatim
+  ("I did not verify print/PDF, presentation, notifications") and shipped anyway. A self-review
+  cannot discover a fact you never looked up.
+- ROOT CAUSE: nearly every BLOCKING finding was one query or one grep away.
+  · `source_id` — the plan said "semantics unknown, executor must STOP". One JOIN answers it:
+    142 non-null = 116 song slugs joining `music_songs.slug` + 26 cuentacuentos ids.
+  · Baked-in cover text — planned as an unverified risk. One query: 60 covers, 30 with
+    `textBakedIn=true`, and `Portadas.tsx` bakes title/subtitle into every new cover. B9.5 is
+    not a risk, it is simply wrong.
+  · Spanish output surfaces — celebrant/story/children/music PDFs, presentation labels and dates,
+    children/music email, WhatsApp templates. All greppable. All missing from the plan.
+  · `published_resources` permits ONE active resource per type and has no language column, so
+    publishing English deactivates Spanish. Architectural, and unfound.
+  · B1, described as "risk: none material", is a +5,265-line type regeneration.
+  · B2 targets `LiturgiaForm`, which belongs to the antifonal-prayer flow. The builder creates
+    through `ContextoTransversal`. The plan aimed at the wrong file.
+  · No PII design at all. Liturgy rows carry celebrant, preacher and contact data; B9 would have
+    sent whole records to a translator, violating the hard rule in CLAUDE.md.
+- **PROCESS BUG, PM's:** open question 4 asked Brent whether `transcribe-meeting` is in the liturgy
+  path. He said yes. The code says its only caller is `src/lib/leadership/transcriptionService.ts`.
+  The PM asked a human a question the codebase answers, then recorded the answer as a verified fact.
+  Never ask what you can grep.
+- **[B11] CONFIRMED AND FIXED THIS ENTRY:** `docs/plan/AGENT-WORKFLOW.md` did not exist in this
+  repo — it lived only in `~/dev/fne-lms`. `SOP-PILOT.md` declares itself an amendment layer over
+  its §1–§4, and PD-REFINE's executor and both reviewers ran without ever being able to read the
+  contract they were held to. Copied in with this entry.
+- DECISIONS: PLAN-BILINGUE v2 is NOT frozen and is not executable. It needs a discovery phase (B0)
+  that inventories every translatable field, JSON path, output surface and PII-bearing column
+  BEFORE re-drafting — which is Codex's first missing phase and the correct fix.
+- PILOT AMENDMENT PROPOSED — **C5, verification-before-drafting:** a plan may not be submitted for
+  review until the planner has produced a written evidence log of the queries and greps behind
+  every asserted fact, with any unverified assertion labelled UNVERIFIED in the plan body rather
+  than in a self-review section at the bottom. C2 asks "what do you think is weak"; C5 asks
+  "what did you actually run". Only the second one would have caught these.
+- OPEN: Brent decides — B0 discovery phase then re-draft, or narrow the goal.
