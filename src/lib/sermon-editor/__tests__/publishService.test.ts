@@ -23,6 +23,10 @@ interface Recorded {
   updatePayloads: Record<string, unknown>[];
   insertPayloads: Record<string, unknown>[];
   selectCols: string[];
+  // `selectCols` apila TODOS los `select()` en plano, así que una aserción sobre él ya
+  // la satisface la búsqueda del borrador (que también pide `slug`). La proyección del
+  // `UPDATE` de publicación se anota aparte para que E3a.12 sea falsable por sí sola.
+  updateSelectCols: string[];
 }
 
 // ── Query builder mock that supports the chains used by publishService ─────
@@ -51,7 +55,11 @@ function makeQueryBuilder(
     },
     select(cols?: string) {
       if (this._kind === null) this._kind = 'select';
-      if (cols !== undefined) recorded?.selectCols.push(cols);
+      if (cols !== undefined) {
+        recorded?.selectCols.push(cols);
+        // Sólo la proyección de la cadena que empezó por `.update()`.
+        if (this._kind === 'update') recorded?.updateSelectCols.push(cols);
+      }
       return this;
     },
     eq(_col: string, _val: unknown) {
@@ -65,17 +73,23 @@ function makeQueryBuilder(
     },
     limit(_n: number) {
       // Resolves the max-episode-number lookup
+      this._kind = null; // cadena terminada: la siguiente empieza limpia
       return Promise.resolve(
         responses.selectMaxEpisode ?? { data: [], error: null },
       );
     },
     single() {
-      if (this._kind === 'insert') {
+      const kind = this._kind;
+      // Supabase entrega un builder nuevo por cada `from()`; aquí se reutiliza uno solo,
+      // así que la cadena se cierra a mano. Sin esto, el `select('episode_number')` del
+      // recálculo de número tras un `23505` quedaría anotado como si fuera del `UPDATE`.
+      this._kind = null;
+      if (kind === 'insert') {
         return Promise.resolve(
           responses.insert ?? { data: null, error: { message: 'no insert stub' } },
         );
       }
-      if (this._kind === 'update') {
+      if (kind === 'update') {
         const updates = responses.update ?? [];
         const result = updates[this._updateCallIndex] ?? updates[updates.length - 1];
         this._updateCallIndex += 1;
@@ -118,7 +132,7 @@ import {
 } from '@/lib/sermon-editor/publishService';
 
 function makeRecorded(): Recorded {
-  return { updatePayloads: [], insertPayloads: [], selectCols: [] };
+  return { updatePayloads: [], insertPayloads: [], selectCols: [], updateSelectCols: [] };
 }
 
 beforeEach(() => {
@@ -358,7 +372,11 @@ describe('publishEpisode · slug', () => {
     expect(result.canonicalUrl).toBe(`${CANONICAL_ORIGIN}/reflexiones/x-2`);
     expect(result.canonicalUrl.endsWith('/x-2')).toBe(true);
     // El UPDATE tiene que pedir `slug` de vuelta; si no, no hay nada que devolver.
-    expect(recorded.selectCols.some((c) => c.includes('slug'))).toBe(true);
+    // Se mira SU proyección, no la lista plana: la búsqueda del borrador también pide
+    // `slug` y dejaría la afirmación satisfecha antes de que el `UPDATE` se emita.
+    expect(recorded.updateSelectCols).toHaveLength(1);
+    expect(recorded.updateSelectCols[0]).toContain('slug');
+    expect(recorded.updateSelectCols[0]).toContain('episode_number');
   });
 
   it('no vuelve a proponer slug cuando la fila ya tiene uno (D12)', async () => {
