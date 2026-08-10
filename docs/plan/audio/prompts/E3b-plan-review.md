@@ -1,53 +1,56 @@
 SESSION: AUDIO · E3b · REVIEW
 
-Adversarial plan review of **E3b** (revision 18) of the AUDIO plan (CASA podcast). You are the last
-check before we spend an execution session. This is the first review of this contract.
+Plan review of **E3b, revision 19** of the AUDIO plan (CASA podcast). You failed r18 with 5
+BLOCKING and 1 SHOULD-FIX. **All six were accepted; none was argued down.** This is the re-review,
+round 2 of 2 under SOP §1.5.
 
-WHERE THE PLAN LIVES: only on branch `docs/plan-audio`, never `main`. Read it with
-`git show docs/plan-audio:docs/plan/audio/PLAN.md`, section `## Phase E3b`. Code is on `main`
-(`3851e40` at time of writing); **`E3a` is DONE but NOT YET MERGED** — its code is on
-`phase/E3a-slug@6054d55`, so read `slug`, the trigger and `CANONICAL_ORIGIN` there.
+WHERE THE PLAN LIVES: only on branch `docs/plan-audio`, never `main`. Read
+`git show docs/plan-audio:docs/plan/audio/PLAN.md`, section `## Phase E3b`. `E3a`'s code is on
+`phase/E3a-slug@6054d55` and is still not merged into `main`.
 
-CONTEXT — E3b was a draft since r10 and carried five defects, all fixed in this revision:
-1. **Pagination (your own r9/B5, the last open gap).** The draft said "by offset" and claimed the
-   `id` tie-break "prevents overlap between pages". That is false: the tie-break makes the order
-   deterministic, but offset still overlaps or skips rows when a publication lands between
-   requests. **The contract now uses keyset** on `(published_at DESC, id ASC)`: page 1 asks for 13
-   and shows 12, the 13th is a sentinel; the cursor is the last row's `(published_at, id)` and
-   travels in the URL as `desde`. Declared cost: **no "page 3" URL**.
-2. `E3b.8` asked for "the E0-gates SHA" — a unit retired in r10. Now the phase's own parent SHA.
-3. The orphan line *"Depende de: nada, ni siquiera de E0-gates. Es lo primero que puede arrancar"*
-   is deleted — it contradicted the wave table and is now materially false.
-4. Synthetic fixtures no longer need inventing: `E-infra-impl`'s seed leaves the `9000` range, and
-   since `E3a` the published row carries `slug = reflexion-2026-01-04` while the draft carries
-   NULL — **the draft is exactly the negative case for the public RLS**.
-5. The page uses `CANONICAL_ORIGIN` from `E3a` rather than repeating the D19 host.
+WHAT CHANGED — verify each landed and introduced nothing new:
 
-ATTACK THESE FIRST
-- **Is keyset actually specified correctly?** `published_at < pa OR (published_at = pa AND id > id)`
-  against `ORDER BY published_at DESC, id ASC`. Check the boundary logic, the 13-row sentinel, and
-  what happens when `published_at` is NULL (it is nullable in the schema — does the contract cover
-  a published row whose `published_at` is somehow null, and can that exist given
-  `published_episode_complete`?).
-- **The PM did NOT measure PostgREST's nested `.or()` syntax against this stack**, deliberately, and
-  says so in the ledger: `E3b.2` is the first criterion so the unit reports `FINDINGS` rather than
-  silently falling back to offset. Is deferring that measurement to execution the right call here,
-  or should the contract not freeze until it is measured? You have ruled on the opposite pattern
-  before (D21: measure first). Say which applies.
-- **E3b.3** is the criterion that carries the whole decision: repeated `published_at` plus an
-  insertion between page 1 and page 2, proving neither repetition nor skip. If that criterion is
-  weak, the pagination decision is not actually made.
+- **B1** split in three. (a) Your measurement of the nested `.or()` (`status=200, error=null,
+  rows=1`) is recorded in the phase body **with attribution to you**, and the ledger states plainly
+  that the PM proposed it without measuring. (b) `E3b.2` moves out of the pure test into a new
+  `tests/e2e/reflexiones-paginacion.spec.ts` **against local PostgREST**, 13 test-owned `8000` rows,
+  a real second-page request, exact cleanup, and `FINDINGS` if the `.or()` misbehaves. (c) New
+  **`E3b.5`**: `desde` is untrusted input — invalid timestamp, invalid UUID, truncated encoding and
+  injected PostgREST grammar must all fall back to page 1 without reaching the filter.
+- **B2** — the negative fixture is rebuilt as you specified: publish an `8000` row so E3a's trigger
+  assigns a slug, unpublish it (D12 preserves the slug), request it anonymously by that known slug,
+  with an admin control proving the row still exists. The plan now states explicitly that the r18
+  claim about the seed's NULL-slug draft was **false**.
+- **B3** — `E3b.10` no longer says "shows or copies". It requires a copy/share control producing
+  literally `https://www.anglicanasanandres.cl/reflexiones/<slug>` from `CANONICAL_ORIGIN`, with a
+  declared mutation.
+- **B4** — a new fixtures section decides the null cases: **no preacher → omit the line entirely**
+  (no invented name, no "Anónimo"); **no cover → neutral placeholder**, never a broken box or empty
+  `alt`; same on both pages. It also declares the consequence you flagged: **E4-spike's test episode
+  must carry both**, because E3b will not invent them.
+- **B5** — the stale global prose is fixed (the r17 line calling E3b a draft, and the META still
+  calling E3a a freeze candidate). And the dependency gap is now a **hard precondition**: E3b cannot
+  start until `phase/E3a-slug` is merged, with `git merge-base --is-ancestor 6054d55 main` as the
+  executor's first check and `FINDINGS` if it fails.
+- **S1** — new `E3b.11`: a stable Spanish error state, never a perpetual spinner or blank page.
+- **Your MUTATION RULING** — the fixture arrangement is now **frozen in E3b.3** rather than left to
+  executor judgement: repeated `published_at` across the page boundary, `id`s deliberately out of
+  insertion order, and the between-request insertion sorting **before** the cursor.
 
-ALSO ASSESS
-1. Does the plan match reality? Check `src/appRoutes.tsx` (flat `{path, element}` array, catch-all
-   `*` last), `vercel.json` (single rewrite — hence no real 404 until wave 3), and the RLS policy at
-   `20260610090000_church_podcast_episodes.sql:73`.
-2. Acceptance criteria: unverifiable, vague or self-graded? Do the two declared mutations kill?
-3. Sizing: 7 files, 11 criteria. One session?
-4. Is excluding `src/pages/NotFound.tsx` correct? It is in English, violating D14, and it is the
-   app-wide catch-all; the contract sends translating it to backlog and requires E3b.8 to use its
-   own Spanish state. Right call or dodge?
-5. Anything that makes `E4-spike` (link preview) harder than it needs to be.
+Criteria went 11 → 13; files 7 → 8.
+
+ASSESS — only what this revision touches, plus anything it broke
+1. Is each of B1(a,b,c), B2, B3, B4, B5, S1 genuinely closed?
+2. **Do the three declared mutations now die under the frozen fixture?** That was your ruling's
+   point: verify the arrangement actually forces them.
+3. `E3b.5`: are four cases enough, and is "fall back to page 1" the right behaviour versus showing
+   an error? Is there an injection path the contract still misses?
+4. Did any r19 edit introduce a new contradiction? The document is spliced by hand each round and
+   that is exactly how B5 happened twice.
+5. Sizing: 8 files, 13 criteria. Still one session?
+6. Freeze or not. If not, say plainly whether the gap warrants another round or should be carried
+   into execution as a mandatory amendment — there will not be an r20 without Brent overriding the
+   §1.5 cap, as he did once for E3a.
 
 Taste is a NIT. Only correctness, contract violations, security and architectural violations are
-BLOCKING. Output using the CODEX REVIEW format. VERDICT: PASS only if you would be held to this.
+BLOCKING. Output using the CODEX REVIEW format.

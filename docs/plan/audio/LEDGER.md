@@ -1831,3 +1831,52 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno de código.
 - OPEN AFTER THIS ROUND: **`CODEX REVIEW plan r18` sobre `E3b`.** Y sigue pendiente el merge de
   `phase/E3a-slug` a `main`, que Brent aplazó a después de esta enmienda.
+
+### 2026-08-09 — CODEX REVIEW plan r18 → FAIL (5 BLOCKING) — triage y r19 — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `docs/plan-audio@6ec53ad`. 5 BLOCKING, 1 SHOULD-FIX, 0 NIT.
+  **Acepto los seis.** Ronda 1 de 2 del bucle de review de este contrato.
+- **VERIFICADO POR MÍ ANTES DE ACEPTAR:**
+  - **B4 — confirmado.** `speaker TEXT` y `cover_url TEXT` son nulables
+    (`20260610090000…:15,21`) y **la fila publicada del seed no trae ninguno de los dos**
+    (`seed.sql:121`). Mi `E3b.1` exigía predicador y portada contra un fixture que no los tiene.
+  - **B5b — confirmado.** `git merge-base --is-ancestor 6054d55 origin/main` → **falso**.
+    `main@3851e40` **no contiene `E3a`**, así que una `E3b` ramificada de `main` no compilaría
+    contra su propio contrato.
+  - **B5a — confirmado, y es residuo mío.** La línea 331 que escribí en la r17 decía todavía que el
+    cuerpo de `E3b` es borrador y no contrato, y la META de la línea 43 seguía llamando a `E3a`
+    "candidata a congelar" cuando está DONE. **Mismo tipo de contradicción que Codex ya cazó en
+    r16/B3.** Empalmo el documento a mano ronda tras ronda y ahí es donde se acumula.
+  - **B1, B2, B3** — los acepto por lectura del propio contrato, y los tres son correctos.
+- **B2 ES MÍO Y DEL MISMO TIPO QUE LOS ANTERIORES.** Escribí, en el plan y en el ledger, que la fila
+  borrador del seed era **"exactamente el caso negativo"** de la RLS pública. **No lo es:** tiene
+  `slug` NULL, así que no hay URL que pedir, y navegar a un slug inventado sólo prueba "no existe
+  ese slug" — nunca "la RLS bloquea un borrador". El fixture correcto se construye: publicar una
+  fila del rango `8000` para que el trigger le asigne slug, despublicarla (D12 lo conserva), y
+  pedirla anónimamente por ese slug, con un control de admin que demuestre que la fila sigue ahí.
+  **Cuarta vez que afirmo una propiedad sin comprobar que prueba lo que digo.**
+- **B1 — la medición que no hice, y que Codex sí.** Propuse el `.or()` anidado de PostgREST sin
+  medirlo, declarándolo como riesgo. Codex lo midió: `status=200, error=null, rows=1`. **La sintaxis
+  es viable**, y queda registrada en el cuerpo con su atribución. Pero el hallazgo real es otro:
+  `E3b.2` vivía en un test puro "sin red", y **un test puro no puede probar que PostgREST parsea la
+  expresión**. Pasa a un spec propio contra PostgREST local con 13 filas del rango `8000`.
+  B1 traía además algo que se me pasó entero: **`desde` es entrada no confiable**, y el contrato no
+  pedía validarla antes de interpolarla en el filtro. Criterio nuevo `E3b.5` con cuatro casos
+  —timestamp inválido, UUID inválido, codificación truncada y gramática de PostgREST inyectada—
+  que tienen que caer a página 1 sin tocar la consulta.
+- **B3 — criterio vacuo, del mismo molde que el que Codex cazó en `E3a` r1.** "La URL canónica que
+  la página **muestre o copie**" no obliga a mostrar ni copiar nada: se cumplía sin cablear nada.
+  Ahora `E3b.10` exige un control de copiar/compartir que produzca **literalmente** la URL de D19,
+  con mutación declarada.
+- **B5b se vuelve precondición dura del contrato:** `E3b` no arranca hasta que `phase/E3a-slug`
+  esté en `main`, y el ejecutor lo comprueba con `git merge-base --is-ancestor 6054d55 main` antes
+  de escribir una línea. **Esto convierte el merge pendiente en el siguiente paso real del plan.**
+- **S1 aceptado:** criterio nuevo `E3b.11`, estado de error en español, nunca spinner perpetuo.
+- **MUTATION RULING aceptado:** las dos mutaciones sólo mueren si el fixture las obliga, así que el
+  arreglo queda **congelado en `E3b.3`** —`published_at` repetido cruzando la frontera, `id`
+  desordenados respecto de la inserción, y la fila nueva ordenando **antes** del cursor— en vez de
+  quedar a criterio del ejecutor.
+- CIFRAS: criterios 11 → **13**. Ficheros 7 → **8** (un spec de paginación aparte). Sección de
+  fixtures nueva, precondición de merge nueva, META a revisión 19.
+- OPEN AFTER THIS ROUND: `CODEX REVIEW plan r19`. Y **el merge de `phase/E3a-slug` deja de ser
+  opcional**: es precondición de la fase siguiente.

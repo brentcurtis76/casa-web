@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 18**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 19**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -40,8 +40,9 @@ META
 - **Lo congelado, a la r15: `E2`, `E-infra-spike` y `E-infra-impl`, las tres ejecutadas y
   cerradas.** `E1-spike` es ejecutable por construcción —no toca código que se mergee ni pasa por
   el gate— pero **no ha pasado review**, y está aplazada a la ola 4. **`E3a` se reescribió entera
-  en la r15 y es candidata a congelar: le falta sólo la review de plan de Codex.** `E3b` y
-  `E4-spike` siguen en borrador; `E1-impl`, `E4-impl`, `E5` y `E6` no son unidades.
+  en la r15, pasó review en la r17 y está **DONE desde el 2026-08-09**.** **`E3b` se reescribió en
+  la r18 y es candidata a congelar.** Sólo `E4-spike` sigue en borrador; `E1-impl`, `E4-impl`, `E5`
+  y `E6` no son unidades.
 - **Aviso de herencia (Codex r7/N1):** E3 y E4-spike **ya no heredan** la aprobación que Codex
   dio a A7 y A10a en la r5. La r7 les cambió scope, dependencias, e2e y pruebas de RLS, y una
   aprobación no sobrevive a eso. Se revisan de cero.
@@ -288,7 +289,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 18 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 19 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -317,7 +318,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
-| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **CANDIDATA A CONGELAR — reescrita en la r18; pendiente de review de plan** | E3a ✅, E-infra-impl ✅ |
+| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **CANDIDATA A CONGELAR — r19 tras el FAIL de Codex a la r18; pendiente de review.** Requiere `E3a` **mergeada** | E3a ✅, E-infra-impl ✅ |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
 **`E-infra` se partió en la r14.** No fue una decisión nueva: Codex r10/S3 la había condicionado
@@ -328,7 +329,7 @@ fase que mezcla una medición con una implementación cuya forma nadie conoce to
 **Es la ola que produce lo primero que la comunidad puede abrir.** Hasta aquí, todo lo entregado
 es plomería interna: E2 mejoró la carátula, pero nadie fuera del editor la ve.
 
-**El cuerpo de E3b sigue en este documento como borrador, no como contrato.** *(`E3a` salió de aquí en la r15 y se reescribió en la r16 y la r17; su cuerpo **sí** es contrato candidato. Codex r16/B3.)* Codex r9
+*(Bloque histórico. **Ya no gobierna nada:** `E3a` salió de aquí en la r15 y está **DONE**; `E3b` salió en la r18 y es contrato candidato. Lo único en borrador es `E4-spike`. Codex r16/B3 y r18/B5.)* Codex r9
 demostró que ambas esconden una unidad de infraestructura, y que su contrato de slug y su
 semántica de paginación todavía tienen huecos (§16, B2 y B5). Se especifican cuando
 `E-infra-spike` haya medido el entorno — **medir primero, redactar después**, que es la lección
@@ -1085,7 +1086,8 @@ toca la superficie de `E3a`, y siguen siendo 62 migraciones. Codex r16/S3.)*
 
 ## Phase E3b — Páginas públicas `/reflexiones` y `/reflexiones/:slug`
 
-**Reescrita en la r18 (2026-08-09), con `E3a` ya cerrada.** El cuerpo anterior era borrador desde
+**Reescrita en la r18 y corregida en la r19 (2026-08-09), tras `CODEX REVIEW plan r18: FAIL`
+(5 BLOCKING, 1 SHOULD-FIX, los seis aceptados).** El cuerpo anterior era borrador desde
 la r10 y arrastraba cinco cosas que hoy son falsas o están resueltas. **Se corrigen aquí las
 cinco, y la única decisión de diseño nueva —la paginación— se toma, no se delega.**
 
@@ -1098,7 +1100,7 @@ cinco, y la única decisión de diseño nueva —la paginación— se toma, no s
 | **Paginación (hueco r9/B5, el único que quedaba abierto)** | "por offset", afirmando que el desempate por `id` "impide solapes entre páginas" | **Falso, y por eso se cambia.** El desempate ordena de forma determinista, pero el offset **sigue solapando o saltando filas** cuando entra una publicación entre peticiones. Se pasa a **keyset**. Ver abajo |
 | **`E3b.8` pedía "el SHA de E0-gates"** | Unidad retirada en la r10 | El **SHA padre de la propia fase**, como hizo `E3a` |
 | **"Depende de: nada, ni siquiera de E0-gates. Es lo primero que puede arrancar"** | Línea huérfana al final del bloque | **Borrada.** Contradecía la tabla de olas y hoy es materialmente falsa: sin `slug` no hay ruta |
-| **"La tabla está vacía, hay que usar datos sintéticos"** | Cierto cuando se escribió | **Ya no hace falta inventarlos.** El seed de `E-infra-impl` deja el rango `9000`, y desde `E3a` la fila publicada trae `slug = reflexion-2026-01-04` y la borrador `NULL`. **La borrador sin slug es exactamente el caso negativo de `E3b.5`** |
+| **"La tabla está vacía, hay que usar datos sintéticos"** | Cierto cuando se escribió | **El caso positivo ya no hay que inventarlo:** el seed deja el rango `9000` y desde `E3a` la fila publicada trae `slug = reflexion-2026-01-04`. **El caso negativo SÍ hay que construirlo.** *La r18 dijo que la fila borrador del seed era "exactamente el caso negativo"; **es falso** (Codex r18/B2): tiene `slug` NULL, así que no hay URL que pedir y sólo probaría "no existe ese slug", nunca "la RLS bloquea un borrador".* Ver la sección de fixtures |
 | **La URL del episodio** | Se construía a mano | `PublishResult.canonicalUrl` existe desde `E3a` con el host de D19. La página usa **la misma constante**, no una copia |
 
 ### Paginación — decisión, con su límite declarado
@@ -1113,6 +1115,15 @@ cinco, y la única decisión de diseño nueva —la paginación— se toma, no s
 - **El cursor viaja en la URL** como parámetro `desde`, codificado para sobrevivir a los `:` y `+`
   de un timestamp ISO. La codificación la elige el ejecutor; **tiene que ir y volver sin pérdida y
   estar probada**.
+- **`desde` es entrada no confiable** (Codex r18/B1). Antes de interpolarlo en el `.or()` hay que
+  **validarlo estrictamente**: el timestamp tiene que parsear como fecha ISO válida y el `id` como
+  UUID. Cualquier otra cosa —codificación truncada, UUID inválido, o gramática de PostgREST
+  inyectada— **descarta el cursor y devuelve la página 1**, nunca lo pasa al filtro.
+
+**MEDIDO por Codex el 2026-08-09 contra este stack local**, y se registra porque el PM **no** lo
+midió antes de proponerlo: la cadena de Supabase-JS con el `.or()` anidado devuelve
+`status=200, error=null, rows=1`. **La sintaxis es viable.** Aun así D21 sigue aplicando, y por eso
+`E3b.2` exige probarla **contra PostgREST local**, no sólo con aritmética de cursor.
 
 **Por qué keyset y no offset con el límite declarado:** el cursor está anclado a una fila, no a una
 posición, así que **no puede solapar ni saltar** aunque se publique algo entre peticiones. Cierra
@@ -1146,38 +1157,74 @@ falta paginación por número, será su propia unidad. *Y un episodio publicado 
 - Buscador, filtros, reproductor avanzado, enlace público a la liturgia, paginación por número.
 - Tocar `publishService`, la migración de `slug` o el seed.
 
+### Fixtures — qué prueba qué (reescrito tras Codex r18/B2 y B4)
+
+**Caso positivo:** la fila publicada del seed, rango `9000`, con `slug = reflexion-2026-01-04`.
+**No se toca.**
+
+**Caso negativo de RLS — hay que construirlo, y es propio del test (rango `8000`):**
+1. Se **publica** una fila, y el trigger de `E3a` le asigna slug.
+2. Se **despublica**, y D12 conserva ese slug.
+3. Se pide **anónimamente por ese slug conocido**.
+La página tiene que mostrar el estado "no encontrado" en español, **y un control autenticado como
+admin tiene que ver que la fila sigue ahí**. Eso distingue "la RLS lo bloquea" de "nunca hubo tal
+slug", que es lo único que probaba la r18.
+
+**Campos que la base admite nulos** (Codex r18/B4): `speaker` y `cover_url` son `TEXT` sin
+`NOT NULL`, y **la fila publicada del seed no trae ninguno de los dos**. El contrato decide:
+- **Sin predicador:** no se inventa nombre ni se escribe "Anónimo". **Se omite la línea entera.**
+- **Sin portada:** marcador visual neutro con el nombre del sitio, nunca un hueco roto ni un `alt`
+  vacío.
+- Lo mismo en el índice y en la página del episodio.
+**Consecuencia para `E4-spike`, declarada aquí:** su criterio de previsualización exige predicador
+y portada, así que **su episodio de prueba tiene que traer los dos**. `E3b` no se los inventa.
+
 ### Criterios
 
-- [ ] E3b.1 `/reflexiones` lista episodios `published`, con título, predicador, fecha y portada.
-- [ ] E3b.2 **Keyset probado sin montar UI:** con 13 filas sintéticas, la página 1 devuelve 12 y un
-      cursor; la 2 devuelve la 13.ª. **Ninguna fila aparece dos veces ni se salta.**
-- [ ] E3b.3 **La prueba que el offset no pasaba:** con `published_at` **repetido** entre varias
-      filas, el desempate por `id` mantiene el orden estable, y **una inserción entre la petición
-      de la página 1 y la de la 2 no produce ni repetición ni salto**. *Ésta es la razón de ser de
-      la decisión; si no se prueba, la decisión no está tomada.*
-- [ ] E3b.4 El cursor **va y vuelve por la URL sin pérdida** (`desde`), incluido un `published_at`
-      con zona horaria.
-- [ ] E3b.5 Existe `/reflexiones/:slug` con reproductor y enlace de descarga.
-- [ ] E3b.6 **e2e anónimo:** ambas rutas cargan **sin sesión**, contra el rango `9000` del seed.
-      `/reflexiones/reflexion-2026-01-04` muestra el episodio publicado.
-- [ ] E3b.7 **e2e anónimo:** el episodio **borrador** del seed (`…9000-…011`, `slug` NULL) **no**
-      es accesible. La RLS pública ya expone sólo `published`
-      (`20260610090000_church_podcast_episodes.sql:73`); esto lo demuestra desde fuera.
-- [ ] E3b.8 Un slug inexistente muestra un "no encontrado" **visual y en español**, propio de la
-      página. *Declarado: el HTTP sigue siendo 200 hasta la ola 3. No se finge un 404.*
-- [ ] E3b.9 La URL canónica que la página muestre o copie usa **la constante de `E3a`**
-      (`CANONICAL_ORIGIN`, host de D19), no una cadena repetida.
-- [ ] E3b.10 Español en todo texto visible (D14); **sin PII de miembros** (D13) — el predicador es
-      un rol/nombre ya público en el feed, nada más.
-- [ ] E3b.11 Gate D18 sobre los ficheros tocados, contra el **SHA padre anotado de esta fase**.
-      Build verde.
+- [ ] E3b.1 `/reflexiones` lista episodios `published` con título y fecha, **y con predicador y
+      portada cuando existen**, aplicando los fallbacks de arriba cuando no. Probado con la fila
+      del seed, que **no trae ninguno de los dos**.
+- [ ] E3b.2 **La consulta real contra PostgREST local**, no sólo aritmética de cursor: 13 filas
+      propias del rango `8000`, página 1 devuelve 12 y un cursor, página 2 devuelve la 13.ª.
+      Salida cruda, y limpieza exacta del rango `8000` al terminar. **Si el `.or()` anidado no se
+      comporta, la unidad reporta `FINDINGS` y para** — no cae al offset en silencio.
+- [ ] E3b.3 **La prueba que el offset no pasa, con el arreglo congelado y no a criterio del
+      ejecutor:** (a) `published_at` **repetido** a ambos lados de la frontera de página, con los
+      `id` deliberadamente desordenados respecto del orden de inserción; (b) tras pedir la página
+      1, se inserta una fila que **ordena antes del cursor**; (c) se pide la página 2 y **cada `id`
+      original aparece exactamente una vez**; (d) se declara que la fila nueva aparece **al
+      recargar**, no dentro del recorrido en curso.
+- [ ] E3b.4 El cursor va y vuelve por la URL sin pérdida, incluido un `published_at` con zona.
+- [ ] E3b.5 **`desde` malicioso o roto no llega al filtro:** timestamp inválido, UUID inválido,
+      codificación truncada y gramática de PostgREST inyectada ⇒ **página 1**, sin error crudo y
+      sin consulta con el valor sucio. Salida cruda de los cuatro.
+- [ ] E3b.6 Existe `/reflexiones/:slug` con reproductor y enlace de descarga.
+- [ ] E3b.7 **e2e anónimo:** ambas rutas cargan **sin sesión**;
+      `/reflexiones/reflexion-2026-01-04` muestra el episodio publicado del seed.
+- [ ] E3b.8 **e2e anónimo, con el fixture de arriba:** el episodio despublicado **que sí tiene
+      slug** no es accesible por él, y el control de admin demuestra que la fila existe.
+- [ ] E3b.9 Un slug inexistente muestra el mismo "no encontrado" **visual y en español**.
+      *Declarado: el HTTP sigue siendo 200 hasta la ola 3. No se finge un 404.*
+- [ ] E3b.10 **La URL canónica es visible y copiable**, no un import sin usar: la página del
+      episodio tiene un control de copiar/compartir que produce **literalmente**
+      `https://www.anglicanasanandres.cl/reflexiones/<slug>`, construido desde `CANONICAL_ORIGIN`
+      de `E3a`. *Mutación: cambiar el origen por otra cadena pone el test rojo.*
+- [ ] E3b.11 **Estado de error estable** (Codex r18/S1): si la consulta falla, la página muestra un
+      mensaje en español; **nunca un spinner perpetuo ni una página en blanco**.
+- [ ] E3b.12 Español en todo texto visible (D14); sin PII de miembros (D13).
+- [ ] E3b.13 Gate D18 sobre los ficheros tocados, contra el **SHA padre anotado**. Build verde.
 
 ### Test plan
 
-- `src/lib/reflexiones/__tests__/queries.test.ts` **(nuevo)** — keyset, `published_at` repetido,
-  inserción entre páginas, ida y vuelta del cursor. Sin UI, sin red.
-- `src/pages/__tests__/Reflexiones.test.tsx` **(nuevo)** — render del índice y del estado vacío.
-- `tests/e2e/reflexiones.spec.ts` **(nuevo)** — anónimo, contra el rango `9000` del seed.
+- `src/lib/reflexiones/__tests__/queries.test.ts` **(nuevo)** — aritmética del cursor, ida y
+  vuelta, y **los cuatro cursores inválidos de `E3b.5`**. Puro, sin red.
+- **`tests/e2e/reflexiones-paginacion.spec.ts` (nuevo) — contra PostgREST local, no mockeado.**
+  Es donde viven `E3b.2` y `E3b.3` con sus 13 filas del rango `8000`. *Un test puro puede probar
+  la aritmética; no puede probar que PostgREST parsea el `.or()` anidado. Codex r18/B1.*
+- `src/pages/__tests__/Reflexiones.test.tsx` **(nuevo)** — índice, estado vacío, **estado de error**
+  y los fallbacks de predicador y portada ausentes.
+- `tests/e2e/reflexiones.spec.ts` **(nuevo)** — anónimo: el caso positivo del seed y el **fixture
+  despublicado-con-slug** de `E3b.8`, con su control de admin y su limpieza del rango `8000`.
 
 ```bash
 npx vitest run --no-file-parallelism src/lib/reflexiones src/pages
@@ -1185,9 +1232,14 @@ supabase db reset
 npx playwright test tests/e2e/reflexiones.spec.ts
 ```
 
-**Mutación declarada:** quitar el desempate por `id` del orden deja `E3b.3` rojo con
-`published_at` repetido. **Segunda mutación:** usar `offset` en vez del cursor hace que la
-inserción entre páginas repita una fila, y `E3b.3` lo caza.
+**Las dos mutaciones sólo mueren si el fixture las obliga, así que el fixture está congelado en
+`E3b.3` y no queda a criterio del ejecutor** (Codex r18/«MUTATION RULING»):
+- **Quitar el desempate por `id`** muere porque hay `published_at` repetido cruzando la frontera de
+  página **y los `id` están desordenados respecto del orden de inserción**; sin eso el orden podría
+  salir bien por casualidad.
+- **Cambiar keyset por offset** muere porque la fila que se inserta entre páginas **ordena antes
+  del cursor**; si ordenara después, el offset sobreviviría.
+- **Tercera:** cambiar `CANONICAL_ORIGIN` por otra cadena deja `E3b.10` rojo.
 
 ### Definition of done
 
@@ -1196,9 +1248,11 @@ verde, y el humo de `E-infra-impl` **sin modificar y verde**.
 
 ### Risks / unknowns
 
-- **PostgREST y el `.or()` anidado.** La sintaxis `or=(a.lt.X,and(a.eq.X,b.gt.Y))` es la documentada,
-  pero **no la he medido contra este stack**. `E3b.2` es el primer criterio por eso: si no se
-  comporta, la unidad reporta `FINDINGS` y para, en vez de caer al offset en silencio.
+- **PostgREST y el `.or()` anidado.** **Medido por Codex el 2026-08-09 contra este stack**
+  (`status=200, error=null, rows=1`), después de que el PM lo propusiera **sin medirlo** — queda
+  escrito. Sigue siendo el primer riesgo porque una sonda de una fila no es la consulta de la
+  fase: `E3b.2` la ejerce contra PostgREST local con 13 filas, y si no se comporta la unidad
+  reporta `FINDINGS` en vez de caer al offset en silencio.
 - El catálogo productivo está vacío, así que el índice se verá con las **dos** filas del seed en
   local. La paginación se prueba con filas sintéticas del rango `8000`, que el humo ya limpia.
 
@@ -1207,10 +1261,23 @@ verde, y el humo de `E-infra-impl` **sin modificar y verde**.
 `git revert` del commit de fase. No hay migración, no hay cambio de esquema: **el rollback aquí
 sí es seguro con `git revert` a secas**, a diferencia de `E3a`.
 
+### Precondición dura — `E3a` tiene que estar en `main` primero (Codex r18/B5)
+
+**`E3b` no puede arrancar hasta que `phase/E3a-slug` esté mergeada.** No es preferencia de orden:
+la columna `slug`, el trigger que la asigna y `CANONICAL_ORIGIN` **existen sólo en
+`phase/E3a-slug@6054d55`**, y `main` no los tiene. Una `E3b` ramificada del `main` de hoy no
+compila contra su propio contrato.
+
+**El ejecutor lo verifica antes de escribir una línea**, y si falla reporta `FINDINGS` y para:
+
+```bash
+git merge-base --is-ancestor 6054d55 main && echo "E3a en main: OK" || echo "FALTA EL MERGE — parar"
+```
+
 ### Depende de
 
-**`E3a`** (sin `slug` no hay ruta) y **`E-infra-impl`** (sin entorno local no hay e2e anónimo).
-Ramifica del `main` vigente el día que arranque y anota su SHA.
+**`E3a`** (mergeada, no sólo cerrada) y **`E-infra-impl`**. Ramifica del `main` vigente el día que
+arranque —que ya contendrá `6054d55`— y anota su SHA exacto.
 
 ---
 
