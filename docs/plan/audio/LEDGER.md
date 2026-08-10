@@ -1968,3 +1968,25 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   1. **Brent autoriza el merge de `phase/E3a-slug` a `main`** (no-FF, sin solape esperado).
   2. **El PM escribe `docs/plan/audio/prompts/E3b-r1.md`** y lo commitea en `docs/plan-audio`.
   3. Repetir `/exec AUDIO E3b r1`. Volverá a parar en el paso 1 mientras 1 no esté hecho.
+
+### 2026-08-09 — E3b round 1 — PM (Opus), verificación del FINDINGS
+- SESSION: `AUDIO · E3a · PM` (verifica `AUDIO · E3b · r1 · EXEC`, `c766ed6`)
+- **STATUS FINDINGS ACEPTADO, y era la salida correcta.** El ejecutor paró en la precondición
+  fail-closed sin escribir una línea de código, que es exactamente lo que el contrato manda. **La
+  precondición que la r19 metió por Codex r18/B5 funcionó a la primera y en vivo.**
+- **VERIFICADO POR MÍ:** `git merge-base --is-ancestor 6054d55 main` → **falso**. `main` sigue en
+  `3851e40` y no contiene `E3a`; `CANONICAL_ORIGIN` no existe en `main` y sí en
+  `6054d55:src/lib/sermon-editor/publishService.ts:20`; la migración del slug tampoco está en
+  `main`. Sus medidas del merge coinciden con las mías: base `4b44b5b`, no-FF, cero solape de
+  ficheros.
+- **HALLAZGO 2 ES MÍO, y es de proceso, no de plan.** `docs/plan/audio/prompts/E3b-r1.md` **no
+  existía**. Le di el prompt a Brent en el chat y **me salté la copia commiteada**, que es
+  precisamente lo que el SOP exige para que un ejecutor en otro worktree lo encuentre. Ya está
+  commiteado. *Es el mismo tipo de fallo que B1/B4/B5 de las rondas de plan: hago la parte visible
+  y omito la que enmarca. La regla es simple y la incumplí: **el prompt va al chat Y a
+  `prompts/`**, siempre las dos.*
+- FINDINGS RAISED: ninguno de código — no hay código.
+- **ESTA RONDA NO CUENTA COMO RONDA DE EJECUCIÓN** a efectos del tope de §1.5: no hubo intento de
+  implementación, sólo una precondición que paró. La siguiente sigue siendo `r1`.
+- OPEN AFTER THIS ROUND: **una sola cosa** — el merge de `phase/E3a-slug` a `main`, pendiente de
+  la autorización explícita de Brent. Con eso hecho, `/exec AUDIO E3b r1` arranca de verdad.
