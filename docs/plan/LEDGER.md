@@ -4226,3 +4226,36 @@ starts truthful, not complete.
   of scope here, own phase later.
 - OPEN AFTER THIS ROUND: Brent dispatches the prompt to a fresh Opus session at effort xhigh;
   fresh-context reviewer (pilot C3) runs before any cross-family review.
+
+### 2026-08-10 — PD-REFINE round 1 — fresh-context reviewer (pilot C3)
+- ELAPSED: ~10 min review
+- STAGE: fresh review ~10m
+- EFFORT: high
+- **FIRST-PASS: YES (C3) — first review, first time. Baseline was 1/10 phases.**
+- ACTION: fresh-context adversarial review, no conversation history, seeded only with the diff,
+  acceptance criteria, frozen decisions and the reviewer rubric. VERDICT PASS, zero BLOCKING.
+- VERIFIED BY THE REVIEWER, NOT ASSERTED: 482/0 on a restored tree; no DDL in the diff; the pure
+  move checked BOTH directions in Python (7 removed lines absent from the shared module, each the
+  same line with `export` prepended; all 22 exported names still exported); 9 mutants applied and
+  reverted, 8 killed — including hoisting `req.json()` above the authz guard, derived independently
+  of the ledger's own M5 claim.
+- FINDINGS: 0 BLOCKING · 3 SHOULD-FIX · 5 NITS · 1 weak test.
+  [S1] the INVALID_STORY copy advises retry for a condition where retry can never succeed —
+  stories outside 12–16 scenes are permanently un-refinable, and the OLD prompt explicitly
+  authorised 10–18 while enforcing nothing. [S2] the three Spanish messages are generate-story's
+  verbatim and describe the wrong operation ("generar", "las notas" — this surface has `feedback`).
+  [S3] the shared comment claims single-source-of-truth that generate-story:637/:709 still violate.
+  Weak test: PDR1f is named for A4 but asserts literal substrings, never comparing to the
+  validator — a surviving mutant (hardcode 12-16, values unchanged) passes all 36 cases.
+- DECISIONS: SHOULD-FIX → backlog per SOP §1.4, no remediation round. Blast radius of the
+  behavioural regression measured directly against the live DB: `cuentacuentos_drafts` = 1 row,
+  15 scenes (in window), no `props` key → that single draft would 502; `liturgia_elementos` = 0
+  stories of that shape.
+- **PILOT CAVEAT — the metric is not yet like-for-like.** The 1/10 baseline counts CODEX
+  cross-family reviews. This PASS is C3, a fresh-context Claude reviewer. Comparable measurement
+  requires the Codex review. Do not score the pilot on this entry alone.
+- **PILOT CONTAMINATION, round 1:** C3 says the PM stops self-verifying. The PM ran ~6 verification
+  commands before dispatching C3. Nothing was found and no corrections were fed back, so
+  contamination is low — but the rule was broken in the first round and that is on the PM.
+- BACKLOG ADDED: S1, S2, S3, PDR1f strengthening; generate-story prompt constants (:637, :709).
+- OPEN AFTER THIS ROUND: Codex cross-family review = the comparable data point.
