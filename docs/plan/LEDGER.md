@@ -4191,3 +4191,38 @@ starts truthful, not complete.
 - BACKLOG ADDED: ablate C1/C2/C3 separately if the bundle works (n=4 cannot separate them)
 - OPEN AFTER THIS ROUND: next 4 CASA phases run under the pilot; second research pass on
   AI-productivity evidence and harness tooling still in flight.
+
+### 2026-08-10 — PD-REFINE round 1 — Fable (PM, bootstrap + dispatch)
+- CONTEXT PRESSURE: comfortable
+- ELAPSED: PM spec pass only; executor not yet dispatched
+- STAGE: PM spec <this round>
+- EFFORT: high (global default restored 2026-08-10)
+- FIRST-PASS: pending
+- ACTION: selected PD-REFINE over the RLS-hardening pass as pilot phase 1 — PD-REFINE is code +
+  tests with an existing precedent to match, while RLS-hardening drops a live storage policy and
+  depends on the 5 `upsert:true` sites being gone. Wrong blast radius for a phase whose purpose is
+  testing the process. Wrote `docs/plan/prompts/PD-REFINE-r1.md` against VERIFIED code, not the
+  plan's prose: read `refine-story/handler.ts` end to end and confirmed output handling is a
+  ```json fence regex → control-char strip → JSON.parse → three-field check (title, scenes,
+  Array.isArray), with every failure funnelling into one HTTP 500. Confirmed the PD precedent in
+  `generate-story/handler.ts`: forced `emit_story` tool with strict:true, additionalProperties:false
+  throughout, `ProviderOutputReason = REFUSAL|MAX_TOKENS|INVALID_STORY` mapped to typed 502 via
+  `ProviderOutputError`, `validateAndNormalizeStory(data): StoryValidationResult` with named codes,
+  stop_reason checked before content, SCENE_COUNT_MIN=12/MAX=16, test naming PD1a…/PD2a…
+- FINDINGS RAISED: **one real defect found during the spec pass** — `refine-story` contradicts
+  itself on scene count: SYSTEM_PROMPT (~line 85) says "entre 12-16", REFINEMENT_INSTRUCTIONS.length
+  (~line 66) says "entre 10 y 18 escenas". Folded into the phase as [A4] rather than filed as
+  backlog, since the validator needs a single source of truth anyway.
+- DECISIONS: shared contract code (`validateAndNormalizeStory`, `ProviderOutputError`,
+  `PROVIDER_OUTPUT_MESSAGES`, scene-count constants) to be extracted to
+  `_shared/storyContract.ts` and RE-EXPORTED from generate-story so its surface is unchanged —
+  `_shared/` is the established home for cross-function code (liturgyAuth, imageFetch, corpus).
+  Executor instructed to STOP and report FINDINGS if the extraction cannot be a pure move or
+  blows the phase cap, per SOP §1.6.
+- PILOT C2 APPLIED: the reviewer rubric is embedded in the executor prompt as a mandatory
+  PRE-SUBMISSION SELF-REVIEW section. This is the change under test — the executor has never
+  before been shown the rubric it is actually judged against.
+- BACKLOG ADDED: `refine-children-lesson` has the same prose-JSON-parsing shape; explicitly out
+  of scope here, own phase later.
+- OPEN AFTER THIS ROUND: Brent dispatches the prompt to a fresh Opus session at effort xhigh;
+  fresh-context reviewer (pilot C3) runs before any cross-family review.
