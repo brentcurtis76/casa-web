@@ -1794,3 +1794,40 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - **Recomendación:** una ronda de plan para `E3b` —cerrar B5, corregir 2, 3 y 4, y aprovechar 5—
   seguida de review de plan de Codex, antes de cualquier `/exec`. Es una ronda corta: el cuerpo ya
   existe y ninguna de las cinco es de diseño nuevo salvo la elección de paginación.
+
+### 2026-08-09 — plan round 18 — PM (Opus) — `E3b` reescrita; el bloque de borradores casi vacío
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: r18. Reescritura de `E3b` con `E3a` ya cerrada, por instrucción de Brent de hacer la
+  enmienda **antes** del merge. Corrige las cinco cosas que la relectura del cierre encontró.
+- **LA ÚNICA DECISIÓN DE DISEÑO NUEVA — paginación, y se toma aquí.** El borrador decía "por
+  offset" y afirmaba que el desempate por `id` "impide solapes entre páginas". **Es falso**: el
+  desempate ordena de forma determinista, pero el offset sigue solapando o saltando filas cuando
+  entra una publicación entre peticiones. **Se pasa a keyset** sobre `(published_at DESC, id ASC)`:
+  página 1 pide 13 y muestra 12, la 13.ª es el centinela; el cursor es el `(published_at, id)` de
+  la última fila y viaja en la URL como `desde`.
+  **Cierra el hueco r9/B5 de forma permanente en vez de documentarlo** — era el último que el
+  banner de borradores seguía listando.
+  **Lo que se pierde, declarado:** no hay URL de "página 3". Para un catálogo que crece una vez por
+  semana es un precio bajo; paginación por número sería su propia unidad.
+- **LAS OTRAS CUATRO CORRECCIONES:** `E3b.8` pedía "el SHA de E0-gates" (unidad retirada en la r10)
+  → SHA padre de la fase; la línea huérfana *"Depende de: nada, ni siquiera de E0-gates"* **borrada**
+  —contradecía la tabla de olas y hoy es materialmente falsa, porque sin `slug` no hay ruta—; los
+  datos sintéticos **ya no hay que inventarlos**, porque el seed deja el rango `9000` y desde `E3a`
+  la fila publicada trae `slug = reflexion-2026-01-04` y **la borrador `NULL`, que es exactamente
+  el caso negativo de la RLS**; y la página usa `CANONICAL_ORIGIN` de `E3a` en vez de repetir el host.
+- **HALLAZGO DE LECTURA, al backlog:** `src/pages/NotFound.tsx` está **en inglés**
+  (`"Oops! Page not found"`, `"Return to Home"`), lo que viola D14. Es la catch-all de toda la app,
+  así que traducirla toca a todo el mundo y no es de `E3b`; el criterio `E3b.8` usa su propio
+  estado en español y **no la reutiliza**. Queda declarado en Out of scope para que nadie lo lea
+  como olvido.
+- **RIESGO DECLARADO, y es el que puede tumbar la fase:** la sintaxis `.or('a.lt.X,and(a.eq.X,b.gt.Y)')`
+  de PostgREST es la documentada **pero no la he medido contra este stack**. Por eso `E3b.2` es el
+  primer criterio: si no se comporta, la unidad reporta `FINDINGS` y para, **en vez de caer al
+  offset en silencio**. *(Deliberadamente no la medí yo: medir es barato, pero esta unidad todavía
+  no tiene contrato aprobado, y medir para justificar un diseño sin revisar es cómo llegué a
+  D22.)*
+- ESTRUCTURA: `E3b` sale del bloque de borradores, que **se queda sólo con `E4-spike`**. Índice
+  §5 actualizado, META a revisión 18, una fila nueva de backlog. **11 criterios, 7 ficheros.**
+- FINDINGS RAISED: ninguno de código.
+- OPEN AFTER THIS ROUND: **`CODEX REVIEW plan r18` sobre `E3b`.** Y sigue pendiente el merge de
+  `phase/E3a-slug` a `main`, que Brent aplazó a después de esta enmienda.
