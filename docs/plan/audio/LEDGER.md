@@ -1921,3 +1921,50 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   1. **Merge de `phase/E3a-slug` a `main`** — ya no es sólo el cierre de `E3a`: es **precondición
      fail-closed de `E3b`**, que para con `FINDINGS` si no la encuentra.
   2. `/exec AUDIO E3b r1`, en cuanto 1 esté hecho.
+
+### 2026-08-10 — E3b round 1 — EXEC (Opus) → FINDINGS, parado antes de escribir código
+- SESSION: `AUDIO · E3b · r1 · EXEC`
+- STATUS: **FINDINGS**. **Cero ficheros tocados, cero commits de código.** La fase no arrancó
+  porque su propia precondición fail-closed dice que no debe arrancar. Esta es la salida que el
+  contrato prescribe, no un fallo de ejecución.
+- **HALLAZGO 1 — la precondición dura de `E3b` NO se cumple.** Corrido el comando literal que el
+  plan pone en «Precondición dura — `E3a` tiene que estar en `main` primero (Codex r18/B5)»:
+
+  ```
+  git merge-base --is-ancestor 6054d55 main  →  exit 1  (FALTA EL MERGE — parar)
+  git rev-parse phase/E3a-slug main
+    6054d55a1b091ec54cb8cf97277e1f7f4a1ebf46
+    3851e40454c8d9d68a8f9bb0c41f4315032ee51d
+  ```
+
+  Y lo que el plan predice que faltaría, falta de verdad — no lo asumo, lo medí en `main`:
+  - `git grep CANONICAL_ORIGIN main -- src/` → **0 coincidencias**. En `6054d55` está en
+    `src/lib/sermon-editor/publishService.ts:20`.
+  - La migración `20260808120000_church_podcast_episodes_slug.sql` **existe sólo en `6054d55`**;
+    `main` no tiene ninguna migración de slug de podcast.
+
+  O sea: `slug`, su trigger y `CANONICAL_ORIGIN` siguen viviendo únicamente en la rama de `E3a`.
+  Una `E3b` ramificada del `main` de hoy no compilaría contra su propio contrato, exactamente
+  como escribió el PM en la r19.
+- **HALLAZGO 2 — no existe prompt de ejecutor para `E3b` r1.** `docs/plan/audio/prompts/` en
+  `docs/plan-audio@39b1a4e` contiene `E3b-plan-review.md` y nada más para esta fase. Verificado
+  también que **no está sin commitear en ningún otro checkout**: revisados los cinco worktrees
+  (`casa-web`, `casa-e3a`, `casa-p2-review`, `casa-pilot`, `casa-upgrade`); ninguno tiene un
+  `E3b-r1.md`, ni versionado ni suelto. El SOP prohíbe arrancar sólo con el plan, así que aunque
+  el merge estuviera hecho esta ronda seguiría parada.
+- **DATO PARA EL MERGE, medido — no es fast-forward, pero tampoco hay conflicto.** El PM y Brent
+  van a necesitarlo:
+  - `git merge-base main phase/E3a-slug` → `4b44b5b`. `main` **ha divergido** desde que `E3a`
+    ramificó, así que `git merge-base --is-ancestor main phase/E3a-slug` → exit 1: **no se puede
+    fast-forward**, hará falta merge commit o rebase de `E3a` sobre `main`.
+  - `E3a` aporta 2 commits (`1d09b7d`, `6054d55`). `main` aporta 9 (`79e662e`…`3851e40`).
+  - Los 9 de `main` tocan `docs/plan/upgrade/*`, `src/components/sections/DiaDelNinoHero.tsx`,
+    `src/data/currentSeason.ts`, `src/pages/Index.tsx` y `supabase/functions/create-mesa-matches/*`.
+    **Ninguno solapa con lo que toca `E3a`** (migración de podcast + `src/lib/sermon-editor/`), así
+    que el merge debería entrar limpio. No lo ejecuto: la autoridad de merge a `main` es de Brent.
+- **NO HICE:** ni rama, ni migración, ni página, ni spec, ni gate. Nada de los 13 criterios
+  `E3b.1`-`E3b.13`. El contrato se leyó entero para poder afirmar lo anterior, no se empezó.
+- OPEN AFTER THIS ROUND:
+  1. **Brent autoriza el merge de `phase/E3a-slug` a `main`** (no-FF, sin solape esperado).
+  2. **El PM escribe `docs/plan/audio/prompts/E3b-r1.md`** y lo commitea en `docs/plan-audio`.
+  3. Repetir `/exec AUDIO E3b r1`. Volverá a parar en el paso 1 mientras 1 no esté hecho.
