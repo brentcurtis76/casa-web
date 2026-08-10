@@ -63,3 +63,82 @@
   - Blocking on Brent, carried forward for D6 rather than asked now: the default English Bible
     translation, and the English liturgical texts for the six canonical elements in
     `src/data/elementos-fijos/`.
+
+### 2026-08-10 — plan round 2 — PM (planner)
+
+- SESSION: `BILINGUE · plan · PM` (same session as round 1; plan not yet frozen)
+- ELAPSED: ~40 min (16:09 → ~16:49; verification 25m, rewrite 15m)
+- STAGE: triage + independent verification 25m | rewrite 15m | fresh review 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — Codex FAIL on draft 1 (`5ee2f17`), 10 BLOCKING · 5 SHOULD-FIX · 1 NIT.
+  Review stored at `reviews/BILINGUE-PLAN-review-2.md`.
+- CONTEXT PRESSURE: comfortable — triage was ~8 targeted commands and queries.
+- ACTION: verified all ten BLOCKING findings independently before accepting any, then rewrote
+  `PLAN.md` end to end. Phase count 6 → 8 (D2 pre-split into D2a/D2b/D2c). Three new frozen
+  decisions (D-G, D-H, D-I); D-C rewritten; D-F narrowed.
+- COMMITS: (this round) — see git log for the draft-2 SHA
+- TESTS: verification commands only; no gates re-run this round (zero source diff).
+
+- **VERIFIED BEFORE ACCEPTING — all ten BLOCKING confirmed:**
+  - **[B1] My own census was broken in exactly the way I was criticising.** The orphan exclusion
+    silently failed inside the script: dumping the script's own file list gives 21 files for
+    `liturgia-builder` where the same `find` run directly gives 19. Corrected totals **166 files /
+    1,402 copy-lines** (was 174 / 1,414) — matching the reviewer's numbers exactly. Rewrote the
+    filter to `grep -vE` on the stream, which has no `find -regex` dialect ambiguity. Also accepted
+    the metric correction: accent-bearing lines are a **lower-bound candidate set**, not an upper
+    bound — `Guardar`, `Cancelar`, `Presentar` are Spanish without accents.
+  - **[B2] Confirmed — and this was the worst of it.** Draft 1's Decision Log called `custom-*`
+    homogeneity verified while its own risk section admitted I had not looked. Query:
+    `title-slide` 12 · `image-slide` 11 · `text-slide` 5 · `call-response` 2 · untyped 2. Five
+    shapes. The "20 kinds" correction is retracted; the matrix is 25 rows minimum.
+  - **[B3] Confirmed: 145 normalized JSON paths** (`slides` 55 + `config` 90) against my ~40 split
+    trigger. I had counted 11 *top-level* config keys and let that imply a small surface.
+  - **[B5] Confirmed: 15 tables in the recursive FK closure, not 9.** Depth 2 adds
+    `church_children_calendar`, `church_children_lesson_materials`,
+    `church_children_packet_deliveries`, `music_packet_deliveries`; depth 3 adds
+    `church_children_attendance`, `church_children_session_assignments`.
+  - **[B4] [B6] [B7] [B8] [B9] [B10]** accepted on reading — each is an internal contradiction in
+    draft 1 rather than an empirical claim. [B6] is the sharpest: D-C promised shell verification of
+    database facts a shell script cannot reach.
+- **WHERE I DID NOT DEFER:** the reviewer's stated *cause* for [B1] ("`?` is not acting as intended
+  … the listed orphan command returns no files") is not what I observe — standalone it returns 18
+  files. The failure is real but reproduces only inside the script. Conclusion and corrected numbers
+  accepted; diagnosis noted as not matching. On `CuentacuentoEditor` the review says 434 of 601;
+  I measure 434 of 596 and 596 stands. Neither changes anything.
+
+- DECISIONS (new this round):
+  - **D-G** — UI locale and liturgy content language are independent axes. This is `L1` from the
+    failed plan, re-frozen on its merits rather than inherited; it is the only one of L1–L8 carried
+    forward, and D1's whole taxonomy rests on it. ([S2])
+  - **D-H** — the PII classification is fixed in the plan, not chosen by an executor, and member PII
+    never reaches a translation provider, AI prompt or log. ([B8])
+  - **D-I** — an unresolved fact that materially changes feasibility, scope or phase count blocks
+    D6; `UNVERIFIED` is for details only. Each phase reports `BLOCKS-D6` items. ([B9])
+  - **D-C rewritten** — verification is two named mechanisms and the plan claims only what each can
+    do: `D<n>-verify.sh` diffs the document against committed JSON fixtures (mechanical); refreshing
+    fixtures from the database is a documented manual MCP step, because `psql` is not installed.
+    The shell script proves document↔evidence, not evidence↔database. ([B6])
+  - **D-F narrowed** — "translate rather than regenerate" applies to generated devotional prose
+    only, not Bible text, canonical liturgical texts, songs or assets. ([S1])
+  - **D2 pre-split** into D2a (scalars, all four liturgy tables), D2b (55 `slides` paths),
+    D2c (90 `config` paths + `custom_content` + the five `custom-*` shapes). ([B3] [B4])
+  - **Document-only gate set defined and justified** — `git diff --stat`, `D<n>-verify.sh`,
+    `npx tsc --noEmit`. `lint`/`test`/`build`/Playwright deliberately excluded: on a zero-line
+    source diff they re-test the base branch, not the phase. `tsc` is kept because it catches a
+    source file that leaked in. Gates run against the phase commit in `casa-pilot` after `npm ci`,
+    not in another checkout. ([S4])
+  - **D6.9 split** into a script-checkable half (structural symmetry of the options template) and an
+    explicitly non-mechanical half (a fresh-context neutrality read). The plan no longer claims
+    every criterion is executable. ([B10])
+  - **D4 now depends on D3** ([S3]); external feasibility — Bible redistribution rights and English
+    WhatsApp template lead time — added as D6.8 ([S5]).
+- BACKLOG ADDED: `src/data/elementos-fijos/` is 6 content files + `index.json`; phrase it as
+  "6 canonical documents / 46 slides" ([N1] — applied, not deferred).
+- OPEN AFTER THIS ROUND:
+  - PLAN.md draft 2 is **not frozen.** Needs Codex plan review round 2. Loop cap: SOP §1.5 allows
+    2 Codex rounds before Brent decides — this is round 2 of 2.
+  - Still unverified, each assigned to its phase: whether `npm ci` succeeds in `casa-pilot`; the
+    contents of the 90 `config` paths; whether `church_podcast_episodes` holds language-dependent
+    content; the Bible redistribution rights position.
+  - Blocking on Brent, carried to D6: default English Bible translation; English liturgical texts
+    for the six canonical elements.
