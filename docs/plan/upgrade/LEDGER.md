@@ -3133,3 +3133,112 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   enmienda del criterio. (3) Merge de `feat/mesa-md-wire` a `main` — decisión de Brent,
   tras revisión de Codex. (4) P5a queda desbloqueada por P4; P6/P7/P8 consumen
   `mainDishCoverage` y `tablesWithShortfall` tal como salen hoy de `results`.
+
+### 2026-08-10 — P4 round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P4 · r1 · PM
+- **VEREDICTO: la fase está limpia. Cero BLOCKING. Un SHOULD-FIX que es del ledger, no
+  del código; tres NIT. Lista para revisión final de Codex.**
+- **LO QUE CORRÍ YO, no lo que dice el reporte.** Worktree `casa-upgrade`, rama
+  `feat/mesa-md-wire` @ `0fad9ad`, ancestría comprobada: parte de `3851e40`, mi propio
+  commit de bootstrap, sin ramas intermedias. `deno test --allow-all --no-check .` →
+  **456 passed / 0 failed**. Gate D8 sobre los cuatro ficheros → **reproducido carácter a
+  carácter**: los cinco mensajes de la línea base con texto idéntico y solo
+  desplazamiento de línea (`matching.ts` 98→157; `handler.ts` 31→32, 290→299, 343→356,
+  149/150→150/151), cero mensajes nuevos, totales del proyecto `tsc=1039 eslint=161
+  deno-lint=92 deno-check=43`, **iguales** a los que medí en `main` antes de despachar.
+  `npm run build` → exit **0**. Greps: E1 `allocateAll|TableInput|foodAssignments` en
+  `handler.ts` → 0; E5 `total_people|main_dish_count` → 0; D1e
+  `@supabase/supabase-js|Deno.env` en `matching.ts` → 1, **y es la línea del comentario
+  que cita la propia decisión**, no código; `Math.random` en `matching.ts` → 0.
+  `matching.ts` tiene exactamente **un** import y es `../_shared/mainDish.ts`.
+- **E6 LO AUDITÉ POR EXTRACCIÓN, NO LEYENDO.** Script propio que parsea los bloques
+  `Deno.test(...)` de `handler_test.ts` en el padre y en la punta y los compara como
+  cadenas: los **ocho protegidos son byte-idénticos**, y el conjunto de nombres cambia
+  en exactamente dos que salen y seis que entran. Diez tests en el padre, catorce en la
+  punta. El renombrado de los goldens 5 y 6 —que el ejecutor avisó que rompería una
+  auditoría por nombre— **no me afectó porque no audité por nombre**; conviene que la
+  próxima fase con allowlist compare bloques y no títulos.
+- **LOS DOS MODOS DE FALLO QUE NOMBRÉ: PROBADOS AUSENTES, Y ADEMÁS PROBÉ QUE LA SUITE
+  MUERDE.** Tres mutaciones sobre **copias en el scratchpad** (el repo no se tocó):
+  - **A — reequilibrio neutralizado** (`balanceMainDishCarriers` devuelve la entrada):
+    **3 rojos**, incluido el test 12 del handler. El cableado del rebalance está
+    realmente ejercitado, no solo presente.
+  - **C — el fold-back a `hostStatus` eliminado** (las tres líneas que reescriben
+    `assignedGuests`/`currentGuests`/`currentGuestPeople`): **1 rojo**, `el reequilibrio
+    se refleja en los invitados`. Importa porque de `hostStatus` salen las tres
+    actualizaciones de participantes de aguas abajo: si divergiera, se escribirían
+    `assigned_role` sobre una lista y `mesa_abierta_assignments` sobre otra.
+  - **D — comida rotada entre los invitados de la mesa** (recuento de `main_course` por
+    mesa intacto, solo cambia quién lo lleva): **4 rojos**, entre ellos los dos de
+    excluidos. Es la mutación que elegí precisamente por ser la que un recuento no ve.
+  Ninguna de las tres sobrevive. Contraste con P3b, donde una mutación equivalente sobre
+  los 8 tests puros pasó inadvertida: **esta suite sí fija identidades, no solo
+  cardinales.**
+- **E6 vs E8: EL HUNK QUE EL EJECUTOR DECLARÓ ESTÁ FORZADO, Y LO COMPROBÉ EN VEZ DE
+  creerlo.** Borró `FOODS` y `referenceShuffle`, que solo usaban los goldens 5 y 6.
+  Reproduje la alternativa en un fichero de sonda fuera del repo: mantenerlos produce
+  **dos `no-unused-vars` nuevos**, y `handler_test.ts` mide `deno lint (0)` en la línea
+  base, así que E8 se rompe. **E6 y E8 no se pueden cumplir los dos al pie de la letra.**
+  **Resuelvo como PM: el borrado cabe en E6.** El criterio protege los ocho goldens y
+  limita a dos los que cambian; ambas cosas se cumplen, y un helper que queda muerto por
+  una reescritura permitida es consecuencia de la reescritura, no un cambio propio. **No
+  es enmienda al plan**: E6 es un criterio de fase, mi redacción del prompt lo concretó
+  y esta ronda le añade la excepción que le faltaba. Codex tiene que ver esta línea y
+  discrepar si no la comparte.
+- **SHOULD-FIX S1 — B-12 NO EXISTE: ES LA LÍNEA BASE, Y ESTÁ EN EL PLAN.** El ejecutor
+  reportó los 6 rojos de `MesaAbiertaDashboard.test.tsx` como «preexistente pero **no
+  catalogado**» y abrió B-12. **D8.2 los cataloga literalmente**: «La base sigue siendo
+  los 6 de `MesaAbiertaDashboard.test.tsx` **hasta P8**, que los repara y declara el
+  conjunto nuevo». Corrí Vitest yo mismo en la punta: **1063 passed / 6 failed**, un solo
+  fichero rojo, ese, exactamente esos seis. **B-12 queda retirada**; no entra en el
+  backlog. El error no costó nada y el diagnóstico del ejecutor era correcto en lo que
+  importaba —el rojo no es suyo—, pero un backlog con entradas fantasma es cómo una fase
+  tardía hereda trabajo inventado. **Nota de medición: esta corrida no tuvo ningún rojo
+  de B-05** (`CuentacuentoEditor.ph.*` en verde), primera vez en cuatro fases; B-05 sigue
+  siendo flake, no se toca.
+- **NITS, ninguno merece ronda de remediación** (SOP: solo BLOCKING la merece).
+  **N1** — la cabecera de `handler.ts:11–12` sigue diciendo «the only injected seam is
+  `pick`, which `shuffle` uses»: `shuffle` ya no se importa ahí. El ejecutor lo declaró
+  bajo NOT DONE. Dos líneas de comentario. **N2** — el renombrado de los goldens 5 y 6,
+  ya tratado arriba. **N3** — ajeno a P4: `docs/plan/upgrade/reviews/REVIEW-P1.md` lleva
+  **sin commitear** desde el 2026-08-08 en el worktree `casa-upgrade`. La review de Codex
+  de P1 no está en el repo. Es la cuarta vez que una review de Codex se queda sin
+  publicar (P2 sin push, P3a sin stagear, P3b fue la primera que salió sola); **hay que
+  recogerla aparte de esta fase.**
+- **SOBRE LOS CUATRO CAMPOS DE `SeatingPlan` EN VEZ DE DOS.** El ejecutor pidió
+  explícitamente que lo mirara. Lo apruebo y no es desviación: §3.2 del prompt dejaba la
+  forma abierta y E2 exige que **dos** crucen a `results`, cosa que se cumple —`dinners`
+  y `mainDishMoves` no salen en la respuesta HTTP. `dinners` es lo que vuelve
+  estructuralmente imposible el modo de fallo 1 (no hay dos listas que cruzar en el bucle
+  de escritura) y `mainDishMoves` es lo único con lo que los tests 4 y 5 pueden afirmar
+  «cuando ocurre un intercambio» en vez de suponerlo — mi mutación A lo confirma: sin él,
+  esos tests no distinguirían un rebalance ausente de un fixture sin déficit.
+- **LO QUE ME LLEVO DE ESTA RONDA.** El hallazgo reutilizable no es mío, es del ejecutor:
+  **aguas abajo de `planSeating` no se puede diseñar una fixture razonando**, porque el
+  reparto por ratio de llenado sobre el orden barajado decide quién cae dónde. Enumeró
+  los 256 repartos de willingness y encontró que 60 disparan swap. **P6, P7 y P8 deben
+  enumerar en lugar de trazar** cuando necesiten un escenario concreto; escribirlo aquí
+  para que el prompt de P6 lo lleve. Segunda: el prompt volvió a llevar la línea base por
+  fichero con mensajes crudos y los modos de fallo nombrados, y volvió a salir una ronda
+  sin redespachos. **Dos fases seguidas.**
+- COSTE DE LA FASE HASTA AQUÍ: **1 ronda de ejecutor, 1 verificación de PM, 0
+  redespachos, 0 rondas de remediación, 0 criterios congelados modificados.**
+- TESTS (PM): `deno test --allow-all --no-check .` → 456/0 · gate D8 4 ficheros → 0
+  nuevos · `npm run build` → 0 · `npx vitest run --no-file-parallelism` → 1063/6, los 6
+  de la línea base de D8.2 · 3 mutaciones → 3, 1 y 4 rojos respectivamente.
+- FINDINGS RAISED: BLOCKING **ninguno** · SHOULD-FIX **S1** (retirar B-12; es del ledger,
+  ya corregido en esta entrada) · NIT **N1, N2, N3**.
+- DECISIONS: (1) el borrado de `FOODS`/`referenceShuffle` **cabe en E6**, resuelto arriba,
+  sin enmienda al plan. (2) Los cuatro campos de `SeatingPlan` se aprueban. (3) N1 no
+  abre ronda; se recoge en la siguiente fase que toque `handler.ts` (P7).
+- BACKLOG: **B-12 retirada antes de existir.** B-08 y B-11 sin cambios, siguen fuera de
+  P4 por la decisión de la ronda de bootstrap. B-05 sin cambios (esta corrida salió
+  verde, sigue siendo flake). **B-06 hay que decidirlo antes de P8.** Nuevo apunte de
+  proceso, no de código: recuperar y commitear `REVIEW-P1.md` (N3).
+- OPEN AFTER THIS ROUND: (1) **revisión final de Codex** sobre `feat/mesa-md-wire` @
+  `0fad9ad` — los dos puntos donde quiero que discrepe si puede son la resolución de E6 y
+  si los tests 11–14 fijan identidades suficientes o solo recuentos; ya di mis tres
+  mutaciones, que pida una cuarta que yo no haya pensado. (2) Merge a `main` — decisión
+  de Brent, tras el PASS. (3) `main` local va **un commit por delante de `origin/main`**
+  desde el bootstrap: el push quedó bloqueado por el clasificador de permisos y sigue
+  pendiente. (4) Con P4 cerrada quedan desbloqueadas P5a, P6 y P7.
