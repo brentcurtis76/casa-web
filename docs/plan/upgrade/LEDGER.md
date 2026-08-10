@@ -3338,3 +3338,83 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   por delante de `origin/main`** desde el bootstrap: el push quedó bloqueado por el
   clasificador y sigue pendiente. (3) **Decidir B-13/N1** (dónde caen, si es que caen).
   (4) Después, `/pm-boot UPGRADE P5a` con contexto fresco — P4 desbloquea P5a, P6 y P7.
+
+### 2026-08-10 — P5a round 1 — PM (Opus 5) — BOOTSTRAP Y PROMPT
+- SESSION: UPGRADE · P5a · PM
+- CONTEXT PRESSURE: comfortable.
+- **FASE ELEGIDA: P5a.** P4 quedó DONE (`5ca9a10`, Codex PASS) y sus dependencias
+  (P1b, P4) están cerradas, así que P5a es la primera TODO ejecutable. Coincide con lo
+  que el propio cierre de P4 dejó escrito como paso (4).
+- **EL PLAN QUE ENCONTRÉ PRIMERO ESTABA OBSOLETO, Y CONVIENE ANOTARLO.** `casa-web`
+  está en `plan/bilingue` y su copia de `docs/plan/upgrade/` se queda en P3b: el índice
+  de fases marca P4 como TODO. El estado real vive en este worktree (`casa-upgrade`,
+  `feat/mesa-md-wire`), porque P4 aún no se ha mergeado. **UPGRADE no tiene fila en
+  `~/.claude/agent-workflow/workstreams.md`** —usa el layout de slug y resuelve sin
+  ella—, pero eso no basta: resuelve al directorio equivocado si la sesión arranca en
+  otro worktree. Es el mismo fallo que la nota de AUDIO documenta para su rama. Un PM
+  que hubiera leído la copia de `casa-web` habría concluido que P5a está bloqueada por
+  P4 y habría despachado la fase que no toca.
+- ACTION: leí el SOP (`~/.claude/agent-workflow/AGENT-WORKFLOW.md`; no hay copia en el
+  repo), PLAN, las 12 últimas entradas del LEDGER y `reviews/REVIEW-P4.md`. Medí la
+  línea base yo mismo en `casa-p2-review` @ `3851e40` (`main` limpio) en vez de heredar
+  cifras: gate D8 sobre los cuatro ficheros existentes de `F`, y la suite de Vitest
+  entera. Escribí `prompts/P5a-r1.md`.
+- **LÍNEA BASE MEDIDA, NO HEREDADA.** Vitest **1063 pasan / 6 fallan** (1069), y los 6
+  son exactamente los de `MesaAbiertaDashboard.test.tsx` — la base que declara D8.2.
+  Este worktree **no** reprodujo los 8 de `usePresentationState` (B-10) ni el flake de
+  `CuentacuentoEditor.ph.*` (B-05) que Codex vio en el suyo durante P4. Quinta fase
+  seguida en que la medición de Vitest depende del worktree: el objetivo de P5a se fija
+  en **1073/6 con el mismo conjunto rojo**, y la regla del commit padre (D8.2) queda
+  escrita en el prompt para lo demás. Gate D8: `MesaAbiertaSignup` 1 ESLint ·
+  `EditParticipantDialog` 1 tsc + 1 ESLint · `AddParticipantDialog` 1 tsc + 1 ESLint ·
+  `MesaAbiertaAdmin` 10 tsc + 14 ESLint. Todos preexistentes (B-08). Totales del
+  proyecto tsc=1039 eslint=161 deno-lint=92 deno-check=43.
+- **UN HALLAZGO DE LA MEDICIÓN QUE EL PROMPT CONVIERTE EN GUARDA.** Cinco de los diez
+  errores de `MesaAbiertaAdmin.tsx` son `SelectQueryError<"column 'email' does not
+  exist on 'mesa_abierta_participants'.">`: el `select` de `fetchParticipants` ya pide
+  una columna que `types.ts` no declara. P5a añade `can_bring_main_dish` **a ese mismo
+  `select`**. Como esa columna sí está en `types.ts` (líneas 139/158/177), los cinco
+  mensajes deben quedar idénticos carácter a carácter; si el texto cambia y pasa a
+  nombrar `can_bring_main_dish`, es diagnóstico nuevo (BLOCKING por D8.4) y significa
+  que `types.ts` discrepa del esquema vivo. El prompt lo declara BLOCKING de antemano y
+  prohíbe explícitamente parchear `types.ts` para taparlo. Es justo la clase de residuo
+  que Codex pidió declarar **antes** en el cierre de P4 (la pega que aceptó sobre E6).
+- **AVISO 1 DEL CIERRE DE P4 CUMPLIDO.** La polaridad va como §2 del prompt, con tabla
+  de verdad explícita, tres reformulaciones, un chequeo obligatorio antes del reporte
+  («busca la aserción que fija el defecto y confirma que afirma `true`») y una fila
+  propia en el formato del reporte. Es el fallo de esta fase: dos inversiones apiladas
+  sobre un valor por defecto, y diez tests verdes escritos con la misma inversión.
+- **AVISO 2 NO APLICA A P5a** (el contrato de `results.mainDishCoverage[]` es para P6,
+  P7 y P8). Queda pendiente para esos tres prompts.
+- **DOS RIESGOS REALES QUE MEDÍ Y QUE EL PLAN NO PODÍA SABER:**
+  (a) `src/test/setup.ts` mockea globalmente el cliente de Supabase, pero **no tiene
+  clave `functions`**, así que `supabase.functions.invoke` es `undefined` — el test 10
+  no arranca sin mock local; y su `single: vi.fn()` resuelve a `undefined`, así que
+  cualquier test que dispare un submit real revienta al desestructurar. Ambas cosas van
+  en el prompt con el patrón que sí funciona (`MesaAbiertaDashboard.test.tsx:1–52`).
+  (b) **Ningún test del repo ha manejado nunca un `Switch` de Radix.** Es el riesgo que
+  el plan anticipó. El prompt da el mecanismo (`role="switch"`, `aria-checked`,
+  `fireEvent` y no `userEvent`) y exige `id`/`htmlFor` **solo** en el switch nuevo,
+  porque los tres switches del paso 3 quedarían sin nombre accesible y el test tendría
+  que ir por índice.
+- DECISIONS: (1) Fijo la firma de `buildParticipantInsert` en el prompt como **suelo**,
+  no como corsé: el plan solo especifica F1 y cuatro tests puros sobre un único booleano
+  sobran, luego el builder construye la fila entera del signup. Se permite desviarse
+  declarándolo. (2) Prohíbo ensancharlo al diálogo de edición y al de admin: son un
+  `update` y un cuerpo de edge function, y unificarlos es refactor que esta fase no
+  compra. (3) `canBringMainDish` en camelCase y en positivo en el cuerpo de
+  `admin-add-participant`, porque P5b leerá exactamente eso (G2). (4) El prompt avisa de
+  los 27 ficheros duplicados `* 2.tsx` **trackeados** en git, incluido
+  `MesaAbiertaAdmin 2.tsx`; `vitest.config.ts` ya los excluye, pero un glob del ejecutor
+  no.
+- BACKLOG: sin cambios. **B-13 y N1 siguen sin dueño** — ninguna de las cuatro fases
+  restantes incluye `create-mesa-matches/handler.ts` en su `F`. Sigue siendo decisión de
+  Brent (recomendación de P4: ensanchar la `F` de P7). **B-06 hay que decidirlo antes de
+  P8.** N2 lo cierro en este commit: `reviews/REVIEW-P1.md` llevaba desde P1 sin
+  commitear en este worktree y entra aquí.
+- FINDINGS RAISED: ninguno contra el plan. P5a se ejecuta tal como está escrita.
+- OPEN AFTER THIS ROUND: (1) **`feat/mesa-md-wire` → `main` sigue sin mergear**, y P5a
+  no puede despacharse antes: el prompt aborta si `main` no marca P1b y P4 como DONE.
+  Este commit de bootstrap va en `feat/mesa-md-wire` a propósito, para que un solo merge
+  lleve P4 y el prompt de P5a juntos. Decisión de Brent. (2) `main` local sigue un commit
+  por delante de `origin/main`. (3) B-13/N1 sin decidir.
