@@ -2073,3 +2073,26 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - OPEN AFTER THIS ROUND: **ronda de remediación r2**, y **exige enmendar el plan primero**: hay que
   meter `smoke-local.spec.ts` en el alcance de `E3b`, que es un fichero de una fase DONE y pasada
   por Codex. Entrada de Decision Log incluida.
+
+### 2026-08-09 — plan round 21 — PM (Opus) — el humo entra en el alcance de `E3b` (D24)
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: enmienda del plan para desbloquear la r2 de `E3b`, por decisión de Brent sobre el
+  BLOCKING de la r1. **Opción elegida: acotar las aserciones del humo a su rango**, dentro de
+  `E3b`, con entrada de Decision Log (**D24**).
+- **POR QUÉ NO LAS OTRAS DOS:** `workers: 1` deja el humo tal como Codex lo aprobó pero enlentece
+  toda la suite e2e **y el problema volvería con el siguiente spec que siembre datos** — afirmar
+  estado global es incompatible con `fullyParallel` por construcción, no por accidente. Un hotfix
+  aparte contra `E-infra-impl` era más limpio en atribución pero añadía una ronda de ciclo sin
+  cambiar el arreglo.
+- CAMBIOS: Scope 8 → **9 ficheros**; sección nueva explicando por qué entra el noveno y **qué NO se
+  toca** (la guarda de tres capas vive en `playwright.config.ts`, `global-setup.ts` y `guard.ts`, no
+  en estas aserciones); Out of scope explícito de todo lo demás del humo; criterios **E3b.14** (la
+  suite entera verde) y **E3b.15** (el caso A de la guarda sigue saliendo ≠ 0, **demostrado, no
+  afirmado** — se toca un fichero de una fase cerrada con PASS y se prueba que lo que la cerró sigue
+  en pie). Criterios 13 → **15**. META a revisión 21.
+- **EL PROMPT DE LA r2 LLEVA UN CRITERIO QUE NO ESTÁ EN EL PLAN, y a propósito:** `A4` exige
+  demostrar que el humo **sigue cazando un entorno realmente sucio** tras acotarlo. Una aserción
+  estrechada que ya no puede fallar sería peor que el bug que arregla, y ése es el riesgo real de
+  esta enmienda.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: `/exec AUDIO E3b r2`. Prompt commiteado en `prompts/E3b-r2.md`.

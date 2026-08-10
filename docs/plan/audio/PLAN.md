@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 20**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 21**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -289,7 +289,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 20 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 21 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -1136,7 +1136,7 @@ hacia adelante. Para un catálogo que crece una vez por semana es un precio bajo
 falta paginación por número, será su propia unidad. *Y un episodio publicado con una fecha
 **anterior** al cursor sí aparecerá en una página posterior: es correcto y esperado, no un solape.*
 
-### Scope — 8 ficheros
+### Scope — 9 ficheros (el 9.º entra en la r21)
 
 1. `src/appRoutes.tsx` — dos rutas **públicas**, sin `ProtectedRoute` (el fichero es un array plano
    de `{ path, element }`; la catch-all `*` se queda al final).
@@ -1149,6 +1149,29 @@ falta paginación por número, será su propia unidad. *Y un episodio publicado 
 7. `tests/e2e/reflexiones.spec.ts` **(nuevo)** — anónimo, caso positivo y fixture de RLS.
 8. `tests/e2e/reflexiones-paginacion.spec.ts` **(nuevo)** — `E3b.2` y `E3b.3` contra PostgREST
    local. **Separado a propósito:** es el único que necesita 13 filas propias.
+9. **`tests/e2e/smoke-local.spec.ts` — añadido en la r21, y SÓLO las aserciones de sus pasos 1 y 7.**
+
+### El noveno fichero — por qué el humo entra (r21, D24)
+
+**La r1 dejó roja la suite completa y el defecto era del plan, no del ejecutor.** Reproducido por el
+PM: los tres specs juntos → **1 falla**, siempre el paso 1 del humo (*"El entorno está sucio"*); el
+humo **solo** → verde. El ejecutor honró la partición de ids al pie de la letra, **se negó a tocar
+el humo** porque estaba fuera de alcance, y escaló. Correcto.
+
+**La causa:** la partición de ids de la r20 venía de Codex r19/B3, que hablaba de **colisiones de
+limpieza**. Pero `smoke-local.spec.ts:126-129` no afirma sobre su rango — **afirma sobre la tabla
+entera** (`anon debería ver sólo el baseline publicado`). Partir los ids no arregla una aserción
+global, y con `fullyParallel: true` las 13 filas de paginación son visibles para el humo.
+
+**Qué se cambia, y sólo esto:** los pasos 1 y 7 pasan a afirmar **sobre los ids que el humo posee**
+—su fixture `…8000-…0001` y las dos filas del baseline `…9000-…010` y `…011`— en vez de sobre la
+tabla completa. La intención se conserva entera: el paso 1 sigue probando que `anon` ve la publicada
+y **no** la borrador (que es la RLS), y que su propio fixture aún no está; el paso 7 sigue probando
+que borró exactamente el suyo y dejó el baseline intacto.
+
+**Qué NO se toca, y es lo que importa:** la **guarda anti-producción de tres capas** vive en
+`playwright.config.ts`, `tests/e2e/global-setup.ts` y `tests/e2e/helpers/guard.ts`, **no** en estas
+aserciones. `E3b.15` lo demuestra en vez de afirmarlo.
 
 ### Out of scope
 
@@ -1160,6 +1183,9 @@ falta paginación por número, será su propia unidad. *Y un episodio publicado 
   vive dentro de la página del episodio. *Traducir `NotFound.tsx` va al backlog, no aquí.*
 - Buscador, filtros, reproductor avanzado, enlace público a la liturgia, paginación por número.
 - Tocar `publishService`, la migración de `slug` o el seed.
+- **De `smoke-local.spec.ts`, todo salvo las aserciones de los pasos 1 y 7.** Ni la guarda, ni el
+  viaje, ni el contrato de limpieza, ni `playwright.config.ts`, ni `tests/e2e/global-setup.ts`, ni
+  `tests/e2e/helpers/guard.ts`.
 
 ### Fixtures — qué prueba qué (reescrito tras Codex r18/B2 y B4)
 
@@ -1173,7 +1199,7 @@ en vivo entre sí. **Cada spec posee un bloque propio y enumerado, y su limpieza
 
 | Spec | Ids que posee |
 |---|---|
-| `smoke-local.spec.ts` (ya existe, no se toca) | `…8000-000000000001` |
+| `smoke-local.spec.ts` (sus aserciones se acotan en la r21) | `…8000-000000000001` |
 | `reflexiones-paginacion.spec.ts` | `…8000-000000000101` … `…8000-000000000113` (13, enumerados) |
 | `reflexiones.spec.ts` (fixture de RLS) | `…8000-000000000201` |
 
@@ -1230,6 +1256,12 @@ y portada, así que **su episodio de prueba tiene que traer los dos**. `E3b` no 
       mensaje en español; **nunca un spinner perpetuo ni una página en blanco**.
 - [ ] E3b.12 Español en todo texto visible (D14); sin PII de miembros (D13).
 - [ ] E3b.13 Gate D18 sobre los ficheros tocados, contra el **SHA padre anotado**. Build verde.
+- [ ] E3b.14 **La suite completa de Playwright, verde.** `npx playwright test` entero, con
+      `fullyParallel: true` puesto. Salida cruda. *Éste es el criterio que la r1 no cumplió y por el
+      que existe la r2.*
+- [ ] E3b.15 **La guarda anti-producción sigue mordiendo, demostrado y no afirmado:** el caso A de
+      `E-infra-impl` —URL productiva explícita— sigue saliendo con código ≠ 0. Salida cruda. *Se toca
+      un fichero de una fase cerrada con PASS de Codex; se prueba que lo que la cerró sigue en pie.*
 
 ### Test plan
 
@@ -1270,7 +1302,7 @@ npx playwright test tests/e2e/reflexiones.spec.ts tests/e2e/reflexiones-paginaci
 
 ### Definition of done
 
-E3b.1-E3b.13 con salida cruda, **las tres mutaciones en rojo**, gate D18 contra el SHA padre, build
+E3b.1-E3b.15 con salida cruda, **las tres mutaciones en rojo**, **la suite entera verde**, gate D18 contra el SHA padre, build
 verde, y el humo de `E-infra-impl` **sin modificar y verde**.
 
 ### Risks / unknowns
@@ -2208,6 +2240,7 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-09 | **El backfill histórico no aplica el tope de 5 intentos** | Asunción 3 del ejecutor, aceptada por PM y Codex: el tope pertenece al bucle del trigger en vivo. Tumbar una migración por un sexto episodio histórico en la misma fecha sería peor que emitir `-6`, que sigue siendo válido y cabe de sobra en el `CHECK` | Ejecutor / Codex |
 | 2026-08-09 | **`publishService` selecciona `slug` además de `title`** | Sin saber si la fila ya tiene slug, republicar mandaría una preferencia distinta de la asignada y el trigger respondería `23514`. Desviación 1 del ejecutor, aceptada | Ejecutor |
 | 2026-08-09 | **El guardia `existingEpisodeNumber === null` sale de la condición del reintento** | Decía que republicar un número conocido no puede competir consigo mismo: cierto para el número, falso para el slug desde que existe. Se conserva para decidir si recalcular el número. Es lo que exige «Concurrencia» punto 2 | Ejecutor / Codex |
+| 2026-08-09 | **`E3b` toca `smoke-local.spec.ts`, de la fase cerrada `E-infra-impl`** | La r1 dejó roja la suite: el humo **afirma sobre la tabla entera**, incompatible con `fullyParallel: true` en cuanto existe un segundo spec que siembra datos. Era correcto mientras el humo estaba solo. **Se acotan sus pasos 1 y 7 a los ids que posee**; la guarda de tres capas no se toca y `E3b.15` lo demuestra. Descartadas: `workers: 1` enlentece toda la suite y el problema volvería con el siguiente spec; un hotfix aparte añadía una ronda sin cambiar el arreglo. | Brent, sobre el BLOCKING del PM en `E3b` r1 |
 
 ---
 
