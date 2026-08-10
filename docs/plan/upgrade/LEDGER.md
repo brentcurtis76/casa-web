@@ -3242,3 +3242,99 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   de Brent, tras el PASS. (3) `main` local va **un commit por delante de `origin/main`**
   desde el bootstrap: el push quedó bloqueado por el clasificador de permisos y sigue
   pendiente. (4) Con P4 cerrada quedan desbloqueadas P5a, P6 y P7.
+
+### 2026-08-10 — P4 CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P4 · REVIEW
+- **VEREDICTO: PASS.** `feat/mesa-md-wire`, código en `0fad9ad`, review commiteada y
+  **publicada por Codex** en `5ca9a10`. **Cero BLOCKING, un SHOULD-FIX, dos NIT.**
+  **P4 queda DONE.** Es la primera fase del plan que **cambia conducta**, y salió en una
+  ronda de ejecutor, una verificación de PM y una revisión de Codex, sin redespachos ni
+  rondas de remediación — igual que P3b. **Dos fases seguidas al primer intento.**
+- LO QUE CODEX VERIFICÓ POR SU CUENTA, en worktrees limpios de punta y padre: los ocho
+  goldens protegidos **byte-idénticos** entre `3851e40` y `0fad9ad` (10 tests → 14) ·
+  E1–E5 uno a uno leyendo el código, no el reporte · Deno **456/0** · build exit 0 con
+  Node v22.22.0 y Deno 2.7.11 · gate D8 **en punta y en padre**, idéntico en ambos ·
+  `git diff --check` limpio · sin migración, SQL, deploy ni escritura a la base
+  compartida · PII: respuesta y `console.warn` solo con ids y números · **reprodujo mis
+  tres mutaciones** con los mismos recuentos (25/3, 27/1, 24/4).
+- **PEDÍ UNA CUARTA MUTACIÓN QUE YO NO HUBIERA PENSADO Y LA ENCONTRÓ. ES EL SHOULD-FIX.**
+  S1: cambiar `handler.ts:346` por `tablesWithShortfall: []` deja los 28 tests de
+  `create-mesa-matches` en **28/0**. Lo reproduje: 28/0. **Ningún test del handler ejerce
+  un déficit real que llegue hasta la respuesta HTTP, y el `console.warn` de D4 no lo
+  afirma nadie.** `matching_test.ts` sí cubre el cálculo (`reporta shortfall`); lo que
+  falta es el tramo del borde, justo el que P6, P7 y P8 van a consumir. No bloquea —el
+  código revisado es correcto— pero **es exactamente el hueco que mis tres mutaciones no
+  podían encontrar, porque las tres atacaban el motor y ninguna el borde.** Segunda fase
+  seguida en que la pregunta «nombra un cambio que estos tests no cacen» rinde más que
+  exhibir la mutación propia. Ya no es anécdota: **va como práctica fija en el prompt de
+  Codex de las fases que quedan.**
+- **CODEX AVALÓ MI RULING SOBRE E6, Y LE PUSO UNA PEGA QUE ACEPTO.** Confirmó que en el
+  padre `FOODS` y `referenceShuffle` solo alimentaban los goldens 5 y 6, y que borrarlos
+  es consecuencia necesaria de una modificación permitida. Su reparo: **esa excepción
+  debió incorporarse al plan o al prompt, no existir solo como ruling posterior.** Tiene
+  razón y es mío: escribí E6 en el prompt sin prever que la reescritura permitida mataría
+  helpers. **Lección para P6, la otra fase con extracción de bloques: cuando un criterio
+  prohíbe hunks fuera de una lista, hay que declarar de antemano qué pasa con el código
+  que la propia lista deja muerto.**
+- **B-11 SE CIERRA SIN HABERLA REPARADO, Y ESO VALIDA LA DECISIÓN DE BOOTSTRAP.** Codex
+  repitió sobre la punta de P4 la mutación que en P3b pasó inadvertida —los dos `shuffle`
+  iniciales por copias simples— y ahora **caen dos tests** (26/2): `el reequilibrio se
+  refleja en los invitados` y `se respeta el mínimo tras el reequilibrio`. Los seis tests
+  que P4 añadió afirman **identidades**, no recuentos, así que fijan el efecto observable
+  que los ocho de P3b dejaban suelto. Dejar B-11 fuera del alcance de P4 salió **gratis**:
+  el alcance propio de la fase la cerró. Marcada CERRADA en el backlog del PLAN.
+- **LA RETIRADA DE B-12 CONFIRMADA, Y EL ENTORNO VUELVE A SER LA ÚNICA SORPRESA.** Codex
+  midió Vitest **1055/14** en su worktree —los 6 de `MesaAbiertaDashboard` (base de D8.2)
+  más 8 de `usePresentationState` por `localStorage` ausente (B-10)— y el padre reprodujo
+  los 14 **más** un flake de `CuentacuentoEditor.ph.persist` (1054/15, B-05). Yo había
+  medido 1063/6 en otro worktree. Mismo commit, tres cifras distintas, **ningún rojo
+  atribuible a los cuatro ficheros de P4**. **Cuarta fase seguida en que las sorpresas de
+  medición son del entorno y los recuentos por fichero son lo único portable.** D8.5 lleva
+  cuatro fases teniendo razón; el 1063/6 que puse en mi verificación es una variante
+  válida del entorno, **no** una base portátil, y así queda anotado.
+- BACKLOG: **B-11 CERRADA.** **B-13 añadida** (el S1: el borde de `tablesWithShortfall`
+  sin test). **B-14 añadida** (asimetría de robustez: `mainDish.ts` acota su índice, el
+  `shuffle` heredado de `matching.ts` no; una `pick` de 999 revienta con `TypeError`. No
+  infringe D11 y Codex ni siquiera lo marcó como SHOULD-FIX). **B-12 sigue siendo un
+  número quemado**, retirado antes de existir; no se reutiliza. B-05, B-06, B-07, B-08,
+  B-09, B-10 sin cambios. **B-06 hay que decidirlo antes de P8.**
+- **B-13 NO TIENE DÓNDE CAER, Y ESO ES UNA DECISIÓN DE BRENT, NO MÍA.** Revisé el alcance
+  declarado de las cuatro fases que quedan: **ninguna incluye
+  `create-mesa-matches/handler.ts` ni `handler_test.ts` en su `F`** —P5a y P6 son
+  frontend, P5b es `admin-add-participant`, P7 son `mesaCopy.ts` y las dos funciones de
+  notificación, P8 es el dashboard—. Sin una decisión explícita, **B-13 y el comentario
+  obsoleto de `handler.ts:11` (N1) no los recoge nadie** y el workstream cierra con ese
+  residuo. Recomendación: **ensanchar la `F` de P7 con esos dos ficheros** —P7 ya es Deno,
+  ya tiene gate de `deno test` y ya toca la ruta de la comida—, lo que cuesta una fila de
+  Decision Log y ningún criterio nuevo. **No lo hago yo**: tocar el índice de fases de un
+  plan congelado es enmienda, y las enmiendas las aprueba Brent.
+- NITS de Codex: **N1** el encabezado de `handler.ts:11` sigue citando `shuffle`, ya
+  declarado y diferido; **N2** `REVIEW-P1.md` sigue sin commitear en el worktree
+  `casa-upgrade` — **cuarta review de Codex que no se publica sola** (P2 sin push, P3a sin
+  stagear, P3b la primera que salió sola, P4 también salió sola). El problema no es la
+  review de P4: es que la de **P1 nunca llegó al repo**. Recogerla es trabajo de un
+  minuto y ajeno a esta fase.
+- **§3.8.5 — P5a RELEÍDA A LA LUZ DE LO CONSTRUIDO. NINGUNA ENMIENDA, DOS AVISOS:**
+  - **P5a no toca nada de lo que P4 cambió.** Sus nueve ficheros son de `src/`; P4 no
+    modificó ni un fichero de frontend, así que la línea base de P5a es la misma que
+    tenía. F1–F8 siguen bien tal cual.
+  - **Aviso 1 — la polaridad se invierte dos veces y hay que decirlo en el prompt.** D2
+    guarda `can_bring_main_dish` en positivo, la UI lo presenta como exclusión y el switch
+    va **apagado por defecto**: apagado = `true` = puede traerlo. F1 y F3 ya lo dicen
+    («`true` con switch apagado», «inicializa el switch como el negado del campo»), pero
+    es el sitio evidente donde un ejecutor invierte un booleano y todos los tests siguen
+    verdes porque los escribió con la misma inversión. El prompt de P5a debe llevar la
+    tabla de verdad explícita.
+  - **Aviso 2 — el contrato que P6/P7/P8 heredan ya está fijado y conviene citarlo
+    literal.** `results.mainDishCoverage[]` = `{tableId, peopleCount,
+    requiredMainDishes, willingCarriers, mainDishCount, shortfall}` con `tableId` = id del
+    anfitrión; `results.tablesWithShortfall[]` = `{tableId, shortfall}`. `dinners` y
+    `mainDishMoves` **no cruzan** el borde HTTP. Codex confirmó que esa forma no estorba a
+    ninguna fase posterior. Va tal cual en los prompts de P6, P7 y P8 para que nadie lo
+    reconstruya leyendo.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-wire` a `main`** — decisión de
+  Brent. Fast-forward posible mientras `main` no se mueva; `main` está tomado por el
+  worktree `casa-p2-review`, así que va con `git -C`. (2) **`main` local sigue un commit
+  por delante de `origin/main`** desde el bootstrap: el push quedó bloqueado por el
+  clasificador y sigue pendiente. (3) **Decidir B-13/N1** (dónde caen, si es que caen).
+  (4) Después, `/pm-boot UPGRADE P5a` con contexto fresco — P4 desbloquea P5a, P6 y P7.
