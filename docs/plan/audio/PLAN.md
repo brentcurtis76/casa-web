@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 21**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 22**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -289,7 +289,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 21 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 22 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -1163,7 +1163,14 @@ limpieza**. Pero `smoke-local.spec.ts:126-129` no afirma sobre su rango — **af
 entera** (`anon debería ver sólo el baseline publicado`). Partir los ids no arregla una aserción
 global, y con `fullyParallel: true` las 13 filas de paginación son visibles para el humo.
 
-**Qué se cambia, y sólo esto:** los pasos 1 y 7 pasan a afirmar **sobre los ids que el humo posee**
+**AMPLIADO EN LA r22 — también el paso 5.** La r2 midió que `smoke-local.spec.ts:192-197` tiene
+**la misma construcción** que D24 quitó de los pasos 1 y 7: afirma sobre la tabla anon-visible
+entera. Pasa hoy sólo por temporización —el humo hace login y navega antes de llegar al paso 5, y
+para entonces el spec de paginación ya limpió—, y **el siguiente spec que siembre filas publicadas
+lo rompe otra vez**. Demostrado sembrando una fila vecina legítima fuera de los ids del humo: el
+paso 1 pasó y **el paso 5 falló**. Entra en la r3 con el mismo tratamiento.
+
+**Qué se cambia, y sólo esto:** los pasos 1, 5 y 7 pasan a afirmar **sobre los ids que el humo posee**
 —su fixture `…8000-…0001` y las dos filas del baseline `…9000-…010` y `…011`— en vez de sobre la
 tabla completa. La intención se conserva entera: el paso 1 sigue probando que `anon` ve la publicada
 y **no** la borrador (que es la RLS), y que su propio fixture aún no está; el paso 7 sigue probando
@@ -1256,9 +1263,11 @@ y portada, así que **su episodio de prueba tiene que traer los dos**. `E3b` no 
       mensaje en español; **nunca un spinner perpetuo ni una página en blanco**.
 - [ ] E3b.12 Español en todo texto visible (D14); sin PII de miembros (D13).
 - [ ] E3b.13 Gate D18 sobre los ficheros tocados, contra el **SHA padre anotado**. Build verde.
-- [ ] E3b.14 **La suite completa de Playwright, verde.** `npx playwright test` entero, con
-      `fullyParallel: true` puesto. Salida cruda. *Éste es el criterio que la r1 no cumplió y por el
-      que existe la r2.*
+- [ ] E3b.14 **`E3b` no añade ningún fallo a la suite** — *reescrito en la r22; ver abajo por qué
+      la redacción anterior era inalcanzable.* Dos medidas, con el mismo comando y el mismo día:
+      (a) los **tres specs que `E3b` toca** son verdes **juntos**, con `fullyParallel: true` puesto;
+      (b) el conjunto de fallos de `npx playwright test` entero es **subconjunto** del del SHA
+      padre. Salida cruda de las dos corridas, HEAD y padre.
 - [ ] E3b.15 **La guarda anti-producción sigue mordiendo, demostrado y no afirmado:** el caso A de
       `E-infra-impl` —URL productiva explícita— sigue saliendo con código ≠ 0. Salida cruda. *Se toca
       un fichero de una fase cerrada con PASS de Codex; se prueba que lo que la cerró sigue en pie.*
@@ -1302,7 +1311,7 @@ npx playwright test tests/e2e/reflexiones.spec.ts tests/e2e/reflexiones-paginaci
 
 ### Definition of done
 
-E3b.1-E3b.15 con salida cruda, **las tres mutaciones en rojo**, **la suite entera verde**, gate D18 contra el SHA padre, build
+E3b.1-E3b.15 con salida cruda, **las tres mutaciones en rojo**, **cero fallos añadidos a la suite**, gate D18 contra el SHA padre, build
 verde, y el humo de `E-infra-impl` **sin modificar y verde**.
 
 ### Risks / unknowns
@@ -2027,6 +2036,7 @@ resuelta antes del primer envío).
 
 | Item | Origen | Por qué no es fase |
 |---|---|---|
+| **La suite e2e está roja desde antes de `E3b`** | `E3b` r2, medido por el ejecutor y por el PM | Sobre el SHA padre `62e9158`, **sin una línea de `E3b`**, fallan `mesa-abierta-signup` (2), `rbac` (3) y `recorder` (1) de forma estable, más un conjunto `financial-*` que varía entre corridas. **Ninguno lee ni escribe `church_podcast_episodes`.** Es real y merece su propia unidad; no es de AUDIO |
 | **`src/pages/NotFound.tsx` está en inglés** | `E3b` r18 | `"Oops! Page not found"`, `"Return to Home"`. Viola D14 y es la catch-all de toda la app, así que traducirla toca a todo el mundo, no a `E3b`. `E3b.8` usa su propio estado en español y no la reutiliza |
 | **`DROP TRIGGER IF EXISTS` en la migración de `slug`** | `E3a` r1, NIT del PM y de Codex | Línea 138 de `20260808120000…`. Codex confirmó que en todo estado de upgrade soportado el trigger nuevo no puede existir y el statement es no-op, pero quitarlo encajaría mejor con la letra de D9 |
 | **El backfill numera desde 1 sobre `slug IS NULL`** | `E3a` r1, NIT del PM | En una reejecución parcial —columna ya presente con valores— la base podría chocar con un slug previo y el índice único, que se crea después, fallaría. Inalcanzable con migraciones versionadas |
@@ -2241,6 +2251,8 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-09 | **`publishService` selecciona `slug` además de `title`** | Sin saber si la fila ya tiene slug, republicar mandaría una preferencia distinta de la asignada y el trigger respondería `23514`. Desviación 1 del ejecutor, aceptada | Ejecutor |
 | 2026-08-09 | **El guardia `existingEpisodeNumber === null` sale de la condición del reintento** | Decía que republicar un número conocido no puede competir consigo mismo: cierto para el número, falso para el slug desde que existe. Se conserva para decidir si recalcular el número. Es lo que exige «Concurrencia» punto 2 | Ejecutor / Codex |
 | 2026-08-09 | **`E3b` toca `smoke-local.spec.ts`, de la fase cerrada `E-infra-impl`** | La r1 dejó roja la suite: el humo **afirma sobre la tabla entera**, incompatible con `fullyParallel: true` en cuanto existe un segundo spec que siembra datos. Era correcto mientras el humo estaba solo. **Se acotan sus pasos 1 y 7 a los ids que posee**; la guarda de tres capas no se toca y `E3b.15` lo demuestra. Descartadas: `workers: 1` enlentece toda la suite y el problema volvería con el siguiente spec; un hotfix aparte añadía una ronda sin cambiar el arreglo. | Brent, sobre el BLOCKING del PM en `E3b` r1 |
+| 2026-08-09 | **`E3b.14` se reescribe: de "suite verde" a "sin fallos añadidos"** | El PM escribió el criterio **sin medir la suite en el SHA padre**. Medido después por el ejecutor y reproducido por el PM: en `62e9158`, sin nada de `E3b`, la suite ya falla. "Verde" era inalcanzable por cualquier ronda de `E3b`. Lo que el BLOCKING de la r1 significaba de verdad —y sigue siendo cierto— es **que la fase no añada un fallo nuevo**, que es lo que ahora dice | Ejecutor `E3b` r2, aceptado por el PM |
+| 2026-08-09 | **D24 se amplía al paso 5 del humo** | Misma aserción sobre la tabla entera que los pasos 1 y 7. Pasa hoy sólo por temporización; el siguiente spec que siembre publicadas la rompe. Demostrada con una fila vecina, no supuesta | Ejecutor `E3b` r2 |
 
 ---
 

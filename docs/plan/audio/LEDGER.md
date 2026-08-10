@@ -2096,3 +2096,34 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   esta enmienda.
 - FINDINGS RAISED: ninguno.
 - OPEN AFTER THIS ROUND: `/exec AUDIO E3b r2`. Prompt commiteado en `prompts/E3b-r2.md`.
+
+### 2026-08-09 — E3b round 2 — EXEC (Opus) + verificación del PM
+- SESSION: `AUDIO · E3b · r2 · EXEC` (`e397057`), verificada por `AUDIO · E3a · PM`
+- STATUS: **FINDINGS**, y es la salida correcta. **1 fichero, +28/-6**, exactamente lo encargado.
+- **LO QUE HIZO, verificado por mí:** `IDS_QUE_POSEE` + `soloLosPropios()`, y los pasos 1 y 7
+  acotados a esos tres ids. Leí el diff entero: la intención se conserva —el paso 1 sigue probando
+  que `anon` ve la publicada y **no** la borrador, que es la RLS— y no toca ni la guarda ni el
+  viaje ni la limpieza.
+- **CORRIDO POR MÍ:** los tres specs juntos → **6 passed**; guarda caso A → **EXIT=1** con
+  `capa 1 … NO está en la lista blanca`; y **A4**: sembré una fila sucia **dentro** de los ids del
+  humo y el paso 1 acotado **la cazó** — la aserción estrechada no quedó desdentada, que era el
+  riesgo real de D24. Gate D18 base vs HEAD idéntico, build verde.
+- **[FINDING 1] ACEPTADO Y REPRODUCIDO — el criterio `E3b.14` lo escribí yo y era inalcanzable.**
+  Corrí la suite en el SHA padre `62e9158`, **sin una línea de `E3b`**: fallan
+  `mesa-abierta-signup` (2), `rbac` (3) y `recorder` (1) de forma estable. **"Suite completa verde"
+  no lo puede cumplir ninguna ronda de `E3b`.** Lo escribí sin medir la suite en el padre, después
+  de haber levantado un BLOCKING por rojez de suite. **Sexta vez que afirmo una propiedad sin
+  comprobarla.** El BLOCKING de la r1 seguía siendo correcto —`E3b` sí **añadía** un fallo nuevo—,
+  pero el criterio que redacté para arreglarlo pedía de más. Reescrito en la r22 a lo que la ronda
+  puede probar: **que la fase no añada fallos**, con el conjunto de HEAD subconjunto del del padre.
+- **[FINDING 2] ACEPTADO Y VERIFICADO — el paso 5 tiene el mismo defecto.**
+  `smoke-local.spec.ts:192-197` afirma sobre la tabla anon-visible entera, igual que los pasos 1 y
+  7 antes de D24. **Pasa hoy sólo por temporización.** El ejecutor lo demostró sembrando una fila
+  vecina legítima fuera de sus ids: el paso 1 pasó y **el paso 5 falló**. Lo leí y es exacto. **No
+  lo arregló, y correctamente**: el encargo decía pasos 1 y 7.
+- FINDINGS RAISED: los dos del ejecutor, ambos de plan. **Cero de código.**
+- PLAN (r22): `E3b.14` reescrito; **D24 ampliado al paso 5**; **backlog nuevo** con la rojez
+  preexistente de la suite (`mesa-abierta`, `rbac`, `recorder`, `financial-*`), que es real, no es
+  de AUDIO y merece su propia unidad; dos entradas de Decision Log; META a revisión 22.
+- OPEN AFTER THIS ROUND: `/exec AUDIO E3b r3` — **la última** del tope de §1.5. Cierra el paso 5 y
+  mide `E3b.14` como ahora está escrito.
