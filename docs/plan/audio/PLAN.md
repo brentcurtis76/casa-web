@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 19**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 20**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -289,7 +289,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 19 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 20 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -318,7 +318,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
-| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **CANDIDATA A CONGELAR — r19 tras el FAIL de Codex a la r18; pendiente de review.** Requiere `E3a` **mergeada** | E3a ✅, E-infra-impl ✅ |
+| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **✅ CONGELADA — r20, por la disposición §1.5 que el propio Codex prescribió. Ejecutable en cuanto `E3a` esté en `main`** | E3a ✅, E-infra-impl ✅ |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
 **`E-infra` se partió en la r14.** No fue una decisión nueva: Codex r10/S3 la había condicionado
@@ -387,7 +387,7 @@ al proyecto productivo. La E3b de la r9 habría mandado a un ejecutor a **crear 
 `draft` y `published` contra la base de producción**, que además es la compartida con Life OS.
 Eso no es un criterio flojo: es una instrucción peligrosa, y la escribí yo.
 
-**Por eso `E-infra` existe y por eso E3a/E3b no se congelan.**
+**Por eso `E-infra` existió, y por eso E3a y E3b no se congelaron entonces.** *(Histórico, de la r10. **Ya no gobierna:** `E3a` está DONE desde el 2026-08-09 y `E3b` es candidata a congelar. Codex r19/B4.)*
 
 ### Remedición del entorno (2026-08-08, `main @ 6d45f35a54bde0335d05ffd6943167cf25d0a09e`)
 
@@ -972,7 +972,7 @@ actuales**, en este orden:
 El backfill **no reproduce la derivación de TS** a propósito: duplicar el algoritmo crea dos
 fuentes que derivan. Los episodios históricos necesitan un slug **estable, único y válido**.
 
-### Scope — 7 ficheros
+### Scope — 8 ficheros
 
 1. La migración nueva.
 2. `src/lib/sermon-editor/slug.ts` **(nuevo)** — normalización pura, sin Supabase.
@@ -1091,7 +1091,9 @@ toca la superficie de `E3a`, y siguen siendo 62 migraciones. Codex r16/S3.)*
 la r10 y arrastraba cinco cosas que hoy son falsas o están resueltas. **Se corrigen aquí las
 cinco, y la única decisión de diseño nueva —la paginación— se toma, no se delega.**
 
-**Candidata a congelar. No congelada:** le falta review de plan.
+**CONGELADA en la r20.** Codex falló la r19 con 4 BLOCKING **mecánicos** y dictaminó que **no
+justifican otra ronda de diseño**: se aplican como enmiendas vinculantes previas a la ejecución,
+**sin r20 adversarial**. Las cuatro están aplicadas. Cambios a partir de aquí exigen Decision Log.
 
 ### Qué cambia respecto del borrador, y por qué
 
@@ -1134,7 +1136,7 @@ hacia adelante. Para un catálogo que crece una vez por semana es un precio bajo
 falta paginación por número, será su propia unidad. *Y un episodio publicado con una fecha
 **anterior** al cursor sí aparecerá en una página posterior: es correcto y esperado, no un solape.*
 
-### Scope — 7 ficheros
+### Scope — 8 ficheros
 
 1. `src/appRoutes.tsx` — dos rutas **públicas**, sin `ProtectedRoute` (el fichero es un array plano
    de `{ path, element }`; la catch-all `*` se queda al final).
@@ -1144,7 +1146,9 @@ falta paginación por número, será su propia unidad. *Y un episodio publicado 
    para que la paginación se pruebe sin montar componentes.
 5. `src/lib/reflexiones/__tests__/queries.test.ts` **(nuevo)**.
 6. `src/pages/__tests__/Reflexiones.test.tsx` **(nuevo)**.
-7. `tests/e2e/reflexiones.spec.ts` **(nuevo)**.
+7. `tests/e2e/reflexiones.spec.ts` **(nuevo)** — anónimo, caso positivo y fixture de RLS.
+8. `tests/e2e/reflexiones-paginacion.spec.ts` **(nuevo)** — `E3b.2` y `E3b.3` contra PostgREST
+   local. **Separado a propósito:** es el único que necesita 13 filas propias.
 
 ### Out of scope
 
@@ -1161,6 +1165,19 @@ falta paginación por número, será su propia unidad. *Y un episodio publicado 
 
 **Caso positivo:** la fila publicada del seed, rango `9000`, con `slug = reflexion-2026-01-04`.
 **No se toca.**
+
+**PARTICIÓN DE IDS ENTRE SPECS — obligatoria** (Codex r19/B3). `playwright.config.ts:47` tiene
+`fullyParallel: true`, así que dos specs que compartan el rango `8000` pueden borrarse los fixtures
+en vivo entre sí. **Cada spec posee un bloque propio y enumerado, y su limpieza borra sólo sus
+`id`, nunca el rango ni un prefijo:**
+
+| Spec | Ids que posee |
+|---|---|
+| `smoke-local.spec.ts` (ya existe, no se toca) | `…8000-000000000001` |
+| `reflexiones-paginacion.spec.ts` | `…8000-000000000101` … `…8000-000000000113` (13, enumerados) |
+| `reflexiones.spec.ts` (fixture de RLS) | `…8000-000000000201` |
+
+**Prohibido** un `DELETE` por rango o por prefijo `8000`: sólo por `id` exacto, uno a uno.
 
 **Caso negativo de RLS — hay que construirlo, y es propio del test (rango `8000`):**
 1. Se **publica** una fila, y el trigger de `E3a` le asigna slug.
@@ -1229,21 +1246,31 @@ y portada, así que **su episodio de prueba tiene que traer los dos**. `E3b` no 
 ```bash
 npx vitest run --no-file-parallelism src/lib/reflexiones src/pages
 supabase db reset
-npx playwright test tests/e2e/reflexiones.spec.ts
+npx playwright test tests/e2e/reflexiones.spec.ts tests/e2e/reflexiones-paginacion.spec.ts
 ```
 
-**Las dos mutaciones sólo mueren si el fixture las obliga, así que el fixture está congelado en
+**Las tres mutaciones sólo mueren si el fixture las obliga, así que el fixture está congelado en
 `E3b.3` y no queda a criterio del ejecutor** (Codex r18/«MUTATION RULING»):
-- **Quitar el desempate por `id`** muere porque hay `published_at` repetido cruzando la frontera de
-  página **y los `id` están desordenados respecto del orden de inserción**; sin eso el orden podría
-  salir bien por casualidad.
+- **Quitar el desempate por `id`.** *"Los `id` desordenados" NO basta* (Codex r19/B2): con
+  `02, 01, 03…13` la página 1 puede seguir llegando hasta `12` y la 2 devolver `13`, cada id una
+  sola vez, y la mutación sobrevive. **El arreglo exacto se congela así:**
+  - las **13 filas comparten el mismo `published_at`**, así que el orden depende **sólo** del
+    desempate;
+  - los 13 `id` se enumeran literalmente en el spec, en orden ascendente conocido;
+  - **se insertan con el que ordena ÚLTIMO primero** (`…0113`, luego `…0101`…`…0112`), para que el
+    orden físico no coincida con el de `id`;
+  - el test afirma **pertenencia Y orden exactos**: página 1 = `…0101`…`…0112` en ese orden,
+    página 2 = `…0113`. No "cada id aparece una vez".
+  - **Además, una aserción directa de cableado:** la consulta emite un segundo
+    `.order('id', { ascending: true })`, con su propia mutación. *Las dos juntas porque la primera
+    depende del orden físico que devuelva Postgres, y la segunda no.*
 - **Cambiar keyset por offset** muere porque la fila que se inserta entre páginas **ordena antes
   del cursor**; si ordenara después, el offset sobreviviría.
 - **Tercera:** cambiar `CANONICAL_ORIGIN` por otra cadena deja `E3b.10` rojo.
 
 ### Definition of done
 
-E3b.1-E3b.11 con salida cruda, las dos mutaciones en rojo, gate D18 contra el SHA padre, build
+E3b.1-E3b.13 con salida cruda, **las tres mutaciones en rojo**, gate D18 contra el SHA padre, build
 verde, y el humo de `E-infra-impl` **sin modificar y verde**.
 
 ### Risks / unknowns

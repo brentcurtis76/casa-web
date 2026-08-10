@@ -1880,3 +1880,44 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   fixtures nueva, precondición de merge nueva, META a revisión 19.
 - OPEN AFTER THIS ROUND: `CODEX REVIEW plan r19`. Y **el merge de `phase/E3a-slug` deja de ser
   opcional**: es precondición de la fase siguiente.
+
+### 2026-08-09 — CODEX REVIEW plan r19 → FAIL (4 BLOCKING mecánicos) — r20 y CONGELADO — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `e621d3c`, 4 BLOCKING, 0 SHOULD-FIX, 0 NIT. **Acepto los cuatro.**
+- **DISPOSICIÓN §1.5 — y la prescribe el propio Codex, no yo.** Su fallo dice literalmente que los
+  cuatro **no justifican otra ronda de diseño**, que se lleven como **enmiendas vinculantes previas
+  a la ejecución**, y que tras aplicarlas y mergear `E3a` la fase es ejecutable **sin r20
+  adversarial**. Aplicadas las cuatro, **`E3b` queda CONGELADA**. Brent puede revocarlo.
+- **VERIFICADO POR MÍ, los cuatro:**
+  - **B1 — confirmado y era grave por lo tonto.** Metí el spec de paginación en el test plan pero
+    **no en el Scope** (seguía diciendo 7 ficheros), **ni en el comando** (sólo corría
+    `reflexiones.spec.ts`) **ni en la DoD** (seguía pidiendo `E3b.1-E3b.11` y "las dos
+    mutaciones"). O sea: el criterio que existe para probar PostgREST **no formaba parte de la
+    definición de hecho**. Corregido a 8 ficheros, los dos specs en el comando, y `E3b.1-E3b.13`
+    con **tres** mutaciones.
+  - **B2 — confirmado, y el contraejemplo de Codex es correcto.** "Los `id` desordenados" no fuerza
+    nada: con `02, 01, 03…13` la página 1 llega igual hasta `12` y la 2 devuelve `13`, cada id una
+    vez, y quitar el desempate sobrevive. **Ahora el arreglo se congela entero**: las 13 filas
+    comparten `published_at`, los 13 `id` van enumerados, **se insertan con el que ordena último
+    primero**, y se afirma **pertenencia y orden exactos** — más una aserción directa de que la
+    consulta emite el segundo `.order('id')`, con su propia mutación, porque la primera depende del
+    orden físico que devuelva Postgres y la segunda no.
+  - **B3 — confirmado midiendo.** `playwright.config.ts:47` tiene **`fullyParallel: true`**, y mis
+    dos specs nuevos compartían el rango `8000` con el humo, que ya posee `…8000-…0001`. Bajo
+    paralelo, la limpieza de uno puede borrar el fixture vivo de otro. **Tabla de partición nueva**:
+    humo `…0001`, paginación `…0101`-`…0113`, RLS `…0201`, y **prohibido borrar por rango o
+    prefijo** — sólo por `id` exacto.
+  - **B4 — confirmado, tercer residuo de empalme.** La línea 390 seguía diciendo en presente *"por
+    eso E3a/E3b no se congelan"*. Marcada como histórica.
+- **PATRÓN QUE YA NO ES CASUALIDAD.** B5 en la r18, B5 en la r19 y B4 aquí son **lo mismo tres
+  veces**: reescribo una sección con precisión y dejo prosa vieja gobernando en otra parte del
+  documento. Y B1 es su pariente: añadí un criterio y un spec **sin propagarlos a Scope, comando y
+  DoD**. **El defecto no es de diseño, es de que empalmo un documento de 2400 líneas a mano y no
+  reviso los sitios que enmarcan lo que acabo de tocar.** Para la fase siguiente: al tocar un
+  criterio, releer Scope, comando de test y DoD **en la misma pasada**, y buscar el nombre de la
+  fase en todo el documento antes de commitear.
+- ESTADO: **`E3b` CONGELADA (r20).** 13 criterios, 8 ficheros, 3 mutaciones. META a revisión 20.
+- OPEN AFTER THIS ROUND:
+  1. **Merge de `phase/E3a-slug` a `main`** — ya no es sólo el cierre de `E3a`: es **precondición
+     fail-closed de `E3b`**, que para con `FINDINGS` si no la encuentra.
+  2. `/exec AUDIO E3b r1`, en cuanto 1 esté hecho.
