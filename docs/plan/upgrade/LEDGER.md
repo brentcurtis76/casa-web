@@ -3470,3 +3470,95 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `feat/mesa-md-form` y decidir el merge — de Brent. (3) **Al escribir el prompt de P5b,
   reemplazar el absoluto de Vitest por «SHA del padre + delta»**; si no, la próxima
   ronda repite mis tres corridas de diagnóstico.
+
+### 2026-08-10 — P5a round 1 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P5a · PM
+- CONTEXT PRESSURE: comfortable.
+- **VEREDICTO: FASE LIMPIA. CERO BLOCKING.** Un SHOULD-FIX (hueco de cobertura, no
+  defecto) y dos NIT. Lista para revisión final de Codex. **Tercera fase seguida que
+  sale al primer intento**, sin redespachos ni rondas de remediación.
+- **LO QUE VERIFIQUÉ YO, NO EL REPORTE:**
+  - **Diff leído entero**, no el resumen: los nueve ficheros de `F` y ninguno más.
+    Ningún `* 2.tsx`, ningún `types.ts`, ningún `supabase/functions/**`, ninguna
+    migración. `MesaAbiertaAdmin.tsx` recibe exactamente las dos ediciones de §3.5.
+  - **Vitest ejecutado por mí tres veces.** Punta: **1091/6** (1097) en la segunda
+    corrida, rojo único `MesaAbiertaDashboard.test.tsx`. Padre `62e9158` medido por mí
+    en `casa-p2-review`: **1080/7** (1087), rojos `MesaAbiertaDashboard` (6) +
+    `CuentacuentoEditor.f4.integration` (1, familia B-05). **Delta = 1097 − 1087 = +10
+    exacto.** Los diez tests nuevos corridos aislados: 10/10 en 2 s.
+  - **Gate D8 ejecutado por mí sobre las nueve rutas.** Reproduce el reporte. Cada
+    mensaje coincide carácter a carácter con la línea base de §6.2; solo se desplazan
+    líneas. **Los cinco `SelectQueryError` siguen nombrando `email`**, que era la guarda
+    que puse en §3.5. Los cinco ficheros nuevos a cero. Totales tsc=1039 eslint=161
+    deno-lint=92 deno-check=43, idénticos a §6.2.
+  - **`npm run build` → exit 0**, comprobado con el código de salida limpio.
+  - **La costura que ningún test cubre, leída a mano**: `fetchParticipants` hace
+    `{...participant}` sobre la fila seleccionada y `MesaAbiertaAdmin.tsx:1280` pasa el
+    objeto entero como `participant={editParticipant}`. El campo llega al diálogo. F3
+    se sostiene de punta a punta.
+- **MI LÍNEA BASE ABSOLUTA CADUCÓ Y EL EJECUTOR TIENE RAZÓN.** Puse 1073/6 midiendo
+  `main` @ `3851e40`; entre el bootstrap y la ejecución, `main` se tragó **dos** merges
+  —P4 (`949b40a`) y `phase/E3a-slug` (`62e9158`, otro workstream, ~18 tests—. Verifiqué
+  además que el merge de E3a **no tocó ninguno de los cuatro ficheros existentes de
+  `F`**, así que la línea base de diagnósticos de §6.2 sigue siendo válida como padre;
+  lo que caducó fue solo el recuento absoluto de Vitest. **Lección, y va a los prompts
+  de P5b, P6, P7 y P8: el absoluto de Vitest no es citable en un repo con tres
+  workstreams mergeando a `main`. Se cita el SHA del padre y el delta.** El ejecutor lo
+  levantó por su cuenta y pagó tres corridas de suite para demostrar que no había roto
+  nada. D8.5 lleva cinco fases teniendo razón.
+- **LA DESVIACIÓN ES CORRECTA Y ERA UN FALLO MÍO.** §3.1 prescribía `status: string` en
+  el tipo de retorno. El ejecutor lo estrechó a `status: 'pending'` porque el `string`
+  ancho rompe la sobrecarga de `.insert()` y mete un TS2769 nuevo en
+  `MesaAbiertaSignup.tsx`. **Lo corroboré sin editar código**: el propio
+  `EditParticipantDialog.tsx(104,11)` arrastra desde antes un
+  `TS2322: Type 'string' is not assignable to type '"pending" | "confirmed" |
+  "cancelled" | "waitlist"'` — misma tabla, misma columna, mismo mecanismo. Aplicar mi
+  firma al pie de la letra habría sido BLOCKING por D8.4. El ejecutor midió las dos
+  variantes con el gate antes de decidir y lo declaró. **Es el comportamiento correcto
+  ante un prompt equivocado**, y es la segunda vez en este plan que el detalle de tipos
+  de Supabase muerde: conviene que P5b, P6 y P8 no prescriban tipos de retorno que no
+  haya compilado alguien.
+- **PEDÍ UN CAMBIO QUE ESTOS DIEZ TESTS NO CACEN, Y LO ENCONTRÉ. ES EL SHOULD-FIX.**
+  Práctica fija desde P4. **S1: borrar `can_bring_main_dish` del `select` de
+  `fetchParticipants` deja los diez tests en 10/10.** Lo ejecuté como mutación real
+  sobre el árbol y lo revertí (árbol limpio, verificado). Ningún test monta
+  `MesaAbiertaAdmin`, así que la costura admin→diálogo no está cubierta por nada salvo
+  mi lectura. **El modo de fallo no es cosmético: sin ese campo el diálogo recibe
+  `undefined`, inicializa el switch apagado, y al guardar persiste
+  `can_bring_main_dish: true` — es decir, un admin que edite el teléfono de alguien
+  excluido lo vuelve a inscribir en el plato principal sin verlo.** Silencioso, y del
+  lado de la corrupción de datos.
+  **No se repara en P5a**: el plan fija el test plan de esta fase en diez tests y la
+  aritmética en `vitest +10`; añadir un onceavo es ensanchar una fase congelada, que es
+  justo cómo las fases se encarecen. **Va al backlog como B-15, y su sitio natural es
+  P6**, que ya tiene `MesaAbiertaAdmin.tsx` en su `F` y ya monta el panel para la
+  insignia de cobertura. Es el mismo patrón que el S1 de P4: el motor cubierto, el borde
+  no.
+- NITS: **N1** el reporte afirma «el padre es flaky y la punta no». La punta también
+  flakea: mi **primera** corrida de la punta dio 7 fallos (el séptimo, de la familia
+  B-05), la segunda 6. No cambia el veredicto —el extra reproduce en el padre y no
+  importa ningún fichero de `F`, que es lo que exige D8.2— pero la afirmación es más
+  fuerte que el dato. **N2** el resumen del paso 5 marca «No traeré el plato principal»
+  con el mismo icono `Check` verde que los demás renglones; es coherente con el patrón
+  que yo mismo prescribí (lista de «esto registramos»), pero un icono neutro leería
+  mejor. Cosmético, español correcto, D10 cumplido.
+- **LOS DIEZ TESTS SON FUERTES, LO COMPROBÉ LEYÉNDOLOS.** El test 3 compara la fila
+  entera con `toEqual`, así que un campo que el builder pierda falla ahí. El 8 re-renderiza
+  con **otro** participante y cubre `false`/`true`/`undefined` — caza el olvido del
+  `useEffect`, que era el fallo que anticipé en §3.3. El 9 y el 10 afirman las dos
+  polaridades y el 10 además exige que `cannotBringMainDish` y `can_bring_main_dish`
+  **no** estén en el cuerpo. Cero aserciones débiles. **La escotilla de §5 no se usó**:
+  el asistente monta en jsdom con solo `AuthContext` y `use-toast` mockeados, así que
+  5–7 son de fuerza completa. Primer test del repo que maneja un `Switch` de Radix.
+- ACCEPTANCE CRITERIA: **F1–F6 y F8 met**, verificados uno a uno contra el código.
+  **F7 met en el delta, no en el absoluto impreso** (+10 exacto contra el padre
+  re-medido; el 1073/6 era inalcanzable por el movimiento de `main`).
+- BACKLOG: **B-15 añadida** (S1: la costura `fetchParticipants`→`EditParticipantDialog`
+  sin test; recomendado a P6). B-13, N1 de P4 y B-14 **siguen sin dueño**. B-05 y B-10
+  sin cambios. **B-06 hay que decidirlo antes de P8.**
+- FINDINGS RAISED: ninguno contra el plan. P5a se ejecutó tal como está escrita.
+- OPEN AFTER THIS ROUND: (1) **Revisión final de Codex sobre `feat/mesa-md-form`**;
+  el prompt debe pedirle explícitamente que nombre un cambio que los diez tests no
+  cacen, y darle B-15 ya encontrada para que busque otro. (2) Merge de
+  `feat/mesa-md-form` a `main` — decisión de Brent, después del PASS. (3) B-13/B-14/N1
+  sin dueño; la recomendación de P4 sigue siendo ensanchar la `F` de P7.
