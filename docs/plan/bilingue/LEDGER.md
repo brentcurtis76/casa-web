@@ -283,3 +283,59 @@
   - Weakest points, named: D6.10(b) neutrality read is not script-closable; the `(field, kind)`
     coverage enumeration is new, load-bearing across four phases, and has never been run.
   - Blocking on Brent, carried to D6: default English Bible translation; English liturgical texts.
+
+### 2026-08-10 — plan round 5 — PM (triage; third FAIL, second time past the §1.5 cap)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~15 min (triage only; no draft 4 — decision is Brent's)
+- STAGE: triage + root-cause 15m | rewrite 0m | fresh review 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — Codex FAIL on draft 3 (`eaed6f5`), 7 BLOCKING · 1 SHOULD-FIX · 0 NIT.
+  Review at `reviews/BILINGUE-PLAN-review-4.md`. Trajectory across the workstream:
+  **11 → 10 → 8 → 7 BLOCKING.** All findings valid each time.
+- CONTEXT PRESSURE: comfortable
+- ACTION: root-caused the recurring failure. Wrote no draft 4.
+- COMMITS: ledger + review only; `PLAN.md` stays at draft 3 (`eaed6f5`)
+
+- **ROOT CAUSE FOUND, AND IT IS THE INSTRUMENT, NOT THE JUDGEMENT.**
+  `grep` and `find` resolve to **shell functions** injected by
+  `~/.claude/shell-snapshots/snapshot-zsh-*.sh` in this session — not to `/usr/bin/grep` and
+  `/usr/bin/find`. The wrappers change the answer. Measured with the real binaries:
+
+  | command | `LC_ALL=C` | `LC_ALL=en_US.UTF-8` |
+  |---|---|---|
+  | `/usr/bin/grep -cE '[áéíóúñüÁÉÍÓÚÑÜ¿¡]' CuentacuentoEditor.tsx` | **601** | **596** |
+
+  Identical in zsh and bash. **Both numbers are correct; locale is the variable — exactly what
+  the reviewer said.** My "five methods all agree at 596" was an artifact of the wrapper.
+  `find -regex '.* [0-9]\.tsx?'` likewise returns 18 through the wrapper and **0** through
+  `/usr/bin/find` in both shells; `find -E` returns 18 everywhere.
+  **I published three different wrong diagnoses of the same 8-file discrepancy** — first the
+  regex dialect, then bash-vs-zsh, then implicitly a PATH difference — because my measurements
+  were never reproducible outside this harness and I kept defending them as if they were.
+- **SECOND ROOT CAUSE: commands written into the plan were not executed.** Each was one run from
+  being right — Appendix V4 returns **8** JSONB columns, not the 4 D2d scopes; V5's literal query
+  returns **19** rows, not 15 (15 needs an unstated `min(depth)` reduction); V2/V3 return
+  `count(distinct path)` only, so the `(path, kind)` fixture D2b/D2c require **cannot be built
+  from the query the plan supplies**; V6's 166-file census has no command in the appendix at all.
+- **ALL SEVEN BLOCKING ACCEPTED.** [D3-B1] D-J is half-implemented — seven criteria say "by a
+  recorded command" without supplying one, which is the unreviewed-assertion problem D-J exists to
+  remove. [D3-B3] "kind" is undefined: raw `tipo` gives 1,205 slides pairs, collapsing custom
+  UUIDs to `customType` gives 617, and 617 still merges the two structurally distinct untyped
+  rows; D2b also depends on D2a while needing D2c's taxonomy. [D3-B4] the supplied grep matches
+  unrelated `prayer-response`/`liturgy-response` rather than the `CustomElementSubtype`
+  declaration. [D3-B5] D3 runs its verifier *before* the manual MCP cross-check it must validate,
+  and D6.6 applies MCP refresh to filesystem fixtures, which is impossible. [D3-B6] D2d's
+  four-column scope is not what V4 returns. [D3-B7] D3 consumes D5's closure without depending on
+  D5 — the same dependency bug as D3/D4, one phase over.
+- SETTLED BY THE REVIEWER: D-I is a real gate; D4→D3 with an explicit hand-off is correct;
+  Definition of done and Rollback present on all nine phases; structural neutrality plus a human
+  read is an acceptable contract; the discovery-only boundary remains sound.
+- DECISIONS: two process fixes recorded to memory, both mechanical and both bigger than BILINGUE —
+  (1) every count in a plan must be taken with the absolute binary path and a pinned locale, and
+  the invocation recorded verbatim; when a reviewer's number disagrees, suspect the instrument
+  before defending the number. (2) every command written into a plan must be **executed** and its
+  real output pasted before the plan ships.
+- OPEN AFTER THIS ROUND: **Brent decides, second time past the cap.** Draft 4 under the two process
+  fixes, or freeze a repaired D1 alone and convert the deadlock into execution. `PLAN.md` is not
+  frozen and no phase may start.
