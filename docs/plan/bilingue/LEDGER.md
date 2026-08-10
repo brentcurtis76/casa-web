@@ -142,3 +142,66 @@
     content; the Bible redistribution rights position.
   - Blocking on Brent, carried to D6: default English Bible translation; English liturgical texts
     for the six canonical elements.
+
+### 2026-08-10 — plan round 3 — PM (triage; loop cap reached)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min (triage + verification only; no rewrite — decision is Brent's)
+- STAGE: triage + independent verification 20m | rewrite 0m | fresh review 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** — Codex FAIL on draft 2 (`98ab364`), 8 BLOCKING · 3 SHOULD-FIX · 0 NIT.
+  **SOP §1.5 cap reached (2 Codex rounds). Decision goes to Brent: accept / re-plan / backlog.**
+- CONTEXT PRESSURE: comfortable
+- ACTION: verified the disputed and cheap-to-check findings; wrote no draft 3. Per SOP §3.9 the
+  amendment is proposed, not applied, until Brent approves.
+- COMMITS: ledger only; `PLAN.md` remains at draft 2 (`98ab364`)
+
+- **I WAS WRONG TO CONTRADICT THE REVIEWER ON [B1], AND THE CAUSE MATTERS.**
+  Round 2 I recorded that the reviewer's diagnosis was wrong because
+  `find src -regex '.* [0-9]\.tsx?'` returned 18 for me. It does — **under zsh**, which is what
+  this session's shell runs. Under `bash`, which is what the script's shebang selects, the same
+  command returns **0**; `find -E` returns 18. The reviewer was right and I generalised a result
+  from one shell to all shells. That is the same error class as the finding itself — an
+  unreproducible result asserted as universal — committed while correcting it.
+- **The 596 vs 601 disagreement does not resolve, and that is the real finding.** My 596 is stable
+  across `grep -c`, `grep | wc -l`, `LC_ALL=C`, `LC_ALL=en_US.UTF-8`, and a widened character class;
+  no decomposed/combining accents are present; total non-ASCII lines are 683. The reviewer's 601
+  sits between the two, so their class is wider than mine and narrower than all non-ASCII, but I
+  cannot reproduce it. **Two parties cannot reproduce each other's census — which is exactly the
+  problem the census exists to solve.** This is a stronger argument for [R2-S1] (freeze the method
+  at byte level: character class, locale, shell, tokenisation) than either number is for itself.
+- **[R2-B1] confirmed and it is the fourth inventory fact I asserted without checking.**
+  `blank-slide` is a fully supported custom subtype — `types/shared/liturgy.ts`,
+  `CustomElementPicker`, `CustomElementEditor`, `customElementToSlides.ts`, `exportService.ts`,
+  `ConstructorLiturgias.tsx` and its test — with **zero production rows**. Declared-literal counts:
+  `call-response` 16, `title-slide` 12, `blank-slide` 12, `text-slide` 11, `image-slide` 11.
+  My "five shapes" came from data alone and missed the code-only sixth.
+- **[R2-B7] confirmed — a mechanical regression I introduced.** The rewrite dropped
+  **Definition of done** and **Rollback** from D2a, D2b, D2c, D3, D4 and D5, and Rollback from D6.
+  Draft 1 had them; the SOP §2.1 skeleton requires them.
+- **[R2-B6] confirmed — I added the D3/D4 dependency in the wrong direction.** Responding to [S3] I
+  made D4 depend on D3. It is backwards: D3's dataflow audit must *consume* D4's asset inventory,
+  so D4 precedes D3.
+- **[R2-B3] and [R2-B8] confirmed against my own document.** I rewrote D-C to promise only what each
+  mechanism can do, then left D3.10 ("shell verifier reads live PII") and D5's test plan ("re-runs
+  live counts") violating it. And several "Verified current state" rows cite `find` / `count(*)` /
+  "recursive CTE recorded in D5" rather than the exact command D-B demands.
+- **[R2-B2] [R2-B4] [R2-B5] accepted on reading.** Field/path dispositions need `(path, kind)`
+  resolution via explicit default + exceptions; D6 can pass against stale fixtures without a
+  provenance and refresh requirement; `BLOCKS-D6` is circular while executors choose whether to
+  apply the label.
+
+- **PATTERN, STATED PLAINLY:** across three drafts I have asserted an inventory fact without
+  checking it four times — `custom-*` homogeneity, the `find -regex` behaviour, D-C's consistency
+  with its own phase test plans, and the code-declared custom subtypes. Each was caught by one
+  command. Another draft written the same way will produce a fifth. The proposed amendment is
+  therefore structural, not another pass: **the plan should stop asserting inventory facts beyond
+  what is needed to size a phase, and convert them into acceptance criteria that require the
+  executor to derive them.** A plan that asserts less cannot be wrong in this way.
+- WHAT IS *NOT* WRONG: the reviewer states twice that the discovery-only boundary is sound and that
+  no new top-level phase is required. All eight findings are repairs inside the existing eight
+  phases. This is a materially different position from `PLAN-BILINGUE.md`, which needed 11 missing
+  phases and had two frozen decisions disputed.
+- OPEN AFTER THIS ROUND: **Brent decides** — accept draft 2 with the eight findings as D1's opening
+  corrections; approve a targeted draft 3 (SOP §1.5 override, logged); or backlog BILINGUE.
+  `PLAN.md` is not frozen and no phase may start until he does.
