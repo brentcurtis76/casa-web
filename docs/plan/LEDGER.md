@@ -4259,3 +4259,33 @@ starts truthful, not complete.
   contamination is low — but the rule was broken in the first round and that is on the PM.
 - BACKLOG ADDED: S1, S2, S3, PDR1f strengthening; generate-story prompt constants (:637, :709).
 - OPEN AFTER THIS ROUND: Codex cross-family review = the comparable data point.
+
+### 2026-08-10 — PD-REFINE CIERRE — Codex PASS a la primera; primer dato comparable del piloto
+- **FIRST-PASS: YES — Codex PASS on round 1, zero BLOCKING. Baseline was 1/10 phases.**
+  This is the like-for-like measurement; the 1/10 baseline counts Codex reviews.
+- CODEX VERDICT: PASS · 0 BLOCKING · 1 SHOULD-FIX · 0 NITS. Verified independently: no DDL,
+  moved bodies compared mechanically, every prior `generate-story` export retained, authz/body/
+  provider ordering inspected, 482/0 on deno 2.7.11, own mutation testing across strict mode,
+  refusal handling, shared scene validation, structural 502 mapping and authz ordering. It also
+  checked the tool schema against LIVE Anthropic docs and confirmed top-level `strict: true`,
+  optional properties, Opus 5 support and the refusal/max_tokens exceptions as implemented —
+  something C3 explicitly could not do.
+- **CONFOUND RESULT (the reason C3's findings were withheld from Codex):** Codex's findings are a
+  STRICT SUBSET of C3's. Both converged independently on PDR1f as the single weak test, both by
+  mutation testing. Codex missed [S2] (the Spanish copy is generate-story's verbatim — "generar",
+  "las notas" — on a surface that refines and whose input is `feedback`) and [S3] (shared comment
+  claims a single source of truth that generate-story:637/:709 still violates), and did not raise
+  [S1]. On this phase, cross-family review caught NOTHING that a fresh same-family context did not,
+  except the live-docs check.
+  PM CAVEAT: the Codex prompt stated the regression decision was already made. It explicitly
+  invited comment on the handling (which is [S1]), so the door was open — but suppression of [S1]
+  cannot be ruled out. [S2] and [S3] had no such excuse. n=1; do not generalise yet.
+- CONVERGENT FINDING, now high-confidence: PDR1f is weak. It asserts literal substrings in the
+  outgoing bytes and rejects stale ranges, but cannot detect identical hardcoded values severing
+  the shared constants. Production code satisfies A4; the test does not pin it.
+- DECISIONS: PD-REFINE closes. SHOULD-FIX → backlog per §1.4, no remediation round.
+- BACKLOG ADDED: PDR1f source-linkage assertion (both reviewers); S1 retry copy; S2 refine-specific
+  Spanish messages; S3 narrow the shared comment; generate-story prompt constants (:637, :709);
+  refine-children-lesson same prose-JSON shape.
+- OPEN: merge is Brent's. Pilot phase 2 must exercise the PLANNING loop — C2 and C3 touch only
+  execution, and PD-REFINE reused a plan frozen months ago.
