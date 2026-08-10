@@ -3,9 +3,11 @@
 // es decir `can_bring_main_dish: true` (D2).
 
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { MesaAbiertaSignup } from '../MesaAbiertaSignup';
+
+const participantInserts: Array<Record<string, unknown>> = [];
 
 vi.mock('@/components/auth/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'test-user-id', email: 'test@example.com' } }),
@@ -13,6 +15,39 @@ vi.mock('@/components/auth/AuthContext', () => ({
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
+}));
+
+// El mock global de `src/test/setup.ts` devuelve `undefined` de los terminadores,
+// así que `const { data } = await …single()` revienta. Éste sí resuelve, y captura
+// la fila que el asistente manda a `.insert()`.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: (table: string) => ({
+      // Comprobación de inscripción previa: nunca hay una.
+      select: () => ({
+        eq: () => ({
+          eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
+        }),
+      }),
+      // `profiles`: actualización del nombre.
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      insert: (payload: Record<string, unknown>) => {
+        if (table === 'mesa_abierta_participants') {
+          participantInserts.push(payload);
+          return {
+            select: () => ({
+              single: () =>
+                Promise.resolve({ data: { id: 'participante-1' }, error: null }),
+            }),
+          };
+        }
+        // `mesa_abierta_dietary_restrictions` se espera directamente.
+        return Promise.resolve({ error: null });
+      },
+    }),
+    auth: {},
+    functions: { invoke: () => Promise.resolve({ data: null, error: null }) },
+  },
 }));
 
 const mainDishSwitch = () =>
@@ -44,6 +79,13 @@ function advanceToStep5() {
   expect(screen.getByText('¡Casi listo!')).toBeInTheDocument();
 }
 
+/** Pulsa «Completar Inscripción» y espera a que la fila llegue al `.insert()`. */
+async function submitAndCaptureInsert() {
+  fireEvent.click(screen.getByRole('button', { name: /Completar Inscripción/i }));
+  await waitFor(() => expect(participantInserts).toHaveLength(1));
+  return participantInserts[0];
+}
+
 describe('MesaAbiertaSignup — plato principal', () => {
   it('el switch aparece en el paso 3 y está apagado por defecto', () => {
     advanceToStep3();
@@ -72,5 +114,33 @@ describe('MesaAbiertaSignup — plato principal', () => {
     advanceToStep5();
 
     expect(screen.getByText('No traeré el plato principal')).toBeInTheDocument();
+  });
+
+  // El resumen puede acertar mientras la fila miente: lo único que la base ve es
+  // el `.insert()`. Este test lo mira directamente, en las dos polaridades.
+  it('el estado del switch llega al insert', async () => {
+    participantInserts.length = 0;
+
+    // Sin tocar el switch ⇒ el miembro conserva la capacidad (D2).
+    advanceToStep3();
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'false');
+    advanceToStep5();
+
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      can_bring_main_dish: true,
+    });
+
+    cleanup();
+    participantInserts.length = 0;
+
+    // Con el switch encendido ⇒ la exclusión tiene que llegar a la fila.
+    advanceToStep3();
+    fireEvent.click(mainDishSwitch());
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'true');
+    advanceToStep5();
+
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      can_bring_main_dish: false,
+    });
   });
 });

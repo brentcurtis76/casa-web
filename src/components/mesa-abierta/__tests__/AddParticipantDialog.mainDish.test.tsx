@@ -71,4 +71,21 @@ describe('AddParticipantDialog — plato principal', () => {
     const bodyOn = await submitWithName();
     expect(bodyOn.body).toMatchObject({ canBringMainDish: false });
   });
+
+  // El diálogo no se desmonta entre altas: si `resetForm` no apaga el switch, la
+  // exclusión de un participante se filtra al siguiente que el admin agregue.
+  it('resetForm devuelve el switch a apagado', async () => {
+    renderDialog();
+
+    const zwitch = () =>
+      screen.getByRole('switch', { name: /No puedo traer el plato principal/i });
+
+    fireEvent.click(zwitch());
+    expect(zwitch()).toHaveAttribute('aria-checked', 'true');
+
+    const body = await submitWithName();
+    expect(body.body).toMatchObject({ canBringMainDish: false });
+
+    await waitFor(() => expect(zwitch()).toHaveAttribute('aria-checked', 'false'));
+  });
 });
