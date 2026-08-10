@@ -57,6 +57,7 @@ interface Participant {
   mesa_abierta_dietary_restrictions?: DietaryRestriction[];
   full_name?: string;
   email?: string;
+  can_bring_main_dish?: boolean;
 }
 
 interface MatchResult {
@@ -234,7 +235,8 @@ export const MesaAbiertaAdmin = () => {
         phone_number,
         host_address,
         host_max_guests,
-        plus_one_name
+        plus_one_name,
+        can_bring_main_dish
       `)
       .eq('month_id', monthId)
       .order('created_at', { ascending: false });

@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { buildParticipantInsert } from "@/lib/mesa-abierta/participantPayload";
 import { DietaryRestrictionsForm, DietaryRestriction, PlusOneDietary } from "./DietaryRestrictionsForm";
 import { WhatsAppOptIn } from "./WhatsAppOptIn";
 import { Home, Users, Check, ArrowLeft, ArrowRight, AlertCircle, CheckCircle, Mail } from "lucide-react";
@@ -42,6 +43,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
   const [plusOneDietary, setPlusOneDietary] = useState<PlusOneDietary | undefined>();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
+  const [cannotBringMainDish, setCannotBringMainDish] = useState(false);
 
   const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
@@ -108,20 +110,20 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
       // Insert participant record
       const { data: participant, error: participantError } = await supabase
         .from('mesa_abierta_participants')
-        .insert({
-          user_id: user.id,
-          month_id: monthId,
-          role_preference: rolePreference,
-          email: email,
-          has_plus_one: hasPlusOne,
-          plus_one_name: plusOneDietary?.name || null,
+        .insert(buildParticipantInsert({
+          userId: user.id,
+          monthId,
+          rolePreference,
+          email,
+          hasPlusOne,
+          plusOneName: plusOneDietary?.name || null,
           recurring,
-          host_address: rolePreference === 'host' ? hostAddress : null,
-          host_max_guests: rolePreference === 'host' ? maxGuests : null,
-          phone_number: phoneNumber || null,
-          whatsapp_enabled: whatsappEnabled,
-          status: 'pending',
-        })
+          hostAddress,
+          maxGuests,
+          phoneNumber,
+          whatsappEnabled,
+          cannotBringMainDish,
+        }))
         .select()
         .single();
 
@@ -367,6 +369,22 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                   onCheckedChange={setRecurring}
                 />
               </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="cannot-bring-main-dish">
+                    No puedo traer el plato principal
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Te asignaremos ensalada, bebidas o postre en su lugar
+                  </p>
+                </div>
+                <Switch
+                  id="cannot-bring-main-dish"
+                  checked={cannotBringMainDish}
+                  onCheckedChange={setCannotBringMainDish}
+                />
+              </div>
             </div>
           </div>
         );
@@ -418,6 +436,14 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
                   <Check className="h-5 w-5 text-green-600 mt-0.5" />
                   <div>
                     <p className="font-semibold">Con acompañante (+1)</p>
+                  </div>
+                </div>
+              )}
+              {cannotBringMainDish && (
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">No traeré el plato principal</p>
                   </div>
                 </div>
               )}

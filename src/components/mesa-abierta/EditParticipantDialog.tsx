@@ -30,6 +30,7 @@ interface Participant {
   host_max_guests?: number;
   plus_one_name?: string;
   email?: string;
+  can_bring_main_dish?: boolean;
   mesa_abierta_dietary_restrictions?: DietaryRestriction[];
   full_name?: string;
 }
@@ -57,6 +58,8 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
   const [hostAddress, setHostAddress] = useState(participant.host_address || '');
   const [maxGuests, setMaxGuests] = useState(participant.host_max_guests || 5);
   const [status, setStatus] = useState(participant.status);
+  // `undefined` (filas anteriores a la columna) significa "sí puede traerlo": switch apagado.
+  const [cannotBringMainDish, setCannotBringMainDish] = useState(participant.can_bring_main_dish === false);
 
   // Reset form when participant changes
   useEffect(() => {
@@ -69,6 +72,7 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
     setHostAddress(participant.host_address || '');
     setMaxGuests(participant.host_max_guests || 5);
     setStatus(participant.status);
+    setCannotBringMainDish(participant.can_bring_main_dish === false);
   }, [participant]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -98,6 +102,7 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
           host_max_guests: rolePreference === 'host' ? maxGuests : null,
           phone_number: phoneNumber || null,
           status: status,
+          can_bring_main_dish: !cannotBringMainDish,
         })
         .eq('id', participant.id);
 
@@ -254,6 +259,23 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
             <Switch
               checked={hasPlusOne}
               onCheckedChange={setHasPlusOne}
+            />
+          </div>
+
+          {/* Main dish opt-out */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-cannot-bring-main-dish">
+                No puedo traer el plato principal
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Te asignaremos ensalada, bebidas o postre en su lugar
+              </p>
+            </div>
+            <Switch
+              id="edit-cannot-bring-main-dish"
+              checked={cannotBringMainDish}
+              onCheckedChange={setCannotBringMainDish}
             />
           </div>
 

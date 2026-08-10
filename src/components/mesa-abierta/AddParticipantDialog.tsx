@@ -31,6 +31,7 @@ export function AddParticipantDialog({ open, onClose, onSuccess, monthId }: AddP
   const [hostAddress, setHostAddress] = useState('');
   const [maxGuests, setMaxGuests] = useState(5);
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
+  const [cannotBringMainDish, setCannotBringMainDish] = useState(false);
 
   const resetForm = () => {
     setFullName('');
@@ -42,6 +43,7 @@ export function AddParticipantDialog({ open, onClose, onSuccess, monthId }: AddP
     setHostAddress('');
     setMaxGuests(5);
     setWhatsappEnabled(true);
+    setCannotBringMainDish(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -132,6 +134,7 @@ export function AddParticipantDialog({ open, onClose, onSuccess, monthId }: AddP
           hostAddress: rolePreference === 'host' ? hostAddress : null,
           hostMaxGuests: rolePreference === 'host' ? maxGuests : null,
           whatsappEnabled,
+          canBringMainDish: !cannotBringMainDish,
         },
       });
 
@@ -264,6 +267,23 @@ export function AddParticipantDialog({ open, onClose, onSuccess, monthId }: AddP
             <Switch
               checked={hasPlusOne}
               onCheckedChange={setHasPlusOne}
+            />
+          </div>
+
+          {/* Main dish opt-out */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="add-cannot-bring-main-dish">
+                No puedo traer el plato principal
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Te asignaremos ensalada, bebidas o postre en su lugar
+              </p>
+            </div>
+            <Switch
+              id="add-cannot-bring-main-dish"
+              checked={cannotBringMainDish}
+              onCheckedChange={setCannotBringMainDish}
             />
           </div>
 
