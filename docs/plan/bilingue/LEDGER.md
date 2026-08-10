@@ -762,3 +762,47 @@ cd /Users/brentcurtis/dev/casa-pilot && git diff --name-only pilot/sop-v2...HEAD
 ```
 
 - OPEN AFTER THIS ROUND: D1a awaits PM verification of round 2. Executor round 2 of max 3.
+
+### 2026-08-10 — D1a round 2 — PM verification — PHASE CLEAN
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~15 min (independent verification)
+- STAGE: executor (see executor entry) | PM verification 15m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** for the phase (r1 carried 1 BLOCKING); **r2 is clean on PM verification.**
+- WHAT I VERIFIED MYSELF, by running it rather than reading it:
+  - **[A1]** Ran `census.sh` and grepped its output for `_test.|.test.|.spec.|__mocks__` → **0**.
+    Verified against the script's *output*, not its predicate — reading the predicate is the
+    failure mode that produced r1.
+  - **[A3]** `shasum -a 256 -c` at HEAD → **4/4 OK**. The lock survives the edit.
+  - **[A5]** `git diff --name-only pilot/sop-v2...HEAD | grep -v '^docs/plan/bilingue/'` → empty.
+  - **[A4]** Grepped both prose artifacts for result shapes → none. **The method lock held for a
+    second round**, this time under pressure: the round's own test plan required running the
+    script, and nothing it printed reached an artifact.
+  - **The safety argument for the exclusion, checked independently rather than accepted:** all
+    **22** `*_test.(ts|tsx)` files under `src`+`supabase` declare a test runner — none is a
+    disguised copy surface; **no non-test module imports a `*_test` module**; and
+    `.spec`/`_spec`/`__mocks__` match **zero** files, so declining to add defensive predicates is
+    sound rather than lazy.
+  - The `census.sh` diff is exactly `-not -name '*_test.*'` on both selectors plus a corrected
+    header comment. No drive-by changes.
+- **A CLAIM OF MINE THAT WAS WRONG:** my first pass reported the survey commands as carrying no
+  output, contradicting the executor's [A2]. They do — recorded as `# exit 1, no output`, which
+  satisfies D-B (command plus output) without recording a count, so D-L holds. My grep was too
+  narrow. The executor's resolution of that D-B/D-L tension is better than the one I would have
+  specified, and naming the three fixture helpers instead of counting them is the same instinct.
+- **SCOPE CREEP — self-reported, and I agree with the call.** Two prose lines claiming the script
+  "is never executed in D1a" were made false by this round's own test plan. Correcting them beats
+  shipping a false statement inside a hash-locked method. Reverts cleanly if a reviewer disagrees.
+- FINDINGS: BLOCKING 0 · SHOULD-FIX 0 · NIT 0.
+- **PHASE STATUS: clean, ready for Codex final review (SOP §3.6).** Not marked DONE — only Codex
+  passing does that. Brent's §1.5 override stopped *plan* review; per-phase review is untouched.
+- STALE AFTER THIS ROUND: every preliminary census total the PM published — 166/1,402, 180/1,418,
+  185/376/316, 186/381/320 — now includes excluded test files. **None may be carried into D1b**;
+  D1b re-derives from the locked method. Recorded here because those numbers are scattered across
+  PLAN.md and six review documents.
+- WORKFLOW DEFECT FOUND BY THE EXECUTOR, FIXED: `/exec BILINGUE D1a r2` did not resolve the plan —
+  no `workstreams.md` row, and `docs/plan/bilingue/` does not exist in the default `casa-web`
+  checkout. It exists **only** on `pilot/sop-v2` in the `casa-pilot` worktree. The executor
+  recovered because the prompt file names the worktree, but that is luck, not design — the same
+  hazard `workstreams.md` already documents for AUDIO. A row has been added.
