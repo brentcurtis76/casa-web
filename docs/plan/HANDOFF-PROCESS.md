@@ -7,11 +7,20 @@
 
 You run the workflow pilot for Brent. Your subject is *how the work gets done*, not the work.
 
-Read first: `docs/plan/SOP-PILOT.md`, `docs/plan/AGENT-WORKFLOW.md`, then the `LEDGER.md` entries
-dated 2026-08-10 onward. Say what you found before proposing anything.
+Read first, in order, and say what you found before proposing anything:
+
+1. `~/.claude/agent-workflow/AGENT-WORKFLOW.md` — the SOP (**canonical, 511 lines — not a repo copy**)
+2. `~/.claude/agent-workflow/workstreams.md` — where each workstream's plan, ledger and reviews live
+3. `docs/plan/SOP-PILOT.md` — the pilot's design and stopping rule
+4. `docs/plan/LEDGER.md` entries dated 2026-08-10 onward — the pilot and PD-REFINE record
+5. `docs/plan/bilingue/LEDGER.md` — lane 1's ledger, **once `/plan-new BILINGUE` has created it**
 
 Repo: `/Users/brentcurtis/dev/casa-web`. Working branch: `pilot/sop-v2` at
 `/Users/brentcurtis/dev/casa-pilot`.
+
+**Two ledgers, deliberately.** CASA's root `docs/plan/LEDGER.md` is shared by the CUENTOS and
+MATERIALES workstreams and holds the PD-REFINE and pilot entries. BILINGUE is new work and gets its
+own at `docs/plan/bilingue/LEDGER.md`. Watch both.
 
 ## The question
 
@@ -61,8 +70,18 @@ cycle. Cutting per-run latency saves minutes; raising first-pass rate deletes wh
    - A question was asked of Brent that the codebase could answer (`transcribe-meeting`). He
      answered in good faith, the code disagreed, and it entered the plan as verified fact.
      *Never ask what you can grep.*
-   - `AGENT-WORKFLOW.md` never existed in the CASA repo — only in `fne-lms`. PD-REFINE's executor
-     and both reviewers were held to a contract they could not read. Fixed 2026-08-10.
+   - **The SOP reference was wrong, and the first fix was worse.** `SOP-PILOT.md` said
+     "`AGENT-WORKFLOW.md`" with no path, which reads as repo-relative; Codex [B11] flagged that no
+     such file existed in casa-web. The fix copied the **427-line** version from `fne-lms` into the
+     repo — 84 lines behind the canonical 511-line file at `~/.claude/agent-workflow/`, missing
+     §1.2 and §1.8 — creating a third drifting copy. Copy removed; the reference now points at the
+     canonical path. **Lesson: a missing-file finding is not automatically a copy-the-file fix.
+     Find where the file actually lives first.**
+   - A whole layer existed that the PM never looked for: `~/.claude/agent-workflow/workstreams.md`,
+     the registry mapping workstream nicknames to plan/ledger/review locations, plus the
+     `/plan-new`, `/pm-boot` and `/exec` commands that implement SOP §3.1/§3.3/§3.4. The PM
+     hand-rolled a planner prompt and a PM handoff that already existed as commands. **Check what
+     tooling exists before building a worse version of it.**
 5. **The PM contaminated round 1** by running six verification commands before dispatching C3,
    which C3 exists to replace. Nothing was found and nothing was fed back, so the damage was small,
    but the rule was broken in the first round it existed.

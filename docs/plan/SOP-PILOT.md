@@ -1,8 +1,19 @@
 # SOP PILOT — reducing rework rounds without reducing scrutiny
 
 Status: **ACTIVE PILOT**, started 2026-08-10, project CASA only.
-Supersedes nothing. This is an amendment layer over `AGENT-WORKFLOW.md` §1–§4.
+Supersedes nothing. This is an amendment layer over the SOP §1–§4.
 If the pilot fails its stopping rule, delete this file and the SOP is unchanged.
+
+**The SOP is `~/.claude/agent-workflow/AGENT-WORKFLOW.md` (canonical, 511 lines).** Its companion
+`~/.claude/agent-workflow/workstreams.md` maps each `SESSION:` nickname to where that workstream's
+plan, ledger and reviews actually live — read it before assuming a path.
+
+*Corrected 2026-08-10.* This file originally said "`AGENT-WORKFLOW.md`" with no path, which read as
+a repo-relative reference. Codex [B11] correctly flagged that no such file existed in casa-web. The
+first fix was wrong twice over: it copied the **427-line** version out of `fne-lms` — 84 lines
+behind canonical, missing §1.2 Files and §1.8 Session identity and lifecycle — into this repo,
+creating a third drifting copy of a document that already has one home. The copy has been removed.
+Do not re-add it; CASA's own `CLAUDE.md` makes the same rule for pipeline files, for the same reason.
 
 ---
 

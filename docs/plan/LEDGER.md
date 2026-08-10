@@ -4396,3 +4396,26 @@ starts truthful, not complete.
   than in a self-review section at the bottom. C2 asks "what do you think is weak"; C5 asks
   "what did you actually run". Only the second one would have caught these.
 - OPEN: Brent decides — B0 discovery phase then re-draft, or narrow the goal.
+
+### 2026-08-10 — SOP-PILOT correction — Fable (PM)
+- ACTION: Brent corrected the lane-1 handoff — it must start at SOP §3.1 (`/plan-new`), not §3.3
+  (`/pm-boot`). §3.3 assumes a frozen plan with a phase to run; there is neither. Investigating that
+  surfaced two PM errors of its own.
+- **[B11] FIX WAS WRONG.** The canonical SOP is `~/.claude/agent-workflow/AGENT-WORKFLOW.md` —
+  **511 lines, updated today**, with §1.2 Files and §1.8 Session identity and lifecycle. This
+  morning's fix copied the **427-line** `fne-lms` version into casa-web: 84 lines stale, and a third
+  drifting copy of a document with one home. CASA's own CLAUDE.md forbids exactly this pattern for
+  pipeline files. Copy removed; `SOP-PILOT.md` now cites the canonical path. A missing-file finding
+  is not automatically a copy-the-file fix.
+- **A whole tooling layer went unexamined.** `~/.claude/agent-workflow/workstreams.md` is a registry
+  mapping each `SESSION:` nickname to its plan, ledger and reviews, and `/plan-new`, `/pm-boot` and
+  `/exec` already implement SOP §3.1/§3.3/§3.4. The PM hand-wrote an executor prompt and a planner
+  handoff that existed as commands. Check what exists before building a worse version of it.
+- **BILINGUE IS A SEPARATE WORKSTREAM.** The registry shows CUENTOS and MATERIALES share this
+  `LEDGER.md` (their `P*` and `M*` prefixes). `/plan-new BILINGUE` lands at `docs/plan/bilingue/`
+  with its own ledger, reviews, evidence and prompts, and needs no registry row. `PLAN-BILINGUE.md`
+  and `reviews/BILINGUE-PLAN-review-1.md` stay here as the failed first attempt and its verdict —
+  required reading for the new planner, not a base to patch.
+- DECISIONS: lane 1 starts `/plan-new BILINGUE`; first phase is discovery, output is an inventory
+  and not code. Lane 2 watches both ledgers.
+- OPEN: Brent opens the two conversations.
