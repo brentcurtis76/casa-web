@@ -6,8 +6,13 @@ import { Calendar, Clock, MapPin, type LucideIcon } from "lucide-react";
  * Hero "Día del Niño" — importado desde Claude Design
  * (`Header Dia del Nino.dc.html`, design system CASA "Silencio Sagrado").
  *
- * Hero de temporada: se monta en Index.tsx en lugar de <LiturgicalHero />,
- * igual que AdvientoHero o RetiroSemanaSanta.
+ * Hero de temporada, igual que AdvientoHero o RetiroSemanaSanta: se monta en
+ * Index.tsx en lugar de <LiturgicalHero /> mientras dura la ocasión, y se
+ * desmonta al terminar para que vuelva el calendario litúrgico.
+ *
+ * Actualmente DESMONTADO (la edición del 9 de agosto de 2026 ya pasó). Para
+ * reutilizarlo el próximo año hay que actualizar EVENT_DETAILS con la fecha,
+ * la hora y el lugar nuevos.
  */
 
 export type ArtTreatment = "frame" | "halo" | "both" | "plain";

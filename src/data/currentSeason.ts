@@ -26,19 +26,19 @@ export interface LiturgicalSeason {
 }
 
 export const currentSeason: LiturgicalSeason = {
-  id: "epiphany",
-  name: "Tiempo de Epifanía",
+  id: "ordinary",
+  name: "Tiempo Ordinario",
 
   scripture: {
-    reference: "Mateo 2:2",
-    text: "Hemos visto su estrella en el oriente y venimos a adorarle"
+    reference: "Miqueas 6:8",
+    text: "Practicar la justicia, amar la misericordia, y caminar humildemente con tu Dios"
   },
 
-  theme: "La luz de Cristo se manifiesta al mundo",
+  theme: "Crecemos juntos en fe y comunidad",
 
   // Color de acento (opcional, default: ámbar #D4A853)
-  // Epifanía usa blanco/oro litúrgico
-  accentColor: "#D4A853"
+  // Tiempo Ordinario usa verde litúrgico
+  accentColor: "#2E8B57"
 };
 
 /**
