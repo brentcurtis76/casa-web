@@ -191,9 +191,16 @@ test.describe('Humo del entorno local', () => {
 
     await test.step('5 · anon ve los dos publicados y ningún borrador', async () => {
       const filas = await leerEpisodios(ANON_KEY);
-      expect(filas.map((f) => f.id).sort()).toEqual(
-        [FIXTURE_DEL_TEST, BASELINE_PUBLICADO].sort()
-      );
+      // De los tres ids que este spec posee, anon tiene que ver EXACTAMENTE dos: el
+      // baseline publicado y el fixture que el paso 2 acaba de sembrar. El borrador
+      // del baseline sigue fuera (ésa es la RLS). Acotado a los ids propios por lo
+      // mismo que los pasos 1 y 7 (D24): un vecino legítimo de otro spec no es un
+      // entorno sucio.
+      expect(
+        soloLosPropios(filas).sort(),
+        'De los ids del humo, anon debería ver los dos publicados: el baseline y el ' +
+          'fixture recién sembrado.'
+      ).toEqual([FIXTURE_DEL_TEST, BASELINE_PUBLICADO].sort());
       expect(filas.every((f) => f.status === 'published')).toBe(true);
       expect(filas.map((f) => f.id)).not.toContain(BASELINE_BORRADOR);
     });
