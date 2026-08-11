@@ -1098,3 +1098,108 @@ D-N blind spot, recorded as one.
   applied one level apart.
 - OPEN AFTER THIS ROUND: `prompts/D1a-r4.md` issued under the amended contract. Round counting
   restarts against the amended phase (§3.9), so r4 is round 1 of 3 against the new criteria.
+
+### 2026-08-11 — D1a round 4 (amended contract) — EXECUTOR
+
+- SESSION: `BILINGUE · D1a · r4 · EXEC` — `/exec BILINGUE D1a r4`, durable executor conversation
+  under the lean overlay (`~/.claude/agent-workflow/LEAN-WORKFLOW.md`, ACTIVE 2026-08-11).
+- STARTED: 2026-08-11T21:28:50Z
+- ENDED: 2026-08-11T21:41:00Z
+- ELAPSED: ~12 min
+- STAGE: locate contract + read plan/replan/artifacts 4m | implement 5m | verify + evidence 3m
+- EFFORT: executor Opus `high`
+- ATTEMPT: **4 cumulative** for D1a (round 1 of 3 against the amended criteria, §3.9)
+- RISK: STANDARD — documentation-only, zero-line source diff, no schema/auth/PII surface.
+- HANDOFFS: 1 (Brent pasted `/exec BILINGUE D1a r4`)
+- FIRST-PASS: pending Codex.
+- WORKTREE: `/Users/brentcurtis/dev/casa-pilot`, common dir `/Users/brentcurtis/dev/casa-web/.git`,
+  branch `phase/d1a-method`, base `pilot/sop-v2`. Verified before editing, not inferred from the
+  folder name.
+- FILES CHANGED (`git diff --numstat`): `evidence/CENSUS-METHOD.md` (+90/-62) ·
+  `evidence/census.sh` (+51/-6) · `evidence/METHOD-MANIFEST.txt` (+2/-2) ·
+  `reviews/D1a-r4-review-request.md` (new) · this `LEDGER.md` entry.
+- **THE THREE CHANGES, AND NOTHING ELSE:**
+  - **[A1 / D1a.9]** Untested absolutes removed. The four stage-one predicates now state their error
+    direction (over-exclusion) and two named cases where it fails: a production module named
+    `*_test.ts` or living in `__tests__/`, and a test that itself writes to a user-visible sink.
+    Stage two states its error direction and quotes the r3 [B1] case verbatim as a block — a
+    production `.json` reached by a constructed or globbed path whose basename an unrelated test
+    names literally **is excluded**. Round 3's "can only ever keep a data file" is retracted in the
+    artifact. The naming survey gained a "where this survey's direction does not hold" paragraph.
+  - **[A2 / D1a.10]** `json_is_test_evidence` rewritten as three named, commented branches.
+    Branch 1 `basename-collision` (exact `$NF ==` comparison, not a `-name` glob, so a bracket in a
+    basename cannot be read as a pattern) and branch 2 `no-literal-referrer` both **keep** and call
+    `record_ambiguous_keep`, which emits `AMBIGUOUS_KEEP<TAB>path<TAB>reason=…` **once per path** to
+    stderr. stdout is untouched, so the reviewed output shape is byte-identical.
+  - **[A3 / D1a.11]** The `Deno.test` textual check and both of its output blocks are deleted, along
+    with "excluding the convention drops no copy surface". The replacement section is titled
+    *Exclusion safety is established by enumeration, not by pattern*, records Codex's three-line
+    refutation, states explicitly that no cleverer pattern replaces it (**D-O**), and points at
+    D1b.13. The importer check survives, restated with its limits (dynamic `import()`, runtime
+    specifiers, re-export chains, importers outside the two roots) instead of as a guarantee.
+- **SELECTION IS UNCHANGED, PROVEN BY THE STRONGEST AVAILABLE FORM (D-M):** not the three counts
+  alone but full stdout equality against the script Codex reviewed.
+
+  ```text
+  $ export LC_ALL=en_US.UTF-8
+  $ /usr/bin/git show 98f4e51:docs/plan/bilingue/evidence/census.sh > /tmp/census-r3.sh
+  $ bash /tmp/census-r3.sh > /tmp/cs-r3.txt 2>/dev/null; echo "r3 exit=$?"
+  r3 exit=0
+  $ bash docs/plan/bilingue/evidence/census.sh > /tmp/cs-r4.txt 2>/dev/null; echo "r4 exit=$?"
+  r4 exit=0
+  $ /usr/bin/diff /tmp/cs-r3.txt /tmp/cs-r4.txt && echo "IDENTICAL"
+  IDENTICAL
+  ```
+
+- GATES:
+
+  ```text
+  $ bash docs/plan/bilingue/evidence/census.sh 2>/dev/null | /usr/bin/grep -c 'corpus_pd_base'
+  0
+  $ bash docs/plan/bilingue/evidence/census.sh 2>/dev/null | /usr/bin/grep -c 'elementos-fijos'
+  14
+  $ bash docs/plan/bilingue/evidence/census.sh 2>/dev/null | /usr/bin/grep -cE '_test\.|\.test\.|\.spec\.|__mocks__'
+  0
+  $ bash docs/plan/bilingue/evidence/census.sh 3>&1 1>/dev/null 2>&3
+  AMBIGUOUS_KEEP	src/data/elementos-fijos/index.json	reason=basename-collision
+  $ /usr/bin/grep -rniE "never drop|drops no|every excluded file is a test|no other (test|fixture|spec)" docs/plan/bilingue/evidence/
+  docs/plan/bilingue/evidence//CENSUS-METHOD.md:198:Round 2 of this artifact stated: *"No other test, spec, mock or fixture convention occurs in the
+  $ cd docs/plan/bilingue/evidence && /usr/bin/grep -vE '^#' METHOD-MANIFEST.txt | /usr/bin/shasum -a 256 -c
+  CENSUS-METHOD.md: OK
+  census.sh: OK
+  SURFACE-SCHEMA.md: OK
+  wordlist-passB.txt: OK
+  $ bash -n docs/plan/bilingue/evidence/census.sh; echo "bash -n=$?"
+  bash -n=0
+  $ npx tsc --noEmit; echo "tsc=$?"
+  tsc=0
+  ```
+
+  The single grep hit is the quoted text of an explicitly retracted claim, which the contract allows.
+  Gate set is the document-only set defined at D1a bootstrap ([S4]): `lint`/`test`/`build`/Playwright
+  stay excluded on a zero-line source diff, and `SOP-PILOT.md` records the CASA base as red today
+  (118 lint errors, 15 failing tests at `d5b16e8`) — repository debt, not this diff.
+- **BRANCH CAPABILITY VERIFIED BY CONSTRUCTION**, because branch 2 never fires against the live tree:
+  the committed function was sourced verbatim onto a scratch tree and produced
+  `no-literal-referrer` (orphan), `basename-collision` (duplicated basename), `EXCLUDED` (referenced
+  only by `thing_test.ts`) and `KEPT` (referenced by `prod.ts`) — all four outcomes.
+- **A7 / D1a.8 NOT MET, AND NOT CAUSED BY THIS ROUND.** `git diff --name-only pilot/sop-v2...HEAD`
+  also lists `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`. `git log` attributes both
+  to `98f4e51 docs(plan): activate lean workflow v2`, committed onto this phase branch before r4
+  began. They are workflow-process documents — no source, schema, configuration or database change —
+  so the substance of **D-A** holds. The executor did not rewrite another owner's commit. Reviewer to
+  rule on whether A7 is satisfied by the branch as constituted, or whether `98f4e51` belongs
+  elsewhere.
+- OPEN / DEFERRED:
+  - `PLAN_SHA` in all five artifacts still points at `c842161` (freeze), not `f2be4f2` (amendment).
+    Updating it would touch `SURFACE-SCHEMA.md` and `wordlist-passB.txt`, both out of scope this
+    round, and rehash artifacts Codex already passed. Flagged, not changed.
+  - D1b must derive the *excluded* path list itself; `census.sh` records ambiguous keeps only, per
+    the round's scope. The standalone stage-two command in `CENSUS-METHOD.md` produces it.
+  - **Weakest point, named before the reviewer names it:** the ambiguity record lives on stderr. It
+    keeps the reviewed stdout byte-identical, but `census.sh 2>/dev/null` — what this round's own
+    test command runs — silently discards it. Two documents require D1b to capture it; nothing
+    mechanically enforces it. A `D1b-verify.sh` assertion would close that, and belongs to D1b.
+- REVIEW REQUEST: `docs/plan/bilingue/reviews/D1a-r4-review-request.md`
+- CODEX: pending.
+- ESCAPED DEFECT: n/a — not yet passed.

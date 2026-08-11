@@ -84,17 +84,62 @@ done < "$WORDLIST"
 [[ -n "$WORDS" ]] || fail 'word list has no entries'
 WORD_PATTERN="\\b($WORDS)\\b"
 
-# A .json inside the roots is test evidence when every file that names it is a test file.
-# The rule is who-refers-to-it, not what-it-is-called: a captured baseline follows no naming
-# convention, so no name predicate can reach it. A .json that no module names at all is kept,
-# because the safe direction of this rule is to include.
+# Stage two, applied to .json paths only. The rule is who-refers-to-it, not what-it-is-called:
+# a captured baseline follows no naming convention, so no name predicate can reach it.
+#
+# Three named branches. Ambiguous evidence keeps the file, and says why:
+#
+#   1. AMBIGUOUS -> keep, reason=basename-collision. More than one file under the referrer roots
+#      carries this basename, so a literal referrer cannot be attributed to this path.
+#   2. AMBIGUOUS -> keep, reason=no-literal-referrer. No .ts/.tsx under the referrer roots writes
+#      the basename as text. A path assembled at runtime, a glob expansion, and a referrer outside
+#      the referrer roots (build script, Deno task, CI workflow) all land here and are
+#      indistinguishable from a file nothing references. This branch does not detect those cases;
+#      it is where they come to rest.
+#   3. RESOLVED. Any non-test referrer -> keep. Every referrer is a test file -> exclude.
+#
+# Error direction: over-include under ambiguity, over-exclude when basename evidence is complete
+# but wrong. This is not a guarantee that no copy surface is dropped -- CENSUS-METHOD.md states
+# the case where a production file is excluded. Exclusion safety is established by enumeration in
+# D1b (D1b.13), not by this predicate.
+#
+# Each ambiguous keep is recorded once on stderr as `AMBIGUOUS_KEEP<TAB>path<TAB>reason=...` so
+# D1b can enumerate it (D1a.10). stdout carries census rows only.
+AMBIGUOUS_KEPT=
+
+record_ambiguous_keep() {
+  local file=$1
+  local reason=$2
+  case "$AMBIGUOUS_KEPT" in
+    *"|$file|"*) return 0 ;;
+  esac
+  AMBIGUOUS_KEPT="$AMBIGUOUS_KEPT|$file|"
+  printf 'AMBIGUOUS_KEEP\t%s\treason=%s\n' "$file" "$reason" >&2
+}
+
 json_is_test_evidence() {
   local file=$1
-  local base referrers
+  local base collisions referrers
   base=${file##*/}
+
+  # Branch 1. Exact basename comparison, not a -name glob: a basename containing a bracket or a
+  # star would otherwise be matched as a pattern.
+  collisions=$("$FIND" "${REFERRER_ROOTS[@]}" -type f \
+    | "$AWK" -F/ -v want="$base" '$NF == want' | "$WC" -l | "$AWK" '{print $1}')
+  if [[ "$collisions" -gt 1 ]]; then
+    record_ambiguous_keep "$file" basename-collision
+    return 1
+  fi
+
+  # Branch 2.
   referrers=$("$GREP" -rlF --include='*.ts' --include='*.tsx' -- "$base" "${REFERRER_ROOTS[@]}" \
     | "$SORT" -u || true)
-  [[ -n "$referrers" ]] || return 1
+  if [[ -z "$referrers" ]]; then
+    record_ambiguous_keep "$file" no-literal-referrer
+    return 1
+  fi
+
+  # Branch 3.
   if printf '%s\n' "$referrers" | "$GREP" -qvE "$TEST_PATH_ERE"; then
     return 1
   fi

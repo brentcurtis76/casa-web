@@ -41,12 +41,22 @@ in this order:
 
 The first three exclude test code under the two conventions this repository uses for test *modules*:
 `__tests__/` directories and `*.test.ts`/`*.test.tsx` under `src/`, and the Deno underscore
-convention `*_test.ts` used throughout `supabase/functions/`. **Test files are excluded because the
-census measures user-visible copy surfaces, and a test file emits nothing to a user.** Its Spanish
-literals are assertions and fixtures — expected values quoted from the module under test — so
-counting them double-counts the production string and inflates every sizing decision D1b feeds.
+convention `*_test.ts` used throughout `supabase/functions/`. **Why:** the census measures
+user-visible copy surfaces, and the Spanish literals in a test module are ordinarily assertions and
+fixtures — expected values quoted from the module under test — so counting them double-counts the
+production string and inflates every sizing decision D1b feeds.
 The fourth predicate excludes copied TypeScript artifacts whose basename ends in a space followed by
 a decimal digit.
+
+**Error direction of the four stage-one predicates: over-exclusion.** They read the path and ask
+nothing about the content, so a file whose name matches is dropped whether or not it is a test. Two
+named cases where that direction is wrong: a production module named `*_test.ts`, or placed inside a
+`__tests__/` directory, is excluded although it emits copy; and a test that itself writes to a
+user-visible sink is excluded although it emits. **This method does not claim either case is absent
+at SOURCE_SHA.** D1a round 3 tried to establish the first with a pattern that looked for a
+`Deno.test` declaration in every excluded file; that check was refuted and has been removed — see
+*Exclusion safety is established by enumeration, not by pattern* below. What the predicates actually
+exclude is enumerated in D1b's `evidence/D1-exclusions.md`, where a reviewer reads the list.
 
 **Stage two** is a referrer-based predicate applied to `.json` paths only, fixed in the next
 section. It exists because a name predicate cannot reach test *data*: a captured baseline follows no
@@ -54,16 +64,50 @@ naming convention, so there is no name to predicate on.
 
 ### Stage two: test data is excluded by who refers to it, not by what it is called
 
-A `.json` that survives stage one is excluded when it is named by at least one `.ts`/`.tsx` file
-under `src/` or `supabase/` **and every** file that names it is a test file. A `.json` that no module
-names at all is **kept**: the safe direction of this rule is to include, because an unreferenced data
-file may still be loaded through a path assembled at runtime.
+A `.json` that survives stage one is excluded when three conditions hold together: no other file
+under `src/` or `supabase/` carries the same basename; it is named by at least one `.ts`/`.tsx` file
+under those roots; and **every** file that names it is a test file. Anything short of all three
+**keeps** the file through the ambiguity branch fixed below.
 
 "Names it" is basename containment, not import resolution. That is deliberately looser than an
 import graph — it counts `fixedElementFile: 'la-paz.json'` and
-`fetch('/data/elementos-fijos/index.json')` as referrers, and neither is an `import` statement. A
-looser referrer set can only ever *keep* a data file, never drop one, so the imprecision runs in the
-safe direction.
+`fetch('/data/elementos-fijos/index.json')` as referrers, and neither is an `import` statement.
+
+**Error direction of stage two: it over-includes under ambiguity, and it can over-exclude when the
+basename evidence is complete but wrong.** The second half is not hypothetical, and this is the case
+where the direction does not hold:
+
+> If production reaches a `.json` by a path assembled at runtime or expanded from a glob — so that
+> no `.ts`/`.tsx` writes the basename literally — while an unrelated test names that same basename
+> literally, then every referrer this rule can see is a test, and the **production file is
+> excluded**. Nothing in the rule detects that. The basename-collision branch does not cover it
+> either: it fires when a second file shares the basename, which is a different situation.
+
+Codex found this in D1a round 3 ([B1]). Round 3's artifact stated that a looser referrer set can
+only ever keep a data file — **that claim was false and is retracted.** The live `index.json`
+basename collision at SOURCE_SHA is benign and does not validate the general claim. What is excluded
+is enumerated for review in D1b (`D1-exclusions.md`, D1b.13); this rule is not asked to guarantee
+the result.
+
+#### The ambiguity branch, and the reason it records
+
+`census.sh` implements stage two as three named branches. The first two are ambiguity and they keep:
+
+| Branch | Condition | Outcome | Reason recorded |
+|---|---|---|---|
+| 1 | More than one file under `src/`/`supabase/` carries this basename, so a literal referrer cannot be attributed to this path | keep | `basename-collision` |
+| 2 | No `.ts`/`.tsx` under those roots writes the basename as text | keep | `no-literal-referrer` |
+| 3 | Any non-test referrer → keep · every referrer is a test file → exclude | resolved | none |
+
+Branch 2 is where three distinct situations come to rest, indistinguishable from each other: a path
+assembled at runtime, a glob expansion, and a referrer that lives outside the referrer roots (a
+build script, a Deno task, a CI workflow). **The branch does not detect them and does not claim to.**
+It keeps the file and says the evidence was absent.
+
+Each ambiguous keep is written once to **stderr**, as
+`AMBIGUOUS_KEEP<TAB><path><TAB>reason=<reason>`; stdout carries census rows only. D1b captures that
+channel (`2> …`) and lists every such file, with its reason, in `D1-exclusions.md` — an
+over-inclusion is as much a finding for a reviewer as an exclusion.
 
 A referrer counts as a test file when its path matches this exact ERE — the same three conventions
 stage one uses:
@@ -101,76 +145,53 @@ script and read only by `corpus_parity_test.ts`. It is not named `*_test.*`, doe
 reached it, and the next captured baseline will be named differently again.
 
 **What this rule cannot do.** It reads referrers inside `src/` and `supabase/` only, so a `.json`
-referenced solely from a build script, a Deno task or a CI workflow is treated as unreferenced and
-therefore kept — the safe direction, but not a correct classification. It applies to `.json` alone:
+referenced solely from a build script, a Deno task or a CI workflow reaches branch 2 and is kept
+under `no-literal-referrer` — the right outcome by accident, not a correct classification, and the
+recorded reason says so. It applies to `.json` alone:
 a `.ts` module that is test-only but named like production is not caught, because excluding a `.ts`
 on referrer evidence could drop real copy. And it cannot decide whether a *production* referrer
 actually renders the file's Spanish to a user; that question belongs to the call-path audit fixed in
 `SURFACE-SCHEMA.md`.
 
-### The `*_test.*` predicate: both claims, each with its command
+### Exclusion safety is established by enumeration, not by pattern
 
 `*_test.*` was absent from stage one until D1a round 2. Only the dot convention was excluded, so the
-Deno test files inside the roots were selected and counted. Excluding the convention drops no copy
-surface. That rests on two separate claims, and each carries its own command below. Round 2 asserted
-the first and supplied a command for only the second; that gap is corrected here.
+Deno test files inside the roots were selected and counted. Adding the predicate corrected that.
 
-**Claim one — every file the predicate excludes declares a test runner.** The check enumerates the
-excluded set from the committed roots rather than a written-down list, refuses to pass vacuously if
-that set is empty, and exits non-zero naming any file that does not declare `Deno.test`:
-
-```bash
-export LC_ALL=en_US.UTF-8
-ROOTS=$(/usr/bin/sed -n '/^PASS_A_ROOTS=(/,/^)/p' docs/plan/bilingue/evidence/census.sh \
-  | /usr/bin/grep -vE '^(PASS_A_ROOTS=\(|\))' | /usr/bin/tr -d ' ')
-EXCLUDED=$(/usr/bin/find -E $(echo $ROOTS) src/lib/whatsapp -type f -regex '.*\.(ts|tsx|json)$' \
-  -name '*_test.*' | /usr/bin/sort -u)
-[ -n "$EXCLUDED" ] || { printf 'FAIL: the *_test.* predicate excludes nothing here — the claim would pass vacuously\n'; exit 1; }
-NOT_A_TEST=$(printf '%s\n' "$EXCLUDED" | while IFS= read -r f; do
-  /usr/bin/grep -qE '(^|[^[:alnum:]_$.])Deno\.test[[:space:]]*[({]' "$f" || printf '%s\n' "$f"
-done)
-[ -z "$NOT_A_TEST" ] || { printf 'FAIL: excluded by *_test.* but declares no Deno.test runner:\n%s\n' "$NOT_A_TEST"; exit 1; }
-printf 'OK: every file the *_test.* predicate excludes declares a Deno.test runner\n'
-```
-
-```text
-OK: every file the *_test.* predicate excludes declares a Deno.test runner
-```
-
-That the check is capable of failing was established rather than assumed. Against a synthetic
-`*_test.ts` that declares no runner, it names the file and exits 1:
+Round 3 then tried to show that the predicate is safe — that everything it excludes really is a test
+— with a pattern that required each excluded file to declare `Deno.test`. **That check has been
+deleted, and the claim it supported with it.** A regex over text cannot tell code from a comment or
+a string literal, which Codex demonstrated by construction:
 
 ```bash
-export LC_ALL=en_US.UTF-8
-SCRATCH=$(/usr/bin/mktemp -d)
-printf 'export const copy = "Guardar";\n' > "$SCRATCH/impostor_test.ts"
-NOT_A_TEST=$(printf '%s\n' "$SCRATCH/impostor_test.ts" | while IFS= read -r f; do
-  /usr/bin/grep -qE '(^|[^[:alnum:]_$.])Deno\.test[[:space:]]*[({]' "$f" || printf '%s\n' "${f##*/}"
-done)
-[ -z "$NOT_A_TEST" ] || { printf 'FAIL: excluded by *_test.* but declares no Deno.test runner:\n%s\n' "$NOT_A_TEST"; /bin/rm -rf "$SCRATCH"; exit 1; }
-printf 'OK\n'; /bin/rm -rf "$SCRATCH"
+printf '// Deno.test("x", () => {});\n' > a_test.ts   # PASSES — a comment counts as a test
+printf 'const note = "Deno.test(";\n'    > b_test.ts   # PASSES — a string literal counts
+printf 'Deno["test"]("x", () => {});\n'  > c_test.ts   # FAILS  — a real test is flagged non-test
 ```
 
-```text
-FAIL: excluded by *_test.* but declares no Deno.test runner:
-impostor_test.ts
-(exit 1)
-```
+**No cleverer pattern replaces it.** Any pattern strong enough to make the claim would be making the
+same kind of claim, and would fail on the next construction (D-O). What replaces it is
+enumeration: **D1b writes `evidence/D1-exclusions.md`** listing every path this method excluded, the
+rule that excluded it, and its evidence, together with every file kept under the ambiguity branch and
+its recorded reason (D1b.13). A reviewer confirms nothing real was dropped by reading that short
+derived list. **This artifact makes no claim that a given file is or is not a test.** It states the
+rules, and the direction in which each is wrong.
 
-**Claim two — no non-test module imports a `*_test` module:**
+One bounded piece of evidence survives, stated with its limits rather than as a guarantee — that no
+module *statically written* to import a `*_test` module exists under the two roots at SOURCE_SHA:
 
 ```bash
 /usr/bin/grep -rnE "from ['\"][^'\"]*_test(\.ts)?['\"]" src supabase \
   '--include=*.ts' '--include=*.tsx' | /usr/bin/grep -vE '_test\.ts:'
-# exit 1, no output — no production importer
+# exit 1, no output
 ```
 
-**The limit both claims leave open.** A declared test runner and an absent importer together show
-that these files are tests and that no production module pulls their strings in. Neither shows that
-a test file emits nothing to a user by some other route — a test that itself wrote to a user-visible
-sink would satisfy both checks and still be excluded. An importer search cannot close that gap; only
-the call-path audit in `SURFACE-SCHEMA.md` can, and it is scoped to production surfaces. This is a
-stated blind spot under D-N, not a proven absence.
+That search sees written specifiers only. A dynamic `import()`, a specifier assembled at runtime, a
+re-export chain, and an importer outside `src/`/`supabase/` are all invisible to it, and it says
+nothing about whether a test file reaches a user by some other route — a test that itself wrote to a
+user-visible sink would satisfy it and still be excluded. Only the call-path audit fixed in
+`SURFACE-SCHEMA.md` bears on that, and it is scoped to production surfaces. Stated blind spot under
+D-N and D-O, not a proven absence.
 
 ### A retracted claim
 
@@ -209,6 +230,13 @@ added for a *naming* convention that matches no file: the method is locked
 against SOURCE_SHA, so an exclusion that removes nothing could never be justified against a file,
 and adding one would be untestable decoration. A new convention appearing later is an extension, and
 the extension rule below governs it.
+
+**Where this survey's direction does not hold.** It is a search over *names*, at SOURCE_SHA, over the
+candidate set the roots and the extension filter produce. It cannot see a test, fixture or mock that
+is not identified by its name — which is precisely what falsified the round 2 version of the claim —
+and it says nothing about any other commit. Its error direction is therefore over-confidence in
+stage one's coverage, and the correction for that is stage two plus the D1b enumeration, not a wider
+regex.
 
 The copied-artifact exclusion is implemented with BSD extended regular expressions by invoking
 `/usr/bin/find -E` and applying `.* [0-9]\.(ts|tsx)`. Bare `find -regex` is not interchangeable with
