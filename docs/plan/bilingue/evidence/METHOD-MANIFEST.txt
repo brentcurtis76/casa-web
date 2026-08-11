@@ -6,7 +6,7 @@
 # ALGORITHM=SHA-256 via /usr/bin/shasum -a 256
 # BLIND_SPOT=Integrity locks these static methods but does not prove complete surface coverage.
 # EXTENSION_RULE=Commit and review a replacement manifest with every changed method artifact.
-2f3dee3e146d2f33bbc82c91d6b24cf65577d43d7a332682767a74a501175217  CENSUS-METHOD.md
-2fdd415b4194c67e6c1c36098974f6862be08a1a0455c5753506f1ed4c2b5e78  census.sh
+4672e0f73f4cfefc382cdf4a21a9458f08bc520d7b7bb3a52b8f4121d7ebaba0  CENSUS-METHOD.md
+25dafac5303820c797db9367a5503ef3e4946fa500a5f580274190bf29230d0d  census.sh
 aa2d85d5e0fb71303ede4d66cabfdaf463940bf62f74a0a4324018e197d4dd83  SURFACE-SCHEMA.md
 41c477a3137cb5841e632678d30754e0f04be77abbe64bf8a3fa3a01ee25bacb  wordlist-passB.txt

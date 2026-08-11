@@ -24,6 +24,8 @@ ACCENT='[áéíóúñüÁÉÍÓÚÑÜ¿¡]'
 COMMENT='^[[:space:]]*(//|\*|/\*)'
 FILE_ERE='.*\.(ts|tsx|json)$'
 ORPHAN_ERE='.* [0-9]\.(ts|tsx)'
+TEST_PATH_ERE='(^|/)__tests__/|\.test\.[^/]+$|_test\.[^/]+$'
+REFERRER_ROOTS=(src supabase)
 
 PASS_A_ROOTS=(
   src/components/liturgia-builder
@@ -82,25 +84,45 @@ done < "$WORDLIST"
 [[ -n "$WORDS" ]] || fail 'word list has no entries'
 WORD_PATTERN="\\b($WORDS)\\b"
 
-PASS_A_FILES=()
-while IFS= read -r file; do
-  PASS_A_FILES+=("$file")
-done < <(
-  "$FIND" -E "${PASS_A_ROOTS[@]}" -type f -regex "$FILE_ERE" \
+# A .json inside the roots is test evidence when every file that names it is a test file.
+# The rule is who-refers-to-it, not what-it-is-called: a captured baseline follows no naming
+# convention, so no name predicate can reach it. A .json that no module names at all is kept,
+# because the safe direction of this rule is to include.
+json_is_test_evidence() {
+  local file=$1
+  local base referrers
+  base=${file##*/}
+  referrers=$("$GREP" -rlF --include='*.ts' --include='*.tsx' -- "$base" "${REFERRER_ROOTS[@]}" \
+    | "$SORT" -u || true)
+  [[ -n "$referrers" ]] || return 1
+  if printf '%s\n' "$referrers" | "$GREP" -qvE "$TEST_PATH_ERE"; then
+    return 1
+  fi
+  return 0
+}
+
+name_selected() {
+  "$FIND" -E "$@" -type f -regex "$FILE_ERE" \
     -not -path '*__tests__*' -not -name '*.test.*' -not -name '*_test.*' \
     -not -regex "$ORPHAN_ERE" \
     | "$SORT" -u
-)
+}
+
+PASS_A_FILES=()
+while IFS= read -r file; do
+  if [[ "$file" == *.json ]] && json_is_test_evidence "$file"; then
+    continue
+  fi
+  PASS_A_FILES+=("$file")
+done < <(name_selected "${PASS_A_ROOTS[@]}")
 
 PASS_B_FILES=()
 while IFS= read -r file; do
+  if [[ "$file" == *.json ]] && json_is_test_evidence "$file"; then
+    continue
+  fi
   PASS_B_FILES+=("$file")
-done < <(
-  "$FIND" -E "${PASS_B_ROOTS[@]}" -type f -regex "$FILE_ERE" \
-    -not -path '*__tests__*' -not -name '*.test.*' -not -name '*_test.*' \
-    -not -regex "$ORPHAN_ERE" \
-    | "$SORT" -u
-)
+done < <(name_selected "${PASS_B_ROOTS[@]}")
 
 count_pattern() {
   local file=$1
