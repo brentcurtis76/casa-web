@@ -8,8 +8,11 @@
  * The matching logic is a verbatim move: the guard order (OPTIONS ->
  * requireMesaAdmin -> req.json() -> monthId -> month exists -> status open ->
  * deadline -> idempotency -> participants) and every write are unchanged.
- * The only injected seam is `pick`, which `shuffle` uses in place of
- * `Math.random` so tests can make the shuffles deterministic.
+ * The only injected seam is `pick` (D11), and this file just forwards it to
+ * `planSeating`. Since P3b `shuffle` lives in `matching.ts`, not here, and
+ * since P4 it is no longer `pick`'s only consumer: `matching.ts` hands the same
+ * `pick` to `allocateAll` as well, so a test that fixes it makes both the
+ * shuffles and the food allocation deterministic.
  *
  * The seating decision itself lives in `matching.ts` (D13): this file reads the
  * participants, calls `planSeating`, and writes the result. As of P4 the food

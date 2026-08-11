@@ -85,6 +85,22 @@ function guests(n: number): Participant[] {
   return Array.from({ length: n }, (_v, i) => guest(`g${i + 1}`));
 }
 
+/**
+ * Synthetic member columns (D12 — invented, never real). The handler selects
+ * `*`, so these do reach it in production; a test that asserts a log line
+ * carries no PII has to put PII within reach first.
+ */
+const PII = {
+  full_name: "Ana Fulana",
+  email: "ana.fulana@example.invalid",
+  phone: "+56 9 8765 4321",
+} as const;
+
+/** The same row as the database returns it, PII columns included. */
+function withPii(p: Participant): Participant {
+  return { ...p, ...PII } as Participant;
+}
+
 // ----------------------------------------------------- the Supabase double
 
 type Verb = "getUser" | "select" | "insert" | "update" | "delete";
@@ -641,6 +657,68 @@ Deno.test("ningún excluido con main_course persistido", async () => {
       carrier.food === "main_course",
       false,
       `${carrier.id} está excluido y se persistió con el plato principal`,
+    );
+  }
+});
+
+Deno.test("el déficit real cruza el borde HTTP", async () => {
+  // One table of six people → quota 2 (D1), and nobody is willing, so the
+  // deficit is 2. With a single table there is no donor to swap with: the
+  // shortfall is structural and has to survive all the way to the response,
+  // because P6, P7 and P8 read `tablesWithShortfall` from there (D4).
+  //
+  // The rows carry the PII columns the handler really receives — it selects
+  // `*` (`handler.ts:129`) — so the D12 assertion below is not vacuous.
+  const db = adminDouble({
+    participants: [
+      withPii(host("h1", 6, false, false)),
+      ...Array.from({ length: 5 }, (_v, i) =>
+        withPii(guest(`g${i + 1}`, false, false))),
+    ],
+  });
+  const handler = createHandler({ supabase: db, pick: () => 0 });
+
+  const warnings: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...args: unknown[]): void => {
+    warnings.push(args.map(String).join(" "));
+  };
+
+  let body: HandlerBody;
+  let status: number;
+  try {
+    const res = await handler(makeRequest().req);
+    status = res.status;
+    body = await res.json() as HandlerBody;
+  } finally {
+    console.warn = realWarn;
+  }
+
+  assertEquals(status, 200);
+
+  // The deficit is reported, not swallowed (D4) — the shape P6/P7/P8 consume.
+  assertEquals(body.results?.tablesWithShortfall, [{ tableId: "h1", shortfall: 2 }]);
+
+  // ...and the coverage entry agrees with it.
+  const coverage = body.results?.mainDishCoverage ?? [];
+  assertEquals(coverage.length, 1);
+  assertEquals(coverage[0].tableId, "h1");
+  assertEquals(coverage[0].peopleCount, 6);
+  assertEquals(coverage[0].requiredMainDishes, 2);
+  assertEquals(coverage[0].willingCarriers, 0);
+  assertEquals(coverage[0].mainDishCount, 0);
+  assertEquals(coverage[0].shortfall, 2);
+
+  // D4 warns exactly once, and D12 keeps that line to ids and numbers.
+  assertEquals(warnings.length, 1);
+  assertEquals(warnings[0].includes("h1"), true);
+  assertEquals(warnings[0].includes("2"), true);
+  assertEquals(warnings[0].includes("@"), false);
+  for (const secret of Object.values(PII)) {
+    assertEquals(
+      warnings[0].includes(secret),
+      false,
+      `el aviso de déficit filtró PII: ${secret}`,
     );
   }
 });

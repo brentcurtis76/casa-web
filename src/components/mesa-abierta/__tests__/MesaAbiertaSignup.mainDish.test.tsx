@@ -72,6 +72,33 @@ function advanceToStep3() {
   next(); // paso 2 → 3
 }
 
+/**
+ * Deja el asistente en el paso 3 **como anfitrión**. A diferencia del invitado,
+ * el anfitrión sí tiene que rellenar la dirección: `canProceedFromStep3`
+ * (`MesaAbiertaSignup.tsx:53`) la exige, y sin ella «Siguiente» va deshabilitado.
+ */
+function advanceToStep3AsHost() {
+  render(
+    <MesaAbiertaSignup open onClose={vi.fn()} monthId="month-1" preferredRole="host" />
+  );
+
+  next(); // paso 1 → 2
+  fireEvent.change(screen.getByLabelText('Nombre completo *'), {
+    target: { value: 'Anfitriona de prueba' },
+  });
+  fireEvent.change(screen.getByLabelText('Correo electrónico *'), {
+    target: { value: 'anfitriona@ejemplo.com' },
+  });
+  fireEvent.change(screen.getByLabelText('Número de teléfono *'), {
+    target: { value: '+56 9 1234 5678' },
+  });
+  next(); // paso 2 → 3
+
+  fireEvent.change(screen.getByLabelText('Dirección de tu hogar *'), {
+    target: { value: 'Calle Falsa 123' },
+  });
+}
+
 /** Desde el paso 3, avanza hasta el resumen del paso 5. */
 function advanceToStep5() {
   next(); // paso 3 → 4
@@ -140,6 +167,35 @@ describe('MesaAbiertaSignup — plato principal', () => {
     advanceToStep5();
 
     expect(await submitAndCaptureInsert()).toMatchObject({
+      can_bring_main_dish: false,
+    });
+  });
+
+  // Los cuatro tests de arriba recorren el asistente sólo como invitado, así que
+  // esconder el switch al anfitrión los dejaría a los cuatro en verde (B-18). Y
+  // el anfitrión es justo el caso que importa: por D7 es el primer candidato a
+  // `main_course`, así que un anfitrión que no puede cocinarlo es lo que esta
+  // funcionalidad existe para resolver.
+  it('el anfitrión también puede excluirse', async () => {
+    participantInserts.length = 0;
+
+    advanceToStep3AsHost();
+
+    // Estamos de verdad en el paso 3 del anfitrión, no en el del invitado.
+    expect(screen.getByText('Paso 3 de 5')).toBeInTheDocument();
+    expect(screen.getByText('Información de anfitrión')).toBeInTheDocument();
+
+    // El switch existe para el anfitrión y nace apagado, igual que para el invitado (D2).
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(mainDishSwitch());
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'true');
+
+    advanceToStep5();
+
+    // Y la exclusión llega a la fila: es lo único que la base ve.
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      role_preference: 'host',
       can_bring_main_dish: false,
     });
   });
