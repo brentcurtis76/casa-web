@@ -851,3 +851,126 @@ cd /Users/brentcurtis/dev/casa-pilot && git diff --name-only pilot/sop-v2...HEAD
 - FINDINGS: BLOCKING 2 (both to r3) · SHOULD-FIX 0 · NIT 0.
 - OPEN AFTER THIS ROUND: `prompts/D1a-r3.md` issued. Executor round 3 of max 3 — **if r3 does not
   clear Codex, the SOP requires a re-plan proposal rather than a fourth round.**
+
+### 2026-08-11 — D1a round 3 — executor
+
+- SESSION: `BILINGUE · D1a · r3 · EXEC`
+- ELAPSED: ~35 min
+- STAGE: read plan/prompt/artifacts 8m | [B1] rule design + implementation 12m | [B2] check +
+  negative controls 8m | artifact prose 5m | verification + commit 2m
+- EFFORT: executor `high`
+- FIRST-PASS: **yes** — both BLOCKING closed in one pass, no iteration on a red gate.
+- COMMIT: `012826d`. Files: `census.sh` (+46/-12), `CENSUS-METHOD.md` (+152/-14),
+  `METHOD-MANIFEST.txt` (+4/-4).
+
+**[B1] — the exclusion is now referrer-based, and the falsified claim is retracted.**
+
+`census.sh` gains a second exclusion stage, `json_is_test_evidence`, applied to `.json` paths that
+survive the four `find` name predicates. A `.json` is excluded when at least one `.ts`/`.tsx` under
+`src/`+`supabase/` names it **and every** file that names it is a test file. A `.json` that nothing
+names is **kept** — the safe direction of the rule is to include, because an unreferenced data file
+may still be loaded through a runtime-assembled path.
+
+"Names it" is basename containment, not import resolution. That is looser than an import graph on
+purpose: it counts `fixedElementFile: 'la-paz.json'` and `fetch('/data/elementos-fijos/index.json')`,
+neither of which is an `import`, and a looser referrer set can only ever *keep* a data file. The
+imprecision runs toward including a real surface, never toward dropping one.
+
+The classification, run standalone against the roots:
+
+```bash
+export LC_ALL=en_US.UTF-8
+ROOTS=$(/usr/bin/sed -n '/^PASS_A_ROOTS=(/,/^)/p' docs/plan/bilingue/evidence/census.sh \
+  | /usr/bin/grep -vE '^(PASS_A_ROOTS=\(|\))' | /usr/bin/tr -d ' ')
+/usr/bin/find -E $(echo $ROOTS) src/lib/whatsapp -type f -name '*.json' \
+  -not -path '*__tests__*' -not -name '*.test.*' -not -name '*_test.*' | /usr/bin/sort -u \
+| while IFS= read -r f; do
+    refs=$(/usr/bin/grep -rlF --include='*.ts' --include='*.tsx' -- "${f##*/}" src supabase \
+      | /usr/bin/sort -u || true)
+    [ -n "$refs" ] || { printf 'NO REFERRER (kept): %s\n' "$f"; continue; }
+    printf '%s\n' "$refs" \
+      | /usr/bin/grep -qvE '(^|/)__tests__/|\.test\.[^/]+$|_test\.[^/]+$' \
+      || printf 'TEST EVIDENCE (excluded): %s\n' "$f"
+  done
+```
+
+```text
+TEST EVIDENCE (excluded): supabase/functions/generate-story/corpus_pd_base.json
+```
+
+The PM's enumeration was confirmed rather than assumed, by running `census.sh` before the change:
+`_shared/corpus_baseline.json`, `deno.json` and `import_map.json` never appear in its output, since
+only `_shared/whatsapp` is a root.
+
+The retraction is written as a retraction, not a narrowing. `CENSUS-METHOD.md` now quotes the round-2
+sentence, marks it retracted, names what falsified it, and states the narrower claim the survey
+actually supports — that no further *naming* convention occurs, which says nothing about test data.
+The "fixture helpers that do exist" paragraph carried the same overreach implicitly and now says
+plainly that those three are not the whole population.
+
+**[B2] — the `Deno.test` claim now has a command, and the command is shown to be capable of failing.**
+
+The artifact split one paragraph making two claims into two claims each carrying its own command.
+The new check enumerates the excluded set from the committed roots rather than a written-down list,
+refuses to pass vacuously when that set is empty, and exits non-zero naming any offender:
+
+```bash
+export LC_ALL=en_US.UTF-8
+ROOTS=$(/usr/bin/sed -n '/^PASS_A_ROOTS=(/,/^)/p' docs/plan/bilingue/evidence/census.sh \
+  | /usr/bin/grep -vE '^(PASS_A_ROOTS=\(|\))' | /usr/bin/tr -d ' ')
+EXCLUDED=$(/usr/bin/find -E $(echo $ROOTS) src/lib/whatsapp -type f -regex '.*\.(ts|tsx|json)$' \
+  -name '*_test.*' | /usr/bin/sort -u)
+[ -n "$EXCLUDED" ] || { printf 'FAIL: the *_test.* predicate excludes nothing here — the claim would pass vacuously\n'; exit 1; }
+NOT_A_TEST=$(printf '%s\n' "$EXCLUDED" | while IFS= read -r f; do
+  /usr/bin/grep -qE '(^|[^[:alnum:]_$.])Deno\.test[[:space:]]*[({]' "$f" || printf '%s\n' "$f"
+done)
+[ -z "$NOT_A_TEST" ] || { printf 'FAIL: excluded by *_test.* but declares no Deno.test runner:\n%s\n' "$NOT_A_TEST"; exit 1; }
+printf 'OK: every file the *_test.* predicate excludes declares a Deno.test runner\n'
+```
+
+```text
+OK: every file the *_test.* predicate excludes declares a Deno.test runner
+```
+
+A green check that cannot go red is not evidence. Both failure modes were exercised. Against a
+synthetic `*_test.ts` with no runner:
+
+```text
+FAIL: excluded by *_test.* but declares no Deno.test runner:
+impostor_test.ts
+(exit 1)
+```
+
+and against an empty excluded set (`-name '*_zzznone_test.*'`):
+
+```text
+FAIL: the *_test.* predicate excludes nothing here — the claim would pass vacuously
+(exit 1)
+```
+
+The vacuous-pass guard is the one that matters for D1b: without it, a future roots edit that stops
+matching any test file would turn this check green while proving nothing.
+
+The limit is stated in the artifact rather than left implied — a declared runner plus an absent
+importer show these are tests and that no production module pulls their strings in, but neither
+shows a test emits nothing to a user by another route. An importer search cannot close that; it is a
+D-N blind spot, recorded as one.
+
+- SCOPE: no change to the roots, character class, word list, schema or inclusion rule. No file under
+  `src/`, `supabase/` or `supabase/migrations/` touched (D-A). `git diff --name-only
+  pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'` → exit 1, no output, re-run at the
+  committed HEAD rather than before the commit.
+- D-L HELD under the same pressure as r2: `census.sh` was run repeatedly to verify selection and
+  nothing it printed reached an artifact. Self-checked with
+  `/usr/bin/grep -nE '(files=|hits=|[0-9]{2,} (files|lines|matches)|total)'` over both prose
+  artifacts — the only hit is the sentence that declares the rule. One draft phrase, "classifies one
+  path as test evidence", was reworded to "the following path" before committing: a count of results
+  is a result.
+- D-L method lock: both changed artifacts rehashed, all four verify.
+- WEAKEST PART, named before the reviewer names it: basename containment will misclassify if a test
+  fixture ever shares a basename with a production data file in another directory — the collision
+  would find a production referrer and keep the fixture. That fails toward inclusion, so it inflates
+  rather than drops, but it is a real imprecision and it is the price of not building an import
+  graph in bash.
+- OPEN AFTER THIS ROUND: D1a awaits PM verification of round 3, then Codex final review round 2 of
+  max 2. Executor round 3 of max 3 — no fourth round is available under the SOP.
