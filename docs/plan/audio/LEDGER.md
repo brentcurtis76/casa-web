@@ -2167,3 +2167,38 @@ es exactamente el error que dejó a `E-infra` en borrador.**
      de `62e9158`— y hace falta un corredor **sin tope de 10 minutos**: la suite son 105 tests y
      tarda 5-7,5 min por corrida.
   3. Después: review final de Codex sobre `phase/E3b-pages@ea3adaf`.
+
+### 2026-08-09 — E3b `A4` MEDIDA — PM (Opus), con Docker restaurado
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: medida la única criterio que quedaba abierto, `E3b.14`(b), tras reiniciar Brent Docker
+  (que volvió en **v29.7.2** — se actualizó solo).
+- **PRIMERA MEDIDA, y por sí sola habría sido engañosa:** suite completa, HEAD `ea3adaf` → **46
+  fallos**; padre `62e9158` → **18**. **35 de diferencia, todos `financial-*`**, y **ninguno
+  tocando `reflexiones` ni `smoke-local`**. La corrida de HEAD acumuló **16 timeouts de 30 s** y
+  duró 1,5 min más: olía a contención, no a código.
+- **SEGUNDA MEDIDA, que es la que decide** — la cláusula del propio criterio: re-correr
+  `financial-*` **aislada** en ambos SHAs.
+  - Padre: **59 passed, 2 fallos** (`financial-payroll:88`, `financial-personnel:115`).
+  - HEAD: **60 passed, 1 fallo** (`financial-personnel:115`).
+  - `comm -23 HEAD PADRE` → **vacío**. **HEAD ⊂ PADRE.**
+- **Y la familia no-financial, de la corrida completa:** padre **9**, HEAD **6**, `comm -23` →
+  **vacío**. Los seis de HEAD (`mesa-abierta-signup` ×3, `rbac` ×2, `recorder`) están todos en el
+  padre.
+- **`E3b.14` CUMPLIDO en sus dos mitades:** (a) los tres specs juntos → **6 passed**; (b) el
+  conjunto de fallos de HEAD es **subconjunto** del del padre, en las dos familias. **Los 35 extras
+  eran contención pura: aislados desaparecen.**
+- **RE-VERIFICADO POR MÍ AHORA QUE DOCKER FUNCIONA**, cerrando el hueco que dejé en la r3:
+  - **A3** los tres specs juntos sobre `ea3adaf` → **6 passed**.
+  - **A5** guarda caso A → **EXIT=1**, `capa 1 … NO está en la lista blanca`.
+  - **A1** con un vecino legítimo sembrado **fuera** de los ids del humo → **1 passed**, donde
+    antes de la r3 fallaba el paso 5. Fila retirada después.
+- **LO ÚNICO QUE NO REPRODUJE: A2.** Su inyección a mitad de ventana —quitar `FIXTURE_DEL_TEST`
+  entre el paso 2 y el 5, de modo que las dos aserciones conservadas pasen y **sólo la acotada
+  dispare**— necesita un sondeador que no voy a reconstruir. **Acepto su salida cruda**, que es
+  detallada y coherente, y lo digo en vez de insinuar que la comprobé.
+- **`E3b` ESTÁ LIMPIA.** 15 criterios, tres rondas de ejecución, **cero BLOCKING de código en las
+  tres**. No la marco DONE: sólo un PASS de Codex cierra la unidad.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND:
+  1. **Review final de Codex** sobre `phase/E3b-pages@ea3adaf`.
+  2. Sigue pendiente el **push de `main`**, que arrastra 7 commits de UPGRADE — decisión de Brent.
