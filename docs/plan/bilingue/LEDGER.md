@@ -806,3 +806,48 @@ cd /Users/brentcurtis/dev/casa-pilot && git diff --name-only pilot/sop-v2...HEAD
   checkout. It exists **only** on `pilot/sop-v2` in the `casa-pilot` worktree. The executor
   recovered because the prompt file names the worktree, but that is luck, not design — the same
   hazard `workstreams.md` already documents for AUDIO. A row has been added.
+
+### 2026-08-11 — D1a Codex review round 1 — PM triage
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min
+- STAGE: Codex review (external) | PM triage + verification 20m
+- EFFORT: PM `high` · Codex `high`
+- FIRST-PASS: **no** — Codex **FAIL**, 2 BLOCKING · 0 SHOULD-FIX · 0 NIT. Codex round 1 of max 2.
+- **BOTH BLOCKING VERIFIED BY THE PM, NOT ACCEPTED ON READING:**
+  - **[B1] confirmed.** `supabase/functions/generate-story/corpus_pd_base.json` is selected by both
+    passes; its only importer is `corpus_parity_test.ts`. I enumerated the full extent rather than
+    the single instance: **exactly 8 `.json` files are selected — 7 are `src/data/elementos-fijos/*`
+    with production importers and correctly included; 1 is this fixture.**
+    `_shared/corpus_baseline.json`, `deno.json` and `import_map.json` are *not* selected, because
+    only `_shared/whatsapp` is a root, not `_shared`.
+  - **[B2] confirmed.** `CENSUS-METHOD.md` makes two claims — that every excluded `*_test.ts`
+    declares `Deno.test`, and that nothing imports a `*_test` module — and supplies one command,
+    which establishes only the second. Codex independently found the first claim *true*; the
+    violation is the missing evidence, which is exactly what D-B and D-M exist to prevent.
+- **[B1] IS A CLASS THE r2 FIX COULD NOT CATCH, AND THAT IS THE LESSON.** `corpus_pd_base.json`
+  carries no naming convention at all — not `*_test.*`, not `__tests__`. Every exclusion in the
+  method so far is name-based, and no name-based rule can catch it. r3 must build an
+  **importer-based** rule for data files. Note the causal chain: adding `.json` to the census in
+  draft 4 — to pick up the canonical liturgical texts — is what pulled this in. A widening in one
+  place opened a hole in another, and only running the census exposed it.
+- **I VIOLATED D-M IN THE r2 VERIFICATION ENTRY.** That entry states the 22-file `Deno.test` finding
+  and the importer finding in prose, without pasting the commands — the same omission Codex is
+  blocking [B2] on, committed in the entry where I credited the executor for avoiding it. D-M is
+  easy to keep in a plan and hard to keep in a ledger. Recorded rather than quietly fixed.
+- **PLAN AMENDED (frozen plan, Decision Log entry added).** Codex's NOTES ON THE PLAN is correct:
+  `D1b.11` named the literal **185**-file Pass B set, which r2's test exclusion invalidated — along
+  with every other census total published in this plan and its six reviews. D1b.11 now cites the set
+  **definition** (Pass A roots ∪ `src/lib/whatsapp`, under the locked exclusions) and states plainly
+  that the definition controls and the figure does not. Left as written, that criterion would have
+  been either unpassable or — worse — passable against the wrong set.
+- WHAT CODEX PASSED, so r3 does not reopen it: output shape suitable for a JSON fixture; the
+  zero-match `.spec.`/`_spec.`/`__mocks__` predicates correctly declined as decoration; all four
+  hashes verify and no method component sits outside them; D1a's merge commit is a sound trust
+  anchor; binaries and locale handling hygienic; `# exit 1, no output` adequate for genuinely
+  command-backed negative claims; the inclusion rule lands correctly on both `whatsapp-signup` and
+  children-ministry admin when Codex applied it itself; the schema expresses mixed presentation axes
+  and declaration-to-renderer chains like `LITURGY_ORDER`; and r2's two-line scope creep justified.
+- FINDINGS: BLOCKING 2 (both to r3) · SHOULD-FIX 0 · NIT 0.
+- OPEN AFTER THIS ROUND: `prompts/D1a-r3.md` issued. Executor round 3 of max 3 — **if r3 does not
+  clear Codex, the SOP requires a re-plan proposal rather than a fourth round.**

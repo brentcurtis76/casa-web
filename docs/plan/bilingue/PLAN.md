@@ -381,8 +381,11 @@ marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its hal
 - [D1b.8] `D1-verify.sh` verifies **every** artifact in `METHOD-MANIFEST.txt` against its `sha256`
   from D1a's merge commit, and records that commit SHA. Checking `census.sh` alone would leave the
   word list, schema, inclusion rule and audit procedure mutable ([D5-B2]).
-- [D1b.11] Pass B is run over the **185-file** set (Pass A ∪ `src/lib/whatsapp`), not the 135-file
-  set the PM used, and all three of its numbers are re-derived ([D5-B1]).
+- [D1b.11] Pass B is run over the set **defined as** Pass A roots ∪ `src/lib/whatsapp`, under the
+  locked exclusions — not the 135-root set the PM used. **The definition controls; the figure 185
+  does not.** That number predates D1a round 2's test exclusion and is stale, as is every other
+  census total published anywhere in this plan or its reviews. All Pass B numbers are re-derived
+  from the locked method. *(Amended 2026-08-11 after Codex review of D1a — see Decision log.)*
 - [D1b.12] **The blind spot is stated and, where possible, measured** (D-N): what the method
   structurally cannot see. Known already — text *declared* in one file and *rendered* in another
   (`LITURGY_ORDER`, `WA_TEMPLATES`), and unaccented Spanish outside the frozen word list. Say what
@@ -513,6 +516,7 @@ mechanism the next plan must choose, since **D-K governs shell hygiene, not SQL*
 | 2026-08-10 | **The sink regex is a candidate floor, paired with a call-path audit (D-J extended)** | it was wrong by 3× and missed a live WhatsApp emission | review 5 [D4-B2] |
 | 2026-08-10 | **Brent's product decisions restored as Appendix A** | the shrink dropped them; they are decisions, not methodology | review 5 [D4-B5] |
 | 2026-08-10 | `D1-SUMMARY.md` requires **recorded** human acceptance in the DoD | Brent said he lacked visibility to judge; "written" is not "understood" | review 5 [D4-S3] |
+| **2026-08-11** | **Amendment to frozen plan: D1b.11 cites a set *definition*, not the number 185** | D1a r2 excluded test files, which invalidated 185 — and every other census total published in this plan and its six reviews. A criterion naming a stale figure would have made D1b unpassable or, worse, passable against the wrong set. | Codex D1a review, NOTES ON THE PLAN |
 
 ---
 
