@@ -65,8 +65,15 @@ export interface PaginaReflexiones {
 // página vuelve a ser la 1. Una gramática de PostgREST inyectada no puede colarse porque
 // ni `,` ni `(` ni `)` ni `.` sobreviven a estas expresiones.
 
-/** ISO 8601 con zona explícita, que es lo que emite PostgREST para un `timestamptz`. */
-const RE_ISO_CON_ZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}:\d{2}|Z)$/;
+/**
+ * ISO 8601 con zona explícita, que es lo que emite PostgREST para un `timestamptz`.
+ *
+ * Los componentes van capturados a propósito: la expresión sólo comprueba la FORMA, y la
+ * validez de calendario y de reloj se decide después sobre esos grupos. Ver
+ * `esTimestampValido`.
+ */
+const RE_ISO_CON_ZONA =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:([+-])(\d{2}):(\d{2})|Z)$/;
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -75,8 +82,56 @@ const RE_SLUG = /^[a-z0-9-]{1,80}$/;
 
 const SEPARADOR_CURSOR = '|';
 
+/**
+ * ¿Existe realmente ese día en el calendario?
+ *
+ * Reconstruye la fecha en UTC y EXIGE QUE VUELVA IDÉNTICA. Una fecha imposible no falla al
+ * construirse: se desborda. `Date.UTC(2026, 1, 31)` devuelve el 3 de marzo, así que si los
+ * componentes reconstruidos no coinciden con los de entrada, la entrada era imposible.
+ *
+ * Ésta es exactamente la comprobación que `Date.parse()` NO hace, y por la que hasta la r4
+ * un `2026-02-31T12:00:00+00:00` pasaba la validación y llegaba crudo al `.or()`, con
+ * PostgREST contestando `400 22008`.
+ *
+ * El año se pone aparte con `setUTCFullYear` porque `Date.UTC` mapea los años 0-99 a
+ * 1900-1999; sin eso, un `0026-…` se rechazaría por una razón falsa en vez de por su
+ * calendario. El desbordamiento se sigue detectando igual: `setUTCFullYear` reaplica mes y
+ * día sobre el año real, así que un 29 de febrero de un año no bisiesto vuelve a rodar.
+ */
+function esFechaDeCalendario(anio: number, mes: number, dia: number): boolean {
+  const reconstruida = new Date(Date.UTC(2000, mes - 1, dia));
+  reconstruida.setUTCFullYear(anio);
+
+  return (
+    reconstruida.getUTCFullYear() === anio &&
+    reconstruida.getUTCMonth() === mes - 1 &&
+    reconstruida.getUTCDate() === dia
+  );
+}
+
+/**
+ * Forma ISO **y** validez real, sin apoyarse en `Date.parse()`.
+ *
+ * `Date.parse()` normaliza en vez de rechazar, así que no sirve de rejilla: devuelve un
+ * número finito para el 31 de febrero. Aquí la forma la pone la expresión regular y la
+ * validez la ponen los componentes — hora ≤ 23, minuto y segundo ≤ 59, desfase dentro de
+ * ±23:59, y un día que exista de verdad.
+ */
 export function esTimestampValido(valor: string): boolean {
-  return RE_ISO_CON_ZONA.test(valor) && Number.isFinite(Date.parse(valor));
+  const partes = RE_ISO_CON_ZONA.exec(valor);
+  if (!partes) return false;
+
+  const [, anio, mes, dia, hora, minuto, segundo, , desfaseHoras, desfaseMinutos] = partes;
+
+  // La hora 24 es el otro agujero que dejaba `Date.parse()`: la rodaba al día siguiente.
+  if (Number(hora) > 23 || Number(minuto) > 59 || Number(segundo) > 59) return false;
+
+  // `undefined` cuando la zona es `Z`, que no lleva desfase que validar.
+  if (desfaseHoras !== undefined) {
+    if (Number(desfaseHoras) > 23 || Number(desfaseMinutos) > 59) return false;
+  }
+
+  return esFechaDeCalendario(Number(anio), Number(mes), Number(dia));
 }
 
 export function esUuidValido(valor: string): boolean {

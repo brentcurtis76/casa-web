@@ -16,6 +16,7 @@ import {
   construirConsultaPagina,
   decodificarCursor,
   esSlugValido,
+  esTimestampValido,
   filtroCursor,
   formatearFechaEpisodio,
   obtenerPaginaReflexiones,
@@ -174,6 +175,87 @@ describe('cursores hostiles o rotos (E3b.5)', () => {
 
     expect(pagina.episodios).toHaveLength(1);
     expect(llamadas.some((l) => l.metodo === 'or')).toBe(false);
+  });
+});
+
+/**
+ * E3b.5b — el agujero que Codex encontró en la review final de la fase.
+ *
+ * `Date.parse()` NO rechaza una fecha imposible: la normaliza y devuelve un número finito,
+ * así que `esTimestampValido` decía `true` y el valor CRUDO llegaba al `.or()`. PostgREST
+ * contestaba `400 22008` en vez de degradar a página 1, que es lo que `E3b.5` promete.
+ *
+ * Los cuatro casos de abajo son los medidos por Codex y reproducidos por el PM.
+ */
+describe('fechas de calendario imposibles (E3b.5b)', () => {
+  const codificarCrudo = (plano: string) =>
+    btoa(plano).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  /** `[caso, timestamp, en qué lo convertía `Date.parse()`]` */
+  const IMPOSIBLES: Array<[string, string, string]> = [
+    ['31 de febrero', '2026-02-31T12:00:00+00:00', '2026-03-03'],
+    ['29 de febrero de un año NO bisiesto', '2025-02-29T00:00:00Z', '2025-03-01'],
+    ['31 de abril', '2026-04-31T00:00:00Z', '2026-05-01'],
+    ['hora 24', '2026-01-01T24:00:00Z', 'el día siguiente'],
+  ];
+
+  it.each(IMPOSIBLES)(
+    '%s ⇒ cursor nulo, página 1 y cero `.or()`',
+    async (caso, timestamp, normalizacion) => {
+      const valido = esTimestampValido(timestamp);
+      const crudo = codificarCrudo(`${timestamp}|${ID}`);
+      const decodificado = decodificarCursor(crudo);
+
+      const { cliente, llamadas } = clienteEspia(respuestaCon([filaFalsa(0)]));
+      const pagina = await obtenerPaginaReflexiones(crudo, cliente);
+      const filtros = llamadas.filter((l) => l.metodo === 'or');
+
+      // Salida cruda de los cuatro: el informe no tiene que creerse el verde.
+      console.log(
+        `[E3b.5b] ${caso}\n  timestamp = ${timestamp}\n  ` +
+          `Date.parse lo normalizaba a = ${normalizacion}\n  ` +
+          `esTimestampValido = ${valido}\n  ` +
+          `decodificarCursor = ${JSON.stringify(decodificado)}\n  ` +
+          `episodios de la página = ${pagina.episodios.length}\n  ` +
+          `llamadas .or() = ${JSON.stringify(filtros)}`
+      );
+
+      expect(valido).toBe(false);
+      expect(decodificado).toBeNull();
+      // Página 1: la consulta se emite igual, pero sin el filtro de keyset.
+      expect(pagina.episodios).toHaveLength(1);
+      expect(filtros).toEqual([]);
+    }
+  );
+});
+
+/**
+ * La contrapartida de `E3b.5b`: el arreglo tenía que ser ESTRECHO. Lo que ya se rechazaba
+ * bien sigue rechazándose, y —más importante, porque es lo que una validación más dura
+ * rompe primero— lo que ya se aceptaba sigue aceptándose.
+ */
+describe('el arreglo de E3b.5b no desborda', () => {
+  const CASOS: Array<[string, string, boolean]> = [
+    // Ya se rechazaban con `Date.parse()`; tienen que seguir rechazándose sin él.
+    ['desfase +99:99', '2026-03-01T12:00:00+99:99', false],
+    ['desfase +25:00', '2026-03-01T12:00:00+25:00', false],
+    ['desfase +00:61', '2026-03-01T12:00:00+00:61', false],
+    ['segundo 60', '2026-03-01T12:00:60Z', false],
+    ['segundo 99', '2026-03-01T12:00:99Z', false],
+    ['mes 13', '2026-13-01T12:00:00Z', false],
+    ['día 32', '2026-03-32T12:00:00Z', false],
+    ['minuto 60', '2026-03-01T12:60:00Z', false],
+    // Y lo que SÍ es válido y una rejilla demasiado dura mataría.
+    ['desfase -14:00, que es un desfase real', '2026-03-01T09:00:00-14:00', true],
+    ['fracción de segundo', '2026-08-10T20:58:49.652180+00:00', true],
+    ['29 de febrero de un año bisiesto', '2024-02-29T00:00:00Z', true],
+    ['31 de diciembre', '2026-12-31T23:59:59Z', true],
+  ];
+
+  it.each(CASOS)('%s ⇒ %s', (caso, timestamp, esperado) => {
+    const obtenido = esTimestampValido(timestamp);
+    console.log(`[E3b.5b/regresión] ${caso}: ${timestamp} ⇒ ${obtenido} (esperado ${esperado})`);
+    expect(obtenido).toBe(esperado);
   });
 });
 
