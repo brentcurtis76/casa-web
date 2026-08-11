@@ -1014,3 +1014,51 @@ D-N blind spot, recorded as one.
 - **PHASE STATUS: clean, ready for Codex final review round 2 (of max 2).** Not marked DONE — only
   Codex passing does that. If Codex FAILs again the SOP requires a re-plan proposal, not a fourth
   executor round.
+
+### 2026-08-11 — D1a Codex review round 2 — PM triage — BOTH §1.5 CAPS REACHED
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min
+- STAGE: Codex review (external) | PM triage + verification 20m
+- EFFORT: PM `high` · Codex `high`
+- FIRST-PASS: **no** — Codex **FAIL**, 2 BLOCKING · 0 SHOULD-FIX · 0 NIT.
+  **Executor rounds 3 of 3. Codex rounds 2 of 2. Both caps reached** — SOP §1.5 requires a re-plan
+  proposal, and Codex's own verdict says so. **No round 4 was issued.**
+- **BOTH BLOCKING VERIFIED, AND ONE OF THEM CONVICTS ME:**
+  - **[B2] confirmed by construction.** Built the three cases and ran the committed regex:
+    `// Deno.test("x", …)` **passes** (a comment counts as a test), `const note = "Deno.test(";`
+    **passes** (a string literal counts), `Deno["test"]("x", …)` **fails** (a real test is flagged
+    non-test). A regex over text cannot separate code from comment or string, so the check cannot
+    do the job it was written for.
+  - **[B1] confirmed on the claim, not the instance.** The artifact guarantees the imprecision can
+    "never drop" a copy surface. False: if production reaches a JSON by a constructed or globbed
+    path — no literal basename anywhere in `.ts` — while an unrelated test names that basename
+    literally, every referrer is a test and the **production file is excluded**. The live
+    `index.json` collision is benign at SOURCE_SHA and does not validate the general claim.
+  - **I ASSERTED THE SAME FALSE PROPERTY.** My r3 verification entry says "both branches fail
+    toward inclusion". It does not. That is the **fourth** property I have asserted in this
+    workstream without testing it — after the `find -regex` diagnosis, "all five methods agree at
+    596", and D-C's consistency with its own phase test plans. Each was one command from being
+    caught. The pattern is not carelessness about facts I checked; it is confidence about
+    properties I never checked at all.
+- **ROOT CAUSE — the plan's, not the executor's.** D1a's criteria demand absolutes ("drops no copy
+  surface", "every excluded file is a test") from a bash text heuristic, and every heuristic has a
+  false-positive and a false-negative direction. Three rounds produced three correct fixes and three
+  new unprovable guarantees. **This is the same failure that killed six plan drafts — chasing
+  provable completeness — one level down.** D-N already grants the *inventory* a measured blind
+  spot; the *method* never got the same treatment, and that is the gap.
+- **RE-PLAN PROPOSAL WRITTEN: `REPLAN-D1a.md`. `PLAN.md` deliberately NOT amended** — §3.9 requires
+  Brent's approval first. Proposal in brief: D1a stops trying to prove its exclusions are safe and
+  instead states the rule plus its error direction; unresolved evidence fails toward inclusion as an
+  **explicitly coded rule** rather than an asserted property; the textual runner check is replaced
+  by **evidence by enumeration** — D1b emits `D1-exclusions.md` listing every excluded path with the
+  rule and evidence, which a reviewer can actually read; and D-N is extended to method artifacts.
+- WHAT CODEX PASSED AND THE AMENDMENT DOES NOT TOUCH: `corpus_pd_base.json` correctly excluded and
+  all seven `elementos-fijos` JSONs correctly retained **for the right reason** (genuine production
+  referrers, not the canciones collision); all four manifest hashes verify including the new
+  stage-two logic; the limited referrer roots and JSON-only scope are acceptable as documented; and
+  the D1b.11 amendment is correct — the set definition now controls.
+- FINDINGS: BLOCKING 2 (both to the re-plan) · SHOULD-FIX 0 · NIT 0.
+- OPEN AFTER THIS ROUND: **Brent decides** — approve the amendment and run D1a once more under the
+  new contract; accept D1a as it stands with a second logged §1.5 override and carry both findings
+  into D1b as caveats; or backlog. `PLAN.md` unchanged and D1a not marked DONE either way.
