@@ -974,3 +974,43 @@ D-N blind spot, recorded as one.
   graph in bash.
 - OPEN AFTER THIS ROUND: D1a awaits PM verification of round 3, then Codex final review round 2 of
   max 2. Executor round 3 of max 3 — no fourth round is available under the SOP.
+
+### 2026-08-11 — D1a round 3 — PM verification — CLEAN
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min (independent verification)
+- STAGE: executor (see executor entry) | PM verification 20m
+- EFFORT: PM `high`
+- FIRST-PASS: **no** for the phase (r1 and r2 each carried findings); **r3 clean on PM verification.**
+- WHAT I VERIFIED MYSELF, by running rather than reading:
+  - `corpus_pd_base` → **0** selected. `elementos-fijos` → **14** (7 files × 2 passes). Test shapes
+    → **0**. Manifest → **4/4 OK**. Diff → confined. `tsc` → 0.
+  - **[A2] the fix is genuinely importer-based.** `/usr/bin/grep -rn "corpus_pd_base\|corpus_parity"
+    census.sh` → no match: **the filename is hardcoded nowhere.** Read `json_is_test_evidence`
+    directly — it returns *keep* when there is no referrer and *keep* when any referrer is a
+    non-test path, excluding only when every referrer is a test. **Both branches fail toward
+    inclusion**, which is the correct direction for a copy census.
+  - **[A4] the `Deno.test` check is properly built, not merely present.** It derives the excluded
+    set from the committed roots rather than a transcribed list, **refuses to pass vacuously on an
+    empty set**, and exits non-zero naming any non-conforming file. The executor demonstrated it
+    failing against a synthetic file rather than asserting it could.
+- **THEIR SELF-FLAGGED WEAKNESS IS LIVE, AND I CHECKED WHETHER IT BITES.** The referrer match is by
+  basename, and a collision exists at SOURCE_SHA: `src/data/canciones/index.json` and
+  `src/data/elementos-fijos/index.json`. It causes **no wrong outcome** — both are production data
+  with non-test referrers, and `src/data/canciones` is not a census root, so it is not selected at
+  all. The limit is documented in the artifact. Under D-N this is a stated blind spot that fails
+  toward inclusion, not a defect. Recorded because "theoretical" was the executor's word for it and
+  it is not theoretical.
+- SCOPE CREEP — one line, same shape as r2 and the same call: the "fixture helpers that do exist"
+  sentence carried the identical overreach that `corpus_pd_base.json` had just falsified.
+  Retracting one while leaving its twin would ship a known-false line inside a hash-locked artifact.
+  I agree with the judgement; it reverts cleanly.
+- THEIR `NOT DONE` ITEMS ARE CORRECTLY SCOPED, not evasions: the referrer search covers `src/` and
+  `supabase/` only (a `.json` referenced solely from a build script or CI reads as unreferenced and
+  is **kept**); stage two deliberately applies to `.json` alone, because excluding a `.ts` on
+  referrer evidence could drop real copy; and `lint`/`test`/`build`/Playwright were not run, which
+  matches the plan's document-only gate set — flagged rather than silently omitted.
+- FINDINGS: BLOCKING 0 · SHOULD-FIX 0 · NIT 0.
+- **PHASE STATUS: clean, ready for Codex final review round 2 (of max 2).** Not marked DONE — only
+  Codex passing does that. If Codex FAILs again the SOP requires a re-plan proposal, not a fourth
+  executor round.
