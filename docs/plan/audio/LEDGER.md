@@ -2231,3 +2231,51 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   remediación tras un FAIL de Codex**, que §1.5 cuenta aparte con tope 2. No hay cap roto.
 - FINDINGS: 1 BLOCKING, aceptado. **Cero discutidos en toda la fase**, como en `E3a`.
 - OPEN AFTER THIS ROUND: `/exec AUDIO E3b r4`, prompt commiteado en `prompts/E3b-r4.md`.
+
+### 2026-08-11 — E3b round 4 — EXEC (Opus), primera remediación tras el FAIL de Codex
+- SESSION: `AUDIO · E3b · r4 · EXEC` (`2e7092a`, sobre `ea3adaf`, padre de fase `62e9158`)
+- WORKTREE: `/Users/brentcurtis/dev/casa-e3b`, rama `phase/E3b-pages`. Git common dir
+  `/Users/brentcurtis/dev/casa-web/.git` ⇒ overlay lean activo.
+- ACTION: cerrado el único BLOCKING de Codex. `esTimestampValido` **ya no usa `Date.parse()`**.
+  La expresión regular captura los componentes; la validez se decide sobre ellos: hora ≤ 23,
+  minuto y segundo ≤ 59, desfase dentro de ±23:59, y `esFechaDeCalendario`, que reconstruye la
+  fecha en UTC y **exige que vuelva idéntica** — una fecha imposible se desborda y no hace
+  round-trip. El año se aplica con `setUTCFullYear` porque `Date.UTC` mapea 0-99 a 1900-1999.
+- **REPRODUCIDO ANTES DE TOCAR NADA**, para no arreglar a ciegas: los cuatro casos daban `true`
+  en node, y `curl` contra PostgREST local (54331) con `2026-02-31T12:00:00+00:00` en el `.or()`
+  devolvía **HTTP 400**. El defecto era real y era el descrito.
+- **A1 · `E3b.5b` — los cuatro, con salida cruda:** `2026-02-31`, `2025-02-29`, `2026-04-31` y
+  `2026-01-01T24:00:00` ⇒ `esTimestampValido=false`, `decodificarCursor=null`, **página 1**
+  (1 episodio pintado) y `llamadas .or() = []`. Los cuatro.
+- **A2 · `E3b.5` intacto:** los cuatro cursores hostiles originales siguen dando `null` y cero
+  `.or()`. Salida cruda conservada.
+- **A3 · sin regresión, y ésta es la mitad que importa:** tabla nueva de 12 casos. Siguen
+  rechazándose `+99:99`, `+25:00`, `+00:61`, segundo 60 y 99, mes 13, día 32 y minuto 60; y
+  siguen **aceptándose** `-14:00`, la fracción de segundo, el 29 de febrero de un año **bisiesto**
+  y el 31 de diciembre. Un arreglo demasiado duro habría matado estos cuatro primero.
+- **A4 · MUTACIÓN EN ROJO, que es lo que hace que la ronda pruebe algo:** restaurada
+  `Number.isFinite(Date.parse(valor))` como única comprobación ⇒ **los cuatro casos de A1 fallan**
+  (`AssertionError: expected true to be false`), 4 failed | 38 passed. Los 12 de regresión
+  **siguieron verdes bajo la mutación**, que es la prueba directa de que el arreglo es estrecho:
+  lo único que cambia de comportamiento es el desbordamiento de calendario y la hora 24.
+- **A5 · las tres mutaciones de la r1 siguen rojas**, re-verificadas hoy, no heredadas:
+  quitar el desempate por `id` ⇒ vitest rojo; keyset → offset ⇒ `[PAG] 101` reaparece en la
+  página 2; `CANONICAL_ORIGIN` → `mutacion.invalid` ⇒ `reflexiones.spec.ts` rojo con el valor
+  recibido en el mensaje. Los tres specs juntos, tras `supabase db reset`: **6 passed**.
+- **A7 · GATE D18** sobre los dos ficheros contra el padre `62e9158`: **0/0/0/0** en ambos.
+  Totales del proyecto **idénticos a los del padre**, medidos en un worktree de `62e9158` y no
+  supuestos: `tsc=1039 eslint=161 deno-lint=92 deno-check=43` en los dos. `tsc --noEmit` sale 0;
+  `npm run build` verde.
+- **SUITE COMPLETA, las dos familias:** `npm test` ⇒ 6 failed | 1130 passed, y los 6 son
+  `MesaAbiertaDashboard`, **idénticos uno a uno en el padre** (medido en worktree). `npx playwright
+  test` ⇒ **7 failed | 22 skipped | 76 passed (4,2 min)**: `financial-personnel:115`,
+  `mesa-abierta-signup` ×3, `rbac` ×2 y `recorder` — exactamente el conjunto que el PM midió en el
+  padre el 2026-08-09. **Ninguno toca `reflexiones` ni `smoke-local`.** `E3b.14` se mantiene.
+- ALCANCE: **sólo** `src/lib/reflexiones/queries.ts` (+58/−3) y su fichero de tests (+82/−0).
+  Ni las páginas, ni el humo, ni `appRoutes.tsx`, ni la lista blanca de caracteres.
+- FINDINGS RAISED: ninguno. El finding de Codex se aceptó sin discutir.
+- PUNTO MÁS DÉBIL, dicho por mí: la desestructuración del `exec()` tiene un hueco posicional
+  (`…, segundo, , desfaseHoras, …`). Si alguien añade un grupo de captura a la expresión, los
+  índices se corren en silencio. **Queda guardado por los tests, no por la lectura:** los 12 casos
+  de A3 cubren hora, minuto, segundo, desfase y calendario, así que un corrimiento los pone rojos.
+- OPEN AFTER THIS ROUND: re-review de Codex sobre `phase/E3b-pages@2e7092a`.
