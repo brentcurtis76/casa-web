@@ -3813,3 +3813,66 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   necesita la nota de los 12 y de la demostración por mutación. (3) Merge a `main` tras el
   PASS. (4) Sin tocar y sin dueño nuevo: B-15 (recomendada a P6), B-13, B-14 y el N1 de
   P4; B-06 antes de P8.
+
+### 2026-08-11 — P5a round 2 — PM (Opus 5) — VERIFICACIÓN INDEPENDIENTE
+- SESSION: UPGRADE · P5a · PM
+- CONTEXT PRESSURE: comfortable.
+- **VEREDICTO: FASE LIMPIA. CERO BLOCKING, CERO SHOULD-FIX, CERO NIT.** La ronda hizo
+  exactamente lo que la enmienda pedía y nada más. Lista para la revisión final de Codex.
+- **LO QUE VERIFIQUÉ YO, INCLUIDAS LAS DOS MUTACIONES.** No me basté con el output pegado:
+  - **F9 reproducido por mí.** Apliqué `cannotBringMainDish: false` en
+    `MesaAbiertaSignup.tsx:125` y el test 11 se pone **rojo**
+    (`expected … to match object { can_bring_main_dish: false }`), mientras **los otros
+    tres del fichero siguen verdes**. Revertido; `sed -n '125p'` devuelve la línea
+    original y el árbol queda limpio. **Ésta es la prueba de que la ronda 1 tenía un
+    agujero real y de que ya no lo tiene**: la misma mutación, con los diez tests de r1,
+    no movía ni uno.
+  - **F10 reproducido por mí.** Borrado `setCannotBringMainDish(false)` de
+    `AddParticipantDialog.tsx:46`, el test 12 se pone rojo y el test 10 sigue verde.
+    Revertido y verificado.
+  - **Suite completa: 1093 pasan / 6 fallan (1099)**, rojo único
+    `MesaAbiertaDashboard.test.tsx`. **+2 exactos** sobre el 1091/6 de r1, y **+12** sobre
+    el padre — la aritmética enmendada cuadra.
+  - **Gate D8 sobre los dos ficheros: todo ceros.** Totales del proyecto sin moverse
+    (tsc=1039 eslint=161 deno-lint=92 deno-check=43). **`npm run build` → exit 0.**
+  - **F11: `git diff 27a22a4..HEAD` no toca ni un fichero de producción** — dos ficheros
+    de test y el LEDGER. Comprobado filtrando el `--name-only`.
+- **LOS DOS TESTS SON FUERTES Y LOS LEÍ.** El 11 conduce el submit real del asistente y
+  afirma sobre la fila que recibe `.insert()` **en las dos polaridades**, con `cleanup()`
+  entre ambas para no dejar dos switches vivos en el DOM — detalle que un ejecutor con
+  prisa se salta y que habría hecho ambiguo el `getByRole`. El 12 además reafirma que el
+  cuerpo llevaba `canBringMainDish: false` antes de comprobar el reset, así que cubre
+  dos cosas por el precio de una. Cero aserciones débiles. Ninguna desviación del prompt.
+- **EL AVISO DE MEDICIÓN SE CONFIRMA Y YA ES UN DATO DURO.** Cuatro sesiones han medido
+  estos mismos commits y han salido **6, 7, 8, 10 y 11 rojos** según la carga de la
+  máquina; el ejecutor vio 10 en 626 s y 6 en 218 s. **El total (1099) no varió nunca** —
+  solo la lista de rojos. Los extras son siempre la familia `CuentacuentoEditor` (B-05).
+  Queda anotado en el prompt de Codex, junto con el hueco de D8.2 que esto destapa: su
+  regla del padre **no discrimina** cuando el padre corre tranquilo y la punta bajo carga,
+  y el discriminador real es repetir la punta. **Enmendar D8.2 es una decisión aparte y no
+  la tomo en esta ronda.**
+- ACTION: actualicé `prompts/P5a-codex-review.md`, que describía 10 tests y una sola
+  ronda. Ahora manda revisar **las dos rondas**, explica que **F9 y F10 se satisfacen con
+  un test que se pone rojo, no con uno que pasa**, da las dos mutaciones para que Codex
+  las repita, corrige las cifras a 1093/6 y `+12`, y le pide una **cuarta** mutación —
+  B-15, B-16 y B-17 ya están gastadas.
+- **LE PASO A CODEX UNA PREGUNTA DE PLAN, NO DE CÓDIGO.** Dos veces seguidas este
+  workstream ha parido backlog cuyo fichero no está en la `F` de ninguna fase posterior:
+  P4 con B-13 y su N1, y r1 con B-16 y B-17 —éstas rescatadas por la enmienda—. **B-13,
+  B-14 y el N1 de P4 siguen sin dueño.** La regla del SOP «SHOULD-FIX al backlog»
+  presupone un backlog con salida y éste no la tiene. Si Codex ve una respuesta
+  estructural mejor que «ensanchar la `F` de una fase posterior», que la diga en NOTES ON
+  THE PLAN ITSELF.
+- BACKLOG: **B-16 y B-17 CERRADAS** por esta ronda. B-15 sigue recomendada a P6 (su `F` ya
+  contiene `MesaAbiertaAdmin.tsx`). **B-13, B-14 y el N1 de P4 sin dueño.** B-06 antes de
+  P8. B-07 sin cambios.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: (1) **Revisión final de Codex** — `prompts/P5a-codex-review.md`
+  está commiteado y actualizado. **Se abre en Codex Sol; `/exec` abre un Claude y eso ya
+  costó una ronda.** (2) Merge de `feat/mesa-md-form` a `main` tras el PASS — decisión de
+  Brent. (3) Decidir dónde caen B-13, B-14 y el N1 de P4. (4) Recomendación de higiene,
+  fuera de mi permiso de escritura: **UPGRADE merece una fila en
+  `~/.claude/agent-workflow/workstreams.md`** advirtiendo de que su registro vivo está en
+  el worktree `casa-upgrade` y no en `casa-web`, cuya copia va dos fases por detrás. Es el
+  fallo que casi me hace despachar la fase equivocada en el bootstrap y que el ejecutor de
+  r2 volvió a tropezar al final de su reporte.
