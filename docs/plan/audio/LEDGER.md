@@ -2279,3 +2279,65 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   índices se corren en silencio. **Queda guardado por los tests, no por la lectura:** los 12 casos
   de A3 cubren hora, minuto, segundo, desfase y calendario, así que un corrimiento los pone rojos.
 - OPEN AFTER THIS ROUND: re-review de Codex sobre `phase/E3b-pages@2e7092a`.
+
+### 2026-08-11 — E3b round 5 — EXEC (Opus), segunda remediación tras FAIL de Codex
+- SESSION: `AUDIO · E3b · r5 · EXEC` (`af0b11c`, sobre `2e7092a`, padre de fase `62e9158`)
+- VEREDICTO QUE LA ABRE: **Codex FAIL, 1 BLOCKING, 0 SHOULD-FIX, 0 NIT** sobre `2e7092a`.
+  `E3b.5b` quedaba bien; `E3b.5` seguía incumplido por otra puerta.
+- **[B1] ACEPTADO SIN DISCUSIÓN Y REPRODUCIDO POR MÍ ANTES DE TOCAR NADA.** La r4 quitó
+  `Date.parse()` pero conservó el criterio de `Date`, no el de la base. Medido con `curl` contra
+  el 54331: `0000-01-01T00:00:00Z` → **400 `22008`**; `2026-01-01T00:00:00+16:00` y `+23:59` →
+  **400 `22009`**; y lo mismo en negativo. **Las fronteras se midieron, no se dedujeron:**
+  `0001` → 200 y `±15:59` → 200, `±16:00` → 400. De ahí `ANIO_MINIMO = 1` y
+  `DESFASE_HORAS_MAXIMO = 15`, con la medición escrita al lado de cada constante.
+- **BARRIDO, para no volver con un tercer agujero de la misma forma:** 1056 candidatos que pasan
+  la expresión regular; **316 aceptados por el validador; los 316 probados contra PostgREST;
+  CERO que la base rechace.** En el sentido contrario hay **49** que la base acepta y aquí se
+  rechazan, y son exactamente dos familias —segundo `60` y hora `24`—, **ambas exigidas por el
+  contrato de la r4**. Es la dirección segura (cursor nulo, página 1, sin error) y PostgREST no
+  emite ninguna de las dos en un `published_at`, porque Postgres las normaliza al guardar.
+  Queda escrito en el código para que no se lea como un descuido.
+- **REGLA SECULAR, medida:** 1900 y 2100 no son bisiestos y la base los rechaza; 2400 sí. El
+  calendario de `Date` coincide con el de PostgreSQL en los tres, así que `esFechaDeCalendario`
+  ya los trataba bien. Añadidos como casos fijos.
+- MUTACIONES: la nueva —`ANIO_MINIMO = 0` y `DESFASE_HORAS_MAXIMO = 23`— pone en rojo los cinco
+  casos nuevos. La de la r4 (restaurar `Date.parse()`) ahora mata **11**. Las tres de la r1
+  siguen rojas, re-verificadas hoy: desempate por `id`, keyset→offset (`[PAG] 112` reaparece) y
+  `CANONICAL_ORIGIN`.
+- GATES: D18 **0/0/0/0** sobre los dos ficheros; totales del proyecto idénticos al padre
+  (`tsc=1039 eslint=161 deno-lint=92 deno-check=43`). `tsc --noEmit` 0. Build verde. `npm test`
+  6 failed | 1143 passed, los 6 de `MesaAbiertaDashboard` idénticos al padre. Tres specs juntos:
+  **6 passed**.
+- **⚠️ HALLAZGO QUE NO ES MÍO Y NO ARREGLO — `reflexiones-paginacion.spec.ts:177` ES INESTABLE
+  BAJO LA SUITE COMPLETA.** Falla en el paso 6 con `página 2 = []` (vacía) en vez de
+  `["[PAG] 113","[BASELINE]"]`. **Lo atribuí midiendo, no razonando**, con cuatro corridas:
+
+  | corrida | árbol | paginación |
+  |---|---|---|
+  | r4 #1 | `2e7092a` | pasa |
+  | r5 #1 | `af0b11c` | **falla** |
+  | r5 #2 | `af0b11c` | **falla** |
+  | r4 #2 | `2e7092a` (revertido a propósito) | **falla** |
+
+  **Falla en el árbol de la r4 sin una línea mía**, así que no lo introduce la r5. Aislada pasa
+  siempre (`1 passed`), y los tres specs juntos pasan (`6 passed`).
+- **MECANISMO, leído en el código:** `titulosEnPantalla` (línea 163) hace
+  `waitForSelector('main ul li h2')` y lee. Tras pulsar «Más antiguas» **ese selector ya está en
+  pantalla desde la página 1**, así que la espera devuelve al instante y `allTextContents()`
+  puede leer durante el re-render, cuando la lista está vacía. No espera al contenido NUEVO. No
+  es contención de datos: los dos specs ya borran sólo sus propios ids (D24).
+- **POR QUÉ NO LO TOCO:** está fuera del B1 que abre esta ronda, y el PLAN **congela ese spec**
+  («el fixture está congelado en `E3b.3` y no queda a criterio del ejecutor»), con la mutación
+  de offset dependiendo de sus aserciones exactas. Cambiarlo por mi cuenta es justo lo que el
+  congelado prohíbe. **Lo dejo decidido por el PM/Brent.**
+- **CONSECUENCIA HONESTA: `E3b.14` no se sostiene hoy.** El conjunto de fallos de HEAD **no** es
+  subconjunto del del padre mientras este spec parpadee, porque el spec es de `E3b` y el padre no
+  lo tiene. No es regresión de la r5; es un defecto de `E3b` desde la r1 que sólo asoma bajo
+  `fullyParallel`.
+- ROUND ACCOUNTING: **segunda remediación tras FAIL de Codex.** El tope de §1.5 para esta
+  categoría es 2, así que **queda agotado**. Otra ronda exige decisión explícita.
+- FINDINGS RAISED: 1, el de arriba. **BLOCKING de código: ninguno discutido.**
+- OPEN AFTER THIS ROUND:
+  1. Decidir sobre el parpadeo de `reflexiones-paginacion.spec.ts` (arreglo mínimo: esperar al
+     contenido nuevo, p. ej. a que el primer `h2` deje de ser el de la página 1).
+  2. Re-review de Codex sobre `phase/E3b-pages@af0b11c`.
