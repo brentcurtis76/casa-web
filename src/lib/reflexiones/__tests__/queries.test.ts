@@ -230,6 +230,73 @@ describe('fechas de calendario imposibles (E3b.5b)', () => {
 });
 
 /**
+ * `E3b.5` — las FRONTERAS DE POSTGRESQL, que la r4 no tenía y Codex midió.
+ *
+ * La r4 arregló el desbordamiento de calendario pero siguió usando el criterio de
+ * `Date`, no el de la base: aceptaba el año `0000` y desfases hasta `±23:59`. PostgreSQL
+ * rechaza ambos, así que el valor crudo llegaba al `.or()` y volvía como 400 — el mismo
+ * incumplimiento de `E3b.5` por otra puerta.
+ *
+ * Los límites de abajo NO son de la documentación: se midieron con `curl` contra
+ * PostgREST local (54331) y la medición está en el comentario de `ANIO_MINIMO`.
+ */
+describe('fronteras de PostgreSQL (E3b.5)', () => {
+  const codificarCrudo = (plano: string) =>
+    btoa(plano).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  /** `[caso, timestamp, lo que contesta PostgREST con el valor crudo]` */
+  const FUERA_DE_RANGO: Array<[string, string, string]> = [
+    ['año cero', '0000-01-01T00:00:00Z', 'HTTP 400 · 22008'],
+    ['desfase +16:00', '2026-01-01T00:00:00+16:00', 'HTTP 400 · 22009'],
+    ['desfase +23:59', '2026-01-01T00:00:00+23:59', 'HTTP 400 · 22009'],
+    ['desfase -16:00', '2026-01-01T00:00:00-16:00', 'HTTP 400 · 22009'],
+    ['desfase -23:59', '2026-01-01T00:00:00-23:59', 'HTTP 400 · 22009'],
+  ];
+
+  it.each(FUERA_DE_RANGO)(
+    '%s ⇒ cursor nulo, página 1 y cero `.or()`',
+    async (caso, timestamp, respuestaDePostgrest) => {
+      const valido = esTimestampValido(timestamp);
+      const crudo = codificarCrudo(`${timestamp}|${ID}`);
+      const decodificado = decodificarCursor(crudo);
+
+      const { cliente, llamadas } = clienteEspia(respuestaCon([filaFalsa(0)]));
+      const pagina = await obtenerPaginaReflexiones(crudo, cliente);
+      const filtros = llamadas.filter((l) => l.metodo === 'or');
+
+      console.log(
+        `[E3b.5/frontera] ${caso}\n  timestamp = ${timestamp}\n  ` +
+          `crudo contra PostgREST = ${respuestaDePostgrest}\n  ` +
+          `esTimestampValido = ${valido}\n  ` +
+          `decodificarCursor = ${JSON.stringify(decodificado)}\n  ` +
+          `episodios de la página = ${pagina.episodios.length}\n  ` +
+          `llamadas .or() = ${JSON.stringify(filtros)}`
+      );
+
+      expect(valido).toBe(false);
+      expect(decodificado).toBeNull();
+      expect(pagina.episodios).toHaveLength(1);
+      expect(filtros).toEqual([]);
+    }
+  );
+
+  /**
+   * El otro lado de la frontera. Sin esto el arreglo podría ser «rechazarlo todo», que
+   * también deja `.or()` vacío y también sería falso.
+   */
+  it.each([
+    ['año 1, el primero que existe', '0001-01-01T00:00:00Z'],
+    ['desfase +15:59, el máximo real', '2026-01-01T00:00:00+15:59'],
+    ['desfase -15:59, el máximo real', '2026-01-01T00:00:00-15:59'],
+    ['año 9999, el mayor que admite la forma', '9999-12-31T23:59:59.999999Z'],
+  ])('%s ⇒ se ACEPTA (PostgREST contesta 200)', (caso, timestamp) => {
+    const obtenido = esTimestampValido(timestamp);
+    console.log(`[E3b.5/frontera-ok] ${caso}: ${timestamp} ⇒ ${obtenido}`);
+    expect(obtenido).toBe(true);
+  });
+});
+
+/**
  * La contrapartida de `E3b.5b`: el arreglo tenía que ser ESTRECHO. Lo que ya se rechazaba
  * bien sigue rechazándose, y —más importante, porque es lo que una validación más dura
  * rompe primero— lo que ya se aceptaba sigue aceptándose.
@@ -250,6 +317,12 @@ describe('el arreglo de E3b.5b no desborda', () => {
     ['fracción de segundo', '2026-08-10T20:58:49.652180+00:00', true],
     ['29 de febrero de un año bisiesto', '2024-02-29T00:00:00Z', true],
     ['31 de diciembre', '2026-12-31T23:59:59Z', true],
+    // La regla secular, medida contra PostgREST: 1900 y 2100 NO son bisiestos (divisibles
+    // por 100 y no por 400) y la base los rechaza; 2400 sí lo es y los acepta. El
+    // calendario de `Date` coincide con el de PostgreSQL en los tres.
+    ['29 de febrero de 1900, que no es bisiesto', '1900-02-29T00:00:00Z', false],
+    ['29 de febrero de 2100, que no es bisiesto', '2100-02-29T00:00:00Z', false],
+    ['29 de febrero de 2400, que sí es bisiesto', '2400-02-29T00:00:00Z', true],
   ];
 
   it.each(CASOS)('%s ⇒ %s', (caso, timestamp, esperado) => {

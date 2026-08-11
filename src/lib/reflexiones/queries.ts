@@ -82,6 +82,31 @@ const RE_SLUG = /^[a-z0-9-]{1,80}$/;
 
 const SEPARADOR_CURSOR = '|';
 
+// ─── Los límites son los de PostgreSQL, medidos contra PostgREST local ────────
+//
+// La rejilla no puede ser «lo que parezca una fecha»: tiene que ser «lo que la base
+// acepta». Todo lo que ella rechaza y esta función deja pasar sale por el `.or()` y
+// vuelve como un 400, que es justo lo que `E3b.5` promete que no pasa. Los dos valores
+// de abajo se midieron con `curl` contra el 54331, no se dedujeron de la documentación:
+//
+//   0000-01-01T00:00:00Z        → 400 `22008`   ·  0001-01-01T00:00:00Z → 200
+//   2026-01-01T00:00:00±16:00   → 400 `22009`   ·  …±15:59             → 200
+
+/** No hay año cero: PostgreSQL pasa de 1 a. C. a 1 d. C. */
+const ANIO_MINIMO = 1;
+
+/** PostgreSQL admite desfases hasta ±15:59:59; a las 16 en punto contesta `22009`. */
+const DESFASE_HORAS_MAXIMO = 15;
+
+// DONDE ESTA REJILLA ES MÁS ESTRICTA QUE LA BASE, Y POR QUÉ ESTÁ BIEN.
+// Un barrido de 1056 candidatos contra PostgREST local dejó dos familias que la base
+// ACEPTA normalizándolas y aquí se rechazan: el segundo `60` (`23:59:60Z` → 200) y la
+// hora `24` (`24:00:00Z` → 200, el día siguiente). Es deliberado y lo fija el contrato
+// de la r4. No rompe nada: rechazar significa cursor `null` y página 1 —sin error—, y
+// PostgREST nunca EMITE ninguna de las dos formas en un `published_at`, porque Postgres
+// las normaliza al guardar. Así que un cursor legítimo no puede contenerlas.
+// En el sentido que importa —lo que la base rechaza y aquí se colaría— el barrido dio 0.
+
 /**
  * ¿Existe realmente ese día en el calendario?
  *
@@ -115,7 +140,11 @@ function esFechaDeCalendario(anio: number, mes: number, dia: number): boolean {
  * `Date.parse()` normaliza en vez de rechazar, así que no sirve de rejilla: devuelve un
  * número finito para el 31 de febrero. Aquí la forma la pone la expresión regular y la
  * validez la ponen los componentes — hora ≤ 23, minuto y segundo ≤ 59, desfase dentro de
- * ±23:59, y un día que exista de verdad.
+ * ±15:59, año ≥ 1, y un día que exista de verdad.
+ *
+ * **El criterio de «válido» es el de PostgreSQL, no el de JavaScript.** La r4 los confundió:
+ * aceptaba el año `0000` y desfases hasta `±23:59` porque `Date` los admite, y la base los
+ * rechaza con `22008` y `22009`. Ver `ANIO_MINIMO` y `DESFASE_HORAS_MAXIMO`.
  */
 export function esTimestampValido(valor: string): boolean {
   const partes = RE_ISO_CON_ZONA.exec(valor);
@@ -123,12 +152,14 @@ export function esTimestampValido(valor: string): boolean {
 
   const [, anio, mes, dia, hora, minuto, segundo, , desfaseHoras, desfaseMinutos] = partes;
 
+  if (Number(anio) < ANIO_MINIMO) return false;
+
   // La hora 24 es el otro agujero que dejaba `Date.parse()`: la rodaba al día siguiente.
   if (Number(hora) > 23 || Number(minuto) > 59 || Number(segundo) > 59) return false;
 
   // `undefined` cuando la zona es `Z`, que no lleva desfase que validar.
   if (desfaseHoras !== undefined) {
-    if (Number(desfaseHoras) > 23 || Number(desfaseMinutos) > 59) return false;
+    if (Number(desfaseHoras) > DESFASE_HORAS_MAXIMO || Number(desfaseMinutos) > 59) return false;
   }
 
   return esFechaDeCalendario(Number(anio), Number(mes), Number(dia));
