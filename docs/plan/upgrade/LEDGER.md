@@ -3991,3 +3991,77 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `MesaAbiertaAdmin.tsx`**, 2227 líneas que ningún test del repo ha montado nunca; si el
   andamiaje es desproporcionado el resultado correcto es `FINDINGS`, no una aserción
   floja. (3) Luego P5b, y al planificar P6 ya no hace falta arrastrar B-15.
+
+### 2026-08-11 — P5c round 1 — EXEC (Claude Opus 5)
+- SESSION: UPGRADE · P5c · r1 · EXEC
+- STARTED: 2026-08-11T21:20:34Z · ENDED: 2026-08-11T21:58:00Z · ATTEMPT: 1 · RISK: STANDARD
+- CONTEXT PRESSURE: comfortable — el trabajo cupo entero; lo caro no fue el código
+  sino medir la línea base dos veces.
+- ACTION: tres tests y un comentario, sin un solo cambio de conducta. **H1** `el déficit
+  real cruza el borde HTTP` (mesa de seis, cero portadores dispuestos, una sola mesa: el
+  déficit es estructural y no hay donante). **H2** `el anfitrión también puede excluirse`
+  (recorre el asistente con `preferredRole="host"`, que a diferencia del invitado exige
+  rellenar la dirección). **H3** `el fetch entrega can_bring_main_dish al diálogo de
+  edición`, fichero nuevo. **H4** la cabecera de `handler.ts`.
+- COMMITS: `56505ae` (código) + este cierre de ledger. Rama `feat/mesa-md-guards`,
+  base `main`@`d5b16e8`. `git diff b9675e6..HEAD` = exactamente los 4 ficheros de `F`.
+- TESTS: `deno test --allow-all --no-check .` → **457 passed / 0 failed** (base 456/0,
+  **+1**) · `npx vitest run --no-file-parallelism` → **1095 passed / 6 failed** (1101);
+  base medida por mí en un worktree limpio de `d5b16e8`: **1093 / 6** (1099). **+2, y el
+  conjunto de rojos es idéntico**: los 6 de `MesaAbiertaDashboard.test.tsx`.
+- **EL SÉPTIMO ROJO Y CÓMO SE DIRIMIÓ (regla del padre, D8.2).** La primera pasada de la
+  punta dio **7 rojos**: los 6 conocidos más `CuentacuentoEditor.ph.surfaces` T-H.4. No lo
+  di por flake de memoria, lo medí. (1) Esa pasada tardó **363 s** contra los **213 s** de
+  la del padre — o sea, corrió con la máquina cargada, que es exactamente la condición de
+  **B-05**. (2) El fichero aislado y en silencio da **15/15 en las dos**, padre y punta,
+  **tres pasadas cada una**. (3) Repetida la suite completa de la punta en silencio:
+  **1095/6 en 209 s**, sin T-H.4 y con el conjunto de rojos exacto del padre. El rojo era
+  carga, no el commit. Ningún fichero de mi diff lo importa.
+- MUTATION EVIDENCE: **H1** — `tablesWithShortfall: []` en `handler.ts:346` → el test
+  nuevo cae con `AssertionError` (`[{shortfall: 2, tableId: "h1"}]` esperado, `[]`
+  recibido), **28 passed / 1 failed**, y los otros 28 siguen verdes: reproduce el 28/0 que
+  midió el PM. Revertido. **H2** — el switch envuelto en `rolePreference === 'guest'`
+  (`MesaAbiertaSignup.tsx:373`) → `TestingLibraryElementError: Unable to find an
+  accessible element with the role "switch"`, **1 failed / 4 passed**: los cuatro tests
+  previos aguantan verdes, que es justo la ceguera de B-18. Revertido. **H3** —
+  `can_bring_main_dish` fuera del `select` (`MesaAbiertaAdmin.tsx:239`) → el switch del
+  diálogo llega `aria-checked="false"` en vez de `"true"`; en toda `src/components/
+  mesa-abierta` sólo cae ese test (7 rojos = los 6 de base + el mío), o sea reproduce el
+  12/12 de B-15. Revertido. `git status` limpio antes de reportar.
+- **POR QUÉ H3 NO ES LA ASERCIÓN DÉBIL QUE EL PROMPT PROHÍBE.** El doble de Supabase
+  **proyecta las columnas del `select`**, como PostgREST. Un doble que devolviera la fila
+  entera pasaría el test con la costura rota — sería el equivalente a comprobar la cadena
+  del `select`. Es la proyección lo que hace que la mutación se note. El panel montó sin
+  router ni árbol de auth: un `vi.mock` de `useAuth`, otro de `useToast` y un constructor
+  encadenable. `userEvent` y no `fireEvent`, porque las pestañas de Radix se activan en
+  `mouseDown` y un `click` suelto no cambia de pestaña (media hora de depuración ahí).
+- **H1 AFIRMA LA AUSENCIA DE PII CON PII PRESENTE.** El `console.warn` de D4 se captura
+  sustituyendo `console.warn` y restaurándolo en un `finally`. Como el handler hace
+  `select("*")`, las filas del doble ahora llevan `full_name`, `email` y `phone`
+  sintéticos: sin eso, «el aviso no lleva PII» sería cierto por vacuidad. D12 respetado —
+  datos inventados, en memoria, nada enlazado a `auth.users`.
+- GATES: `npm run build` → **exit 0**. Gate D8 sobre los 4 ficheros, difeado contra
+  `d5b16e8`: **cero diagnósticos nuevos**. Las 5 diferencias son **desplazamiento de
+  línea** (+3, exactamente lo que creció el comentario de H4) con el mensaje byte a byte
+  idéntico — `eslint` 32→35, `deno lint` 299→302, `deno check` 356/151/150→359/154/153.
+  Totales del proyecto **idénticos** en padre y punta: `tsc=1039 eslint=161 deno-lint=92
+  deno-check=43`. Los 3 diagnósticos de `handler.ts` son los preexistentes de B-08.
+- **DOS GATES DEL `CLAUDE.md` NO ESTÁN VERDES, Y NINGUNO ES DE ESTA FASE.** (1)
+  `npm run lint` sale != 0 con **161 problemas**, el número que B-09 anota para un
+  worktree limpio; medido idéntico en padre y punta, y **0 atribuibles a `F`**. (2)
+  `npx playwright test` **no llega a listar**: la guarda anti-producción de capa 1 aborta
+  sin `.env.test`, porque sin `VITE_SUPABASE_URL` los tests escribirían en la base
+  compartida con Life OS. Reproducido idéntico en el padre. Montar un Supabase local está
+  fuera del scope de esta fase y forzarlo violaría D12 y las reglas duras del repo.
+  Esta fase no cambia una línea de conducta, así que no hay superficie E2E que regresar.
+- FINDINGS RAISED: ninguno. El riesgo declarado de H3 —que montar `MesaAbiertaAdmin.tsx`
+  exigiera andamiaje desproporcionado— **no se materializó**: tres mocks y un constructor
+  encadenable. El precedente de P5a acertó.
+- DEVIATIONS: **H7 tal como está escrito no es satisfacible.** Pide que `git diff
+  main..HEAD` toque sólo los 4 ficheros más `LEDGER.md`, pero en `main..HEAD` está también
+  `b9675e6`, el commit del propio PM que creó la fase (`PLAN.md`, `prompts/P5c-r1.md`).
+  Lo interpreto sobre el diff del ejecutor: `git diff b9675e6..HEAD` = exactamente los 4
+  ficheros de `F`, verificado.
+- OPEN AFTER THIS ROUND: (1) Revisión independiente de Codex sobre el diff acumulado.
+  (2) Sigue abierta **B-05** y ahora con una medición más: la regla del padre la dirime
+  bien, pero cuesta ~7 minutos de suite por ronda. (3) Después, `/pm-boot UPGRADE P5b`.
