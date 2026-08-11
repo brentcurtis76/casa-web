@@ -3876,3 +3876,63 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   el worktree `casa-upgrade` y no en `casa-web`, cuya copia va dos fases por detrás. Es el
   fallo que casi me hace despachar la fase equivocada en el bootstrap y que el ejecutor de
   r2 volvió a tropezar al final de su reporte.
+
+### 2026-08-11 — P5a CIERRE — Codex (REVIEW) + PM (Opus 5)
+- SESSION: UPGRADE · P5a · PM
+- **VEREDICTO: PASS.** `feat/mesa-md-form`, revisión commiteada y **publicada por Codex**
+  en `6917801` (verificado: existe en `origin/feat/mesa-md-form`). **Cero BLOCKING, dos
+  SHOULD-FIX, un NIT.** **P5a queda DONE.** Marcada en el índice de fases con fecha y SHA.
+- **LA FASE COSTÓ DOS RONDAS Y LA SEGUNDA LA PROVOCÓ UN ERROR MÍO DE DESPACHO**, no un
+  fallo del ejecutor: r1 salió limpia al primer intento y la enmienda que motivó r2 nació
+  de un hueco que yo no vi y que encontró una sesión abierta con el comando equivocado.
+  Queda como la primera enmienda al PLAN desde la congelación.
+- LO QUE CODEX VERIFICÓ POR SU CUENTA: las dos mutaciones de F9 y F10 **fallan
+  correctamente** · una cuarta mutación propia · delta **+12 exacto** · gates idénticos al
+  padre · build correcto · **Deno 456/456** (que yo no había reejecutado: P5a no toca Deno,
+  pero comprobarlo era lo correcto) · worktree limpio.
+- **LA CUARTA MUTACIÓN ENCONTRÓ ALGO, Y ES LA TERCERA FASE SEGUIDA EN QUE ESA PREGUNTA
+  RINDE MÁS QUE EXHIBIR LAS MUTACIONES PROPIAS.** S2 → **B-18**: envolver el switch con
+  `rolePreference === 'guest'` deja la suite en **12/12**. **Lo reproduje yo**: 12/12,
+  árbol limpio tras revertir. Los doce tests recorren el asistente **solo como invitado**,
+  así que perder el opt-out del **anfitrión** no pone nada en rojo — y el anfitrión es por
+  **D7** el primer candidato a `main_course`, o sea el caso que más importa. El código
+  está bien (el switch vive fuera del ternario y ambos roles lo ven); lo que falta es la
+  guarda.
+- **CODEX ACEPTA P6 COMO HOGAR DE B-15, PERO CON UNA CONDICIÓN QUE HAY QUE CUMPLIR AL
+  PLANIFICAR P6, Y TIENE RAZÓN.** Que `MesaAbiertaAdmin.tsx` esté en la `F` de P6 **no
+  basta**: su test plan actual no garantiza que la costura llegue a montarse. B-15 tiene
+  que convertirse allí en **criterio y test nombrados** —«el fetch entrega `false` al
+  diálogo»—. Mi recomendación anterior era más floja que eso y la corrijo. Anotado en la
+  fila de B-15.
+- **CODEX RESPONDIÓ LA PREGUNTA DE PLAN QUE LE HICE, Y LA RESPUESTA ES MEJOR QUE LA MÍA.**
+  Regla propuesta para el SOP: **antes de cerrar una fase, todo SHOULD-FIX de corrección o
+  cobertura debe quedar en uno de tres estados auditables** — (a) reparado en la fase
+  actual; (b) asignado por enmienda a una fase concreta, **con el fichero en su `F` y un
+  criterio o test nombrado**; o (c) aceptado explícitamente por Brent como deuda, con
+  responsable e hito. «Al backlog» sin dueño ni criterio **no es un estado**. Eso es
+  exactamente el agujero por el que se colaron B-13, B-14 y el N1 de P4, y por el que
+  B-16 y B-17 habrían caído si la enmienda no los rescata. **No lo aplico
+  retroactivamente por mi cuenta**: cambiar el SOP es decisión de Brent, y son cuatro
+  ítems (B-13, B-14, B-18, N1 de P4) los que habría que colocar.
+- NIT de Codex: **N1** el icono `Check` verde del resumen del paso 5 para una exclusión.
+  Mismo nit que yo levanté; preferencia visual, no defecto, y no se toca.
+- **§3.8.5 — P5b RELEÍDA A LA LUZ DE LO CONSTRUIDO. NINGUNA ENMIENDA, DOS NOTAS:**
+  - **El alcance de P5b se sostiene tal cual.** Verifiqué `admin-add-participant/index.ts`:
+    239 líneas, `serve()` en `:10`, `Deno.env` en `:16–17`, **dos** rutas de
+    `auth.admin.createUser` (`:128` y `:158`) y el insert del participante en `:188`.
+    Partirlo en `handler.ts` + adaptador + `handler_test.ts` (3 ficheros) es correcto, y el
+    riesgo que el plan ya nombra —mezclar creación de usuario con inserción— es real y
+    tiene dos ramas, no una.
+  - **Nota para el prompt de P5b:** el cliente que P5a acaba de dejar **siempre** manda
+    `canBringMainDish` como booleano, nunca ausente. El `!== false` de G2 sigue siendo el
+    contrato correcto y el test 3 («por defecto `true` si el campo falta») sigue teniendo
+    sentido, pero para llamadas directas o clientes viejos, **no** para el diálogo. Que el
+    prompt lo diga, o alguien concluirá que el test 3 es redundante y lo borrará.
+- BACKLOG: **B-16 y B-17 CERRADAS** (r2). **B-15 abierta con la condición de Codex
+  anotada** → P6. **B-18 añadida, sin dueño.** B-13, B-14 y el N1 de P4 **siguen sin
+  dueño**. B-06 antes de P8. B-05, B-07, B-09, B-10 sin cambios.
+- DECISION LOG: añadida la fila que ratifica `status: 'pending'`.
+- OPEN AFTER THIS ROUND: (1) **Merge de `feat/mesa-md-form` a `main`** — decisión de
+  Brent. (2) **Decidir el destino de B-13, B-14, B-18 y el N1 de P4**, y si se adopta la
+  regla de tres estados que propone Codex. (3) Al planificar **P6**, B-15 debe entrar como
+  criterio nombrado, no como fichero en `F`. (4) Después, `/pm-boot UPGRADE P5b`.
