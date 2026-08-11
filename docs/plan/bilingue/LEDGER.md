@@ -1062,3 +1062,39 @@ D-N blind spot, recorded as one.
 - OPEN AFTER THIS ROUND: **Brent decides** — approve the amendment and run D1a once more under the
   new contract; accept D1a as it stands with a second logged §1.5 override and carry both findings
   into D1b as caveats; or backlog. `PLAN.md` unchanged and D1a not marked DONE either way.
+
+### 2026-08-11 — D1a re-plan APPROVED and applied — PM
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min
+- STAGE: amendment 20m | fresh review 0m | triage 0m
+- EFFORT: PM `high`
+- FIRST-PASS: n/a — plan amendment, not a review round.
+- ACTION: Brent approved option 1 of `REPLAN-D1a.md`. `PLAN.md` amended under SOP §3.9.
+- **AMENDMENT APPLIED:**
+  - **New frozen decision D-O** — the same treatment D-N gives the inventory now applies to the
+    method: no method artifact asserts a safety property it has not tested; every exclusion rule
+    states its error direction and where that direction fails; ambiguous evidence fails toward
+    inclusion **in code**; exclusion safety is established by enumerating what was excluded, never
+    by a pattern claiming to recognise what is safe to exclude.
+  - **D1a.9** — untested absolutes forbidden; error direction and its failure cases required.
+  - **D1a.10** — the ambiguity branch becomes an explicit, commented, reason-recording branch in
+    `census.sh` rather than emergent behaviour someone asserts.
+  - **D1a.11** — no textual check may claim to prove a file is or is not a test. The r3 regex was
+    refuted by construction; a better regex is the same mistake.
+  - **D1b.13** — new deliverable `evidence/D1-exclusions.md`: every excluded path with its rule and
+    evidence, **plus every file kept under the D1a.10 ambiguity branch with its reason**. This is
+    the audit surface that replaces the guarantee — an over-inclusion is as much a finding as an
+    exclusion, and a reviewer can read a short derived list where they could not audit a regex.
+- **WHAT THE AMENDMENT DELIBERATELY DOES NOT TOUCH:** roots, character class, word list, schema,
+  inclusion rule, manifest design, hygiene, output shape, and the stage-two exclusion *behaviour*.
+  Codex passed every one across two reviews. r4 changes what the artifact **claims** and makes one
+  branch explicit — it does not change what the census selects.
+- **THE GENERAL LESSON, RECORDED BECAUSE IT OUTLIVES THIS PHASE:** this workstream has now failed
+  the same way at two levels. Six plan drafts chased a provably complete *inventory*; three
+  executor rounds chased a provably safe *method*. Both are unprovable in advance, and in both
+  cases the fix was the same — state the error direction, make the safe default explicit, and move
+  the proof to the artifact that can actually show its work. D-N and D-O are the same decision
+  applied one level apart.
+- OPEN AFTER THIS ROUND: `prompts/D1a-r4.md` issued under the amended contract. Round counting
+  restarts against the amended phase (§3.9), so r4 is round 1 of 3 against the new criteria.

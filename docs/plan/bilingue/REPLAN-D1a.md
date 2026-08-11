@@ -1,6 +1,6 @@
 # RE-PLAN PROPOSAL — D1a (SOP §3.9)
 
-Status: **PROPOSED, not applied.** `PLAN.md` is unchanged pending Brent's approval.
+Status: **APPROVED by Brent 2026-08-11 and applied to `PLAN.md`.** Retained as the record of why.
 Date: 2026-08-11 · Raised by: PM · Trigger: SOP §1.5 caps both reached.
 
 - Executor rounds: **3 of max 3** (r1, r2, r3)

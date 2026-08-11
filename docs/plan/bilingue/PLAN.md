@@ -220,6 +220,7 @@ npx tsc --noEmit; echo $?                                    # -> 0  (clean base
 | **D-L** | **Method before measurement.** Any counting or classification method is committed and independently reviewed in a phase that produces **no results**, before the phase that produces results. What this buys is **method immutability after review** — it does **not** prove measurement never happened, and this plan does not claim it does: preliminary totals are already published above. | Review 5 [D4-B4]; overclaim corrected per review 6 [D5-B2]. |
 | **D-M** | **Never describe a command in prose. Paste the literal script and its literal output.** A summary of what a command did is not evidence that it did it; three consecutive drafts had prose that drifted from the run, most recently Pass B's file set (135 vs the 185 described). | Review 6 [D5-B1]. This is the last surviving form of the failure that produced six FAILed reviews. |
 | **D-N** | **D1 produces a best-effort inventory with a measured blind spot, not a proven-complete one.** Every artifact states what the method provably cannot see, and how to extend it. | Six reviews each found a further missed surface, because finding surfaces is the work. Claiming completeness is unprovable in advance; characterising the gap is not. |
+| **D-O** | **The same applies to the method, not only to the inventory.** No method artifact asserts a safety property it has not tested. Every exclusion rule states its error direction and the cases where that direction does not hold; where evidence is ambiguous, the rule fails toward inclusion **in code**. Exclusion safety is established by enumerating what was excluded, never by a pattern claiming to recognise what is safe to exclude. | D1a's criteria demanded absolutes from a bash text heuristic, and every heuristic has both error directions. Three executor rounds produced three correct fixes and three new unprovable guarantees. D-N granted the inventory a blind spot; the method never got the same treatment, and that omission consumed both §1.5 caps. |
 
 ---
 
@@ -302,6 +303,20 @@ record takes both values rather than being forced into one or into `UNVERIFIED`.
   cannot prove absence of tuning and is not claimed to. *(Review 6 [D5-B3].)*
 - [D1a.7] Every artifact records the source SHA and the OS/locale it targets (D-K, [D4-S1]).
 - [D1a.8] `git diff --stat pilot/sop-v2...HEAD` lists only `docs/plan/bilingue/`.
+- [D1a.9] **No method artifact asserts a safety property it has not tested (D-O).** Every exclusion
+  rule states its **error direction** — over-include or over-exclude — and names the cases where
+  that direction does not hold. Absolutes such as "drops no copy surface" or "every excluded file
+  is a test" are forbidden; a text heuristic cannot support them.
+- [D1a.10] **Unresolved evidence fails toward inclusion as a coded rule, not an asserted property.**
+  Where exclusion evidence is ambiguous — a basename collision, no literal reference, a
+  dynamically constructed path — the file is **kept**, the branch is explicit in `census.sh`, and
+  the reason is recorded for D1b to emit.
+- [D1a.11] **No textual check claims to prove a file is or is not a test.** Proving that by regex
+  was tried in r3 and refuted: `// Deno.test(…)` and `const note = "Deno.test(";` both pass, and
+  `Deno["test"](…)` fails. Exclusion safety is established by **enumeration in D1b** (D1b.13), not
+  by pattern matching in D1a.
+
+*(D1a.9–D1a.11 added 2026-08-11 by approved re-plan — see `REPLAN-D1a.md` and the Decision log.)*
 
 ### Test plan
 
@@ -390,6 +405,11 @@ marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its hal
   structurally cannot see. Known already — text *declared* in one file and *rendered* in another
   (`LITURGY_ORDER`, `WA_TEMPLATES`), and unaccented Spanish outside the frozen word list. Say what
   else, and say how a future pass would extend the method.
+- [D1b.13] **`evidence/D1-exclusions.md` — the audit surface that replaces the guarantee.** Every
+  path the method excluded, the rule that excluded it, and the evidence. Ordered by rule. This is
+  where a reviewer confirms nothing real was dropped, by reading a short derived list rather than
+  trusting a regex. Every file kept under the D1a.10 ambiguity branch is listed too, with its
+  reason — an over-inclusion is as much a finding as an exclusion.
 - [D1b.9] `git diff --stat pilot/sop-v2...HEAD` lists only `docs/plan/bilingue/`.
 - [D1b.10] **`D1-SUMMARY.md`**: one page, no jargon, readable by someone who has not read the
   codebase. States how many **surfaces** (records, not files), which follow which language axis,
@@ -516,6 +536,7 @@ mechanism the next plan must choose, since **D-K governs shell hygiene, not SQL*
 | 2026-08-10 | **The sink regex is a candidate floor, paired with a call-path audit (D-J extended)** | it was wrong by 3× and missed a live WhatsApp emission | review 5 [D4-B2] |
 | 2026-08-10 | **Brent's product decisions restored as Appendix A** | the shrink dropped them; they are decisions, not methodology | review 5 [D4-B5] |
 | 2026-08-10 | `D1-SUMMARY.md` requires **recorded** human acceptance in the DoD | Brent said he lacked visibility to judge; "written" is not "understood" | review 5 [D4-S3] |
+| **2026-08-11** | **D1a re-scoped (approved re-plan, SOP §3.9): the method states its rule and error direction; D1b proves exclusion safety by enumeration.** New D-O; new criteria D1a.9–D1a.11 and D1b.13. | Three executor rounds and two Codex reviews established that a bash text heuristic cannot support the absolute safety claims D1a's criteria demanded — "never drops a copy surface" is false where production reaches a file by a constructed path, and a regex cannot tell `Deno.test(…)` in code from the same text in a comment or a string. Both §1.5 caps reached. Proposal in `REPLAN-D1a.md`; approved by Brent 2026-08-11. | PM, per Codex D1a review round 2 |
 | **2026-08-11** | **Amendment to frozen plan: D1b.11 cites a set *definition*, not the number 185** | D1a r2 excluded test files, which invalidated 185 — and every other census total published in this plan and its six reviews. A criterion naming a stale figure would have made D1b unpassable or, worse, passable against the wrong set. | Codex D1a review, NOTES ON THE PLAN |
 
 ---
