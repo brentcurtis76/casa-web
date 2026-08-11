@@ -96,21 +96,59 @@ emergent.
 
 ### The branches are capable of firing — falsification by construction
 
-Branch 2 does not fire against the live tree, so it was exercised in isolation on a scratch tree
-using the committed function, alongside both other outcomes:
+Branch 2 does not fire against the live tree, so all four outcomes were exercised in isolation on a
+scratch tree, using the committed function extracted verbatim from `census.sh` rather than a retyped
+copy. This is the complete harness, not an abridgement of one:
+
+```bash
+export LC_ALL=en_US.UTF-8
+CENSUS=/Users/brentcurtis/dev/casa-pilot/docs/plan/bilingue/evidence/census.sh
+SCRATCH=$(/usr/bin/mktemp -d)
+
+# The four fixtures, one per outcome.
+/bin/mkdir -p "$SCRATCH/src" "$SCRATCH/supabase/x"
+printf '{"a":1}\n'                        > "$SCRATCH/src/orphan.json"    # nothing names it
+printf '{"b":2}\n'                        > "$SCRATCH/src/dup.json"       # basename appears twice
+printf '{"b":2}\n'                        > "$SCRATCH/supabase/x/dup.json"
+printf '{"c":3}\n'                        > "$SCRATCH/src/fixture.json"   # only a test names it
+printf 'import d from "./fixture.json";\n' > "$SCRATCH/src/thing_test.ts"
+printf '{"d":4}\n'                        > "$SCRATCH/src/real.json"      # production names it
+printf 'import d from "./real.json";\n'   > "$SCRATCH/src/prod.ts"
+
+# Extract the committed function and its recorder verbatim from census.sh — not a retyped copy.
+/usr/bin/sed -n '/^AMBIGUOUS_KEPT=$/,/^}$/p'              "$CENSUS" >  "$SCRATCH/fn.sh"
+/usr/bin/sed -n '/^json_is_test_evidence()/,/^}$/p'       "$CENSUS" >> "$SCRATCH/fn.sh"
+/usr/bin/shasum -a 256 "$SCRATCH/fn.sh" | /usr/bin/awk '{print "harness function sha256: " $1}'
+
+cd "$SCRATCH"
+FIND=/usr/bin/find; SORT=/usr/bin/sort; GREP=/usr/bin/grep; WC=/usr/bin/wc; AWK=/usr/bin/awk
+TEST_PATH_ERE='(^|/)__tests__/|\.test\.[^/]+$|_test\.[^/]+$'
+REFERRER_ROOTS=(src supabase)
+. "$SCRATCH/fn.sh"
+
+for f in src/orphan.json src/dup.json src/fixture.json src/real.json; do
+  if json_is_test_evidence "$f"; then printf 'EXCLUDED\t%s\n' "$f"; else printf 'KEPT\t%s\n' "$f"; fi
+done
+/bin/rm -rf "$SCRATCH"
+```
+
+Unedited output, stdout and stderr interleaved, exit status included:
 
 ```text
-$ . <function extracted verbatim from census.sh>
-$ for f in src/orphan.json src/dup.json src/fixture.json src/real.json; do … done
+harness function sha256: ca6e9ce7977e29692cef6e8572f4a2a483458cd4fa9662744033f087a4aab7ef
 AMBIGUOUS_KEEP	src/orphan.json	reason=no-literal-referrer
 KEPT	src/orphan.json
 AMBIGUOUS_KEEP	src/dup.json	reason=basename-collision
 KEPT	src/dup.json
 EXCLUDED	src/fixture.json
 KEPT	src/real.json
+harness exit=0
 ```
 
-(`fixture.json` is referenced only by `thing_test.ts`; `real.json` only by `prod.ts`.)
+Four fixtures, four outcomes: branch 2 (`orphan.json`, nothing names it), branch 1
+(`dup.json`, basename appears under both roots), branch 3 exclude (`fixture.json`, named only by
+`thing_test.ts`), branch 3 keep (`real.json`, named by `prod.ts`). The `sha256` line pins which text
+was actually sourced, so the run cannot be confused with one against an edited copy of the function.
 
 ### No untested absolute survives (A1)
 

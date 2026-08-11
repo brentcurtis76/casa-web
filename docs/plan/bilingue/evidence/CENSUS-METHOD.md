@@ -39,9 +39,9 @@ in this order:
 -not -regex '.* [0-9]\.(ts|tsx)'
 ```
 
-The first three exclude test code under the two conventions this repository uses for test *modules*:
-`__tests__/` directories and `*.test.ts`/`*.test.tsx` under `src/`, and the Deno underscore
-convention `*_test.ts` used throughout `supabase/functions/`. **Why:** the census measures
+The first three predicates cover the two test-*module* conventions this repository uses, across three
+path shapes: `__tests__/` directories and `*.test.ts`/`*.test.tsx` under `src/`, and the Deno
+underscore convention `*_test.ts` used throughout `supabase/functions/`. **Why:** the census measures
 user-visible copy surfaces, and the Spanish literals in a test module are ordinarily assertions and
 fixtures — expected values quoted from the module under test — so counting them double-counts the
 production string and inflates every sizing decision D1b feeds.
@@ -49,11 +49,18 @@ The fourth predicate excludes copied TypeScript artifacts whose basename ends in
 a decimal digit.
 
 **Error direction of the four stage-one predicates: over-exclusion.** They read the path and ask
-nothing about the content, so a file whose name matches is dropped whether or not it is a test. Two
-named cases where that direction is wrong: a production module named `*_test.ts`, or placed inside a
-`__tests__/` directory, is excluded although it emits copy; and a test that itself writes to a
-user-visible sink is excluded although it emits. **This method does not claim either case is absent
-at SOURCE_SHA.** D1a round 3 tried to establish the first with a pattern that looked for a
+nothing about the content, so a file whose name matches is dropped whether or not it is a test.
+Three named cases where that direction is wrong, one of them belonging to the fourth predicate
+specifically:
+
+- a production module named `*_test.ts`, or placed inside a `__tests__/` directory, is excluded
+  although it emits copy;
+- a test that itself writes to a user-visible sink is excluded although it emits; and
+- **a production module whose basename legitimately ends in a space followed by a decimal digit** —
+  `Slide 2.tsx`, `Paso 3.ts` — is excluded by the fourth predicate, which cannot distinguish a
+  deliberate name from a copied artifact. The predicate reads the shape, not the provenance.
+
+**This method does not claim any of the three is absent at SOURCE_SHA.** D1a round 3 tried to establish the first with a pattern that looked for a
 `Deno.test` declaration in every excluded file; that check was refuted and has been removed — see
 *Exclusion safety is established by enumeration, not by pattern* below. What the predicates actually
 exclude is enumerated in D1b's `evidence/D1-exclusions.md`, where a reviewer reads the list.
@@ -140,9 +147,12 @@ TEST EVIDENCE (excluded): supabase/functions/generate-story/corpus_pd_base.json
 ```
 
 `corpus_pd_base.json` is a captured baseline of the prompt corpus, re-captured by a documented
-script and read only by `corpus_parity_test.ts`. It is not named `*_test.*`, does not sit in a
-`__tests__` directory, and follows no naming convention at all — no name predicate could have
-reached it, and the next captured baseline will be named differently again.
+script and read only by `corpus_parity_test.ts`. Its path matches none of the three test-module
+predicates: it is not named `*_test.*` and does not sit in a `__tests__` directory. A predicate
+naming this basename literally would of course exclude it — the point is narrower and is all that is
+claimed: its name carries no *convention* for a general predicate to key on, and nothing in the
+capture script constrains what the next baseline is called. That is why stage two keys on referrers
+instead of on names.
 
 **What this rule cannot do.** It reads referrers inside `src/` and `supabase/` only, so a `.json`
 referenced solely from a build script, a Deno task or a CI workflow reaches branch 2 and is kept
@@ -177,8 +187,10 @@ its recorded reason (D1b.13). A reviewer confirms nothing real was dropped by re
 derived list. **This artifact makes no claim that a given file is or is not a test.** It states the
 rules, and the direction in which each is wrong.
 
-One bounded piece of evidence survives, stated with its limits rather than as a guarantee — that no
-module *statically written* to import a `*_test` module exists under the two roots at SOURCE_SHA:
+One bounded probe survives, and it is reported as **what it searched**, not as a property it
+establishes. The command looks under `src/` and `supabase/`, in `.ts`/`.tsx` files, for a
+**`from '…_test'` or `from '…_test.ts'` clause** outside `*_test.ts` files themselves, and returns
+no output at SOURCE_SHA:
 
 ```bash
 /usr/bin/grep -rnE "from ['\"][^'\"]*_test(\.ts)?['\"]" src supabase \
@@ -186,12 +198,14 @@ module *statically written* to import a `*_test` module exists under the two roo
 # exit 1, no output
 ```
 
-That search sees written specifiers only. A dynamic `import()`, a specifier assembled at runtime, a
-re-export chain, and an importer outside `src/`/`supabase/` are all invisible to it, and it says
-nothing about whether a test file reaches a user by some other route — a test that itself wrote to a
-user-visible sink would satisfy it and still be excluded. Only the call-path audit fixed in
-`SURFACE-SCHEMA.md` bears on that, and it is scoped to production surfaces. Stated blind spot under
-D-N and D-O, not a proven absence.
+**That one specifier shape, in those two roots, at that commit, is the entire finding.** The search
+does not see, and the artifact therefore does not speak to: a side-effect import with no `from`
+clause (`import './helper_test.ts';`), a dynamic `import()`, a specifier assembled at runtime, a
+re-export chain, a `require`, an extensionless or aliased specifier that does not end in `_test`, or
+any importer outside those two roots. It also says nothing about whether a test file reaches a user
+by another route — a test that itself wrote to a user-visible sink would produce no match here and
+still be excluded. Only the call-path audit fixed in `SURFACE-SCHEMA.md` bears on that, and it is
+scoped to production surfaces. Stated blind spot under D-N and D-O, not a proven absence.
 
 ### A retracted claim
 
@@ -202,12 +216,20 @@ see — the survey searches names, and that file's name says nothing. Codex foun
 final review. The failure was not the survey; it was extending a name-based finding into a claim
 about fixtures, which are not identified by name.
 
-What the survey below actually supports is narrower, and is all that is claimed now: **no test, spec
-or mock *naming* convention beyond the three already excluded occurs in the configured roots at
-SOURCE_SHA.** Test *data* does occur there, under no naming convention at all, and stage two above is
-what catches it. Over the candidate set produced by the roots and the extension filter, every path
-whose name contains `test` in any case is covered by one of the three name predicates, and
-`.spec.`/`_spec.`, `__mocks__`, and `test/` or `tests/` directory segments match nothing:
+**What replaces it is a report of two searches, not a property.** The commands below run over the
+candidate set produced by the roots and the extension filter, and this is the whole of what they
+establish:
+
+1. every path whose name contains the substring `test` in any case is already covered by one of the
+   three test-module predicates — the first search returns no output; and
+2. the substrings `__mocks__`, `[._]spec.`, and a `/test/` or `/tests/` path segment return no
+   output either.
+
+Two probes over four literal substrings, at SOURCE_SHA, over that candidate set. **A test, fixture
+or mock convention that uses none of those substrings in its path would appear in neither search**,
+and unnamed test *data* — which does occur in these roots — is invisible to both by construction;
+stage two above is what catches that. Nothing here supports a statement about conventions in
+general.
 
 ```bash
 export LC_ALL=en_US.UTF-8
@@ -231,12 +253,12 @@ against SOURCE_SHA, so an exclusion that removes nothing could never be justifie
 and adding one would be untestable decoration. A new convention appearing later is an extension, and
 the extension rule below governs it.
 
-**Where this survey's direction does not hold.** It is a search over *names*, at SOURCE_SHA, over the
-candidate set the roots and the extension filter produce. It cannot see a test, fixture or mock that
-is not identified by its name — which is precisely what falsified the round 2 version of the claim —
-and it says nothing about any other commit. Its error direction is therefore over-confidence in
-stage one's coverage, and the correction for that is stage two plus the D1b enumeration, not a wider
-regex.
+**Where these searches' direction does not hold.** They read *names*, at SOURCE_SHA, over that one
+candidate set, for four literal substrings. They cannot see a test, fixture or mock that is not
+identified by its name — precisely what falsified the round 2 claim — nor one named by some fifth
+convention, and they say nothing about any other commit. Their error direction is therefore
+over-confidence in stage one's coverage, and the correction is stage two plus the D1b enumeration,
+not a wider regex.
 
 The copied-artifact exclusion is implemented with BSD extended regular expressions by invoking
 `/usr/bin/find -E` and applying `.* [0-9]\.(ts|tsx)`. Bare `find -regex` is not interchangeable with

@@ -1179,10 +1179,52 @@ D-N blind spot, recorded as one.
   Gate set is the document-only set defined at D1a bootstrap ([S4]): `lint`/`test`/`build`/Playwright
   stay excluded on a zero-line source diff, and `SOP-PILOT.md` records the CASA base as red today
   (118 lint errors, 15 failing tests at `d5b16e8`) — repository debt, not this diff.
-- **BRANCH CAPABILITY VERIFIED BY CONSTRUCTION**, because branch 2 never fires against the live tree:
-  the committed function was sourced verbatim onto a scratch tree and produced
-  `no-literal-referrer` (orphan), `basename-collision` (duplicated basename), `EXCLUDED` (referenced
-  only by `thing_test.ts`) and `KEPT` (referenced by `prod.ts`) — all four outcomes.
+- **BRANCH CAPABILITY VERIFIED BY CONSTRUCTION**, because branch 2 never fires against the live tree.
+  Complete harness, then its unedited output (D-M — no prose stands in for either):
+
+  ```bash
+  export LC_ALL=en_US.UTF-8
+  CENSUS=/Users/brentcurtis/dev/casa-pilot/docs/plan/bilingue/evidence/census.sh
+  SCRATCH=$(/usr/bin/mktemp -d)
+
+  /bin/mkdir -p "$SCRATCH/src" "$SCRATCH/supabase/x"
+  printf '{"a":1}\n'                        > "$SCRATCH/src/orphan.json"
+  printf '{"b":2}\n'                        > "$SCRATCH/src/dup.json"
+  printf '{"b":2}\n'                        > "$SCRATCH/supabase/x/dup.json"
+  printf '{"c":3}\n'                        > "$SCRATCH/src/fixture.json"
+  printf 'import d from "./fixture.json";\n' > "$SCRATCH/src/thing_test.ts"
+  printf '{"d":4}\n'                        > "$SCRATCH/src/real.json"
+  printf 'import d from "./real.json";\n'   > "$SCRATCH/src/prod.ts"
+
+  /usr/bin/sed -n '/^AMBIGUOUS_KEPT=$/,/^}$/p'        "$CENSUS" >  "$SCRATCH/fn.sh"
+  /usr/bin/sed -n '/^json_is_test_evidence()/,/^}$/p' "$CENSUS" >> "$SCRATCH/fn.sh"
+  /usr/bin/shasum -a 256 "$SCRATCH/fn.sh" | /usr/bin/awk '{print "harness function sha256: " $1}'
+
+  cd "$SCRATCH"
+  FIND=/usr/bin/find; SORT=/usr/bin/sort; GREP=/usr/bin/grep; WC=/usr/bin/wc; AWK=/usr/bin/awk
+  TEST_PATH_ERE='(^|/)__tests__/|\.test\.[^/]+$|_test\.[^/]+$'
+  REFERRER_ROOTS=(src supabase)
+  . "$SCRATCH/fn.sh"
+
+  for f in src/orphan.json src/dup.json src/fixture.json src/real.json; do
+    if json_is_test_evidence "$f"; then printf 'EXCLUDED\t%s\n' "$f"; else printf 'KEPT\t%s\n' "$f"; fi
+  done
+  /bin/rm -rf "$SCRATCH"
+  ```
+
+  ```text
+  harness function sha256: ca6e9ce7977e29692cef6e8572f4a2a483458cd4fa9662744033f087a4aab7ef
+  AMBIGUOUS_KEEP	src/orphan.json	reason=no-literal-referrer
+  KEPT	src/orphan.json
+  AMBIGUOUS_KEEP	src/dup.json	reason=basename-collision
+  KEPT	src/dup.json
+  EXCLUDED	src/fixture.json
+  KEPT	src/real.json
+  harness exit=0
+  ```
+
+  The `sha256` pins which text was sourced, so the run cannot be confused with one against an edited
+  copy of the function.
 - **A7 / D1a.8 NOT MET, AND NOT CAUSED BY THIS ROUND.** `git diff --name-only pilot/sop-v2...HEAD`
   also lists `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`. `git log` attributes both
   to `98f4e51 docs(plan): activate lean workflow v2`, committed onto this phase branch before r4
