@@ -1,176 +1,109 @@
-# SOP PILOT — reducing rework rounds without reducing scrutiny
+# CASA lean workflow pilot
 
-Status: **ACTIVE PILOT**, started 2026-08-10, project CASA only.
-Supersedes nothing. This is an amendment layer over the SOP §1–§4.
-If the pilot fails its stopping rule, delete this file and the SOP is unchanged.
+Status: **ACTIVE**, version 2 from 2026-08-11.
 
-**The SOP is `~/.claude/agent-workflow/AGENT-WORKFLOW.md` (canonical, 511 lines).** Its companion
-`~/.claude/agent-workflow/workstreams.md` maps each `SESSION:` nickname to where that workstream's
-plan, ledger and reviews actually live — read it before assuming a path.
+The executable rules live once at
+`~/.claude/agent-workflow/LEAN-WORKFLOW.md`. They activate for every checkout
+whose Git common directory is `/Users/brentcurtis/dev/casa-web/.git`, including
+`casa-web`, `casa-pilot`, `casa-upgrade`, `casa-e3a`, `casa-e3b`, and
+`casa-p2-review`. This file records CASA-specific gates, measurements, and pilot
+history; it is not another copy of the shared workflow.
 
-*Corrected 2026-08-10.* This file originally said "`AGENT-WORKFLOW.md`" with no path, which read as
-a repo-relative reference. Codex [B11] correctly flagged that no such file existed in casa-web. The
-first fix was wrong twice over: it copied the **427-line** version out of `fne-lms` — 84 lines
-behind canonical, missing §1.2 Files and §1.8 Session identity and lifecycle — into this repo,
-creating a third drifting copy of a document that already has one home. The copy has been removed.
-Do not re-add it; CASA's own `CLAUDE.md` makes the same rule for pipeline files, for the same reason.
+Rollback is safe: mark the shared overlay inactive or remove CASA from its
+activation list. `~/.claude/agent-workflow/AGENT-WORKFLOW.md` remains unchanged.
 
----
+## Project guardrails
 
-## 1. Why
+The active checkout's `CLAUDE.md` remains authoritative. In particular:
 
-Measured from this repo's own artifacts on 2026-08-10, not from any external claim.
+- never touch the 11 Life OS tables in CASA's shared Supabase project;
+- additive migrations only; synthetic test data only; member PII never enters
+  prompts, commits, logs, or Open Brain;
+- branch names are at most 20 characters;
+- run `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, and
+  `npx playwright test` before a code phase is review-ready; and
+- never merge to `main` without Brent's explicit instruction.
 
-**First-review PASS rate: 1 of 10 phases.**
+Any phase involving the shared database, migrations, auth/RBAC/RLS, PII,
+publication, deployment/release, external messaging, or security is `HIGH` risk.
+Ordinary isolated UI or documentation work may be `STANDARD`. Inventory work
+whose completeness cannot be established is `DISCOVERY` and must name blind
+spots and safe failure direction.
 
-| Phase | review-1 | review-2 | review-3 |
-|---|---|---|---|
-| M1 | PASS | — | — |
-| M2 | FAIL | PASS | — |
-| M3a | FAIL | PASS | — |
-| M3b | FAIL | PASS | — |
-| PB | FAIL | PASS | — |
-| PC | FAIL | PASS | — |
-| PG | FAIL | PASS | — |
-| PD | FAIL | FAIL | — |
-| PF | FAIL | FAIL | — |
-| M-PLAN | FAIL | FAIL | PASS |
+## Starting gate baseline
 
-**Ledger rounds per phase:** PH 10 · PFE 8 · PD/M3a/M3b/M2 7 · PREL/PG/PC 6 · PF/PB 5 · M1 4.
-Median ≈ 6.5.
+Verified 2026-08-11 in the clean `main` worktree at
+`d5b16e8fc71e3abfc3b4de19d7f51338b75b40f9`:
 
-The same pattern holds on GENERA: 19 FAIL / 16 PASS across 35 reviews, ~23 BLOCKING findings
-that reached Codex *after* the PM had declared the phase clean, A1 at 11 rounds.
+- `npx tsc --noEmit` passed;
+- `npm run build` passed;
+- `npm run lint` failed with 118 errors and 43 warnings; and
+- `npm test -- --run` failed 15 of 1,099 tests across three files.
 
-The diagnosis this pilot tests: **work is reaching the reviewer not-ready, and each rejection
-costs a full executor + verification cycle.** Per-run latency is a minutes-scale problem;
-first-pass rate is a rounds-scale problem. They are not the same size.
+The live D1a checkout had the same broad lint/test classes, with one fewer lint
+error and one fewer failing test file. This establishes repository debt, not a
+waiver. Under the shared baseline-red protocol, CASA stays blocked from a
+production-quality close until a bounded stabilization phase restores the hard
+gates. Record the base result once and compare exact failure IDs; do not spend
+every feature round rediscovering the counts or quietly call them green.
 
----
+CASA browser tests are additionally protected by the repository safety guard.
+The 2026-08-11 local run stopped because `.env.test` was absent. Never bypass the
+guard or point the suite at CASA's shared Life OS Supabase project; configure the
+documented isolated test environment first.
 
-## 2. What changes
+## Why version 1 was replaced
 
-### C1 — Effort is explicit, and held constant within a session — **NOT A VARIABLE**
+CASA's pre-pilot baseline was slow: first-review PASS was 1 of 10 sampled phases
+and the median was about 6.5 recorded rounds per phase. Version 1 attempted to
+improve readiness by adding a fresh-context Claude review before final Codex
+review. That preserved quality but added another serial handoff.
 
-**Corrected 2026-08-10 by Brent, before phase 1 ran.** The config said `medium`, but in practice
-he had been raising effort manually on essentially every session. So the baseline below — 1/10
-first-review PASS, median 6.5 rounds — was already measured at high effort.
+The evidence does not support the earlier broad claim that this fresh-context
+stage found D1a's blockers. In `docs/plan/bilingue/LEDGER.md`, D1a rounds 2 and 3
+were performed by the existing `BILINGUE · plan · PM` session. They were not the
+new C3 reviewer. The only clean C3 execution sample in the original pilot was
+PD-REFINE. Conclusions that treated D1a as additional C3 evidence are retired.
 
-That kills the tempting hypothesis. The rework is not an effort problem, and C1 cannot be
-credited with any improvement the pilot shows. Setting the global default to `high` is kept only
-so the config stops lying about what actually runs. **C2 and C3 carry the entire pilot.**
+Version 2 tests a simpler hypothesis: production quality comes from a bounded,
+evidence-backed phase contract, deterministic gates, and one genuinely
+independent final review—not from repeatedly moving the same diff through fresh
+conversations.
 
-Original rationale retained below for the record.
+## CASA test sample
 
-`~/.claude/settings.json` was running `effortLevel: "medium"`. Anthropic's documented API
-default is `high` for both Fable 5 and Opus 5; effort governs *all* response tokens — thinking,
-text, **and tool calls** — so `medium` produced fewer verification tool calls, not merely
-shorter reasoning. Anthropic shipped `medium` as Claude Code's default on 2026-03-04 for latency
-and reversed it on 2026-04-07 after quality complaints.
+Apply version 2 to the next four completed CASA phases across any workstream. Do
+not restart completed phases or reset an in-progress phase's attempt count.
 
-- Global is now `high`. **Changed 2026-08-10.**
-- Executor may run `xhigh` on demanding phases (Anthropic's stated guidance for Opus 5 on
-  demanding coding/agentic work).
-- **Do not vary effort mid-conversation.** Changing it invalidates cached prefixes and raises
-  time-to-first-token. Pick the level when the session opens; keep it.
+For each phase, append the shared overlay's actual metrics to its authoritative
+ledger:
 
-Expect this change to make individual runs *slower*. That is the intended direction of trade.
-
-### C2 — The executor is judged against the rubric it will actually be judged against
-
-Today the executor is given acceptance criteria (§3.4) and the reviewer judges against a
-*broader* rubric (§3.6): correctness, error handling, security, edge cases, scope creep, and
-"anything that will make the NEXT phase harder." The executor never sees that second list.
-
-**Change:** the §3.6 reviewer checklist is pasted into every executor prompt as a
-pre-submission gate. Before emitting its report, the executor must self-check against it and
-include a new report section:
-
-```
-PRE-SUBMISSION SELF-REVIEW (against §3.6 reviewer rubric)
-- Acceptance criteria: <each ID, met/not met, how verified>
-- Correctness / error handling / edge cases: <what I checked, what I could not>
-- Frozen decisions (PLAN.md): <which apply, why this does not violate them>
-- Scope creep: <anything touched outside SCOPE, and why>
-- Next-phase cost: <anything I did that makes the next phase harder>
-- Weakest part of this diff: <name it — the reviewer will find it anyway>
+```text
+STARTED: <ISO-8601>
+ENDED: <ISO-8601>
+ATTEMPT: <cumulative>
+RISK: STANDARD | HIGH | DISCOVERY
+HANDOFFS: <count>
+GATES: <commands and results>
+CODEX: PASS | FAIL(<blocking count>) | FINDINGS
+ESCAPED DEFECT: none | <post-PASS defect>
 ```
 
-Rationale: this costs one paste and some executor tokens. It cannot reduce scrutiny — it adds
-a check that did not exist. It is the cheapest available explanation for a 1-in-10 first-pass
-rate.
+Evaluate after four phases against the historical baseline:
 
-### C3 — The PM's verification pass becomes a fresh-context adversarial review
+- median elapsed time from PM bootstrap to final PASS;
+- median human handoffs;
+- cumulative attempts to PASS;
+- post-PASS defects, rollbacks, security/privacy incidents, and red-gate
+  overrides.
 
-§3.3 requires the PM to independently re-run tests, read the diff, and check each criterion.
-Measured outcome: ~23 BLOCKING findings on GENERA passed through this stage and were caught
-downstream. The stage is costing a serial pass and not filtering.
+Keep the faster flow only if time and handoffs fall without worsening the quality
+guardrails. A blocker Codex catches before PASS is not an escaped defect.
 
-Two things are confounded in the current design. The downstream reviewer is both **a different
-model family** *and* **a fresh context seeded with minimal information**. The one study
-measuring cross-family review (arXiv 2604.19049) varies both at once and says so; its author
-performed no ablation. If the benefit is mostly *fresh context*, it is available far earlier
-and far cheaper.
+## Worktree discipline
 
-**Change:** the PM no longer self-verifies. It writes the executor prompt and the ledger, and
-dispatches a **fresh-context reviewer** — new session, no conversation history, seeded only
-with the diff, PLAN.md acceptance criteria, the frozen decisions, and the §3.6 rubric — running
-at `high` effort.
-
-**No stage is removed.** A verification pass that demonstrably did not filter is replaced by
-one designed to. The final cross-family review is untouched and retains final say on BLOCKING.
-
-### C4 — Instrumentation
-
-Nobody currently knows where the wall-clock goes; no source in the research corpus measures
-anything resembling this pipeline. Every ledger round entry gains:
-
-```
-- ELAPSED: <wall-clock for this round, minutes>
-- STAGE: executor <m> | fresh review <m> | triage <m>
-- EFFORT: <level used by each actor this round>
-- FIRST-PASS: <yes/no — did the first review of this phase PASS?>
-```
-
-Without this, the next iteration of the SOP is guesswork.
-
----
-
-## 3. Metric and stopping rule
-
-**Primary metric:** first-review PASS rate. Baseline **1/10 (10%)**.
-**Secondary:** rounds per phase. Baseline median **6.5**.
-**Guardrail:** BLOCKING findings that escape to the final cross-family review. Baseline: the
-majority of them. This must go **down**, never up. If it rises, the pilot has traded quality
-for speed and must be reverted regardless of the primary metric.
-
-**Sample:** the next 4 CASA phases.
-
-**Stop and revert if:**
-- the guardrail rises, or
-- first-review PASS rate is not above 3/4 phases by phase 4, or
-- median rounds per phase does not fall below 5.
-
-**Adopt into `AGENT-WORKFLOW.md` if:** first-review PASS ≥ 3/4 and the guardrail holds or falls.
-
-An honest caveat: n=4 on a single project cannot separate C1 from C2 from C3. This pilot is
-built to detect *whether the bundle helps*, not which part of it does. If the bundle works, the
-next pilot ablates.
-
----
-
-## 4. What this pilot deliberately does NOT do
-
-- **No subagent fan-out inside a phase.** Measured: fan-out within a single task made runs
-  1.15–2.3× *slower* in 6 of 6 comparisons (arXiv 2603.21489), because integration stays
-  sequential and test-gated — which is exactly what the review gate is here.
-- **No dropping the cross-family reviewer.** The strongest published argument against giving an
-  LLM reviewer final say failed adversarial verification and cannot be used as a basis.
-- **No lowering reviewer effort.** The claim that review accuracy holds at lower effort than
-  generation was refuted 0-3 in verification. There is no evidence either way; do not run the
-  reviewer cheap.
-- **No property-based or mutation testing yet.** The supporting results were refuted 0-3. Not
-  ruled out — unsupported by anything currently verified.
-- **No fast mode.** It is Opus-only, so enabling it switches off Fable 5 — a model change, not
-  a speed change — and it is a research preview whose headline latency figure failed
-  verification.
+Before every phase, run `git worktree list`, `git status --short --branch`,
+`git rev-parse --show-toplevel`, and
+`git rev-parse --path-format=absolute --git-common-dir`. Use the phase branch and
+live plan/ledger to choose the checkout. Never delete or move a dirty, ahead, or
+unreviewed worktree as part of this pilot.
