@@ -328,6 +328,7 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 | P3b | Extraer `matching.ts` puro | **DONE** 2026-08-09 · `e2bf43a` | `feat/mesa-md-core` | P3a |
 | P4 | Cablear allocator en el núcleo | **DONE** 2026-08-10 · `5ca9a10` | `feat/mesa-md-wire` | **P1b**, P2, P3b |
 | P5a | Captura en el frontend | **DONE** 2026-08-11 · `6917801` | `feat/mesa-md-form` | **P1b**, P4 |
+| P5c | Guardas de cobertura huérfanas (B-13, B-15, B-18, N1) | TODO | `feat/mesa-md-guards` | P4, P5a |
 | P5b | Seam + captura en `admin-add-participant` | TODO | `feat/mesa-md-addp` | **P1b**, P5a |
 | P6 | Cobertura y diálogos del panel de admin | TODO | `feat/mesa-md-admin` | P4, P5a |
 | P7 | Copia de notificaciones y porciones | TODO | `feat/mesa-md-copy` | P4 |
@@ -336,8 +337,8 @@ GRANT  EXECUTE ON FUNCTION public.get_my_dinner_summary(uuid) TO authenticated;
 Ramas ≤20 caracteres. Recuentos de test **delta**, no absolutos.
 
 **Orden de merge** (enmendado 2026-08-08, Decision Log — antes era lineal con P1 entera):
-P0 → **P1a** → P2 → P3a → P3b, con **P1b obligatoria antes de P4**, y luego P4 → P5a → P5b →
-P6 → P7 → P8. P2, P3a y P3b **nunca dependieron de P1**: son módulos puros y seams de Deno que
+P0 → **P1a** → P2 → P3a → P3b, con **P1b obligatoria antes de P4**, y luego P4 → P5a →
+**P5c** → P5b → P6 → P7 → P8. P2, P3a y P3b **nunca dependieron de P1**: son módulos puros y seams de Deno que
 no tocan la base de datos, así que pueden ejecutarse mientras PR3 sigue pendiente. Ése es el
 motivo de la partición: no dejar tres fases paradas detrás de una acción humana.
 
@@ -709,6 +710,63 @@ cubren la carga útil y los de UI se reducen a polaridad. **Nunca aserciones dé
 
 ---
 
+## Phase P5c — Guardas de cobertura huérfanas
+
+**Añadida 2026-08-11 por enmienda (Decision Log).** No es funcionalidad nueva: **cierra
+las cuatro deudas de cobertura que ninguna fase posterior podía recoger**, porque sus
+ficheros no estaban en la `F` de nadie. Es la primera fase del plan que existe para pagar
+deuda en vez de construir.
+
+**Rama:** `feat/mesa-md-guards` · **Depende de:** P4, P5a (ambas en `main`).
+
+**Scope (4 ficheros):**
+- `supabase/functions/create-mesa-matches/handler_test.ts` — +1 test (B-13)
+- `supabase/functions/create-mesa-matches/handler.ts` — **solo** el comentario de
+  cabecera (`:11`), que sigue citando `shuffle` como consumidor del seam (N1)
+- `src/components/mesa-abierta/__tests__/MesaAbiertaSignup.mainDish.test.tsx` — +1 (B-18)
+- `src/components/mesa-abierta/__tests__/MesaAbiertaAdmin.mainDish.test.tsx` — nuevo, +1
+  (B-15)
+
+**Ninguna conducta cambia.** El único cambio fuera de un fichero de test es un comentario.
+
+**Acceptance criteria — cada uno se demuestra POR MUTACIÓN, no por verde** (la práctica
+que P5a r2 estableció: un test que pasa no prueba que guarde nada):
+- [ ] H1 — **B-13**: cambiar `tablesWithShortfall` por `[]` en la respuesta HTTP de
+  `handler.ts` pone un test en rojo. Medido el 2026-08-11 sobre `main`: hoy deja
+  **28/0**.
+- [ ] H2 — **B-18**: envolver el switch de `MesaAbiertaSignup.tsx:373` con
+  `rolePreference === 'guest'` pone un test en rojo. Hoy deja **12/12**.
+- [ ] H3 — **B-15**: borrar `can_bring_main_dish` del `select` de `fetchParticipants`
+  pone un test en rojo. Hoy deja **12/12**.
+- [ ] H4 — **N1**: la cabecera de `handler.ts` describe el seam como es tras P3b/P4
+  (`pick` lo consumen `matching.ts` y `allocateAll`; `shuffle` ya no vive aquí).
+- [ ] H5 — `deno test --allow-all --no-check .` **+1, 0 fallos**; `vitest` **+2**, rojos
+  sin cambios.
+- [ ] H6 — Gate D8 sobre `F` = los 4 ficheros. Build ok.
+
+**Test plan:**
+- `handler_test.ts`: `el déficit real cruza el borde HTTP` — una mesa cuyo déficit no se
+  puede reequilibrar; afirma que `results.tablesWithShortfall` **no** está vacío y trae
+  `{tableId, shortfall}`, y que el `console.warn` de D4 lleva **solo ids y números**
+  (D12: nada de PII).
+- `MesaAbiertaSignup.mainDish.test.tsx`: `el anfitrión también puede excluirse` — recorre
+  el asistente con `rolePreference: 'host'` y afirma que el switch existe y que su estado
+  llega al `.insert()`. **D7 hace del anfitrión el primer candidato a `main_course`**, así
+  que es el caso que más importa y el único rol que los doce tests actuales no recorren.
+- `MesaAbiertaAdmin.mainDish.test.tsx`: `el fetch entrega can_bring_main_dish al diálogo`
+  — monta el panel con un participante `can_bring_main_dish: false`, abre el diálogo de
+  edición y afirma que el switch aparece encendido. Es la condición que Codex puso para
+  aceptar un hogar a B-15: **el fichero en `F` no basta, la costura tiene que montarse**.
+
+**Risks:** el tercer test monta `MesaAbiertaAdmin.tsx`, 2227 líneas con 10 diagnósticos
+`tsc` preexistentes y muchas consultas que mockear; ningún test del repo lo ha montado
+nunca. Si el andamiaje resulta desproporcionado, `FINDINGS` — **no** una aserción débil.
+Precedente a favor: P5a temía lo mismo del asistente y montó con dos mocks.
+
+**Rollback:** `git revert`. No hay conducta que revertir.
+
+---
+
 ## Phase P5b — Seam + captura en `admin-add-participant`
 
 **Rama:** `feat/mesa-md-addp` · **Scope:** `handler.ts` (nuevo), `index.ts` (adaptador),
@@ -904,12 +962,12 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | **B-09** | P3a r1 (verificación del PM) | **`eslint.config.js` no ignora `supabase/.temp/`**, donde `supabase start` deja el runtime local generado. En un checkout que haya levantado el entorno local (lo introdujo el workstream AUDIO en E-infra) eso son **186 diagnósticos fantasma** en un solo fichero generado, `supabase/.temp/start-secrets/…/main/index.ts`: el total de ESLint pasa de 160 a 347 sin que cambie una línea de código propio. Medido en P3a r1, donde costó un hallazgo mal atribuido. `eslint.config.js:8` ya ignora `dist` y `.claude/worktrees/**`; añadir `supabase/.temp/**` es una línea. Recordatorio de por qué D8.5 trata los totales como observación y no como criterio: **no son portables entre checkouts**. Los recuentos por fichero sí lo son. **Afinado 2026-08-09 (P3b):** en un worktree limpio Codex midió **161**, no 160, idéntico en padre y punta — así que además del ruido de `supabase/.temp/` hay **+1** estable respecto al número anotado en la línea base de `1732bee`. Sigue sin ser criterio y sigue sin atribuirse a ninguna fase, pero conviene saber que el 160 del plan tampoco es reproducible hoy en un checkout limpio. |
 | **B-11** | P3b — revisión de Codex (S1) | **Los 8 tests puros de `matching_test.ts` no fijan los dos `shuffle` iniciales.** Codex sustituyó `matching.ts:76–77` por copias simples (`[...hosts]`, `[...guests]`) y **la suite siguió en 8/0**; el PM lo reprodujo. Esa mutación cambia los desempates entre anfitriones, el orden de invitados y la secuencia posterior de `pick`, pero el test de determinismo solo compara dos ejecuciones **entre sí** y los otros siete afirman sobre todo recuentos, con fixtures homogéneas donde una permutación es inobservable. **No bloqueó P3b** porque el movimiento fue byte a byte idéntico y los **diez goldens de `handler_test.ts` sí** cazan la mutación de extremo a extremo (la comida depende del orden de invitados). La reparación es barata: reforzar uno de los ocho con la traza esperada de argumentos a `pick`, o con identidades esperadas tras el shuffle. **Sitio natural: P4**, que ya añade 6 tests a ese fichero y no está sujeto a la allowlist de goldens (esa rige `handler_test.ts`). Contraste útil para calibrar la suite: la mutación del PM sobre el aliasing sí la tumbó, de 8/0 a 4/4. **CERRADA 2026-08-10 al cerrar P4, sin haberla reparado a propósito.** Codex repitió la mutación sobre la punta de P4: sustituir los dos `shuffle` iniciales por copias simples pone en rojo `el reequilibrio se refleja en los invitados` y `se respeta el mínimo tras el reequilibrio` (**26/2**). Los seis tests que P4 añadió afirman **identidades** —quién se sienta dónde tras el swap— y no solo recuentos, así que fijan el efecto observable que los ocho de P3b dejaban suelto. La decisión de la ronda de bootstrap de **no** meter B-11 en P4 resultó gratuita: el alcance propio de la fase la cerró. |
 | **B-10** | P3a — revisión de Codex | **Ocho tests de `usePresentationState` fallan por `localStorage` ausente, y solo en algunos checkouts.** Codex midió Vitest en **1055 pass / 14 fail** tanto en la punta como en el padre, con idénticas identidades; el PM había medido **1063 / 6** en el padre en otro worktree. Mismo commit, distinto entorno — los 6 conocidos de `MesaAbiertaDashboard` más estos 8. **No es el flake de B-05** (`CuentacuentoEditor.ph.*`), es otra cosa y tiene causa nombrada. La regla del padre de D8.2 lo dirimió exactamente como fue diseñada. Junto con **B-09**, deja una lección para el resto del plan: **de las dos sorpresas de medición de P3a, ninguna era código y las dos eran el entorno.** Conviene decidir si el entorno de Vitest debe proveer `localStorage` antes de que otra fase lo tropiece. |
-| **B-13** | P4 — revisión de Codex (S1) | **Ningún test del handler fija el cruce de `tablesWithShortfall` hasta la respuesta HTTP.** Codex cambió `handler.ts:346` por `tablesWithShortfall: []` en una copia aislada y los 28 tests de `create-mesa-matches` siguieron en **28/0**; el PM lo reprodujo. La mutación viola E2 y D4 —ocultaría a P6, P7 y P8 un déficit que el plan puro sí calculó— y **el `console.warn` de déficit tampoco lo afirma nadie**. No bloqueó P4 porque el código revisado es correcto y `matching_test.ts` sí cubre el cálculo (`reporta shortfall`); lo que falta es el tramo del borde. Reparación: una mesa sin swap posible en el doble del handler, afirmando el elemento **no vacío** de `results.tablesWithShortfall` y que el warning lleva solo ids y números. **No tiene sitio natural**: ninguna fase que queda declara `create-mesa-matches/handler_test.ts` en su `F` —P5a y P6 son frontend, P5b es `admin-add-participant`, P7 son las dos funciones de notificación, P8 el dashboard—, así que **sin una decisión explícita de Brent esto no lo recoge nadie**. Recomendación del PM: ensanchar la `F` de P7 con `handler.ts` y `handler_test.ts` y arrastrar también el comentario obsoleto de `handler.ts:11`. |
-| **B-14** | P4 — revisión de Codex (verificación de bordes) | **Asimetría de robustez ante una `pick` fuera de contrato.** `_shared/mainDish.ts` acota su índice defensivamente (`boundedIndex`, que además caza `NaN`); el `shuffle` de `matching.ts` —heredado verbatim de `index.ts`— no, y una `pick` que devuelva 999 termina en `TypeError` dentro del asiento. **No es infracción de D11**, cuyo contrato exige un entero en `[0, n)` y cuyo proveedor de producción (`Math.floor(Math.random() * n)`) lo cumple; por eso Codex no lo marcó ni siquiera como SHOULD-FIX. Se anota porque el día que alguien inyecte una `pick` de test mal formada, el fallo saldrá en el sitio menos evidente. |
-| **B-15** | P5a r1 (PM) — ratificada por Codex (S1) | **La costura `fetchParticipants` → `EditParticipantDialog` no la fija ningún test.** Borrar `can_bring_main_dish` del `select` (`MesaAbiertaAdmin.tsx:239`) deja los **doce** tests verdes: ninguno monta `MesaAbiertaAdmin`. Medido por el PM como mutación real (dos veces: contra 10 y contra 12) y reproducido por Codex. **El código actual es correcto**, por eso no bloqueó P5a; el modo de fallo sí es corrupción de datos y no ruido: sin el campo el diálogo recibe `undefined`, inicializa el switch apagado, y **guardar cualquier otro cambio persiste `can_bring_main_dish: true`**, reinscribiendo a un excluido. **Hogar: P6**, cuya `F` ya contiene `MesaAbiertaAdmin.tsx` — pero **Codex acepta ese hogar solo con una condición que hay que cumplir al planificar P6**: que B-15 se convierta allí en **criterio y test nombrados** («el fetch entrega `false` al diálogo»). Que el fichero aparezca en `F` **no basta**: el test plan actual de P6 no garantiza que esta costura llegue a montarse. |
+| **B-13** | P4 — revisión de Codex (S1) | **Ningún test del handler fija el cruce de `tablesWithShortfall` hasta la respuesta HTTP.** Codex cambió `handler.ts:346` por `tablesWithShortfall: []` en una copia aislada y los 28 tests de `create-mesa-matches` siguieron en **28/0**; el PM lo reprodujo. La mutación viola E2 y D4 —ocultaría a P6, P7 y P8 un déficit que el plan puro sí calculó— y **el `console.warn` de déficit tampoco lo afirma nadie**. No bloqueó P4 porque el código revisado es correcto y `matching_test.ts` sí cubre el cálculo (`reporta shortfall`); lo que falta es el tramo del borde. Reparación: una mesa sin swap posible en el doble del handler, afirmando el elemento **no vacío** de `results.tablesWithShortfall` y que el warning lleva solo ids y números. **ASIGNADA A P5c 2026-08-11** (criterio H1, demostrada por mutación). Antes: **no tenía sitio natural** — ninguna fase que quedaba declaraba `create-mesa-matches/handler_test.ts` en su `F` —P5a y P6 son frontend, P5b es `admin-add-participant`, P7 son las dos funciones de notificación, P8 el dashboard—, así que **sin una decisión explícita de Brent esto no lo recoge nadie**. Recomendación del PM: ensanchar la `F` de P7 con `handler.ts` y `handler_test.ts` y arrastrar también el comentario obsoleto de `handler.ts:11`. |
+| **B-14** | P4 — revisión de Codex (verificación de bordes) | **Asimetría de robustez ante una `pick` fuera de contrato.** `_shared/mainDish.ts` acota su índice defensivamente (`boundedIndex`, que además caza `NaN`); el `shuffle` de `matching.ts` —heredado verbatim de `index.ts`— no, y una `pick` que devuelva 999 termina en `TypeError` dentro del asiento. **No es infracción de D11**, cuyo contrato exige un entero en `[0, n)` y cuyo proveedor de producción (`Math.floor(Math.random() * n)`) lo cumple; por eso Codex no lo marcó ni siquiera como SHOULD-FIX. Se anota porque el día que alguien inyecte una `pick` de test mal formada, el fallo saldrá en el sitio menos evidente. **ACEPTADA COMO DEUDA POR BRENT 2026-08-11** (estado (c) de la regla de tres estados): disparar el fallo exige que un llamador **viole** el contrato de D11, y el proveedor de producción (`Math.floor(Math.random() * n)`) no puede hacerlo. Blindar una función contra una entrada que su propio contrato prohíbe es código defensivo que D11 declara innecesario. **Se cierra sin reparar, con responsable Brent y revisión al cerrar el workstream.** |
+| **B-15** | P5a r1 (PM) — ratificada por Codex (S1) | **La costura `fetchParticipants` → `EditParticipantDialog` no la fija ningún test.** Borrar `can_bring_main_dish` del `select` (`MesaAbiertaAdmin.tsx:239`) deja los **doce** tests verdes: ninguno monta `MesaAbiertaAdmin`. Medido por el PM como mutación real (dos veces: contra 10 y contra 12) y reproducido por Codex. **El código actual es correcto**, por eso no bloqueó P5a; el modo de fallo sí es corrupción de datos y no ruido: sin el campo el diálogo recibe `undefined`, inicializa el switch apagado, y **guardar cualquier otro cambio persiste `can_bring_main_dish: true`**, reinscribiendo a un excluido. **ASIGNADA A P5c 2026-08-11** (criterio H3), no a P6. Codex aceptaba P6 solo con la condición de que B-15 fuera allí **criterio y test nombrados** («el fetch entrega `false` al diálogo»). Que el fichero aparezca en `F` **no basta**: el test plan actual de P6 no garantiza que esta costura llegue a montarse. |
 | **B-16** | P5a r1 (sesión de verificación) | **CERRADA en P5a r2.** El cableado del switch al builder no lo fijaba ningún test: `cannotBringMainDish: false` en `MesaAbiertaSignup.tsx:125` dejaba los diez tests verdes y `tsc` mudo, es decir, la guarda del camino **principal** de la funcionalidad no existía. Cerrada por el test 11 vía la enmienda del 2026-08-10 (F9). Verificado por el PM y por Codex: la mutación ahora pone el test 11 en rojo. |
 | **B-17** | P5a r1 (sesión de verificación) | **CERRADA en P5a r2.** `resetForm` de `AddParticipantDialog` no devolvía el switch a apagado de forma comprobada, y la exclusión se filtraba al siguiente alta manual. Cerrada por el test 12 (F10). |
-| **B-18** | P5a — revisión de Codex (S2) | **Los doce tests recorren el asistente solo como invitado, así que pueden perder el opt-out del anfitrión sin ponerse rojos.** Codex envolvió el switch con `rolePreference === 'guest'` (`MesaAbiertaSignup.tsx:373`) y la suite quedó en **12/12**; el PM lo reprodujo. La mutación impediría excluirse precisamente al **anfitrión**, que por **D7** es el primer candidato a `main_course` — el caso que más importa, porque un anfitrión que no puede cocinar el plato principal es justo lo que la funcionalidad existe para resolver. El código actual está bien situado (el switch vive fuera del ternario anfitrión/invitado, así que ambos roles lo ven). **No tiene sitio natural: ninguna fase posterior vuelve a tocar `MesaAbiertaSignup.tsx`** — mismo problema estructural que B-13. Necesita dueño explícito, no una entrada abierta sin salida. |
+| **B-18** | P5a — revisión de Codex (S2) | **Los doce tests recorren el asistente solo como invitado, así que pueden perder el opt-out del anfitrión sin ponerse rojos.** Codex envolvió el switch con `rolePreference === 'guest'` (`MesaAbiertaSignup.tsx:373`) y la suite quedó en **12/12**; el PM lo reprodujo. La mutación impediría excluirse precisamente al **anfitrión**, que por **D7** es el primer candidato a `main_course` — el caso que más importa, porque un anfitrión que no puede cocinar el plato principal es justo lo que la funcionalidad existe para resolver. El código actual está bien situado (el switch vive fuera del ternario anfitrión/invitado, así que ambos roles lo ven). **ASIGNADA A P5c 2026-08-11** (criterio H2, demostrada por mutación). Antes **no tenía sitio natural**: ninguna fase posterior vuelve a tocar `MesaAbiertaSignup.tsx` — mismo problema estructural que B-13. |
 
 ---
 
@@ -944,6 +1002,8 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-08 | **El comando de test de Deno pasa a `deno test --allow-all --no-check .`**, tanto en el punto 3 de D8 como en el C6 de P3a | `deno test` type-checkea su grafo de importación. La suite estaba verde con `index.ts` cargando 6 diagnósticos **solo porque ningún test lo importaba**; en cuanto P3a hace que `handler_test.ts` importe `handler.ts` —el objeto entero de la fase— esos diagnósticos entran en el grafo y `deno test` **se niega a ejecutar la suite completa**, devolviendo cero tests en vez de 0 fallos. Así, «desplazar los diagnósticos de B-08» y «`deno test` → 438 passed» no podían ser ciertas a la vez. De las tres salidas, ésta es la única que no cuesta nada: **`--no-check` no reduce la cobertura de tipos**, porque el paso 4 de D8 ya corre `deno check .` sobre el árbol entero y **enumera los `_test.ts`** (verificado: `deno check create-mesa-matches/handler_test.ts` destapa por sí solo los 8 errores del handler). El type-check de `deno test` era duplicado, no adicional. Las alternativas costaban mucho más: adelantar B-08 destruye la propiedad de diff limpio que es lo único que hace verificable la regla dura de P3a, y partir la fase deja el seam sin tests. **Causa raíz: fallo de bootstrap del PM** — midió `deno check` por fichero y `deno test` en el padre, pero nunca el caso «un test importa un fichero con errores de tipo», que era justo lo que su decisión de desplazamiento iba a provocar | Ejecutor P3a r1 (hallazgo F-1), PM (diagnóstico y medición), Brent (decisión) |
 | 2026-08-10 | **P5a pasa de 10 a 12 tests y de `vitest +10` a `+12`; se añaden F9 y F10** | La ronda 1 quedó correcta en el código pero con la cláusula central de F2 —«su estado llega al builder»— verificada **solo por lectura**. Medido por el PM como mutación real: sustituir `cannotBringMainDish` por `false` en la llamada a `buildParticipantInsert` deja **los diez tests verdes y cero diagnósticos de `tsc`**, es decir, la única guarda del camino principal de la funcionalidad no existía. Lo mismo, menor, con `resetForm` (B-17). **Por qué se enmienda en vez de mandarlo al backlog:** `MesaAbiertaSignup.tsx` y `AddParticipantDialog.tsx` aparecen **solo** en el alcance de P5a en todo el PLAN — ninguna fase posterior los vuelve a tocar, así que «al backlog» aquí significa «sin dueño para siempre», que es el residuo que P4 ya dejó con B-13. Los dos ficheros están hoy en la `F` de P5a, la rama está abierta y los mocks ya están escritos y probados. Se acota a dos tests y **no** se toca B-15, que sí tiene casa en P6 | PM (medición y propuesta), sesión de verificación de Claude (hallazgo S1/S2), Brent (decisión) |
 | 2026-08-11 | **`buildParticipantInsert` devuelve `status: 'pending'` literal, no `status: string`** | El prompt de ejecutor de P5a r1 prescribió el tipo ancho. No compila: la unión literal del tipo `Insert` de la tabla rechaza un `string` ancho y aparece un **TS2769 nuevo** en `MesaAbiertaSignup.tsx` — es decir, aplicar la prescripción al pie de la letra habría sido BLOCKING por D8.4. El ejecutor midió las dos variantes con el gate antes de decidir y lo declaró; el PM lo corroboró contra el `TS2322` preexistente de `EditParticipantDialog.tsx:104`, misma tabla y misma columna; **Codex lo ratificó** en la revisión final. Lección para los prompts que quedan: **no prescribir tipos de retorno contra el cliente tipado de Supabase sin haberlos compilado** | Ejecutor P5a r1 (hallazgo y medición), PM (corroboración), Codex Sol (ratificación) |
+| 2026-08-11 | **Se añade la fase P5c, que no construye nada: paga las cuatro deudas de cobertura huérfanas** (B-13, B-15, B-18, N1) | Los cuatro compartían una sola causa: **su fichero no estaba en la `F` de ninguna fase posterior**, así que «al backlog» significaba «sin dueño para siempre». Dos son riesgo real y medido: **B-13** —blanquear `tablesWithShortfall` en la respuesta HTTP deja **28/0**, verificado sobre `main` el 2026-08-11— es el contrato que P6, P7 y P8 van a consumir; **B-18** —ocultar el switch al anfitrión deja **12/12**— guarda código **ya desplegado**, y por D7 el anfitrión es el primer candidato a `main_course`. Se ejecuta **antes de P5b** para que las tres fases que quedan se construyan sobre un contrato probado y no supuesto. Alternativa descartada: repartirlos por P6 y P7, que dejaba B-13 abierta durante toda P6 y metía B-18 en una fase de panel de admin con la que no tiene nada que ver | PM (propuesta y medición), Codex Sol (B-13 y B-18), Brent (decisión) |
+| 2026-08-11 | **Se adopta la regla de los tres estados para los SHOULD-FIX** (SOP §1.4). Antes de cerrar una fase, todo SHOULD-FIX de corrección o cobertura debe quedar en uno de tres estados auditables: **(a)** reparado en la fase actual; **(b)** asignado a una fase concreta **con el fichero en su `F` y un criterio o test nombrados**; o **(c)** aceptado explícitamente por Brent como deuda, con responsable e hito. **«Al backlog» deja de ser un estado válido** | Propuesta de Codex al cerrar P5a, en respuesta a una pregunta de plan que le hizo el PM. El agujero es demostrable: por él se colaron B-13, B-14 y el N1 de P4, y B-16 y B-17 iban camino de lo mismo hasta que la enmienda de P5a r2 los rescató — **dos fallos en cuatro fases**. La condición «fichero en `F`» no basta sola, y de ahí el criterio nombrado: Codex señaló que P6 podía tener `MesaAbiertaAdmin.tsx` en su alcance y aun así no montar nunca la costura de B-15 | Codex Sol (propuesta), Brent (decisión) |
 
 ---
 
@@ -951,10 +1011,10 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 
 Con las tres garantías nuevas de D5, que llevan P2 de 16 a 19 tests Deno:
 
-- **Deno**: P2 **+19** · P3a +10 · P3b +8 · P4 +10 · P5b +4 · P7 +11 = **+62** →
-  409 + 62 = **471 pass / 0 fail**.
-- **Vitest**: P2 +1 · P5a **+12** · P6 +12 · P8 +9 = **+34** → 1036 + 34 = 1070, más los
-  6 rojos reparados por P8 = **1076 pass / 0 fail**.
+- **Deno**: P2 **+19** · P3a +10 · P3b +8 · P4 +10 · **P5c +1** · P5b +4 · P7 +11 = **+63** →
+  409 + 63 = **472 pass / 0 fail**.
+- **Vitest**: P2 +1 · P5a **+12** · **P5c +2** · P6 +12 · P8 +9 = **+36** → 1036 + 36 = 1072,
+  más los 6 rojos reparados por P8 = **1078 pass / 0 fail**.
   (P5a enmendada de +10 a +12 el 2026-08-10, Decision Log.)
 
 > **Los absolutos de Vitest están desfasados desde el 2026-08-08** (Decision Log; backlog

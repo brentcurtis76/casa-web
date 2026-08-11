@@ -3936,3 +3936,58 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   Brent. (2) **Decidir el destino de B-13, B-14, B-18 y el N1 de P4**, y si se adopta la
   regla de tres estados que propone Codex. (3) Al planificar **P6**, B-15 debe entrar como
   criterio nombrado, no como fichero en `F`. (4) Después, `/pm-boot UPGRADE P5b`.
+
+### 2026-08-11 — P5c round 1 — PM (Opus 5) — ENMIENDA, REGLA DE SOP Y PROMPT
+- SESSION: UPGRADE · P5c · PM
+- **BRENT APRUEBA DOS COSAS.** (1) **Se añade la fase P5c**, que no construye nada: paga
+  las cuatro deudas de cobertura huérfanas (B-13, B-15, B-18, N1) y se ejecuta **antes de
+  P5b**. (2) **Se adopta la regla de los tres estados** para los SHOULD-FIX. Ambas con
+  fila en el Decision Log; orden de merge y aritmética actualizados
+  (Deno +62→**+63**, Vitest +34→**+36**).
+- **POR QUÉ UNA FASE ENTERA PARA DEUDA, Y NO REPARTIRLOS.** Los cuatro compartían una
+  sola causa: **su fichero no estaba en la `F` de nadie**. Repartirlos —la opción que
+  parecía más barata— dejaba B-13 abierta durante toda P6 y metía B-18 en una fase de
+  panel de admin con la que no tiene nada que ver, además de exigir que tres ediciones de
+  spec sobrevivieran a que alguien las planificara bien meses después. Una fase, un ciclo
+  de revisión, todo cerrado.
+- **MEDÍ LOS DOS RIESGOS ANTES DE RECOMENDAR NADA, NO LOS RECORDÉ.** Sobre `main`
+  @`d5b16e8`: **B-13 sigue viva** —cambiar `tablesWithShortfall` por `[]` en la respuesta
+  HTTP deja **28/0**, ejecutado por mí y revertido—; **B-18 sigue viva** —ocultar el
+  switch al anfitrión deja **12/12**—. La causa de B-13 es fina y merece anotarse: los
+  tests **sí** afirman el caso vacío (`assertEquals(tablesWithShortfall, [])`), así que
+  blanquear el campo los deja a todos ciertos. **Afirmar el caso feliz es lo que dejó el
+  hueco.**
+- **JERARQUÍA DE RIESGO, QUE ES LO QUE DECIDIÓ EL ORDEN.** B-18 guarda código **ya
+  desplegado** y el anfitrión es por D7 el primer candidato a `main_course`: es el rol que
+  más importa y el único que los doce tests no recorren. B-13 es el **contrato** que P6,
+  P7 y P8 van a consumir, así que cerrarla antes evita construir tres fases sobre algo
+  supuesto. Por eso P5c va antes de P5b y no al final.
+- **B-14 ACEPTADA COMO DEUDA POR BRENT** (estado (c)): disparar el `TypeError` exige que
+  un llamador **viole** el contrato de D11, y el proveedor de producción no puede.
+  Blindar una función contra una entrada que su contrato prohíbe es código defensivo que
+  D11 declara innecesario. Cerrada sin reparar, con responsable e hito. El prompt lo
+  prohíbe explícitamente para que nadie la "arregle de paso".
+- **LA REGLA DE LOS TRES ESTADOS QUEDA ESCRITA EN EL SOP**, no solo en este plan:
+  `~/.claude/agent-workflow/AGENT-WORKFLOW.md` §1.4 (con el razonamiento de por qué «al
+  backlog» no es un estado) y §3.8 paso 3, que ahora obliga a declarar en cuál de los tres
+  cae cada SHOULD-FIX y a **no cerrar la fase** si alguno se queda sin casa. Aplica desde
+  P5b en adelante y a los dos revisores. Es lo único de todo esto que evita la
+  reincidencia: **el agujero se tragó cuatro ítems en cuatro fases.**
+- **LA CONDICIÓN DE CODEX SOBRE B-15 SE CUMPLE POR CONSTRUCCIÓN.** No va a P6 confiando
+  en que allí se planifique bien: va a P5c como criterio **H3**, con la costura montada y
+  probada por mutación. El prompt además nombra la aserción débil que hay que evitar
+  —comprobar que la cadena del `select` contiene el campo— porque pasaría con la costura
+  rota y haría **parecer** cerrado el hueco.
+- ACTION: rama `feat/mesa-md-guards` creada desde `main`@`d5b16e8`; spec de P5c escrita
+  con H1–H7; backlog re-alojado (B-13, B-15, B-18 → P5c; B-14 → deuda aceptada); prompt
+  `prompts/P5c-r1.md` escrito. **Verifiqué la línea base de Deno yo mismo antes de
+  escribirla en el prompt: 456/0 en el árbol y 28/0 en `create-mesa-matches`.** La de
+  Vitest es 1093/6, medida al cerrar P5a.
+- BACKLOG: **B-13, B-15 y B-18 asignadas a P5c** con criterio nombrado. **B-14 cerrada
+  como deuda aceptada.** **N1 de P4 → H4.** **Ya no queda ningún ítem sin dueño.**
+  B-05, B-07, B-09, B-10 siguen abiertos y son de entorno, no de este plan. **B-06 antes
+  de P8.**
+- OPEN AFTER THIS ROUND: (1) Ejecutar P5c r1. (2) Riesgo declarado: **H3 monta
+  `MesaAbiertaAdmin.tsx`**, 2227 líneas que ningún test del repo ha montado nunca; si el
+  andamiaje es desproporcionado el resultado correcto es `FINDINGS`, no una aserción
+  floja. (3) Luego P5b, y al planificar P6 ya no hace falta arrastrar B-15.
