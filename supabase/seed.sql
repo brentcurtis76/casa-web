@@ -76,6 +76,14 @@ INSERT INTO auth.users (
   '', '', '', ''
 ) ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO public.profiles (id, full_name, email) VALUES (
+  '00000000-e2e0-4000-9000-000000000001',
+  'Administración E2E',
+  'admin@e2e.local'
+) ON CONFLICT (id) DO UPDATE SET
+  full_name = EXCLUDED.full_name,
+  email = EXCLUDED.email;
+
 -- 2.1 Rol de Mesa Abierta — sin esta fila el usuario inicia sesión pero
 -- `is_liturgia_admin()` devuelve `f` y las políticas de admin de `liturgias`,
 -- `liturgia_elementos` y `church_podcast_episodes` lo tratan como anónimo.
@@ -105,6 +113,19 @@ SELECT
 FROM public.church_roles cr
 WHERE cr.name = 'general_admin'
 ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- 2.3 Mes abierto sintético para las superficies públicas de Mesa Abierta.
+-- Vive en el rango BASELINE y no lo borra ningún test.
+INSERT INTO public.mesa_abierta_months (
+  id, month_date, registration_deadline, dinner_date, dinner_time, status
+) VALUES (
+  '00000000-e2e0-4000-9000-000000000004',
+  '2099-12-01',
+  '2099-12-08 23:59:59+00',
+  '2099-12-13',
+  '19:00:00',
+  'open'
+) ON CONFLICT (id) DO NOTHING;
 
 
 -- =====================================================

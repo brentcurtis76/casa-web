@@ -14,6 +14,8 @@ const TEST_INCOME_CATEGORY = `${TEST_PREFIX}Categoría Ingreso`;
 const TEST_EXPENSE_CATEGORY = `${TEST_PREFIX}Categoría Gasto`;
 const TEST_CATEGORY_EDITED = `${TEST_PREFIX}Categoría Editada`;
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Financial Categories', () => {
   // Login + tab nav + sheet open consumes significant time under parallel workers
   test.setTimeout(60000);

@@ -11,6 +11,8 @@ import { test, expect, type Page } from '@playwright/test';
 const TEST_ROLE_PREFIX = 'test_e2e_';
 const TEST_ROLE_DISPLAY = `${TEST_ROLE_PREFIX}Rol Prueba`;
 
+test.describe.configure({ mode: 'serial' });
+
 // Helper: login via the app's own login form
 async function loginAsAdmin(page: Page) {
   const email = process.env.TEST_ADMIN_EMAIL;
@@ -192,7 +194,7 @@ test.describe('RBAC - Admin Role Management', () => {
     await expect(adminRow).toBeVisible();
 
     // Should have "Sistema" badge
-    await expect(adminRow.getByText('Sistema')).toBeVisible();
+    await expect(adminRow.getByText('Sistema', { exact: true })).toBeVisible();
 
     // Delete button should be disabled
     const deleteBtn = adminRow.getByRole('button', { name: /Eliminar/i });

@@ -163,8 +163,6 @@ serve(async (req) => {
 
     let emailsSent = 0;
     let emailsFailed = 0;
-    const emailLogs: any[] = [];
-
     console.log(`Processing ${matches?.length || 0} matches`);
 
     // Send emails to each match
@@ -199,7 +197,7 @@ serve(async (req) => {
       const matchAssignments = assignmentsByMatch.get(match.id) || [];
 
       // Prepare guest list for host email (NO NAMES - keep anonymous!)
-      const guestList = matchAssignments.map((assignment: any, index: number) => {
+      const guestList = matchAssignments.map((assignment, index: number) => {
         const guestParticipant = participantMap.get(assignment.guest_participant_id);
         const plusOne = guestParticipant?.has_plus_one ? " (+1 acompañante)" : "";
         const food = assignment.food_assignment !== "none" ? `${translateFoodAssignment(assignment.food_assignment)}` : "Sin asignación";
@@ -329,7 +327,7 @@ serve(async (req) => {
         },
       }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error:", error);
     return new Response(
       JSON.stringify({
@@ -371,7 +369,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<{ s
     }
 
     return { success: true, messageId: data.id };
-  } catch (error: any) {
+  } catch (error) {
     return { success: false, error: error.message };
   }
 }

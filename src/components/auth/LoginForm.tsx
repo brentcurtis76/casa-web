@@ -52,7 +52,7 @@ export function LoginForm({ onLoginSuccess, onForgotPassword }: LoginFormProps) 
       if (onLoginSuccess) {
         onLoginSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
       let errorMessage = 'Credenciales inválidas. Por favor, intenta de nuevo.';
 
       // Check for specific error messages

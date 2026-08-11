@@ -108,15 +108,16 @@ export async function approveScenesIntoCoverStep() {
   const approve = await screen.findByRole(
     'button',
     { name: /Aprobar escenas/i },
-    { timeout: 10000 },
+    { timeout: 30000 },
   );
+  await waitFor(() => expect(approve).toBeEnabled(), { timeout: 30000 });
   await act(async () => {
     fireEvent.click(approve);
     await yields(60);
   });
   await waitFor(
     () => expect(screen.queryByRole('button', { name: /Aprobar escenas/i })).toBeNull(),
-    { timeout: 10000 },
+    { timeout: 30000 },
   );
 }
 

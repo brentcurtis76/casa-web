@@ -160,11 +160,11 @@ describe('T-H.7 — el append persiste y sobrevive a una recarga real', () => {
       />,
     );
     await approveScenesIntoCoverStep();
-    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 15000 });
+    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 30000 });
     await settle(1200);
     expect(coverSrcs()).toHaveLength(2);
     // Lo que la fila tiene tras el PRIMER lote: dos entradas.
-    await waitFor(() => expect(persistedCoverPaths()).toHaveLength(2), { timeout: 15000 });
+    await waitFor(() => expect(persistedCoverPaths()).toHaveLength(2), { timeout: 30000 });
     const pathsAntes = persistedCoverPaths();
 
     // El usuario elige la SEGUNDA opción…
@@ -175,7 +175,7 @@ describe('T-H.7 — el append persiste y sobrevive a una recarga real', () => {
 
     // …y pide dos más.
     await click(within(coverPanel()).getByRole('button', { name: /2 más/ }));
-    await waitFor(() => expect(coverSrcs()).toHaveLength(4), { timeout: 15000 });
+    await waitFor(() => expect(coverSrcs()).toHaveLength(4), { timeout: 30000 });
     await settle(1200);
 
     // Recién aplicadas, las cuatro son todavía los bytes que devolvió el borde

@@ -250,7 +250,11 @@ async function finalizeStory(storyId: string) {
       onStoryCreated={onStoryCreated}
     />
   );
-  const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
+  const approveScenes = await waitFor(() => {
+    const button = screen.getByRole('button', { name: /Aprobar escenas/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    return button;
+  });
   await act(async () => {
     fireEvent.click(approveScenes);
     await yields(25);

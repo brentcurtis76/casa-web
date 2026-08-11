@@ -184,7 +184,7 @@ serve(async (req) => {
       const matchAssignments = assignmentsByMatch.get(match.id) || [];
 
       // Prepare guest list for host message (NO NAMES - keep anonymous!)
-      const guestList = matchAssignments.map((assignment: any, index: number) => {
+      const guestList = matchAssignments.map((assignment, index: number) => {
         const guestParticipant = participantMap.get(assignment.guest_participant_id);
         const plusOne = guestParticipant?.has_plus_one ? " (+1 acompañante)" : "";
         const food = assignment.food_assignment !== "none" ? `${translateFoodAssignment(assignment.food_assignment)}` : "Sin asignación";
@@ -287,7 +287,7 @@ serve(async (req) => {
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error:", error);
     return new Response(
       JSON.stringify({
@@ -330,7 +330,7 @@ async function sendWhatsAppMessage(data: {
     }
 
     return { success: true, messageSid: result.sid };
-  } catch (error: any) {
+  } catch (error) {
     return { success: false, error: error.message };
   }
 }

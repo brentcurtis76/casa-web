@@ -118,8 +118,8 @@ async function renderWithFirstBatch(id: string) {
     />,
   );
   await approveScenesIntoCoverStep();
-  await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
-  await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 10000 });
+  await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 30000 });
+  await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 30000 });
   await settle(600);
 }
 

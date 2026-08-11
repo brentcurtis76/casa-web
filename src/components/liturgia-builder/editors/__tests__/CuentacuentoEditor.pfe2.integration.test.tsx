@@ -245,7 +245,11 @@ async function renderAtCoverStep() {
       onStoryCreated={vi.fn()}
     />,
   );
-  const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i }, { timeout: 5000 });
+  const approveScenes = await waitFor(() => {
+    const button = screen.getByRole('button', { name: /Aprobar escenas/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    return button;
+  }, { timeout: 5000 });
   await act(async () => {
     fireEvent.click(approveScenes);
     await yields(40);
@@ -370,4 +374,3 @@ describe('B2 — las referencias descartadas por generate-scene-images se avisan
     );
   }, 30000);
 });
-

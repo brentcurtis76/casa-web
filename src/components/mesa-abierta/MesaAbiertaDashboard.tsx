@@ -23,7 +23,7 @@ import { format, addHours } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion } from "framer-motion";
 
-interface ParticipantData {
+export interface ParticipantData {
   id: string;
   role_preference: 'host' | 'guest';
   assigned_role: 'host' | 'guest' | null;
@@ -38,6 +38,7 @@ interface ParticipantData {
   mesa_abierta_assignments?: Array<{
     food_assignment: string;
     mesa_abierta_matches: {
+      id?: string;
       dinner_date: string;
       dinner_time: string;
       host_participant: {
@@ -103,13 +104,13 @@ export function MesaAbiertaDashboard() {
       const now = new Date().toISOString();
       const futureParticipants = participants?.filter(p =>
         p.mesa_abierta_months &&
-        (p.mesa_abierta_months as any).dinner_date >= now
+        p.mesa_abierta_months.dinner_date >= now
       ) || [];
 
       // Sort by dinner_date ascending and get the first one
       futureParticipants.sort((a, b) => {
-        const dateA = (a.mesa_abierta_months as any)?.dinner_date || '';
-        const dateB = (b.mesa_abierta_months as any)?.dinner_date || '';
+        const dateA = a.mesa_abierta_months?.dinner_date || '';
+        const dateB = b.mesa_abierta_months?.dinner_date || '';
         return dateA.localeCompare(dateB);
       });
 
@@ -131,7 +132,7 @@ export function MesaAbiertaDashboard() {
             mesa_abierta_matches(
               dinner_date,
               dinner_time,
-              mesa_abierta_participants!mesa_abierta_matches_host_participant_id_fkey(
+              host_participant:mesa_abierta_participants!mesa_abierta_matches_host_participant_id_fkey(
                 host_address
               )
             )
@@ -150,9 +151,9 @@ export function MesaAbiertaDashboard() {
         mesa_abierta_assignments: assignmentData ? [assignmentData] : []
       };
 
-      setParticipantData(completeParticipant as any);
+      setParticipantData(completeParticipant as ParticipantData);
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching participant data:', error);
       toast({
         title: "Error",
@@ -183,8 +184,8 @@ export function MesaAbiertaDashboard() {
 
       // Count dietary restrictions
       const restrictionCounts: { [key: string]: number } = {};
-      assignments?.forEach((assignment: any) => {
-        assignment.mesa_abierta_participants.mesa_abierta_dietary_restrictions?.forEach((restriction: any) => {
+      assignments?.forEach((assignment) => {
+        assignment.mesa_abierta_participants.mesa_abierta_dietary_restrictions?.forEach((restriction) => {
           const type = restriction.restriction_type;
           restrictionCounts[type] = (restrictionCounts[type] || 0) + 1;
         });
@@ -220,7 +221,7 @@ export function MesaAbiertaDashboard() {
 
       setParticipantData({ ...participantData, status: 'cancelled' });
 
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
         description: "No se pudo cancelar la participación",

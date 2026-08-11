@@ -15,6 +15,8 @@ const TEST_NAME = `${TEST_PREFIX}Juan Pérez`;
 const TEST_ROLE = `${TEST_PREFIX}Asistente`;
 const TEST_ROLE_EDITED = `${TEST_PREFIX}Coordinador`;
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Financial Personnel Management', () => {
   test.beforeEach(async ({ page }) => {
     if (!hasCredentials()) {

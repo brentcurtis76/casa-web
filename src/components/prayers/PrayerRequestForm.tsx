@@ -75,7 +75,7 @@ export function PrayerRequestForm() {
       });
       
       form.reset();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error al enviar petición de oración:', error);
       toast({
         variant: 'destructive',

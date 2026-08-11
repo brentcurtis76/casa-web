@@ -173,7 +173,7 @@ export function MesaAbiertaSignup({ open, onClose, monthId, preferredRole }: Mes
 
       // Show success screen instead of just closing
       setShowSuccess(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error signing up:', error);
       toast({
         title: "Error",

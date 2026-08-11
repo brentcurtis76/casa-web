@@ -128,7 +128,7 @@ export function EditParticipantDialog({ open, onClose, onSuccess, participant }:
 
       onSuccess();
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating participant:', error);
       toast({
         title: 'Error',

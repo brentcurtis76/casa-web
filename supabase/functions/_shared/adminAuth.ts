@@ -10,6 +10,7 @@ interface AdminAuthUser {
 // Use `any` for the client to stay compatible with multiple
 // @supabase/supabase-js versions imported across edge functions.
 // deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Compatibility seam for independently versioned Edge clients.
 type SupabaseAdminLike = any;
 
 export interface AdminAuthOk {

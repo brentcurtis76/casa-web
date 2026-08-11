@@ -218,7 +218,7 @@ const handler = async (req: Request): Promise<Response> => {
     // STEP 3: Separate hosts and guests
     // ===================================
     let hosts = participants.filter((p) => p.role_preference === "host");
-    let guests = participants.filter((p) => p.role_preference === "guest");
+    const guests = participants.filter((p) => p.role_preference === "guest");
 
     console.log(`Anfitriones: ${hosts.length}, Invitados: ${guests.length}`);
 
@@ -508,7 +508,7 @@ const handler = async (req: Request): Promise<Response> => {
         },
       }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ Error en match-participants:", error);
 
     return new Response(

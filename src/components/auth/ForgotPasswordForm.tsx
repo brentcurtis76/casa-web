@@ -51,7 +51,7 @@ export function ForgotPasswordForm({ onBack, onSuccess }: ForgotPasswordFormProp
       if (onSuccess) {
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Error',

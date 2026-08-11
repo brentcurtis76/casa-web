@@ -201,6 +201,7 @@ serve(async (req) => {
 
     // Clean up
     jsonText = jsonText
+      // eslint-disable-next-line no-control-regex -- Model output must be stripped of JSON-invalid control bytes.
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
       .trim();
 

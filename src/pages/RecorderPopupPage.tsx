@@ -132,6 +132,7 @@ const RecorderPopupPage: React.FC = () => {
   const segmentActiveMsRef = useRef<number>(0);
   const rotatingRef = useRef(false);
   const stoppingRef = useRef(false);
+  const recorderStopWorkRef = useRef<Promise<void>>(Promise.resolve());
   const activeMsRef = useRef(0);
   const ceilingMsRef = useRef<number>(INITIAL_CEILING_MS);
   const channelRef = useRef<RecorderChannel | null>(null);
@@ -276,7 +277,7 @@ const RecorderPopupPage: React.FC = () => {
     recorder.onstop = () => {
       // Si estamos rotando o deteniendo, flushSegment sube el segmento.
       // El rearranque lo maneja el caller (rotate/stop).
-      void flushSegment().then(() => {
+      const stopWork = flushSegment().then(() => {
         if (rotatingRef.current) {
           rotatingRef.current = false;
           const s = streamRef.current;
@@ -295,6 +296,7 @@ const RecorderPopupPage: React.FC = () => {
           }
         }
       });
+      recorderStopWorkRef.current = stopWork;
     };
     recorder.onerror = (evt: Event) => {
       const sessionId = sessionIdRef.current;
@@ -368,15 +370,18 @@ const RecorderPopupPage: React.FC = () => {
       try {
         const recorder = recorderRef.current;
         if (recorder && recorder.state !== 'inactive') {
+          const stopped = new Promise<void>((resolve) => {
+            recorder.addEventListener('stop', () => resolve(), { once: true });
+          });
           recorder.stop();
+          await stopped;
+          await recorderStopWorkRef.current;
+        } else {
+          await flushSegment();
         }
       } catch {
         /* ignore */
       }
-
-      // Espera a que el último onstop corra y suba el segmento final.
-      await new Promise((r) => setTimeout(r, 500));
-      await flushSegment();
 
       try {
         await finalize(sessionId);

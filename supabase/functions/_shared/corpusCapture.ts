@@ -39,6 +39,7 @@ const sceneDeps = {
   authzDeps,
   supabaseUrl: "https://proj.supabase.co",
   // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Baseline and current handler dependency shapes intentionally differ.
 } as any;
 
 const storyDeps = {
@@ -47,6 +48,7 @@ const storyDeps = {
   authzDeps,
   supabaseUrl: "https://proj.supabase.co",
   // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Baseline and current handler dependency shapes intentionally differ.
 } as any;
 
 const scene = createSceneHandler(sceneDeps);

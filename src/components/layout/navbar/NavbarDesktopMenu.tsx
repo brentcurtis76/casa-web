@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User } from 'lucide-react';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import type { UserProfile } from '@/components/auth/AuthContext';
 
 interface NavbarDesktopMenuProps {
-  user: any;
-  profile: any;
+  user: SupabaseUser | null;
+  profile: UserProfile | null;
   setIsAuthModalOpen: (isOpen: boolean) => void;
   logout: () => void;
   getInitials: (name: string) => string;

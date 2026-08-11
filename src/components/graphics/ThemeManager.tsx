@@ -266,7 +266,7 @@ export const ThemeManager = () => {
 
       setDialogOpen(false);
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
         description: error.message || 'No se pudo guardar el tema.',
@@ -293,7 +293,7 @@ export const ThemeManager = () => {
       });
 
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
         description: error.message || 'No se pudo eliminar el tema.',
@@ -318,7 +318,7 @@ export const ThemeManager = () => {
       });
 
       fetchThemes();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Error',
         description: error.message || 'No se pudo actualizar el tema.',

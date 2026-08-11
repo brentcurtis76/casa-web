@@ -5,7 +5,7 @@ import { User, Session } from '@supabase/supabase-js';
 import type { RoleName, PermissionAction, UserPermission } from '@/types/rbac';
 import { ROLE_NAMES } from '@/types/rbac';
 
-type UserProfile = {
+export type UserProfile = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
@@ -400,7 +400,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Login error:', error.message);
       throw new Error(error.message || 'Error al iniciar sesión');
     } finally {
@@ -422,7 +422,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Signup error:', error.message);
       throw new Error(error.message || 'Error al registrar usuario');
     } finally {
@@ -453,7 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Reset password error:', error.message);
       throw new Error(error.message || 'Error al enviar el correo de recuperación');
     }
@@ -466,7 +466,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Update password error:', error.message);
       throw new Error(error.message || 'Error al actualizar la contraseña');
     }

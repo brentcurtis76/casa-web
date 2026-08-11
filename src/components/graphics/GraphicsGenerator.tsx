@@ -347,7 +347,7 @@ export const GraphicsGenerator = () => {
       prompt: buildPatternPromptFromTheme(selectedTheme!, '1:1'),
       generatedAt: new Date(),
       status: 'pending' as const,
-      illustrationTheme: selectedTheme?.key as any,
+      illustrationTheme: selectedTheme?.key,
     }));
 
     setDesignVariations(initialVariations);
@@ -423,7 +423,7 @@ export const GraphicsGenerator = () => {
               : img
           )
         );
-      } catch (err: any) {
+      } catch (err) {
         console.error(`Error generating variation ${i}:`, err);
 
         // FALLBACK: If API fails (e.g. network error), utilize local fallback
@@ -543,7 +543,7 @@ export const GraphicsGenerator = () => {
       prompt: buildPatternPromptFromTheme(selectedTheme!, OUTPUT_FORMATS[format].ratio),
       generatedAt: new Date(),
       status: 'pending' as const,
-      illustrationTheme: selectedTheme?.key as any,
+      illustrationTheme: selectedTheme?.key,
     }));
 
     // Include the original selected design
@@ -617,7 +617,7 @@ export const GraphicsGenerator = () => {
               : img
           )
         );
-      } catch (err: any) {
+      } catch (err) {
         console.error(`Error generating ${format}:`, err);
 
         setAdaptedImages(prev =>
@@ -744,7 +744,7 @@ export const GraphicsGenerator = () => {
             : img
         )
       );
-    } catch (err: any) {
+    } catch (err) {
       updateFn(prev =>
         prev.map(img =>
           img.id === image.id

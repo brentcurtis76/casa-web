@@ -174,7 +174,7 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
         title: 'Imagen subida',
         description: 'La imagen se ha subido correctamente',
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error uploading image:', error);
       toast({
         title: 'Error',
@@ -286,7 +286,7 @@ export const EventForm = ({ open, event, onClose, onSuccess }: EventFormProps) =
       }
 
       onSuccess();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error saving event:', error);
       toast({
         title: 'Error',

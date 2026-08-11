@@ -69,8 +69,9 @@ export const FINANCIAL_KEYS = {
   annualReport: (year: number) =>
     ['financial', 'report', 'annual', year] as const,
   // Personnel query keys
+  personnelAll: () => ['financial', 'personnel'] as const,
   personnel: (filters?: PersonnelFilters) =>
-    ['financial', 'personnel', filters] as const,
+    [...FINANCIAL_KEYS.personnelAll(), filters] as const,
   // Payroll query keys
   payroll: (year: number, month: number) =>
     ['financial', 'payroll', year, month] as const,
@@ -654,10 +655,13 @@ export function useCreatePersonnel() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: (data: PersonnelCreateData) =>
-      personnelService.createPersonnel(supabase, data, user?.id),
+    mutationFn: async (data: PersonnelCreateData) => {
+      const result = await personnelService.createPersonnel(supabase, data, user?.id);
+      if (result.error) throw result.error;
+      return result;
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnel() });
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnelAll() });
       toast({ title: 'Personal creado correctamente' });
     },
     onError: (error: Error) => {
@@ -676,10 +680,13 @@ export function useUpdatePersonnel() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: PersonnelUpdateData }) =>
-      personnelService.updatePersonnel(supabase, id, data, user?.id),
+    mutationFn: async ({ id, data }: { id: string; data: PersonnelUpdateData }) => {
+      const result = await personnelService.updatePersonnel(supabase, id, data, user?.id);
+      if (result.error) throw result.error;
+      return result;
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnel() });
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnelAll() });
       toast({ title: 'Personal actualizado correctamente' });
     },
     onError: (error: Error) => {
@@ -698,10 +705,13 @@ export function useTogglePersonnelActive() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
-      personnelService.togglePersonnelActive(supabase, id, is_active, user?.id),
+    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+      const result = await personnelService.togglePersonnelActive(supabase, id, is_active, user?.id);
+      if (result.error) throw result.error;
+      return result;
+    },
     onSuccess: (_, { is_active }) => {
-      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnel() });
+      queryClient.invalidateQueries({ queryKey: FINANCIAL_KEYS.personnelAll() });
       toast({ title: is_active ? 'Personal activado' : 'Personal desactivado' });
     },
     onError: (error: Error) => {

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MesaAbiertaDashboard } from '../MesaAbiertaDashboard';
+import type { ParticipantData } from '../MesaAbiertaDashboard';
+
+const mockUser = { id: 'test-user-id', email: 'test@example.com' };
 
 // Mock AuthContext
 vi.mock('@/components/auth/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'test-user-id', email: 'test@example.com' }
+    user: mockUser,
   })
 }));
 
@@ -17,10 +20,11 @@ vi.mock('@/hooks/use-toast', () => ({
 }));
 
 // Create a variable to hold the current test data
-let mockParticipantData: any = null;
-let mockParticipantError: any = null;
+let mockParticipantData: ParticipantData | null = null;
+let mockParticipantError: { code: string; message: string } | null = null;
 
-// Mock Supabase with a simpler approach
+// Mock the two query shapes used by the dashboard. The participant query returns
+// an array after `.neq()`, while the assignment query resolves through `.single()`.
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
@@ -28,23 +32,22 @@ vi.mock('@/integrations/supabase/client', () => ({
         return {
           select: () => ({
             eq: () => ({
-              gte: () => ({
-                order: () => ({
-                  limit: () => ({
-                    single: () => Promise.resolve({
-                      data: mockParticipantData,
-                      error: mockParticipantError
-                    })
-                  })
-                })
-              })
+              neq: () => Promise.resolve({
+                data: mockParticipantData ? [mockParticipantData] : [],
+                error: mockParticipantError,
+              }),
             })
           })
         };
       } else if (table === 'mesa_abierta_assignments') {
         return {
           select: () => ({
-            eq: () => Promise.resolve({ data: [], error: null })
+            eq: () => ({
+              single: () => Promise.resolve({
+                data: mockParticipantData?.mesa_abierta_assignments?.[0] ?? null,
+                error: null,
+              }),
+            }),
           })
         };
       }
@@ -63,7 +66,7 @@ describe('MesaAbiertaDashboard', () => {
   it('shows empty state when user has no participation', async () => {
     // Set up mock data for this test
     mockParticipantData = null;
-    mockParticipantError = { code: 'PGRST116' };
+    mockParticipantError = null;
 
     render(<MesaAbiertaDashboard />);
 
@@ -84,8 +87,8 @@ describe('MesaAbiertaDashboard', () => {
       host_address: null,
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: []
     };
@@ -94,7 +97,7 @@ describe('MesaAbiertaDashboard', () => {
     render(<MesaAbiertaDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Esperando asignación/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Esperando asignación/i)).toHaveLength(2);
       expect(screen.getByText(/invitado/i)).toBeInTheDocument();
     });
   });
@@ -110,14 +113,14 @@ describe('MesaAbiertaDashboard', () => {
       host_address: null,
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
           id: 'match-id',
-          dinner_date: '2025-12-13',
+          dinner_date: '2099-12-13',
           dinner_time: '19:00',
           host_participant: {
             host_address: '123 Main St, City'
@@ -147,14 +150,14 @@ describe('MesaAbiertaDashboard', () => {
       host_address: '456 Oak Ave',
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: [{
         food_assignment: 'none',
         mesa_abierta_matches: {
           id: 'match-id',
-          dinner_date: '2025-12-13',
+          dinner_date: '2099-12-13',
           dinner_time: '19:00',
           host_participant: {
             host_address: '456 Oak Ave'
@@ -183,14 +186,14 @@ describe('MesaAbiertaDashboard', () => {
       host_address: null,
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
           id: 'match-id',
-          dinner_date: '2025-12-13',
+          dinner_date: '2099-12-13',
           dinner_time: '19:00',
           host_participant: {
             host_address: '123 Main St'
@@ -218,8 +221,8 @@ describe('MesaAbiertaDashboard', () => {
       host_address: null,
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: []
     };
@@ -243,14 +246,14 @@ describe('MesaAbiertaDashboard', () => {
       host_address: null,
       phone_number: null,
       mesa_abierta_months: {
-        dinner_date: '2025-12-13',
-        month_date: '2025-12-01'
+        dinner_date: '2099-12-13',
+        month_date: '2099-12-01'
       },
       mesa_abierta_assignments: [{
         food_assignment: 'salad',
         mesa_abierta_matches: {
           id: 'match-id',
-          dinner_date: '2025-12-13',
+          dinner_date: '2099-12-13',
           dinner_time: '19:00',
           host_participant: {
             host_address: '123 Main St'

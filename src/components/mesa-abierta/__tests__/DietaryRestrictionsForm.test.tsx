@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DietaryRestrictionsForm } from '../DietaryRestrictionsForm';
+import type { DietaryRestriction } from '../DietaryRestrictionsForm';
 
 describe('DietaryRestrictionsForm', () => {
   const mockOnRestrictionsChange = vi.fn();
@@ -69,10 +70,12 @@ describe('DietaryRestrictionsForm', () => {
     fireEvent.click(vegetarianCheckbox);
     fireEvent.click(glutenFreeCheckbox);
 
-    const lastCall = mockOnRestrictionsChange.mock.calls[mockOnRestrictionsChange.mock.calls.length - 1][0];
+    const lastCall = mockOnRestrictionsChange.mock.calls[
+      mockOnRestrictionsChange.mock.calls.length - 1
+    ][0] as DietaryRestriction[];
     expect(lastCall).toHaveLength(2);
-    expect(lastCall.map((r: any) => r.type)).toContain('vegetarian');
-    expect(lastCall.map((r: any) => r.type)).toContain('gluten_free');
+    expect(lastCall.map((restriction) => restriction.type)).toContain('vegetarian');
+    expect(lastCall.map((restriction) => restriction.type)).toContain('gluten_free');
   });
 
   it('displays allergy warning icons for severe restrictions', () => {

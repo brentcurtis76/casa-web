@@ -10,22 +10,17 @@ test.describe('Mesa Abierta Sign-up Flow', () => {
 
   test('should display Mesa Abierta section', async ({ page }) => {
     // Check that the Mesa Abierta section is visible
-    await expect(page.getByText('La Mesa Abierta')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'La Mesa Abierta', exact: true })).toBeVisible();
     await expect(page.getByText(/Una cena mensual/i)).toBeVisible();
   });
 
-  test('should show sign-up dialog when "Ser Invitado" is clicked', async ({ page }) => {
-    // Note: This test will require authentication to work properly
-    // For now, we test that the button exists
-    const guestButton = page.getByRole('button', { name: /Ser Invitado/i });
-    await expect(guestButton).toBeVisible();
+  test('should show the public sign-up call to action', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Inscríbete Aquí' })).toBeVisible();
   });
 
-  test('should show sign-up dialog when "Ser Anfitrión" is clicked', async ({ page }) => {
-    // Note: This test will require authentication to work properly
-    // For now, we test that the button exists
-    const hostButton = page.getByRole('button', { name: /Ser Anfitrión/i });
-    await expect(hostButton).toBeVisible();
+  test('should ask unauthenticated visitors to create an account', async ({ page }) => {
+    await page.getByRole('button', { name: 'Inscríbete Aquí' }).click();
+    await expect(page.getByRole('heading', { name: 'CREAR CUENTA' })).toBeVisible();
   });
 
   test('should display next dinner information if available', async ({ page }) => {
@@ -37,10 +32,10 @@ test.describe('Mesa Abierta Sign-up Flow', () => {
   });
 
   test('should display "How It Works" section', async ({ page }) => {
-    await expect(page.getByText('¿Cómo Funciona?')).toBeVisible();
-    await expect(page.getByText('Inscríbete')).toBeVisible();
-    await expect(page.getByText('Espera la Asignación')).toBeVisible();
-    await expect(page.getByText('¡Disfruta!')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '¿Cómo Funciona?' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Inscríbete', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Espera la Asignación' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '¡Disfruta!' })).toBeVisible();
   });
 
   // TODO: Add authenticated tests for full signup flow

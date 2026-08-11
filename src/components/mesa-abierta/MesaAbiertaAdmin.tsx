@@ -38,7 +38,7 @@ const monthStatusLabel = (status: string): string =>
 interface DietaryRestriction {
   id: string;
   restriction_type: string;
-  description?: string;
+  description: string | null;
   severity: string;
   is_plus_one: boolean;
 }
@@ -50,14 +50,14 @@ interface Participant {
   has_plus_one: boolean;
   status: string;
   user_id: string;
-  phone_number?: string;
-  host_address?: string;
-  host_max_guests?: number;
-  plus_one_name?: string;
+  phone_number: string | null;
+  host_address: string | null;
+  host_max_guests: number | null;
+  plus_one_name: string | null;
   mesa_abierta_dietary_restrictions?: DietaryRestriction[];
-  full_name?: string;
-  email?: string;
-  can_bring_main_dish?: boolean;
+  full_name: string;
+  email: string | null;
+  can_bring_main_dish: boolean;
 }
 
 interface MatchResult {
@@ -278,7 +278,7 @@ export const MesaAbiertaAdmin = () => {
         };
       });
 
-      setParticipants(participantsWithDetails as any);
+      setParticipants(participantsWithDetails);
     }
   };
 
@@ -461,7 +461,7 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh months list
       await fetchMonths();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting month:', error);
       toast({
         title: 'Error',
@@ -550,7 +550,7 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       // FunctionsHttpError hides the function's JSON body behind error.context
       let description = error.message || 'Error al ejecutar matching';
@@ -631,7 +631,7 @@ export const MesaAbiertaAdmin = () => {
       await fetchParticipants(selectedMonth.id);
       setMatchResult(null);
       setDinnerMatches([]);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error unmatching:', error);
       toast({
         title: 'Error',
@@ -667,7 +667,7 @@ export const MesaAbiertaAdmin = () => {
       if (updatedMonth) {
         setSelectedMonth(updatedMonth);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error marking month completed:', error);
       toast({
         title: 'Error',
@@ -734,7 +734,7 @@ export const MesaAbiertaAdmin = () => {
       if (selectedMonth) {
         fetchParticipants(selectedMonth.id);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting participant:', error);
       toast({
         title: 'Error',
@@ -821,7 +821,7 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error moving guest:', error);
       toast({
         title: 'Error',
@@ -860,7 +860,7 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error changing food assignment:', error);
       toast({
         title: 'Error',
@@ -898,7 +898,7 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error changing host food assignment:', error);
       toast({
         title: 'Error',
@@ -978,7 +978,7 @@ export const MesaAbiertaAdmin = () => {
 
       // Refresh dinner matches
       await fetchDinnerMatches(selectedMonth.id);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error converting host to guest:', error);
       toast({
         title: 'Error',
@@ -1035,7 +1035,7 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       toast({
         title: 'Error',
@@ -1089,7 +1089,7 @@ export const MesaAbiertaAdmin = () => {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error);
       toast({
         title: 'Error',

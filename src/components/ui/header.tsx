@@ -8,11 +8,10 @@ import { UserMenu } from "./header/UserMenu";
 import { MobileMenu } from "./header/MobileMenu";
 import { ContactModal } from "@/components/contact/ContactModal";
 import { DonationModal } from "@/components/donation/DonationModal";
-import { useLocation, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 function Header1() {
     const { user, profile, logout } = useAuth();
-    const location = useLocation();
     const [isOpen, setOpen] = useState(false);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -23,8 +22,6 @@ function Header1() {
     const openContactModal = () => setIsContactModalOpen(true);
     const openDonationModal = () => setIsDonationModalOpen(true);
     const closeMenu = () => setOpen(false);
-
-    const isHomePage = location.pathname === '/';
 
     return (
         <header className="w-full z-40 fixed top-0 left-0 bg-background">
@@ -71,9 +68,7 @@ function Header1() {
                 {/* Simplified mobile menu */}
                 <MobileMenu
                     isOpen={isOpen}
-                    navigationItems={[]}
                     user={user}
-                    profile={profile}
                     logout={logout}
                     openAuthModal={openAuthModal}
                     openContactModal={openContactModal}
@@ -101,4 +96,3 @@ function Header1() {
 }
 
 export { Header1 };
-

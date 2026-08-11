@@ -59,7 +59,8 @@ test.describe('Recorder popup smoke', () => {
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
-          body: JSON.stringify([{ id: MOCK_SESSION_ID }]),
+          // `.single()` requests a PostgREST object response, not an array.
+          body: JSON.stringify({ id: MOCK_SESSION_ID }),
         });
         return;
       }
@@ -94,20 +95,18 @@ test.describe('Recorder popup smoke', () => {
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 'seg-1',
-              session_id: MOCK_SESSION_ID,
-              segment_index: 0,
-              storage_path: `sessions/${MOCK_SESSION_ID}/segments/00000.webm`,
-              started_at: new Date().toISOString(),
-              ended_at: new Date().toISOString(),
-              duration_seconds: 2,
-              size_bytes: 1024,
-              mime_type: 'audio/webm',
-              created_at: new Date().toISOString(),
-            },
-          ]),
+          body: JSON.stringify({
+            id: 'seg-1',
+            session_id: MOCK_SESSION_ID,
+            segment_index: 0,
+            storage_path: `sessions/${MOCK_SESSION_ID}/segments/00000.webm`,
+            started_at: new Date().toISOString(),
+            ended_at: new Date().toISOString(),
+            duration_seconds: 2,
+            size_bytes: 1024,
+            mime_type: 'audio/webm',
+            created_at: new Date().toISOString(),
+          }),
         });
         return;
       }
@@ -141,8 +140,14 @@ test.describe('Recorder popup smoke', () => {
     const stopButton = page.getByRole('button', { name: /Detener/ }).first();
     await stopButton.click();
 
-    // Allow onstop + flushSegment + async IDB write to settle.
-    await page.waitForTimeout(2000);
+    // The stopped state is only published after the final MediaRecorder event,
+    // IndexedDB write, upload, and session finalization have completed.
+    await expect(page.getByRole('heading', { name: 'Detenido' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByText('1 segmento guardado')).toBeVisible({
+      timeout: 15000,
+    });
 
     const chunkCount = await page.evaluate(async (sessionId) => {
       return await new Promise<number>((resolve, reject) => {

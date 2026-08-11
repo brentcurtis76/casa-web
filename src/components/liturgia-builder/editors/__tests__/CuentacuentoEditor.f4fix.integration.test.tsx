@@ -338,7 +338,10 @@ async function renderAtStoryStep(storyId = 'story-sg') {
   const rendered = render(
     <CuentacuentoEditor context={baseContext} initialStory={makeStoryGeneratedStory(storyId)} onStoryCreated={onStoryCreated} />
   );
-  await waitFor(() => expect(screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeTruthy(), { timeout: 3000 });
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  }, { timeout: 3000 });
   return { ...rendered, onStoryCreated };
 }
 
@@ -347,7 +350,11 @@ async function renderAtCoverStep(onStoryCreated = vi.fn(), storyId = 'story-cov'
   render(
     <CuentacuentoEditor context={baseContext} initialStory={makeScenesPendingStory(storyId)} onStoryCreated={onStoryCreated} />
   );
-  const approveScenes = await screen.findByRole('button', { name: /Aprobar escenas/i });
+  const approveScenes = await waitFor(() => {
+    const button = screen.getByRole('button', { name: /Aprobar escenas/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    return button;
+  });
   await act(async () => {
     fireEvent.click(approveScenes);
     await yields(20);

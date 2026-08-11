@@ -685,5 +685,6 @@ export interface OverlayContent {
 export interface PatternGeneratedImage extends GeneratedImage {
   patternBase64?: string; // Store original pattern for re-compositing
   overlayConfig?: OverlayContent;
-  illustrationTheme?: IllustrationTheme;
+  // Includes both built-in patterns and custom theme keys loaded from the database.
+  illustrationTheme?: string;
 }

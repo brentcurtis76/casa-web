@@ -98,7 +98,7 @@ const handler = async (req: Request): Promise<Response> => {
           },
         }
       );
-    } catch (emailError: any) {
+    } catch (emailError) {
       console.error("Error al enviar el email:", emailError);
       
       return new Response(
@@ -116,7 +116,7 @@ const handler = async (req: Request): Promise<Response> => {
         }
       );
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error en la función whatsapp-signup:", error);
     
     return new Response(
@@ -137,4 +137,3 @@ const handler = async (req: Request): Promise<Response> => {
 };
 
 serve(handler);
-

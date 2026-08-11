@@ -437,7 +437,10 @@ async function renderAtStoryStep(storyId = 'story-sg') {
     />
   );
   await waitFor(
-    () => expect(screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i })).toBeTruthy(),
+    () => {
+      const button = screen.getByRole('button', { name: /Aprobar cuento y generar imágenes/i }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    },
     { timeout: 3000 }
   );
   return { ...rendered, onStoryCreated };
@@ -453,7 +456,10 @@ async function renderAtScenesStep(storyId = 'story-ca') {
     />
   );
   await waitFor(
-    () => expect(screen.getByRole('button', { name: /Aprobar escenas/i })).toBeTruthy(),
+    () => {
+      const button = screen.getByRole('button', { name: /Aprobar escenas/i }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    },
     { timeout: 3000 }
   );
   return { ...rendered, onStoryCreated };

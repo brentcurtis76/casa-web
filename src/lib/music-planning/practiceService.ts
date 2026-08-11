@@ -49,6 +49,33 @@ export interface PracticeSongStats {
   lastPracticedAt: string | null;
 }
 
+interface PracticeQueryError {
+  message: string;
+  code?: string;
+}
+
+interface PracticeQueryResult {
+  data: unknown;
+  error: PracticeQueryError | null;
+}
+
+/** Structural query surface for the table that has not reached generated DB types yet. */
+interface PracticeQuery extends PromiseLike<PracticeQueryResult> {
+  select(columns?: string): PracticeQuery;
+  order(column: string, options?: { ascending?: boolean }): PracticeQuery;
+  eq(column: string, value: unknown): PracticeQuery;
+  gte(column: string, value: unknown): PracticeQuery;
+  lte(column: string, value: unknown): PracticeQuery;
+  limit(count: number): PracticeQuery;
+  insert(values: unknown): PracticeQuery;
+  update(values: unknown): PracticeQuery;
+  delete(): PracticeQuery;
+  single(): Promise<PracticeQueryResult>;
+}
+
+const practiceSessions = (): PracticeQuery =>
+  (supabase.from as unknown as (table: string) => PracticeQuery)('music_practice_sessions');
+
 // ─── Query Functions ────────────────────────────────────────────────────────
 
 /**
@@ -58,7 +85,7 @@ export interface PracticeSongStats {
 export async function getPracticeSessions(
   filters?: PracticeSessionFilters
 ): Promise<PracticeSessionWithSong[]> {
-  let query = (supabase.from as any)('music_practice_sessions')
+  let query = practiceSessions()
     .select('*, music_songs(*)')
     .order('started_at', { ascending: false });
 
@@ -78,7 +105,7 @@ export async function getPracticeSessions(
 export async function getPracticeSessionById(
   id: string
 ): Promise<PracticeSessionWithSong | null> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('*, music_songs(*)')
     .eq('id', id)
     .single();
@@ -97,7 +124,7 @@ export async function getPracticeSessionsForSong(
   songId: string,
   limit: number = 50
 ): Promise<MusicPracticeSessionRow[]> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('*')
     .eq('song_id', songId)
     .order('started_at', { ascending: false })
@@ -115,7 +142,7 @@ export async function getPracticeSessionsForUser(
   userId: string,
   limit: number = 50
 ): Promise<PracticeSessionWithSong[]> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('*, music_songs(*)')
     .eq('user_id', userId)
     .order('started_at', { ascending: false })
@@ -133,7 +160,7 @@ export async function getPracticeSessionsForUser(
 export async function createPracticeSession(
   session: MusicPracticeSessionInsert
 ): Promise<MusicPracticeSessionRow> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .insert(session)
     .select('*')
     .single();
@@ -149,7 +176,7 @@ export async function updatePracticeSession(
   id: string,
   updates: MusicPracticeSessionUpdate
 ): Promise<MusicPracticeSessionRow> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .update(updates)
     .eq('id', id)
     .select('*')
@@ -163,7 +190,7 @@ export async function updatePracticeSession(
  * Delete a practice session by ID.
  */
 export async function deletePracticeSession(id: string): Promise<void> {
-  const { error } = await (supabase.from as any)('music_practice_sessions')
+  const { error } = await practiceSessions()
     .delete()
     .eq('id', id);
 
@@ -177,7 +204,7 @@ export async function deletePracticeSession(id: string): Promise<void> {
  * Computed client-side from all rows (acceptable for small–medium datasets).
  */
 export async function getPracticeStats(): Promise<PracticeStats> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('user_id, song_id, duration_seconds');
 
   if (error) throw new Error(error.message);
@@ -205,7 +232,7 @@ export async function getPracticeStats(): Promise<PracticeStats> {
 export async function getPracticeSongLeaderboard(
   limit: number = 10
 ): Promise<PracticeSongStats[]> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('song_id, duration_seconds, started_at, music_songs(title)')
     .order('started_at', { ascending: false });
 
@@ -263,7 +290,7 @@ export async function getPracticeSongLeaderboard(
 export async function getRecentPracticeActivity(
   limit: number = 20
 ): Promise<PracticeSessionWithSong[]> {
-  const { data, error } = await (supabase.from as any)('music_practice_sessions')
+  const { data, error } = await practiceSessions()
     .select('*, music_songs(*)')
     .order('started_at', { ascending: false })
     .limit(limit);

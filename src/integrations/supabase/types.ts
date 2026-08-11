@@ -42,6 +42,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          email: string | null
           full_name: string | null
           id: string
           phone: string | null
@@ -49,6 +50,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          email?: string | null
           full_name?: string | null
           id: string
           phone?: string | null
@@ -56,6 +58,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          email?: string | null
           full_name?: string | null
           id?: string
           phone?: string | null
@@ -137,6 +140,7 @@ export type Database = {
           status: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason: string | null
           can_bring_main_dish: boolean
+          email: string | null
           created_at: string
           updated_at: string
         }
@@ -156,6 +160,7 @@ export type Database = {
           status?: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason?: string | null
           can_bring_main_dish?: boolean
+          email?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -175,6 +180,7 @@ export type Database = {
           status?: Database['public']['Enums']['mesa_abierta_participant_status']
           cancellation_reason?: string | null
           can_bring_main_dish?: boolean
+          email?: string | null
           created_at?: string
           updated_at?: string
         }

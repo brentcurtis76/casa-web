@@ -55,7 +55,7 @@ export function ResetPasswordForm({ onSuccess }: ResetPasswordFormProps) {
       if (onSuccess) {
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Error',

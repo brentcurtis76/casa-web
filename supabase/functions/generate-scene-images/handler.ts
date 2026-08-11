@@ -680,6 +680,7 @@ export function createHandler(
     // switch below relies on that; keeping the same shape confines this change
     // to the image path rather than cascading into every unrelated field.
     // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Legacy request envelope is runtime-validated field by field below.
     let requestData: any;
     let sourceImages: Map<string, MaterializedImage>;
     let skipped: SkippedImage[];

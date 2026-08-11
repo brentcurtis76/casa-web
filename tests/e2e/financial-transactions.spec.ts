@@ -13,6 +13,8 @@ const TEST_PREFIX = 'test_e2e_';
 const TEST_DESCRIPTION = `${TEST_PREFIX}Ingreso Prueba`;
 const TEST_DESCRIPTION_EDITED = `${TEST_PREFIX}Ingreso Modificado`;
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Financial Transactions', () => {
   // Login + tab nav consumes significant time under parallel workers
   test.setTimeout(60000);

@@ -112,7 +112,7 @@ export const EventsAdmin = () => {
       });
 
       await fetchEvents();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting event:', error);
       toast({
         title: 'Error',

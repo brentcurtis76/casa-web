@@ -4,12 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { User, LayoutDashboard } from 'lucide-react';
 import { useAuth } from "@/components/auth/AuthContext";
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface MobileMenuProps {
     isOpen: boolean;
-    navigationItems: any[];
-    user: any;
-    profile: any;
+    user: SupabaseUser | null;
     logout: () => void;
     openAuthModal: () => void;
     openContactModal: () => void;

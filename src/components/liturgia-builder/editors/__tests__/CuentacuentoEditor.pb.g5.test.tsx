@@ -166,7 +166,11 @@ async function finalizeWith(coverBytes: string): Promise<{
   );
 
   const approve = await waitFor(
-    () => screen.getByRole('button', { name: /Aprobar escenas/i }),
+    () => {
+      const button = screen.getByRole('button', { name: /Aprobar escenas/i }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      return button;
+    },
     { timeout: 10000 }
   );
   await act(async () => {

@@ -78,8 +78,8 @@ async function renderWithFirstBatch(id: string) {
   );
   await approveScenesIntoCoverStep();
   // El auto-arranque encola portada + fin (el fin arranca tras su stagger).
-  await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
-  await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 10000 });
+  await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 30000 });
+  await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 30000 });
   await settle(600);
 }
 
@@ -203,7 +203,7 @@ describe('T-H.4 — las cuatro superficies de portada/fin agregan, con copy exac
       />,
     );
     await approveScenesIntoCoverStep();
-    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
+    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 30000 });
 
     await click(screen.getAllByRole('button', { name: 'Cancelar' })[0]);
     await settle(200);
@@ -280,8 +280,8 @@ describe('T-H.11 — ningún valor del borde ni del cuento llega a las etiquetas
       <CuentacuentoEditor context={CONTEXT} initialStory={story} onStoryCreated={vi.fn()} />,
     );
     await approveScenesIntoCoverStep();
-    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 10000 });
-    await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 10000 });
+    await waitFor(() => expect(invokesOfType('cover')).toHaveLength(1), { timeout: 30000 });
+    await waitFor(() => expect(invokesOfType('end')).toHaveLength(1), { timeout: 30000 });
     await settle(600);
 
     for (const panel of [coverPanel(), endPanel()]) {

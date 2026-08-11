@@ -34,7 +34,12 @@ const dietaryOptions = [
   { id: 'nut_allergy', label: 'Alergia a nueces', icon: '🥜', severity: 'allergy' as const },
   { id: 'shellfish_allergy', label: 'Alergia a mariscos', icon: '🦐', severity: 'allergy' as const },
   { id: 'other', label: 'Otra', icon: '📝', severity: 'preference' as const },
-];
+] satisfies ReadonlyArray<{
+  id: DietaryRestriction['type'];
+  label: string;
+  icon: string;
+  severity: DietaryRestriction['severity'];
+}>;
 
 export function DietaryRestrictionsForm({
   hasPlusOne,
@@ -42,7 +47,7 @@ export function DietaryRestrictionsForm({
   restrictions,
   plusOneRestrictions,
 }: DietaryRestrictionsFormProps) {
-  const [selectedRestrictions, setSelectedRestrictions] = useState<Set<string>>(
+  const [selectedRestrictions, setSelectedRestrictions] = useState<Set<DietaryRestriction['type']>>(
     new Set(restrictions.map(r => r.type))
   );
   const [otherDescription, setOtherDescription] = useState(
@@ -53,14 +58,14 @@ export function DietaryRestrictionsForm({
     !!plusOneRestrictions?.restrictions.length
   );
   const [plusOneName, setPlusOneName] = useState(plusOneRestrictions?.name || '');
-  const [plusOneSelected, setPlusOneSelected] = useState<Set<string>>(
+  const [plusOneSelected, setPlusOneSelected] = useState<Set<DietaryRestriction['type']>>(
     new Set(plusOneRestrictions?.restrictions.map(r => r.type) || [])
   );
   const [plusOneOtherDescription, setPlusOneOtherDescription] = useState(
     plusOneRestrictions?.restrictions.find(r => r.type === 'other')?.description || ''
   );
 
-  const handleRestrictionToggle = (restrictionId: string, isChecked: boolean) => {
+  const handleRestrictionToggle = (restrictionId: DietaryRestriction['type'], isChecked: boolean) => {
     const newSelected = new Set(selectedRestrictions);
     if (isChecked) {
       newSelected.add(restrictionId);
@@ -79,7 +84,7 @@ export function DietaryRestrictionsForm({
     updateParent(selectedRestrictions, value, plusOneHasRestrictions, plusOneName, plusOneSelected, plusOneOtherDescription);
   };
 
-  const handlePlusOneToggle = (restrictionId: string, isChecked: boolean) => {
+  const handlePlusOneToggle = (restrictionId: DietaryRestriction['type'], isChecked: boolean) => {
     const newSelected = new Set(plusOneSelected);
     if (isChecked) {
       newSelected.add(restrictionId);
@@ -99,18 +104,18 @@ export function DietaryRestrictionsForm({
   };
 
   const updateParent = (
-    selected: Set<string>,
+    selected: Set<DietaryRestriction['type']>,
     other: string,
     hasPlusOneRestrictions: boolean,
     plusOneName: string,
-    plusOneRestrictionSet: Set<string>,
+    plusOneRestrictionSet: Set<DietaryRestriction['type']>,
     plusOneOther: string
   ) => {
     // Build main restrictions
     const mainRestrictions: DietaryRestriction[] = Array.from(selected).map(type => {
       const option = dietaryOptions.find(o => o.id === type);
       return {
-        type: type as any,
+        type,
         description: type === 'other' ? other : undefined,
         severity: option?.severity || 'preference',
       };
@@ -124,7 +129,7 @@ export function DietaryRestrictionsForm({
         restrictions: Array.from(plusOneRestrictionSet).map(type => {
           const option = dietaryOptions.find(o => o.id === type);
           return {
-            type: type as any,
+            type,
             description: type === 'other' ? plusOneOther : undefined,
             severity: option?.severity || 'preference',
           };

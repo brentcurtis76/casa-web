@@ -12,10 +12,12 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/AuthContext";
+import type { UserProfile } from "@/components/auth/AuthContext";
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface UserMenuProps {
-    user: any;
-    profile: any;
+    user: SupabaseUser;
+    profile: UserProfile | null;
     logout: () => void;
     isMobile?: boolean;
 }

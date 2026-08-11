@@ -103,6 +103,19 @@ interface CuentacuentoEditorProps {
   onNavigateToFullEditor?: () => void;
 }
 
+type RefinedStoryCharacter = Pick<
+  StoryCharacter,
+  'name' | 'role' | 'description' | 'visualDescription'
+>;
+type RefinedStoryScene = Pick<StoryScene, 'number' | 'text' | 'visualDescription'>;
+interface RefinedStoryPayload {
+  title: string;
+  summary: string;
+  spiritualConnection: string;
+  characters: RefinedStoryCharacter[];
+  scenes: RefinedStoryScene[];
+}
+
 import { uploadImmutableDraftImage } from '@/lib/cuentacuentos/immutableImageUpload';
 import {
   makeCharacterSheetTask,
@@ -776,6 +789,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     hasDraft,
     draft,
     lastSavedAt,
+    isLoading: isDraftLoading,
     isSaving,
     saveDraft,
     deleteDraft,
@@ -1955,25 +1969,27 @@ Instrucciones críticas:
         throw new Error(data?.error || 'Error al refinar el cuento');
       }
 
+      const refinedPayload = data.story as RefinedStoryPayload;
+
       // Actualizar el cuento con la versión refinada
       // Preservar IDs de personajes y escenas para mantener imágenes generadas
       const refinedStory: Story = {
         ...story,
-        title: data.story.title,
-        summary: data.story.summary,
-        spiritualConnection: data.story.spiritualConnection,
-        characters: data.story.characters.map((c: any, i: number) => ({
+        title: refinedPayload.title,
+        summary: refinedPayload.summary,
+        spiritualConnection: refinedPayload.spiritualConnection,
+        characters: refinedPayload.characters.map((character, i) => ({
           ...story.characters[i], // Preservar ID y character sheet
-          name: c.name,
-          role: c.role,
-          description: c.description,
-          visualDescription: c.visualDescription,
+          name: character.name,
+          role: character.role,
+          description: character.description,
+          visualDescription: character.visualDescription,
         })),
-        scenes: data.story.scenes.map((s: any, i: number) => ({
+        scenes: refinedPayload.scenes.map((scene, i) => ({
           ...story.scenes[i], // Preservar ID y selectedImageUrl
-          number: s.number,
-          text: s.text,
-          visualDescription: s.visualDescription,
+          number: scene.number,
+          text: scene.text,
+          visualDescription: scene.visualDescription,
         })),
         metadata: {
           ...story.metadata,
@@ -3623,7 +3639,10 @@ Instrucciones críticas:
       // teclado) mientras el envelope está en vuelo se descarta acá, antes de
       // arrancar un segundo envelope concurrente que fallaría el drainStable
       // tras el commit del primero y mostraría un "vuelve a intentar" falso.
-      if (isApprovingRef.current) return;
+      // Do not let an approval race the mount-time draft lookup. Otherwise a
+      // fast click can persist a new row that the still-pending lookup then
+      // mistakes for an older recoverable draft.
+      if (isDraftLoading || isApprovingRef.current) return;
       isApprovingRef.current = true;
       setIsApproving(true);
       try {
@@ -3725,6 +3744,7 @@ Instrucciones críticas:
       enqueueAuthoritativeWrite,
       // E/A9a — la época viva se estampa en la intención de auto-arranque.
       activeIdentity,
+      isDraftLoading,
     ],
   );
 
@@ -4474,7 +4494,7 @@ Instrucciones críticas:
           <button
             type="button"
             onClick={() => void handleApproveStory()}
-            disabled={isApproving || pipeline.isRunning || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
+            disabled={isDraftLoading || isApproving || pipeline.isRunning || !canApprove({ isSaving: pipeline.isSaving, saveFailedCount: pipeline.saveFailedCount })}
             // Finding 5 — El gate `pipeline.isRunning` (F2) no tenía explicación:
             // el usuario veía el botón gris sin saber por qué. Nombrar la causa.
             title={
@@ -4766,6 +4786,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleApproveCharacters()}
             disabled={
+              isDraftLoading ||
               isApproving ||
               pipeline.isRunning ||
               !allCharactersHaveSheets ||
@@ -5613,6 +5634,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleApproveScenes()}
             disabled={
+              isDraftLoading ||
               isApproving ||
               pipeline.isRunning ||
               scenesSelected < story.scenes.length ||
@@ -6700,6 +6722,7 @@ Instrucciones críticas:
             type="button"
             onClick={() => void handleFinalize()}
             disabled={
+              isDraftLoading ||
               isApproving ||
               pipeline.isRunning ||
               selectedCover === null ||
