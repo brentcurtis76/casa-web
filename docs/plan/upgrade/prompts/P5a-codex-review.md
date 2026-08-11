@@ -157,17 +157,19 @@ Since P4, the question that yields more than exhibiting our own mutations is: **
 change these tests would not catch.** The PM ran it and found one:
 
 **S1 / B-15 — deleting `can_bring_main_dish` from `fetchParticipants`'s `select` leaves
-all ten tests green.** Verified as a real mutation on the tree, then reverted. No test
-mounts `MesaAbiertaAdmin`, so the seam admin→dialog is covered by reading only. The
-failure mode is not cosmetic: without the field the dialog receives `undefined`,
-initialises the switch off, and **saving persists `can_bring_main_dish: true`** — an
-admin editing an excluded participant's phone number silently re-enrols them for the
-main dish.
+all twelve tests green.** Verified as a real mutation on the tree — re-verified against
+the full twelve after r2 — then reverted. No test mounts `MesaAbiertaAdmin`, so the seam
+admin→dialog is covered by reading only. The failure mode is not cosmetic: without the
+field the dialog receives `undefined`, initialises the switch off, and **saving persists
+`can_bring_main_dish: true`** — an admin editing an excluded participant's phone number
+silently re-enrols them for the main dish.
 
-The PM deliberately did **not** fix it in P5a: the plan fixes this phase's test plan at
-ten tests and its arithmetic at `vitest +10`, and widening a frozen phase is how phases
-get expensive. It is logged as **B-15**, recommended to **P6**, which already has
-`MesaAbiertaAdmin.tsx` in its `F` and already mounts the panel.
+**This one is deliberately still open, and the reasoning is yours to challenge.** The
+amendment that produced r2 covered B-16 and B-17 but pointedly excluded B-15, because
+those two sat in files no later phase ever touches whereas **`MesaAbiertaAdmin.tsx` is
+already in P6's `F`** — P6 mounts that panel for the coverage badge, so the test has a
+natural home one phase away. If you think a known silent-corruption path should not ride
+through P5b into P6 on that reasoning, say so and rank it.
 
 **Three are now spent — B-15, plus B-16 and B-17 which r2 closed. Find a fourth.**
 Name a change to this diff that the **twelve** tests do not catch, and say whether it is
@@ -188,7 +190,8 @@ ITSELF — that is a plan problem, not a code one.
 
 ## ALSO CHECK
 
-1. Every acceptance criterion F1–F8 against the code, not the ledger.
+1. Every acceptance criterion F1–F10 against the code, not the ledger. F9 and F10 are
+   the mutation checks above — they are not met by reading.
 2. Do the tests test **behaviour**, or just execute code? These are the repo's first
    tests to drive a Radix `Switch`; check the `aria-checked` assertions are real and
    that the step-3/step-5 wizard navigation is not asserting on something incidental.
@@ -211,7 +214,7 @@ BLOCKING.
 Output using the **CODEX REVIEW** format from the SOP:
 
 ```markdown
-## CODEX REVIEW — P5a round 1
+## CODEX REVIEW — P5a (rounds 1–2)
 VERDICT: PASS | FAIL
 BLOCKING:
 - [B1] <finding> — <file:line> — <why it blocks>
