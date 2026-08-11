@@ -2202,3 +2202,32 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - OPEN AFTER THIS ROUND:
   1. **Review final de Codex** sobre `phase/E3b-pages@ea3adaf`.
   2. Sigue pendiente el **push de `main`**, que arrastra 7 commits de UPGRADE — decisión de Brent.
+
+### 2026-08-09 — CODEX REVIEW E3b FINAL → FAIL (1 BLOCKING) — triage del PM
+- SESSION: `AUDIO · E3a · PM`
+- VEREDICTO: **FAIL** sobre `phase/E3b-pages@ea3adaf`. **1 BLOCKING**, 0 SHOULD-FIX, 0 NIT.
+  E3b.1-4 y E3b.6-15 **MET**; sólo `E3b.5` cae.
+- **[B1] ACEPTADO Y REPRODUCIDO POR MÍ.** `queries.ts:78` valida con
+  `RE_ISO_CON_ZONA.test(valor) && Number.isFinite(Date.parse(valor))`. **`Date.parse()` no rechaza
+  fechas imposibles: las normaliza.** Medido por mí en node:
+  `2026-02-31` → `2026-03-03`; `2025-02-29` (no bisiesto) → `2025-03-01`; `2026-04-31` →
+  `2026-05-01`; `2026-01-01T24:00:00` → el día siguiente. **Las cuatro devuelven `true`.**
+  Y el valor **crudo** llega al filtro: `curl` contra PostgREST local con esa fecha →
+  **`HTTP 400 {"code":"22008","message":"date/time field value out of range"}`**.
+  Viola el contrato de `E3b.5`: lo inválido se descarta y vuelve a página 1. **Un marcador
+  malformado da error en vez de degradar con gracia.**
+- **MEDÍ TAMBIÉN LO QUE *SÍ* FUNCIONA, para que el arreglo no desborde:** el desfase (`+99:99`,
+  `+25:00`, `+00:61`) y los segundos (`:60`, `:99`) **ya se rechazan correctamente**, igual que mes
+  13, día 32 y minuto 60. **El agujero son exactamente dos cosas: desbordamiento del día del mes y
+  hora 24.** Eso hace el arreglo estrecho.
+- **NO ES INYECCIÓN**, y Codex lo dice explícitamente: la lista blanca de caracteres aguanta. Es
+  defecto de corrección y de contrato, no agujero de seguridad.
+- **CODEX CERRÓ EL HUECO QUE YO DEJÉ:** reprodujo el **A2** de la r3 que yo no pude —fixture
+  quitado entre los pasos 2 y 5, con las dos aserciones de RLS pasando y **sólo la acotada
+  fallando**— y además probó el paso 7 reintroduciendo el fixture tras la limpieza. **El
+  estrechamiento de D24 queda verificado por dos partes independientes, ninguna de ellas yo.**
+- PLAN (r23): criterio **`E3b.5b`** con los cuatro casos semánticos, y entrada de Decision Log.
+- ROUND ACCOUNTING: las r1-r3 fueron el bucle PM↔ejecutor (tope 3, agotado). **Ésta es la primera
+  remediación tras un FAIL de Codex**, que §1.5 cuenta aparte con tope 2. No hay cap roto.
+- FINDINGS: 1 BLOCKING, aceptado. **Cero discutidos en toda la fase**, como en `E3a`.
+- OPEN AFTER THIS ROUND: `/exec AUDIO E3b r4`, prompt commiteado en `prompts/E3b-r4.md`.

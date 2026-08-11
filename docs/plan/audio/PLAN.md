@@ -8,7 +8,7 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 22**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 23**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
@@ -289,7 +289,7 @@ un defecto.
 
 ---
 
-## 5. Phase index — por olas (revisión 22 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
+## 5. Phase index — por olas (revisión 23 — **E2 cerrada y mergeada; `E-infra` partida en dos**)
 
 **Dos hechos cambiaron el plano entre la r9 y la r10, y ninguno es una opinión:**
 
@@ -1248,6 +1248,13 @@ y portada, así que **su episodio de prueba tiene que traer los dos**. `E3b` no 
 - [ ] E3b.5 **`desde` malicioso o roto no llega al filtro:** timestamp inválido, UUID inválido,
       codificación truncada y gramática de PostgREST inyectada ⇒ **página 1**, sin error crudo y
       sin consulta con el valor sucio. Salida cruda de los cuatro.
+- [ ] E3b.5b **Fechas de calendario imposibles, ampliado en la r23 (Codex final/B1).** `Date.parse()`
+      **no rechaza: normaliza.** Medido: `2026-02-31` → `2026-03-03`, `2025-02-29` → `2025-03-01`,
+      `2026-04-31` → `2026-05-01`, `2026-01-01T24:00:00` → el día siguiente; las cuatro pasaban la
+      validación y el valor crudo llegaba a `.or()`, con PostgREST devolviendo **400 `22008`**.
+      Los cuatro casos ⇒ **cursor `null`, página 1, cero llamadas a `.or()`**. Salida cruda.
+      *Los casos de zona y fracción que ya pasaban no se tocan; el desfase (`+25:00`, `+99:99`) y
+      los segundos (`:60`) ya se rechazaban correctamente — medido, no supuesto.*
 - [ ] E3b.6 Existe `/reflexiones/:slug` con reproductor y enlace de descarga.
 - [ ] E3b.7 **e2e anónimo:** ambas rutas cargan **sin sesión**;
       `/reflexiones/reflexion-2026-01-04` muestra el episodio publicado del seed.
@@ -2253,6 +2260,7 @@ Riesgos vigentes de las unidades actuales:
 | 2026-08-09 | **`E3b` toca `smoke-local.spec.ts`, de la fase cerrada `E-infra-impl`** | La r1 dejó roja la suite: el humo **afirma sobre la tabla entera**, incompatible con `fullyParallel: true` en cuanto existe un segundo spec que siembra datos. Era correcto mientras el humo estaba solo. **Se acotan sus pasos 1 y 7 a los ids que posee**; la guarda de tres capas no se toca y `E3b.15` lo demuestra. Descartadas: `workers: 1` enlentece toda la suite y el problema volvería con el siguiente spec; un hotfix aparte añadía una ronda sin cambiar el arreglo. | Brent, sobre el BLOCKING del PM en `E3b` r1 |
 | 2026-08-09 | **`E3b.14` se reescribe: de "suite verde" a "sin fallos añadidos"** | El PM escribió el criterio **sin medir la suite en el SHA padre**. Medido después por el ejecutor y reproducido por el PM: en `62e9158`, sin nada de `E3b`, la suite ya falla. "Verde" era inalcanzable por cualquier ronda de `E3b`. Lo que el BLOCKING de la r1 significaba de verdad —y sigue siendo cierto— es **que la fase no añada un fallo nuevo**, que es lo que ahora dice | Ejecutor `E3b` r2, aceptado por el PM |
 | 2026-08-09 | **D24 se amplía al paso 5 del humo** | Misma aserción sobre la tabla entera que los pasos 1 y 7. Pasa hoy sólo por temporización; el siguiente spec que siembre publicadas la rompe. Demostrada con una fila vecina, no supuesta | Ejecutor `E3b` r2 |
+| 2026-08-09 | **La validación del cursor no puede apoyarse en `Date.parse()`** | Codex final/B1, reproducido por el PM: `Date.parse()` normaliza fechas imposibles en vez de rechazarlas, así que `2026-02-31` pasaba la reja y llegaba a PostgREST, que responde `400 22008`. Viola el contrato de `E3b.5` —lo inválido se descarta y vuelve a página 1— aunque **no** es inyección: la lista blanca de caracteres aguanta. Se valida componente a componente con ida y vuelta | Codex |
 
 ---
 
