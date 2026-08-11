@@ -2127,3 +2127,43 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   de AUDIO y merece su propia unidad; dos entradas de Decision Log; META a revisión 22.
 - OPEN AFTER THIS ROUND: `/exec AUDIO E3b r3` — **la última** del tope de §1.5. Cierra el paso 5 y
   mide `E3b.14` como ahora está escrito.
+
+### 2026-08-09 — E3b round 3 — EXEC (Opus) BLOCKED + verificación del PM
+- SESSION: `AUDIO · E3b · r3 · EXEC` (`ea3adaf`), verificada por `AUDIO · E3a · PM`
+- STATUS: **BLOCKED**, y por infraestructura, **no por código ni por plan**. A1, A2, A3, A5, A6 y
+  A7 cumplidos; **A4 no medible**. 1 fichero, **+10/-3**.
+- **VERIFICADO POR MÍ, todo lo que no necesita la base:**
+  - Alcance: `git diff --stat e397057..ea3adaf` → **1 fichero**, sólo el paso 5.
+  - **Las dos aserciones de RLS del paso 5 siguen byte a byte** (`every(status==='published')` y
+    `not.toContain(BASELINE_BORRADOR)`), que era la condición: son afirmaciones de RLS, no de
+    propiedad, y siguen siendo correctas sobre la tabla entera.
+  - Gate D18 base vs HEAD → **sin diferencias**, totales idénticos. `npm run build` → **verde**.
+    Unitarios **38/38**.
+- **LO QUE NO PUDE RE-VERIFICAR, y lo digo en vez de insinuar que sí:** A1, A2, A3 y A5 necesitan
+  el stack local. **Acepto su salida cruda** —que es detallada y coherente— sin haberla reproducido.
+  **A2b merece mención**: aisló el paso 5 quitando `FIXTURE_DEL_TEST` a mitad de ventana, de modo
+  que las dos aserciones conservadas **pasan** y sólo la acotada dispara. Es la prueba de que el
+  estrechamiento no desdentó el paso, hecha por el camino difícil.
+- **EL BLOQUEO, confirmado por mí:** `docker ps` reporta `supabase_db_mulsqxfhxxdsadxsljss` como
+  **"Up 13 hours (healthy)"** mientras `docker exec` responde **"container is not running"**. El
+  almacén de metadatos de containerd está inconsistente, con errores de E/S sobre `meta.db` y sobre
+  blobs de contenido. **Disco del host con 37 GiB libres: no es espacio.**
+- **ES LA SEGUNDA CORRUPCIÓN DE CONTAINERD EN LA MISMA SESIÓN.** La primera fue al arrancar esta
+  sesión de PM, antes de medir el hueco 6 de `E3a`. Dos en un día, en una máquina con disco de
+  sobra, **es señal de salud de Docker o del disco, y merece mirarse fuera de este plan.**
+- **EL EJECUTOR NO REINICIÓ DOCKER, y acertó**: habría tumbado los contenedores del proyecto ajeno.
+  *Observación mía para la decisión: varios de esos contenedores ya figuran **`(unhealthy)`**, así
+  que ese stack está degradado de todos modos.*
+- **DISPOSICIÓN — esto NO es el tope de §1.5 en su sentido útil.** El tope existe para parar
+  cuando el plan o el código no convergen. Aquí **convergieron**: seis de siete criterios cumplidos,
+  el defecto del paso 5 cerrado, cero fallos de código en tres rondas de verificación. **Lo que
+  falta es una medición, y la bloquea una máquina rota.** No escribo propuesta de re-plan: escribir
+  un plan nuevo no arregla containerd.
+- FINDINGS RAISED: **BLOCKING: ninguno.** El único criterio abierto es una medición pendiente.
+- OPEN AFTER THIS ROUND:
+  1. **Brent decide sobre Docker.** Reiniciar Docker Desktop arregla el almacén y reinicia el stack
+     ajeno (ya degradado).
+  2. Con Docker sano, **A4 son dos comandos** —`npx playwright test` en `ea3adaf` y en un worktree
+     de `62e9158`— y hace falta un corredor **sin tope de 10 minutos**: la suite son 105 tests y
+     tarda 5-7,5 min por corrida.
+  3. Después: review final de Codex sobre `phase/E3b-pages@ea3adaf`.
