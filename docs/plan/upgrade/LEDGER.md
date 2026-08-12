@@ -4130,3 +4130,61 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   `CLAUDE.md` y D8 necesita un carve-out explícito para fases sin conducta.
 - OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado
   `b9675e6..7b6f837`. (2) Las tres notas de plan de arriba. (3) Después, `/pm-boot UPGRADE P5b`.
+
+### 2026-08-12 — P5c round 3 — EXEC (Claude Opus 5)
+- SESSION: UPGRADE · P5c · r3 · EXEC
+- STARTED: 2026-08-12T17:15:14Z · ENDED: 2026-08-12T17:25:00Z · ATTEMPT: 3 · RISK: STANDARD
+- CODEX r2: **FAIL, sin bloqueantes.** B1 y S1 de la r1 cerradas y las **seis** mutaciones
+  exigidas caen bien. Un SHOULD-FIX nuevo en estado (a). Aceptado sin discusión.
+- CONTEXT PRESSURE: comfortable — una corrección acotada, misma conversación.
+- COMMITS: `6b98e74`. Rama `feat/mesa-md-guards`, base `main`@`d5b16e8`. Sigue tocando
+  exactamente los 4 ficheros de `F`; cero cambios de conducta.
+- **EL HALLAZGO: EL PROP CONTRA EL ESTADO.** Los seis tests entraban al asistente o con
+  `preferredRole="host"` o como invitado. **Ninguno recorría el camino de quien abre por
+  el botón genérico**: arrancar como invitado y elegir anfitrión en el **paso 1**. Por ese
+  camino `preferredRole` es `undefined` y sólo cambia `rolePreference`, así que una
+  condición escrita sobre el **prop** en vez de sobre el **estado** esconde el opt-out
+  **sólo ahí**. Codex lo midió: la mutación **sobrevivía 5/5**.
+- **ES LA TERCERA VEZ QUE EL MISMO ERROR DE FORMA APARECE UNA CAPA MÁS ADENTRO.** B-18:
+  los tests recorrían un solo rol. S1 de la r1: el recorrido del anfitrión probaba una
+  sola polaridad. Ahora: el rol de anfitrión se alcanzaba por una sola vía. **Cada ronda
+  el agujero fue "una dimensión que los tests no varían", y cada ronda la encontró la
+  pregunta «nombra un cambio que estos tests no cacen», no una suite verde.**
+- REPARACIÓN: nuevo test `el anfitrión elegido en el paso 1 también puede excluirse`, con
+  helper `advanceToStep3ChoosingHostInStep1()` que renderiza **sin** `preferredRole` y
+  elige el rol en el paso 1. **Las dos polaridades**, por la misma razón que en la r2:
+  sin el caso por defecto, forzar la exclusión sólo en ese camino pasaría inadvertido —
+  y esa variante existe, la verifiqué.
+- MUTATION EVIDENCE (las **ocho**, aplicadas y revertidas, `git status` limpio):
+  H1 `tablesWithShortfall: []` → rojo · H2 switch sólo para `guest` → **2 failed / 4
+  passed** · H3 columna fuera del `select` → rojo · **B1a** fila como 2º argumento → rojo
+  · **B1b** fila embebida en el string → rojo, y el fallo enseña la fuga entera · **S1**
+  anfitrión forzado a excluido → **2 failed / 4 passed** · **R3a**
+  `(preferredRole === 'host' || rolePreference === 'guest')` envolviendo el switch →
+  **1 failed / 5 passed**, o sea reproduce exactamente el 5/5 de Codex y ahora cae ·
+  **R3b** `preferredRole === undefined && rolePreference === 'host' ? true : …` en el
+  payload → **1 failed / 5 passed**.
+- **`deepRender()` RETIRADO.** Codex lo declaró redundante bajo el golden de mensaje
+  exacto y la retirada un NIT. Lo quito igualmente: **en la r2 ya declaré que nunca se
+  ejecutaba, y un helper que no corre es justo el falso consuelo que esta fase existe
+  para borrar.** Verificado que el golden solo sigue cazando **las dos** formas de fuga
+  (B1a por aridad, B1b por igualdad exacta).
+- TESTS: `deno test --allow-all --no-check .` → **457 / 0** · `npx vitest run
+  --no-file-parallelism` → **1096 passed / 6 failed** (1102) en 247 s, **los seis de
+  `MesaAbiertaDashboard.test.tsx` y ninguno más**. Cuarta medición seguida sin el séptimo
+  rojo (B-05).
+- **DERIVA DE PLAN QUE EL PM DEBE ANOTAR: la aritmética de Vitest de P5c pasa de `+2` a
+  `+3`.** El tercer test frontend es consecuencia directa del SHOULD-FIX de la r2, no
+  alcance añadido por mí. Deno sigue en **+1**. El total del plan pasa de 1072 a **1073**.
+- GATES: `npm run build` → **exit 0**. Gate D8 difeado contra `d5b16e8`: **cero
+  diagnósticos nuevos**, las mismas 5 diferencias de desplazamiento de línea (+3) con
+  mensajes byte a byte idénticos. Totales idénticos: `tsc=1039 eslint=161 deno-lint=92
+  deno-check=43`. `handler_test.ts` en 0/0/0/0 tras retirar `deepRender`.
+- SIN CAMBIOS: `npm run lint` (161 preexistentes, 0 en `F`) y `playwright` (guarda
+  anti-producción sin `.env.test`), ambos idénticos en padre y punta y ya descargados
+  por Codex en la r1.
+- FINDINGS RAISED: ninguno. Las tres notas de plan de la r1 siguen abiertas para el PM
+  (boundary de H7, formalizar D8.2 «repetir la punta primero», carve-out de gates para
+  fases sin conducta), más la deriva de aritmética de arriba.
+- OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado. (2) Las cuatro
+  notas de plan. (3) Después, `/pm-boot UPGRADE P5b`.
