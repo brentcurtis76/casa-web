@@ -2618,9 +2618,42 @@ hardcodeado. Es `E4s.9`, y se mide.
 - OPEN AFTER THIS ROUND:
   1. **Review independiente de Codex** sobre `phase/E3c-fix` + esta evidencia. El diff de código es
      vacío: lo que se revisa es el **cambio de estado de la base** y la evidencia que lo sostiene.
-  2. **Decisión del PM/Brent sobre `E3c.6`**: (a) aceptarlo como diferido apoyándose en la
-     equivalencia por SHA-256 del cuerpo desplegado + los 112 tests, o (b) habilitar un camino de
-     escritura —clave `service_role` en el entorno, o MCP sin el rol de sólo lectura— y ejecutarlo
-     en una r2. **No se decide aquí.**
+  2. ~~Decisión del PM/Brent sobre `E3c.6`~~ → **RESUELTA, ver la entrada de abajo.**
   3. **`/reflexiones/<slug>` sigue sin verificarse en producción**: sin episodios no hay slug que pedir.
   4. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.
+
+### 2026-08-12 — E3c-fix — DECISIÓN DE BRENT: `E3c.6` DIFERIDO · enrutado a Codex
+- SESSION: `AUDIO · E3c-fix · r1 · EXEC` (misma conversación durable; no se abrió ejecutor nuevo)
+- **DECISIÓN DE BRENT, literal:** «accept E3c.6 as deferred and route to Codex review».
+- **QUÉ SE ACEPTA:** que la fase cierre con **ocho** criterios vigentes en vez de nueve. `E3c.6`
+  —la única prueba de comportamiento— queda diferida porque es **inejecutable con las herramientas
+  que el propio contrato nombra**: el MCP `execute_sql` conecta como `supabase_read_only_user`
+  (`42501`), y todo camino privilegiado alternativo registra una versión nueva en
+  `schema_migrations`, que rompería `E3c.1`. No es una rebaja de exigencia: es un contrato que se
+  contradecía a sí mismo, medido en la r1.
+- **QUÉ SE ACEPTA EN SU LUGAR**, y se declara como evidencia **estática**: trigger presente y
+  habilitado (`tgenabled='O'`); `prosrc` desplegado de las dos funciones **igual por SHA-256** al
+  cuerpo revisado en `E3a`, con `search_path=""`; y los 112 tests de `E3a`/`E3b` en verde sobre ese
+  mismo cuerpo. **No sustituye a una prueba de comportamiento y no se presenta como tal.**
+- **RIESGO QUE SE ASUME, escrito para que no se pierda:** no está demostrado que el trigger *se
+  ejecute* bien en esta instancia. Un `DISABLE TRIGGER` posterior dejaría el hash intacto; lo único
+  que lo acota es la lectura de `tgenabled` de hoy.
+- **CÓMO SE REABRE, y es más barato de lo que parece:** al **publicar el primer episodio real**, esa
+  publicación **es** la prueba de `E3c.6`. La decisión de cómo llega ese episodio ya estaba
+  pendiente para `E4-spike`, así que el diferido no crea trabajo nuevo — lo engancha a trabajo que
+  ya estaba en la cola. También se reabre si aparece un camino de escritura (`service_role`, MCP sin
+  rol de sólo lectura, o `psql`).
+- **CAMBIOS EN EL PLAN (revisión 25):** `E3c.6` reescrito como `[~] DIFERIDO` con la medición que lo
+  refuta, el sustituto aceptado y la condición de reapertura. **Definition of done** pasa a «los
+  ocho criterios vigentes». **Honestidad de tests (D18)** enmendada: se dice explícitamente que la
+  fase **se queda sin sustituto de mutación** y que **no** se disimula con una aserción más débil
+  que sí se pueda correr.
+- **NO se cierra la fase aquí.** `E3c-fix` sigue abierta hasta el veredicto de Codex. El cierre
+  mecánico (guardar review, marcar DONE, anotar deriva y diferidos) lo hace este mismo ejecutor
+  cuando Codex dé `PASS`.
+- OPEN AFTER THIS ROUND:
+  1. **Review de Codex** — prompt en `prompts/E3c-fix-codex-r1.md`. Lleva dos avisos que evitan un
+     FAIL espurio: el diff de código **es vacío por contrato**, y `E3c.6` **está diferido por
+     decisión de Brent**. Y le deja explícitamente a Codex la decisión sobre el gate rojo.
+  2. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
+  3. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.

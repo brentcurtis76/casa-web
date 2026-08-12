@@ -1482,10 +1482,29 @@ el estado final, no la herramienta.
       pinta es el vacío, no el de error**. Verificado sobre el DOM renderizado, no sólo por el
       código HTTP: el shell SPA devuelve `200` aunque la consulta falle, así que el código de estado
       **no** distingue los dos casos. Ésta es la única aserción de la fase que un `curl` no cierra.
-- [ ] **E3c.6** El trigger **funciona en la base real**, demostrado con una prueba falsable: insertar
-      un episodio en `draft`, publicarlo, comprobar que recibe slug solo; intentar cambiarlo y
-      comprobar que la base lo rechaza con `23514` (D12); **y borrar la fila de prueba al terminar**,
-      dejando la tabla en cero filas. Si no se puede dejar limpia, no se hace y se reporta.
+- [~] **E3c.6 — DIFERIDO por decisión explícita de Brent (2026-08-12), tras la r1.** Enunciado
+      original: el trigger **funciona en la base real**, demostrado con una prueba falsable —
+      insertar un episodio en `draft`, publicarlo, comprobar que recibe slug solo; intentar
+      cambiarlo y comprobar que la base lo rechaza con `23514` (D12); y borrar la fila al terminar.
+      **Por qué se difiere, y no es pereza del ejecutor:** el contrato daba por disponible el MCP
+      `execute_sql` como camino de escritura y **es falso** — conecta como `supabase_read_only_user`
+      y devuelve `42501 permission denied` (con `transaction_read_only = off`: es el rol, no el
+      modo). Todos los demás caminos privilegiados (`apply_migration`, cualquier `db push`)
+      **registran una versión nueva** en `schema_migrations`, lo que rompería **E3c.1**, el criterio
+      central de la fase. `psql` no está en el host y no hay clave `service_role` en repo ni
+      entorno. **E3c.1 y E3c.6 son mutuamente insatisfacibles con las herramientas nombradas.**
+      Evidencia: `evidence/E3c-fix.md` §7.
+      **Qué se acepta en su lugar** (evidencia estática, declarada como tal):
+      (a) el trigger existe, está habilitado (`tgenabled='O'`) y apunta a la función correcta;
+      (b) el `prosrc` desplegado de las dos funciones **coincide por SHA-256** con el cuerpo del
+      fichero revisado y aprobado en `E3a`, con `search_path=""` en las dos;
+      (c) ese mismo cuerpo pasa los 112 tests de `E3a`/`E3b` contra un Postgres real.
+      **Lo que NO queda demostrado y se asume como riesgo abierto:** que el trigger *se ejecute*
+      correctamente en esta instancia. Un `ALTER TABLE … DISABLE TRIGGER` posterior dejaría el hash
+      intacto; lo único que lo acota es la lectura de `tgenabled` de hoy.
+      **Reabrir cuando** exista un camino de escritura (clave `service_role` en el entorno, un MCP
+      sin el rol de sólo lectura, o `psql`) — o, más barato, cuando se siembre el primer episodio
+      real: publicarlo **es** la prueba, y esa decisión ya está pendiente para `E4-spike`.
 - [ ] **E3c.7** `supabase db push --dry-run` (o equivalente que no aplique nada) muestra como
       pendientes **exactamente** `20260612000000` y `20260612000001`, y **no** `20260808120000`.
       Es la prueba de que la reconciliación de E3c.1 quedó bien y de que no se desplegó nada ajeno.
@@ -1516,14 +1535,21 @@ cada criterio nombra la consulta o el `curl` que lo cierra. La única prueba de 
 E3c.6, y es falsable por construcción: si el trigger no está, no asigna slug; si D12 no está, el
 `UPDATE` pasa en vez de dar `23514`.
 
-**Honestidad de tests (D18):** E3c.6 es el sustituto de mutación de esta fase. La aserción que no
+**Honestidad de tests (D18):** E3c.6 era el sustituto de mutación de esta fase. La aserción que no
 puede fallar sería "la migración corrió sin error" — se rechaza explícitamente como criterio.
+
+**Enmienda del 2026-08-12, tras la r1:** con `E3c.6` diferido, **esta fase se queda sin prueba de
+comportamiento.** No se disimula sustituyéndola por otra aserción más débil que sí se pueda correr:
+lo que queda es verificación de **estado** (el esquema está, objeto por objeto) más equivalencia
+**estática** del código desplegado (SHA-256 del `prosrc`). El sustituto de mutación real se recupera
+al publicar el primer episodio, no antes.
 
 ### Definition of done
 
-`evidence/E3c-fix.md` completo, los nueve criterios cerrados con salida cruda, gates verdes, y
-`/reflexiones` sirviendo su estado vacío en producción. Después, review independiente de Codex sobre
-el diff acumulado más la evidencia.
+`evidence/E3c-fix.md` completo, **los ocho criterios vigentes** cerrados con salida cruda (`E3c.6`
+diferido por decisión de Brent del 2026-08-12 — ver el criterio), gates corridos y reportados sin
+reetiquetar, y `/reflexiones` sirviendo su estado vacío en producción. Después, review independiente
+de Codex sobre el diff acumulado más la evidencia.
 
 ### Rollback
 
