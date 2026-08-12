@@ -2488,7 +2488,7 @@ paso**. Es exactamente el mismo patrón que este plan ya se hizo tres veces con 
 contenido. Los visitantes ven el estado de error en español en vez del estado vacío. La página no
 funciona, y tampoco funcionaría con contenido.
 
-**2. Auditoría de deriva — son TRES migraciones sin aplicar, no una.**
+**2. Auditoría de deriva — son TRES migraciones sin aplicar, no una.** **[SUPERADO 2026-08-12, Codex B1 r2: la auditoría midió FILAS DE HISTORIAL ausentes, no DDL ausente. Las dos de WhatsApp ya estaban desplegadas; sólo les falta el registro. Ver `evidence/E3c-fix-whatsapp-drift.md`.]**
 63 ficheros en `main`, 60 versiones aplicadas, cero deriva inversa.
 
 | Versión | Workstream | ¿La aplica `E3c-fix`? |
@@ -2556,7 +2556,7 @@ hardcodeado. Es `E4s.9`, y se mide.
      `prompts/E3c-fix-r1.md`, commiteado porque el ejecutor usa otro worktree.
   2. **Decisión pendiente de Brent:** cómo llega el primer episodio publicado — contenido real o
      fila sintética. **`E4-spike` no puede empezar sin eso**, ni siquiera con `E3c-fix` cerrada.
-  3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** No son de AUDIO. Alguien de ese
+  3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO. Alguien de ese
      workstream debería saberlo; queda escrito aquí porque lo medí yo.
 
 ### 2026-08-12 — E3c-fix round 1 — EXEC (Opus)
@@ -2614,13 +2614,13 @@ hardcodeado. Es `E4s.9`, y se mide.
   criterio del propio contrato («cero fallos nuevos») se cumple. Las dos lecturas quedan explícitas.
 - ALCANCE: cero ficheros fuente. Un fichero nuevo de evidencia en `docs/plan-audio`.
 - FINDINGS RAISED: **1 blocking** — E3c.6 inejecutable por el rol de sólo lectura del MCP (arriba).
-  Secundario: `db push` a secas ya **falla** en este repo por las dos migraciones ajenas sin aplicar.
+  Secundario: `db push` a secas ya **falla** en este repo por las dos migraciones ajenas sin registrar. **[SUPERADO 2026-08-12, Codex B1 r2: «sin aplicar» era falso — están desplegadas, les falta la fila de historial. Y `db push` a secas no despliega nada: aborta. El peligroso es `--include-all`.]**
 - OPEN AFTER THIS ROUND:
   1. **Review independiente de Codex** sobre `phase/E3c-fix` + esta evidencia. El diff de código es
      vacío: lo que se revisa es el **cambio de estado de la base** y la evidencia que lo sostiene.
   2. ~~Decisión del PM/Brent sobre `E3c.6`~~ → **RESUELTA, ver la entrada de abajo.**
   3. **`/reflexiones/<slug>` sigue sin verificarse en producción**: sin episodios no hay slug que pedir.
-  4. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.
+  4. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
 
 ### 2026-08-12 — E3c-fix — DECISIÓN DE BRENT: `E3c.6` DIFERIDO · enrutado a Codex
 - SESSION: `AUDIO · E3c-fix · r1 · EXEC` (misma conversación durable; no se abrió ejecutor nuevo)
@@ -2656,7 +2656,7 @@ hardcodeado. Es `E4s.9`, y se mide.
      FAIL espurio: el diff de código **es vacío por contrato**, y `E3c.6` **está diferido por
      decisión de Brent**. Y le deja explícitamente a Codex la decisión sobre el gate rojo.
   2. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
-  3. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.
+  3. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
 
 ### 2026-08-12 — E3c-fix round 2 — EXEC (Opus), remediación del FAIL de Codex
 - SESSION: `AUDIO · E3c-fix · r2 · EXEC` (misma conversación durable, según overlay §4.2)
@@ -2708,4 +2708,61 @@ hardcodeado. Es `E4s.9`, y se mide.
 - OPEN AFTER THIS ROUND:
   1. **Re-review de Codex** sobre la r1+r2 acumuladas. Prompt en `prompts/E3c-fix-codex-r2.md`.
   2. **La deriva de WhatsApp espera a su workstream.** No es de AUDIO y no se toca.
+  3. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
+
+### 2026-08-12 — E3c-fix round 3 — EXEC (Opus), segunda remediación tras FAIL de Codex
+- SESSION: `AUDIO · E3c-fix · r3 · EXEC` (misma conversación durable)
+- STARTED: 2026-08-12T21:05:00Z · ENDED: 2026-08-12T21:34:00Z
+- ATTEMPT: 3 (acumulativo) · HANDOFFS: 2
+- CODEX r2: **FAIL(1 BLOCKING, 1 SHOULD-FIX)** — literal en `reviews/REVIEW-E3c-fix-r2.md`
+- ÁRBOL: `phase/E3c-fix` sigue en `db8ed2e`. **Cero código**, tercera ronda seguida.
+
+- **⚠️ CAMBIO DE HIPÓTESIS, exigido por el overlay §5.** Son **dos FAIL consecutivos de la misma
+  familia de defecto** (inferir esquema desde el historial), y la regla obliga a cambiar de
+  hipótesis antes de seguir. Se nombra explícitamente:
+  - **Hipótesis de la r2 (fallida):** «el defecto vive en los criterios; arreglo `E3c.7`/`.8`/`.9`
+    y con eso el registro queda coherente». Codex demostró que no: la misma inferencia seguía viva
+    en el **out of scope**, en **la trampa** y en la **tabla de riesgos**, que son contrato activo.
+    La r2 llegó a afirmar «ninguna aserción negativa se apoya ya en el historial» **sin haberlo
+    barrido**. Esa frase era, ella misma, una afirmación no medida.
+  - **Hipótesis de la r3:** el defecto es **del documento entero, no de tres líneas**. Se trata como
+    barrido sistemático: `grep` de la familia completa sobre PLAN + LEDGER + evidence + prompts,
+    clasificar cada acierto en **activo** (se reescribe) o **histórico** (se marca SUPERADO), y
+    **verificar el barrido con un segundo `grep`** que sólo debe devolver textos ya marcados.
+- **B1.1/B1.2 — reescritas las tres secciones activas del PLAN:**
+  - **Out of scope**: ya no dice «las otras dos migraciones pendientes». Dice lo que es: **deriva
+    huérfana**, efectos desplegados, falta la fila de historial; y lo que queda por decidir no es
+    desplegarlas sino **reconciliar despliegue e historial**, decisión de su workstream.
+  - **La trampa**: sustituida por una tabla de dos filas con el comportamiento **medido**:
+    `db push` a secas **aborta** (`LegacyDbPushMissingRemoteError`) y **no despliega nada**;
+    **`--include-all`** es el que **reaplicaría**. Sigue prohibido, pero por el motivo correcto.
+  - **Tabla de riesgos §7**: la fila pasa a «`--include-all` **reaplica** la deriva huérfana», con
+    el riesgo real nombrado: `20260612000001` **no está auditada para idempotencia** y duplicar el
+    cron sí tendría efecto observable.
+- **B1.3 — seis notas de supersesión en el material histórico**, que se conserva sin reescribir:
+  cabecera y §2 de `evidence/E3c-fix-drift.md` (con la tabla de qué sigue válido y qué quedó
+  refutado), cuatro entradas del ledger, y una cabecera en `prompts/E3c-fix-r1.md` que enumera sus
+  **tres** afirmaciones refutadas. **Barrido verificado:** el `grep` de control ya sólo devuelve
+  textos marcados como `SUPERADO`/`REFUTADO`/`CORREGIDO`/`HISTÓRICO`.
+- **S1 — la cronología dice ahora exactamente qué sostiene cada fuente**, en una tabla nueva (§1.1
+  del documento de deriva): el **cron** está fechado por `cron.job_run_details`; los **3 índices**
+  sólo están **ordenados** antes de `E3c-fix` por OID, sin fecha; las **9 columnas** consta que
+  existen hoy y **su fecha no está medida** (`pg_attribute` no la guarda y no hay instantánea
+  previa). Se retiran dos afirmaciones de la r2: que el OID asigne fecha, y que OID consecutivos
+  prueben «una sola transacción». Y se dice lo que importa: **el alcance de la fase no depende de
+  ninguna fecha** — lo sostiene el §4, que no las usa. La inferencia de que ambas se aplicaron
+  juntas se marca **como inferencia**.
+- GATES (recorridos otra vez, mismo árbol, mismos resultados): build **VERDE** `✓ built in 8.07s`;
+  vitest `6 failed | 1155 passed (1161)`, las mismas 6 de `MesaAbiertaDashboard`; lint
+  `161 problems (118 errors, 43 warnings)`; `tsc --noEmit` exit 0 y vacuo. `node v22.22.0`.
+  **Nota de Codex que conviene retener:** su primera corrida heredó **Node 26.5.0** y dio **15**
+  fallos; con el runtime congelado `v22.22.0` reprodujo 6/1155. **El número de fallos de base
+  depende de la versión de Node**, así que toda comparación con la base tiene que fijarla.
+- ALCANCE: 6 ficheros de documentación. **Cero ficheros fuente**, cero mutación de producción.
+- FINDINGS RAISED: ninguno nuevo.
+- OPEN AFTER THIS ROUND:
+  1. **Re-review de Codex** sobre r1+r2+r3. Prompt en `prompts/E3c-fix-codex-r3.md`.
+     **Es el tercer FAIL el que dispararía el tope del overlay §5** («after three Codex FAIL
+     verdicts, stop and re-plan»). Vamos por dos.
+  2. La deriva de WhatsApp espera a su workstream. No es de AUDIO y no se toca.
   3. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.

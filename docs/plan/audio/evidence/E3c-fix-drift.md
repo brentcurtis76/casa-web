@@ -1,5 +1,26 @@
 # EVIDENCIA — deriva de migraciones entre `main` y la base desplegada
 
+> ## 🔶 DOCUMENTO HISTÓRICO — PARCIALMENTE SUPERADO EL 2026-08-12
+>
+> **No lo leas como estado actual.** Se conserva porque es la medición que hizo nacer `E3c-fix`,
+> pero **una de sus conclusiones quedó refutada** por la review de Codex de esa misma fase.
+>
+> | Lo que este documento dice | Estado |
+> |---|---|
+> | `/reflexiones` da `400`, falta la columna `slug` (§1) | **VÁLIDO en su fecha** — reparado por `E3c-fix` el 2026-08-12 |
+> | Hay 3 versiones sin fila de historial (§2) | **VÁLIDO y sigue siéndolo** para el historial |
+> | La migración de `E3a` no es idempotente (§3) | **VÁLIDO** |
+> | **«Un `push` a secas desplegaría las dos de WhatsApp» (§2)** | **❌ REFUTADO — ver abajo** |
+>
+> **Lo que se descubrió después:** las dos migraciones de WhatsApp **ya estaban desplegadas** desde
+> el **2026-06-12** —9 columnas, 3 índices y el cron `wa_reminders_daily`, activo—; lo único que
+> les falta es la fila de historial. Y `supabase db push` **a secas aborta**
+> (`LegacyDbPushMissingRemoteError`) en vez de desplegar nada. El comando peligroso es
+> **`--include-all`**, que las **reaplicaría**.
+>
+> **Medición completa y traspaso al workstream dueño: `E3c-fix-whatsapp-drift.md`.**
+> **La lección, ahora explícita: «pendiente en el historial» ≠ «DDL ausente».**
+
 **Tomada por el PM en el bootstrap de `E4-spike` (2026-08-12), antes de redactar ningún contrato.**
 Es la medición que convirtió `E4-spike` en bloqueada y que hizo nacer `E3c-fix`.
 
@@ -96,6 +117,19 @@ $ comm -13 <migraciones-en-main> <versiones-aplicadas>
 las pendientes en orden. Un `push` a secas desplegaría las dos migraciones de WhatsApp, que son
 la decisión de release de otro workstream y no de AUDIO. El overlay lo prohíbe explícitamente
 (§5: enrutar a una fase acotada *"rather than expanding an unrelated feature's scope"*).
+
+> **❌ ESTE PÁRRAFO QUEDÓ REFUTADO EL 2026-08-12** (Codex B1 sobre `E3c-fix`). Se conserva tal cual
+> por honestidad de registro; **no describe la realidad**. Dos errores, los dos medidos después:
+>
+> 1. **Las dos de WhatsApp ya estaban desplegadas** desde el 2026-06-12 — 9 columnas, 3 índices y el
+>    cron `wa_reminders_daily` **activo**, con 62 ejecuciones. Esta tabla mide **filas de historial
+>    ausentes**, que **no** es lo mismo que **DDL ausente**.
+> 2. **`db push` a secas no despliega nada**: aborta con `LegacyDbPushMissingRemoteError`, porque
+>    esas dos versiones son anteriores a la última remota. El comando que sí las tocaría es
+>    **`--include-all`**, y lo que haría es **reaplicarlas**, no desplegarlas por primera vez.
+>
+> La conclusión operativa que sí sobrevive: **AUDIO no debe correr ninguna de las dos variantes**, y
+> la reconciliación es decisión de su workstream. Ver `E3c-fix-whatsapp-drift.md`.
 
 Estado del guard del cron, medido para no exagerar el riesgo:
 

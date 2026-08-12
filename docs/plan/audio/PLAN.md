@@ -1438,10 +1438,16 @@ Evidencia completa: `evidence/E3c-fix-drift.md`.
 
 ### Out of scope — y cada exclusión tiene su razón
 
-- **Las otras dos migraciones pendientes.** `20260612000000_casa_whatsapp_scheduling.sql` y
-  `20260612000001_casa_wa_reminders_cron.sql` **no son de AUDIO**. Desplegarlas es la decisión de
-  release de otro workstream. El overlay §5 lo dice literalmente: enrutar a una fase acotada
-  *"rather than expanding an unrelated feature's scope"*.
+- **La deriva huérfana de WhatsApp.** `20260612000000_casa_whatsapp_scheduling.sql` y
+  `20260612000001_casa_wa_reminders_cron.sql` **no son de AUDIO**.
+  **CORREGIDO el 2026-08-12 (Codex B1, r2).** Esta línea decía «las otras dos migraciones
+  pendientes» y que «desplegarlas» era la decisión pendiente. **Los dos supuestos eran falsos:**
+  sus efectos materiales **ya están desplegados** —las 9 columnas, los 3 índices y el cron
+  `wa_reminders_daily`, activo desde el 2026-06-12— y lo único que les falta es **la fila de
+  historial**. Lo que queda por decidir no es desplegarlas: es **reconciliar despliegue e
+  historial**, y esa decisión sigue siendo de su workstream, no de AUDIO. El overlay §5 aplica
+  igual: enrutar a una fase acotada *"rather than expanding an unrelated feature's scope"*.
+  Medición y traspaso: `evidence/E3c-fix-whatsapp-drift.md`.
 - **Sembrar episodios.** Brent lo dejó fuera de esta fase el 2026-08-12. Se decide aparte.
 - **Tocar `index.html`, `vercel.json`, meta tags, canonical o el `404`.** Todo eso es `E4`.
 - **Arreglar la base de diagnósticos preexistentes** (non-goal permanente del plan).
@@ -1450,8 +1456,20 @@ Evidencia completa: `evidence/E3c-fix-drift.md`.
 
 ### La trampa, dicha antes de que nadie la pise
 
-**`supabase db push` aplica TODAS las pendientes en orden.** Ejecutarlo a secas desplegaría las dos
-migraciones de WhatsApp. **Está prohibido en esta fase.**
+**CORREGIDO el 2026-08-12 (Codex B1, r2).** Esta sección decía: «`supabase db push` aplica TODAS las
+pendientes en orden; ejecutarlo a secas desplegaría las dos migraciones de WhatsApp». **Medido, no
+es lo que pasa.** El comportamiento real, con salida cruda en `evidence/E3c-fix.md` §2:
+
+| Comando | Qué hace de verdad |
+|---|---|
+| `supabase db push` **a secas** | **Aborta sin aplicar nada**: `LegacyDbPushMissingRemoteError`. Las dos de WhatsApp son anteriores a la última versión remota, así que la CLI se niega a continuar y exige `--include-all`. **No despliega nada ajeno: no despliega nada.** |
+| `supabase db push --include-all` | **Éste sí** intentaría **reaplicar** las dos de WhatsApp — cuyos efectos ya están en la base. Es el comando peligroso, y el que nadie debe correr en este repo. |
+
+**Sigue prohibido en esta fase**, pero por el motivo correcto: no porque `db push` despliegue
+esquema ajeno, sino porque **`--include-all` reaplicaría** una migración ya desplegada y sin
+registrar. `20260612000000` es idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT
+EXISTS`) y probablemente sobreviviría; **`20260612000001` no se ha auditado para eso**, y duplicar
+el cron sí tendría efecto observable.
 
 Y la migración de `E3a` **no es idempotente en dos puntos**: los `ADD CONSTRAINT` de las líneas 39
 y 146 no llevan guard, así que **aplicarla dos veces falla con `42710 duplicate_object`**. De ahí
@@ -2463,7 +2481,7 @@ Riesgos vigentes de las unidades actuales:
 | Liturgias antiguas con `SlideGroup` de forma distinta | media | bajo | E2.4 y E2.6: degrada a Gemini con aviso, sin romper la publicación |
 | E4-spike concluye que el preview obliga a cambiar el modelo de despliegue | media | alto | El spike lo determina desplegando, no razonando; el costo se declara en su bloque |
 | **Una fase pasa Codex, se mergea, y su esquema no llega a la base desplegada** | **ocurrida — `E3b`, 2026-08-09 → detectada 2026-08-12** | **alto: página pública en `400` tres días** | **D26**: verificación obligatoria contra la base desplegada en toda fase de esquema. `E3c-fix` repara ésta |
-| Un `supabase db push` despliega migraciones de otro workstream | media | alto | Medido: hay **2** migraciones de WhatsApp pendientes. D26 obliga a aplicar por versión explícita; `E3c.7` lo comprueba a posteriori |
+| Un `supabase db push --include-all` **reaplica** la deriva huérfana de WhatsApp | media | alto | **Reescrito el 2026-08-12 (Codex B1, r2).** Decía «un `db push` despliega migraciones de otro workstream»: falso por partida doble. Sus efectos **ya están desplegados** (desde el 2026-06-12) y sólo falta la fila de historial; y `db push` **a secas aborta** (`LegacyDbPushMissingRemoteError`), no despliega. El peligro real es **`--include-all`**, que reintentaría `20260612000001` —no auditada para idempotencia— y podría duplicar el cron. D26 obliga a aplicar por versión explícita; `E3c.7` comprueba **el historial**, no el esquema |
 | El spike se queda sin episodio que previsualizar | **alta — es el estado actual** | medio: bloquea E4 entero | La tabla está vacía en producción. Precondición explícita de `E4-spike`, y una decisión pendiente de Brent: contenido real o fila sintética |
 | **El PM vuelve a escribir "verificado" sobre una inferencia** | **ha ocurrido tres veces** | alto | Registro explícito en §5; toda afirmación de estado lleva el comando que la produjo |
 

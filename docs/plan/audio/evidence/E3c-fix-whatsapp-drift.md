@@ -1,7 +1,9 @@
 # DERIVA DE ESQUEMA — las dos migraciones de WhatsApp están **desplegadas sin fila de historial**
 
 **Encontrado por:** Codex, review de `E3c-fix` r1 (BLOCKING B1), 2026-08-12.
-**Medido y fechado por:** ejecutor de `E3c-fix`, r2, 2026-08-12.
+**Medido por:** ejecutor de `E3c-fix`, r2, 2026-08-12.
+**Precisado en la r3** tras el SHOULD-FIX S1 de Codex: cada afirmación cronológica dice ahora
+exactamente qué la sostiene, y cuál **no** está medida. Ver §1.1.
 **Dueño: NO es AUDIO.** Este documento existe para entregarlo al workstream de WhatsApp/CASA.
 **AUDIO no ha tocado, ni tocará, nada de lo que se describe aquí.**
 
@@ -11,11 +13,31 @@
 
 `20260612000000_casa_whatsapp_scheduling` y `20260612000001_casa_wa_reminders_cron` **no tienen fila
 en `supabase_migrations.schema_migrations`**, así que la CLI las da por pendientes — pero **sus
-efectos materiales están en la base desplegada desde el 2026-06-12**, y el cron de la segunda
-**lleva 62 ejecuciones diarias y está activo**.
+efectos materiales están hoy en la base desplegada**, y el cron de la segunda **está activo y lleva
+62 ejecuciones diarias**.
 
 **«Pendiente en el historial» ≠ «DDL ausente».** Ésa es la lección, y `E3c-fix` r1 la dio por
 equivalente. Corregido en el PLAN y en la evidencia.
+
+### 1.1 Qué prueba exactamente cada fuente — y qué no
+
+Precisado en la r3 tras el SHOULD-FIX S1 de Codex, que señaló con razón que la r2 escribía «desde el
+2026-06-12» para **todo** el conjunto cuando la fecha sólo está medida para una parte.
+
+| Objeto | Qué está probado | Con qué | Qué **no** está probado |
+|---|---|---|---|
+| Cron `wa_reminders_daily` | **Existe, está activo y corre desde el 2026-06-12** | `cron.job_run_details`, registro fechado, 62 ejecuciones | — |
+| Los 3 índices | **Se crearon antes que `E3c-fix`** | orden de OID (salvedad de wraparound) | Su **fecha exacta**. El OID da orden, no calendario |
+| Las 9 columnas | **Existen hoy** | `information_schema.columns` | Su **fecha de creación**: `pg_attribute` no guarda marca de tiempo y no hay instantánea previa |
+| **Que `E3c-fix` no las creó** | **Probado, y sin depender de ninguna fecha** | sentencias registradas, contenido del espejo, transcripción del push (§4) | — |
+
+**La distinción importa** porque es la que decide el alcance de la fase. Para cerrar `E3c-fix` basta
+lo de la última fila —que **esta fase** no tocó nada ajeno—, y eso **no** necesita fechar la deriva.
+La cronología de §3 es contexto para el workstream dueño, no soporte del alcance de AUDIO.
+
+**Inferencia razonable que se declara COMO inferencia, no como medición:** las dos migraciones
+comparten fecha de nombre (2026-06-12) y workstream, y el cron de una de ellas está fechado ese día,
+así que lo más probable es que las dos se aplicaran juntas entonces. **No está medido.**
 
 ---
 
@@ -83,7 +105,7 @@ cuál de las dos fue** con lo que hay en la base, y no se especula más allá de
 
 ---
 
-## 3. La fecha — evidencia dura, no un argumento
+## 3. La fecha del cron — evidencia fechada (y sólo para el cron)
 
 `cron.job_run_details` **es un registro de auditoría con marca de tiempo**:
 
@@ -113,13 +135,25 @@ Los OID de Postgres se asignan de un contador global monotónico. Sirven como **
 | `idx_podcast_episodes_slug` | **456531** | **`E3c-fix`, hoy 14:26 UTC** |
 | `assign_podcast_episode_slug` | **456533** | **`E3c-fix`, hoy 14:26 UTC** |
 
-Los tres de WhatsApp son **consecutivos** (455068/069/070) —una sola transacción, en el orden del
-fichero (`:27`, `:30`, `:34`)— caen **95 OID después** de una tabla del 10 de junio y **1.460 OID
-antes** de todo lo que `E3c-fix` creó hoy.
+Los tres de WhatsApp son **consecutivos** (455068/069/070) y caen **95 OID después** de una tabla
+del 10 de junio y **1.460 OID antes** de todo lo que `E3c-fix` creó hoy.
 
-**Salvedad declarada:** el contador de OID puede dar la vuelta. En esta base los valores están en el
-rango de las centenas de miles, sin indicio de wraparound, así que el orden es fiable. Aun así, la
-prueba que manda es la del §3 —fechada— y ésta es corroboración.
+**Lo que esta tabla prueba, dicho estrictamente (precisado en la r3, Codex S1):**
+
+- ✅ **Los tres índices se crearon antes que los objetos de `E3c-fix`.** Eso es todo lo que el orden
+  de OID sostiene, y es suficiente para el alcance de la fase.
+- ❌ **No les asigna la fecha 2026-06-12.** El OID es un contador, no un calendario. La r2 escribía
+  como si lo fuera.
+- ❌ **Ser consecutivos no prueba «una sola transacción»**, que es lo que la r2 afirmaba. Sólo
+  prueba que nada más consumió un OID entre medias. Es *compatible* con una sola transacción y con
+  el orden del fichero (`:27`, `:30`, `:34`), pero no lo demuestra.
+
+**Salvedad ya declarada en la r2:** el contador de OID puede dar la vuelta. En esta base los valores
+están en las centenas de miles, sin indicio de wraparound, así que el orden es fiable.
+
+**Y la salvedad que de verdad importa:** ninguna de estas dos cronologías —ni la fechada del §3, ni
+la de orden de aquí— es lo que sostiene el alcance de `E3c-fix`. Eso lo sostiene el §4, que no
+depende de fechas.
 
 ---
 

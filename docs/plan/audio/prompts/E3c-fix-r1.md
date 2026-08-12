@@ -1,5 +1,19 @@
 # EXEC — AUDIO · E3c-fix · r1
 
+> **🔶 PROMPT HISTÓRICO — dos de sus afirmaciones quedaron refutadas el 2026-08-12** (Codex B1 sobre
+> esta misma fase). Se conserva como registro de lo que se despachó; **no lo uses como estado actual.**
+>
+> 1. **§4 y §5 dan por hecho que las dos migraciones de WhatsApp «no están aplicadas».** Falso: sus
+>    efectos están desplegados desde el **2026-06-12** (9 columnas, 3 índices y el cron
+>    `wa_reminders_daily`, **activo**). Lo que falta es la **fila de historial**.
+> 2. **§4 dice que `db push` a secas «aplicaría todas las pendientes» y desplegaría las de WhatsApp.**
+>    Falso: **aborta** con `LegacyDbPushMissingRemoteError`. El comando peligroso es
+>    **`--include-all`**, que las **reaplicaría**.
+> 3. **§5 da por disponible el MCP `execute_sql` para escribir.** Falso: conecta como
+>    `supabase_read_only_user`. Por eso `E3c.6` quedó **diferido** por decisión de Brent.
+>
+> Estado vigente: `PLAN.md` § `Phase E3c-fix` y `evidence/E3c-fix-whatsapp-drift.md`.
+
 SESSION: `AUDIO · E3c-fix · EXEC`
 RISK: **HIGH** — cambio de esquema sobre la base de producción, **compartida con Life OS**.
 

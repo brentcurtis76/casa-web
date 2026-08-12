@@ -137,15 +137,19 @@ de que ningún `db push` futuro reintentará la migración no idempotente y mori
 > La r1 confundió las dos, y era precisamente la afirmación negativa de más consecuencia de la fase.
 >
 > **Lo que sí queda probado, y con eso basta para el alcance de esta fase:** que **`E3c-fix` no
-> desplegó nada ajeno**. Tres pruebas independientes, más una cronología fechada que sitúa esa
-> deriva **dos meses antes** de esta fase:
+> desplegó nada ajeno**. Tres pruebas independientes, **y ninguna depende de fechar la deriva**:
 >
 > - las sentencias registradas de `20260808120000` son **10, 9 tocan `church_podcast_episodes`, 0
 >   tocan WhatsApp**;
 > - el proyecto espejo **no contenía** los dos ficheros (`63 → 61`, §1);
-> - los dos dry-run y el push **nombraron una sola migración**;
-> - `cron.job_run_details` fecha la primera ejecución en **2026-06-12**, y los OID de los objetos de
->   WhatsApp (455068-455070) están **1.460 por debajo** de los que esta fase creó hoy (456530+).
+> - los dos dry-run y el push **nombraron una sola migración**.
+>
+> **Precisión de la r3 (Codex S1):** la r2 escribía aquí «una cronología fechada que sitúa esa deriva
+> dos meses antes», y eso decía de más. Lo que hay, con su alcance exacto: el **cron** está fechado
+> por `cron.job_run_details` (primera ejecución **2026-06-12**); los **3 índices** sólo están
+> **ordenados** antes de esta fase por OID (455068-455070, **1.460 por debajo** de los de hoy), sin
+> fecha; y de las **9 columnas** consta que existen, pero **su fecha de creación no está medida**.
+> La cronología es contexto para el workstream dueño — **no** es lo que sostiene el alcance de AUDIO.
 >
 > **Medición completa, cronología y entrega al workstream dueño: `evidence/E3c-fix-whatsapp-drift.md`.**
 > AUDIO **no ha tocado** nada de eso y no debe hacerlo.
