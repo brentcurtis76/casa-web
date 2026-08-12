@@ -628,14 +628,28 @@ familias rojas de base ajenas a AUDIO. Se dice en vez de reportar un gate no eje
 | **E3c.8** esta fase no tocó nada ajeno | ✅ | §8 |
 | **E3c.9** esta evidencia | ✅ | este fichero + `E3c-fix-whatsapp-drift.md` |
 
-### 10.1 Qué cambió en la r2 (BLOCKING B1 + SHOULD-FIX S1 de Codex)
+### 10.1 Qué cambió en la r2 y en la r3
+
+**Ronda r2 — BLOCKING B1 + SHOULD-FIX S1 de la review r1**
 
 | | Cambio |
 |---|---|
-| **B1** | `E3c.7` ya **no** afirma que no se desplegara nada ajeno. Se separa historial de esquema, se documenta la deriva real de WhatsApp con cronología fechada (2026-06-12, 62 ejecuciones) y se entrega a su workstream sin tocarla. **Se encontró además que la review se quedaba corta:** el cron de `20260612000001` también está desplegado y **activo**. |
+| **B1** | `E3c.7` ya **no** afirma que no se desplegara nada ajeno. Se separa historial de esquema, se documenta la deriva real de WhatsApp y se entrega a su workstream sin tocarla. **Se encontró además que la review se quedaba corta:** el cron de `20260612000001` también está desplegado y **activo**. |
 | **S1** | La equivalencia por SHA-256 declara ahora que `prosrc` **no** cubre atributos, y se miden los que faltaban: las dos funciones son `SECURITY INVOKER`, `postgres`, ACL estándar. |
-| Gates | Recorridos de nuevo sobre el mismo árbol; resultados idénticos (§9). |
-| Código fuente | **Ninguno.** `phase/E3c-fix` sigue en `db8ed2e`. Los cambios de la r2 son de documentación, en `docs/plan-audio`. |
+
+**Ronda r3 — BLOCKING B1 + SHOULD-FIX S1 de la review r2.** La r2 arregló los criterios y **dio por
+barrido lo que no había barrido**: la misma inferencia seguía viva en el *out of scope*, en «la
+trampa» y en la tabla de riesgos del PLAN — contrato activo.
+
+| | Cambio |
+|---|---|
+| **B1** | Las **tres secciones activas** del PLAN reescritas, y **seis notas de supersesión** en el material histórico, que se conserva sin tocar. «La trampa» pasa a decir lo medido: `db push` a secas **aborta**; el peligroso es **`--include-all`**, que **reaplicaría**. Barrido verificado con un `grep` de control. |
+| **S1** | La cronología dice ahora qué sostiene **cada** fuente: el cron **fechado**; los 3 índices sólo **ordenados** por OID; las 9 columnas **sin fecha medida**. Se retiran dos afirmaciones de la r2 — que el OID dé fecha, y que OID consecutivos prueben «una sola transacción». |
+
+| | |
+|---|---|
+| Gates | Recorridos en las tres rondas sobre el mismo árbol; resultados idénticos (§9). |
+| Código fuente | **Ninguno, en ninguna ronda.** `phase/E3c-fix` sigue en `db8ed2e`. Todo lo de r2 y r3 es documentación en `docs/plan-audio`. Ninguna mutación de producción después de la r1. |
 
 ---
 
