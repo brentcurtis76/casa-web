@@ -2449,3 +2449,112 @@ es exactamente el error que dejó a `E-infra` en borrador.**
 - FINDINGS RAISED: ninguno.
 - OPEN AFTER THIS ROUND: **`E4-spike`**, único borrador que queda. Le toca `/pm-boot AUDIO E4-spike`
   en sesión nueva.
+
+### 2026-08-12 — bootstrap de `E4-spike` → BLOQUEADA · nace `E3c-fix` · plan round 24 — PM (Opus)
+- SESSION: `AUDIO · E4-spike · PM`
+- STARTED: 2026-08-12T14:07:20Z · ENDED: 2026-08-12T14:07:20Z (ronda de planificación)
+- ATTEMPT: `E4-spike` sigue en **0 intentos de ejecución** — no se despachó. `E3c-fix` arranca en
+  **r1**. El contador de `E4-spike` no se toca: nunca se abrió ejecutor.
+- RISK: `E4-spike` clasificada **DISCOVERY**; `E3c-fix` clasificada **HIGH** (esquema sobre la base
+  de producción, compartida con Life OS).
+- HANDOFFS: 1 (una decisión de Brent, dos preguntas en la misma pasada).
+- GATES: n/a — ronda de planificación, sin código.
+- CODEX: n/a — no se despachó nada a review.
+- **ESCAPED DEFECT: SÍ, y es de `E3b`.** Ver abajo. Es el primero de este plan.
+
+**ACTION.** Bootstrap de `E4-spike` con el overlay lean activo. Antes de escribir contrato corrí la
+pasada de falsificación que el overlay exige. **Refutó tres claims que sostenían la fase**, así que
+no había contrato que escribir: había un plan que arreglar.
+
+**1. ESCAPED DEFECT — `/reflexiones` responde 400 en producción desde el 2026-08-09.**
+La migración de `E3a` (`20260808120000_church_podcast_episodes_slug.sql`) está en `origin/main` y
+**nunca se aplicó a la base desplegada**. La consulta exacta de la página, contra la API real:
+
+```
+{"code":"42703","message":"column church_podcast_episodes.slug does not exist"}   HTTP=400
+```
+
+`church_podcast_episodes` tiene **18 columnas, sin `slug`**. La última migración aplicada es
+`20260806000000`.
+
+**Cómo se escapó, dicho sin adornos.** Las tres verificaciones de `E3a` —la del ejecutor, la mía y
+la de Codex— se hicieron contra el entorno local que construyó `E-infra-impl`, donde
+`supabase db reset` **sí** aplica la migración. Las tres eran correctas sobre el árbol que miraban.
+Ninguna miraba la base desplegada, porque **en ningún sitio estaba escrito que aplicarla fuera un
+paso**. Es exactamente el mismo patrón que este plan ya se hizo tres veces con la palabra
+"verificado": el comando era real, el árbol no era el que la afirmación nombraba. Ahora es **D26**.
+
+**Alcance honesto:** la tabla está **vacía** (cero filas, cualquier estado), así que nadie perdió
+contenido. Los visitantes ven el estado de error en español en vez del estado vacío. La página no
+funciona, y tampoco funcionaría con contenido.
+
+**2. Auditoría de deriva — son TRES migraciones sin aplicar, no una.**
+63 ficheros en `main`, 60 versiones aplicadas, cero deriva inversa.
+
+| Versión | Workstream | ¿La aplica `E3c-fix`? |
+|---|---|---|
+| `20260612000000_casa_whatsapp_scheduling` | **no es AUDIO** | **NO** |
+| `20260612000001_casa_wa_reminders_cron` | **no es AUDIO** | **NO** |
+| `20260808120000_church_podcast_episodes_slug` | AUDIO / `E3a` | **SÍ, la única** |
+
+**Es el hallazgo que más cambia el contrato:** `supabase db push` aplica todas las pendientes, así
+que un `push` a secas desplegaría el esquema de otro workstream. Prohibido por contrato en
+`E3c-fix`, y comprobado a posteriori por `E3c.7`. Medí el guard del cron para no exagerar el riesgo:
+`pg_cron` y `pg_net` **están**, pero `app.wa_reminders_url` está **vacía**, así que hoy el cron se
+saltaría con `RAISE NOTICE`. El riesgo real es desplegar esquema ajeno, no disparar WhatsApp.
+
+**3. El método de `E4-spike` es inviable — los previews exigen SSO.**
+
+```
+$ curl -A 'facebookexternalhit/1.1 (…)' https://casa-84h1sm85t-brent-curtis-projects.vercel.app/reflexiones
+status=302   location: https://vercel.com/sso-api?url=…
+```
+
+**WhatsApp y Facebook no pueden leer un preview protegido.** E4s.5 —el criterio central de la
+fase— era incomprobable por construcción. Lo que el borrador declaraba como precondición dudosa
+(credenciales de Vercel, Codex r8/S4) **está satisfecho**: `vercel whoami` → `brentcurtis76`,
+proyecto `casa-web` existe. La precondición que faltaba era otra, y nadie la había escrito.
+
+**DECISIONES DE BRENT (2026-08-12), dos preguntas:**
+- **URL para el crawler → proyecto Vercel desechable** con la protección apagada. Descartadas:
+  apagar la protección de `casa-web` (haría públicos todos los previews futuros del sitio real) y
+  el token de bypass en el query string (mete un secreto en la URL compartida y hace divergir la
+  URL buscada de `og:url`/`canonical`, que es lo que el spike mide). Queda como **D25**.
+- **Defecto de producción → fase hotfix separada primero**, con su propia review de Codex, en vez
+  de colgarlo de `E4-spike`. **Sembrar episodios queda explícitamente fuera.**
+
+**CAMBIOS EN EL PLAN (revisión 24):**
+- **`E3c-fix` nueva**, contrato completo: 9 criterios, riesgo `HIGH`, SHA padre fijado en
+  `db8ed2e`, rama `phase/E3c-fix`. Aplica **una** migración, reconcilia la fila de versión, verifica
+  esquema objeto por objeto y producción de vuelta en verde.
+- **`E4-spike` marcada 🔴 BLOQUEADA** con la tabla de claims refutadas al principio del bloque, para
+  que nadie la despache leyendo sólo el índice.
+- **`E4-spike` reparada donde estaba mal**, aunque siga en borrador: método corregido por D25;
+  «12 etiquetas» → **15** (`<title>`, `description` y `canonical` también son genéricas y E4s.2 pide
+  título y canonical por episodio); **E4s.4b nueva** (`og:url` y `canonical` emiten el apex y
+  contradicen D19); **E4s.9 nueva** (medir a qué base habla el prototipo); **E4s.10 nueva** (borrar
+  el proyecto desechable); la arquitectura de A10a **escrita en vez de referenciada**; los cinco
+  huecos de Codex r8/B1 **enumerados en vez de citados**.
+- **D25 y D26 nuevas.** Cuatro riesgos nuevos en §7, uno de ellos marcado **ocurrido**.
+
+**MEDICIONES QUE SOPORTAN LO ANTERIOR** — `evidence/E3c-fix-drift.md` y
+`evidence/E4-spike-preview-blocked.md`, con salida cruda. Árbol: `main` = `origin/main` =
+`db8ed2e`. Host: `supabase` CLI `2.110.0`, `node` `v22.22.0`, **`psql` ausente**.
+Descubierto además: la migración **no es idempotente** en los `ADD CONSTRAINT` de `:39` y `:146`
+—aplicarla dos veces da `42710`—, y `vercel.json` sigue con un solo rewrite y **sin directorio
+`api/`**, así que **A10a.1 nunca se midió**.
+
+**PUNTO CIEGO DECLARADO.** No sé qué `VITE_SUPABASE_URL` reciben los despliegues: `vercel env ls`
+exige enlazar el repo y escribir `.vercel/`, que no es artefacto de planificación y no lo hice. Por
+`src/integrations/supabase/client.ts:5-6` la hipótesis es que cae al proyecto de producción
+hardcodeado. Es `E4s.9`, y se mide.
+
+- FINDINGS RAISED: 3 refutaciones (1 de ellas defecto vivo en producción) + 1 auditoría de deriva.
+- DECISIONS: D25, D26.
+- OPEN AFTER THIS ROUND:
+  1. **`E3c-fix` r1** — despachada con `/exec AUDIO E3c-fix r1`. Prompt en
+     `prompts/E3c-fix-r1.md`, commiteado porque el ejecutor usa otro worktree.
+  2. **Decisión pendiente de Brent:** cómo llega el primer episodio publicado — contenido real o
+     fila sintética. **`E4-spike` no puede empezar sin eso**, ni siquiera con `E3c-fix` cerrada.
+  3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** No son de AUDIO. Alguien de ese
+     workstream debería saberlo; queda escrito aquí porque lo medí yo.

@@ -8,14 +8,34 @@ META
 - PLAN FROZEN: **no.** Codex r1 → FAIL (13) · r2 → FAIL (12) · r3 → FAIL (6) ·
   **r5 → PARTIAL PASS** · **r7 → FAIL (10)** · **r8 → FAIL (11)** · **r9 → FAIL (10)**. Esta es
   **r10 → FAIL (6)** · **r11 → FAIL (7)** · **r12 → PASS, E2 congelada**. Esta es la
-  **revisión 23**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+  **revisión 24**. Ver §9 y §11–§19 para la trazabilidad finding → cambio.
+- **🔴 REVISIÓN 24 (2026-08-12) — `E4-spike` NO se despacha, y nace `E3c-fix`.** El bootstrap de
+  `E4-spike` corrió la pasada de falsificación del overlay y **refutó tres claims que sostenían la
+  fase**. Las tres con salida cruda, en `evidence/E3c-fix-drift.md` y
+  `evidence/E4-spike-preview-blocked.md`:
+  1. **`/reflexiones` responde HTTP 400 en producción.** La migración de `E3a`
+     (`20260808120000_church_podcast_episodes_slug.sql`) está en `main` y **nunca se aplicó a la
+     base desplegada**: `column church_podcast_episodes.slug does not exist`. Es un
+     **`ESCAPED DEFECT`** — apareció después del `PASS` final de `E3b`.
+  2. **No hay nada que previsualizar.** `church_podcast_episodes` tiene **cero filas** en producción.
+  3. **El método del spike es inviable.** Los previews de Vercel están protegidos: `302` a
+     `vercel.com/sso-api`, también con el user-agent de Facebook. **WhatsApp y Facebook no pueden
+     leer un preview de `casa-web`**, así que E4s.5 era incomprobable por construcción.
+  Brent decidió el 2026-08-12: **fase hotfix separada primero** (`E3c-fix`, con su propia review de
+  Codex), y para el spike **un proyecto Vercel desechable** en vez de tocar la protección de
+  `casa-web` (**D25**). **`E4-spike` queda `BLOQUEADA`** y su bloque reescrito con lo refutado.
+- **La lección, escrita como decisión (D26): mergear a `main` no despliega esquema.** Las tres
+  verificaciones de `E3a` —ejecutor, PM y Codex— se hicieron contra el entorno local de
+  `E-infra-impl`, donde `supabase db reset` sí aplica la migración. Nadie había escrito que aplicar
+  a la base desplegada fuera un paso, así que nadie lo comprobó. **Ninguna fase de este plan que
+  toque esquema se cierra sin verificar la base desplegada.**
 - **RE-ALCANCE (2026-08-07):** el plan apuntaba a distribución en directorios. Brent lo declara
   **demasiado ambicioso para una primera instancia**. El objetivo nuevo es el **bucle interno
   de escucha**: grabar en el editor, derivar la carátula de la portada de la liturgia, publicar
   automáticamente en página propia, y compartir el enlace en redes y WhatsApp. **Toda la pista
   de distribución (feed RSS, backfill, directorios, corte de Spotify) pasa al backlog.**
 - **ESTRUCTURA POR OLAS.** **Ola 1 = `E2`, cerrada.** Ola 2 (activa, reordenada por Brent el
-  2026-08-08) = `E-infra-spike` → `E-infra-impl` → `E3a` → `E3b` → `E4-spike`. Ola 3
+  2026-08-08) = `E-infra-spike` → `E-infra-impl` → `E3a` → `E3b` → **`E3c-fix`** → `E4-spike`. Ola 3
   (`E4-impl`, `E5`, `E6`) y ola 4 (`E1-spike`, `E1-impl`) sin planificar y **sin contarse
   como aprobadas**.
 - **`E-infra` PARTIDA EN DOS en la r14**, como exigía Codex r10/S3 y como el propio cuerpo de
@@ -206,6 +226,8 @@ derogarlas: es dejar de fingir que gobiernan un trabajo que ya no existe.
 | **D23** | **La base garantiza el slug; el cliente sólo aporta una preferencia.** Un trigger `BEFORE INSERT OR UPDATE` asigna al publicar, resuelve unicidad con sufijos `-2`…`-5`, aplica el fallback `reflexion-<episode_date>` si nadie aportó base, y congela el valor (D12) con `23514` — nunca `23505`. | **Nace de Codex r15/B2**: `podcast-backfill/index.ts:353` era un tercer publicador que el scope no cubría. El defecto de fondo no era que se escapara uno, sino que el contrato obligaba a **cada** publicador a acordarse. Un invariante de base lo cierra para los tres y para los futuros, y de paso disuelve B3 y B5. Medido funcionando por la ruta autenticada antes de escribirse. | Brent (elección de diseño), sobre Codex r15/B2 |
 | **D20** | **`E-infra-spike` se cierra por aceptación explícita de Brent, no por un PASS de Codex.** Codex la falló 2/2 (tope del bucle, SOP §1.5) con dos BLOCKING, los dos verificados por el PM y los dos **dentro del plan de pruebas de `E-infra-impl`**, no de la medición del entorno. Brent eligió la opción **A: aceptar con enmiendas**. Las dos enmiendas son obligatorias y están en el cuerpo de `E-infra-impl`. | Codex confirmó que *"the infrastructure measurements are substantially sound, and the production guard itself is now well designed"*, y dio por cerrados B1, B2, F3, F4 y la atribución de SHA. Lo que quedaba abierto era el contrato de pruebas de la fase siguiente — que tendrá su propia review de Codex antes de que nadie escriba código. Hacer girar el spike una tercera vez para pulir el plan de otra fase no compra corrección, compra rondas. **Queda registrado que este cierre es un override, para que nadie lo lea como un PASS.** | Brent (override §1.5) |
 | **D18** | **Los gates se miden con `scripts/gates/changed-files-diagnostics.sh` sobre los ficheros que la fase toca, contra el SHA padre fijado de esa fase.** Sin esquemas de identidad globales. Build verde absoluto. Todo test nuevo con prueba base-red o de mutación. | CR-9: el gate correcto ya existe en el repo y documenta 62 colisiones del enfoque que yo proponía. |
+| **D25** *(nueva en la r24)* | **La previsualización social se verifica en un proyecto Vercel desechable con la protección desactivada, nunca en un preview de `casa-web`.** El proyecto se borra al cerrar la unidad. | Los previews de `casa-web` están protegidos: `302` a `vercel.com/sso-api`, también con `facebookexternalhit`. **WhatsApp y Facebook no pueden leer un preview protegido**, así que E4s.5 era incomprobable por construcción. De las tres salidas, Brent eligió ésta el 2026-08-12: apagar la protección de `casa-web` haría públicos todos los previews futuros del sitio real, y un token de bypass en el query string mete un secreto en la URL compartida y hace divergir la URL buscada de `og:url`/`canonical`, que es justo lo que el spike mide. | Brent (2026-08-12), sobre medición del PM |
+| **D26** *(nueva en la r24)* | **Mergear a `main` no despliega esquema. Ninguna fase que toque esquema se cierra sin verificar la base desplegada**, con consulta cruda a `information_schema` / `pg_constraint` y a la API pública — no con "la migración corrió". Y **las migraciones se aplican de una en una y por versión explícita**: `supabase db push` a secas despliega también lo pendiente de otros workstreams. | `E3a` pasó `PASS` de Codex, se mergeó, y su columna **nunca llegó a la base**. Las tres verificaciones —ejecutor, PM y Codex— se hicieron contra el entorno local de `E-infra-impl`, donde `supabase db reset` sí la aplica. Nadie había escrito que aplicar a la base desplegada fuera un paso, así que nadie lo comprobó, y `E3b` salió a producción devolviendo `400`. La auditoría del 2026-08-12 encontró además **3** migraciones sin aplicar, 2 de ellas de otro workstream. | `ESCAPED DEFECT` de `E3b`, medido en el bootstrap de `E4-spike` |
 
 ---
 
@@ -319,7 +341,23 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **✅ DONE — 2026-08-09, `phase/E3b-pages@b89fe93`, `CODEX REVIEW E3b SECOND RE-REVIEW FINAL: PASS`** | E3a ✅, E-infra-impl ✅ |
-| E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
+| E3c-fix | **Desplegar el esquema de `E3a` a la base real** y devolver `/reflexiones` a verde | Infra + DB | **CONTRATO CANDIDATO — r1 sin despachar** (revisión 24) | E3a ✅, E3b ✅ |
+| E4-spike | Previsualización: prototipo desplegado | Spike | **🔴 BLOQUEADA** — método refutado y precondiciones incumplidas (revisión 24) | E3c-fix, **+ un episodio publicado** |
+
+**`E3c-fix` nace en la r24 y no es una fase más: es la reparación de un defecto vivo en producción.**
+`E3b` está mergeada y desplegada, pide `slug`, y la columna no existe en la base. La fase existe
+porque Brent eligió arreglarlo en una unidad propia con su propia review, en vez de colgarlo del
+spike. **Es la única fase despachable de la ola 2 ahora mismo.**
+
+**`E4-spike` está bloqueada por dos cosas distintas, y conviene no confundirlas:**
+
+1. **Precondición de datos** — necesita un episodio publicado con slug en una base real.
+   `E3c-fix` pone la columna y el trigger; **no siembra episodios** (Brent lo dejó fuera
+   explícitamente). Así que después de `E3c-fix` seguirá faltando el episodio, y **eso se decide
+   aparte**: contenido real o fila sintética. Hasta entonces el spike no puede empezar.
+2. **Método** — el `E4s.5` original era incomprobable. D25 lo sustituye por el proyecto Vercel
+   desechable. El bloque de la fase ya está reescrito con eso, pero **sigue siendo borrador**: se
+   redacta como contrato cuando la precondición 1 esté resuelta.
 
 **`E-infra` se partió en la r14.** No fue una decisión nueva: Codex r10/S3 la había condicionado
 —*"E-infra es honesta sólo mientras siga en borrador; al retomarse se parte en dos"*— y el cuerpo
@@ -1360,6 +1398,167 @@ arranque —que ya contendrá `6054d55`— y anota su SHA exacto.
 
 ---
 
+## Phase E3c-fix — Desplegar el esquema de `E3a` a la base real
+
+**RIESGO: `HIGH`.** Cambio de esquema sobre la base de producción, que además es **compartida con
+Life OS**. No hay lectura de esta fase en la que sea `STANDARD`.
+
+**Por qué existe.** `E3b` está en `origin/main` y desplegada. La página pide `slug`. La columna no
+existe en la base. Medido el 2026-08-12 contra la API pública real:
+
+```
+$ curl "https://mulsqxfhxxdsadxsljss.supabase.co/rest/v1/church_podcast_episodes\
+?select=id,slug,title,description,speaker,cover_url,published_at,episode_date,duration_seconds,audio_url\
+&status=eq.published&limit=3"
+{"code":"42703","message":"column church_podcast_episodes.slug does not exist"}
+HTTP=400
+```
+
+Evidencia completa: `evidence/E3c-fix-drift.md`.
+
+### Base y rama
+
+- **SHA padre fijado: `db8ed2ead6b66708122491aef66a5ee38ae6b8bd`** (`main` = `origin/main` el
+  2026-08-12). Nunca `git merge-base HEAD main`.
+- **Rama: `phase/E3c-fix`** (13 chars, dentro del límite de 20 por DNS de Vercel).
+- **Proyecto Supabase: `mulsqxfhxxdsadxsljss`** — el de `supabase/config.toml:1`, el compartido con
+  Life OS.
+
+### Scope
+
+1. Aplicar **una sola** migración a la base desplegada: `20260808120000_church_podcast_episodes_slug.sql`,
+   tal como está en `db8ed2e`. **No se reescribe el fichero.**
+2. Reconciliar `supabase_migrations.schema_migrations` para que la versión registrada sea
+   exactamente `20260808120000`, sin filas duplicadas ni versiones inventadas.
+3. Verificar sobre la base real: columna, los dos `CHECK`, el índice único, las dos funciones y el
+   trigger.
+4. Verificar que `/reflexiones` y `/reflexiones/<slug>` vuelven a `200` con cuerpo válido en
+   producción.
+5. Escribir `evidence/E3c-fix.md` con toda la salida cruda.
+
+### Out of scope — y cada exclusión tiene su razón
+
+- **Las otras dos migraciones pendientes.** `20260612000000_casa_whatsapp_scheduling.sql` y
+  `20260612000001_casa_wa_reminders_cron.sql` **no son de AUDIO**. Desplegarlas es la decisión de
+  release de otro workstream. El overlay §5 lo dice literalmente: enrutar a una fase acotada
+  *"rather than expanding an unrelated feature's scope"*.
+- **Sembrar episodios.** Brent lo dejó fuera de esta fase el 2026-08-12. Se decide aparte.
+- **Tocar `index.html`, `vercel.json`, meta tags, canonical o el `404`.** Todo eso es `E4`.
+- **Arreglar la base de diagnósticos preexistentes** (non-goal permanente del plan).
+- **Cualquier `DROP`, `TRUNCATE` o `ALTER` destructivo** (D9 y regla dura del repo).
+- **Las 11 tablas de Life OS.** Ni leerlas hace falta.
+
+### La trampa, dicha antes de que nadie la pise
+
+**`supabase db push` aplica TODAS las pendientes en orden.** Ejecutarlo a secas desplegaría las dos
+migraciones de WhatsApp. **Está prohibido en esta fase.**
+
+Y la migración de `E3a` **no es idempotente en dos puntos**: los `ADD CONSTRAINT` de las líneas 39
+y 146 no llevan guard, así que **aplicarla dos veces falla con `42710 duplicate_object`**. De ahí
+que el criterio no sea "la SQL corrió" sino "corrió *y* la fila de versión quedó reconciliada".
+
+Herramientas reales del host, medidas: `psql` **ausente** (`command -v psql` vacío) · `supabase`
+CLI `2.110.0` · `node` `v22.22.0`. El MCP `supabase-casa` (`apply_migration`, `execute_sql`) sí está
+disponible. **El ejecutor elige el mecanismo y lo justifica con salida cruda**; lo que se le fija es
+el estado final, no la herramienta.
+
+### Criterios de aceptación — comprobables por un tercero
+
+- [ ] **E3c.1** `20260808120000` aparece en `supabase_migrations.schema_migrations`, **exactamente una
+      vez**, y no se ha registrado ninguna otra versión nueva.
+      `select version from supabase_migrations.schema_migrations where version >= '20260806000000'`
+      → exactamente `20260806000000` y `20260808120000`.
+- [ ] **E3c.2** La columna existe: `church_podcast_episodes` pasa de **18 a 19 columnas**, la nueva
+      es `slug text`.
+- [ ] **E3c.3** Existen los dos `CHECK` (`podcast_episode_slug_length`,
+      `podcast_episode_published_has_slug`), el índice único `idx_podcast_episodes_slug`, las dos
+      funciones (`church_podcast_episode_slug_body`, `assign_podcast_episode_slug`) y el trigger
+      `trg_podcast_episodes_slug`. Consultado a `pg_constraint` / `pg_indexes` / `pg_trigger`, no
+      inferido de que la migración "corrió sin error".
+- [ ] **E3c.4** La consulta exacta de la página devuelve **`HTTP 200`** contra la API pública, con
+      la lista completa de `CAMPOS_EPISODIO` incluyendo `slug`. Es el mismo `curl` de arriba: pasa de
+      `400` a `200`. **Cuerpo esperado `[]`** — la tabla sigue vacía, y eso es correcto, no un fallo.
+- [ ] **E3c.5** `https://www.anglicanasanandres.cl/reflexiones` responde `200` y **el estado que
+      pinta es el vacío, no el de error**. Verificado sobre el DOM renderizado, no sólo por el
+      código HTTP: el shell SPA devuelve `200` aunque la consulta falle, así que el código de estado
+      **no** distingue los dos casos. Ésta es la única aserción de la fase que un `curl` no cierra.
+- [ ] **E3c.6** El trigger **funciona en la base real**, demostrado con una prueba falsable: insertar
+      un episodio en `draft`, publicarlo, comprobar que recibe slug solo; intentar cambiarlo y
+      comprobar que la base lo rechaza con `23514` (D12); **y borrar la fila de prueba al terminar**,
+      dejando la tabla en cero filas. Si no se puede dejar limpia, no se hace y se reporta.
+- [ ] **E3c.7** `supabase db push --dry-run` (o equivalente que no aplique nada) muestra como
+      pendientes **exactamente** `20260612000000` y `20260612000001`, y **no** `20260808120000`.
+      Es la prueba de que la reconciliación de E3c.1 quedó bien y de que no se desplegó nada ajeno.
+- [ ] **E3c.8** **Ninguna tabla de Life OS tocada.** Declarado y verificable en la evidencia: la
+      fase no emite DDL fuera de `church_podcast_episodes` y sus objetos.
+- [ ] **E3c.9** `evidence/E3c-fix.md` con toda la salida cruda, el mecanismo elegido y su
+      justificación, y el estado antes/después de cada aserción.
+
+### Gates del repo (D18)
+
+La fase **puede** no tener diff de código fuente. Si `F` (ficheros fuente modificados) es vacío:
+
+- El gate por ficheros de D18 **no aplica** — no hay ficheros que comparar. Se dice explícitamente
+  en la evidencia en vez de reportar un gate que no se corrió.
+- **`npm run build` sigue siendo obligatorio** (verde absoluto, no delta).
+- **`npx vitest run --no-file-parallelism`** obligatorio: `E3a`/`E3b` tienen 112 tests que codifican
+  el contrato del slug, y son la red que detecta si la migración aplicada no coincide con lo que el
+  código espera. Cero fallos nuevos respecto de `db8ed2e`.
+- Registrar `node --version` y `supabase --version`.
+
+Si el ejecutor concluye que **sí** hace falta tocar código fuente, **para y lo reporta antes de
+escribirlo**: sería una desviación del contrato, no una decisión suya.
+
+### Test plan
+
+No hay test automatizado nuevo. **La verificación es la base real y la producción real**, y por eso
+cada criterio nombra la consulta o el `curl` que lo cierra. La única prueba de comportamiento es
+E3c.6, y es falsable por construcción: si el trigger no está, no asigna slug; si D12 no está, el
+`UPDATE` pasa en vez de dar `23514`.
+
+**Honestidad de tests (D18):** E3c.6 es el sustituto de mutación de esta fase. La aserción que no
+puede fallar sería "la migración corrió sin error" — se rechaza explícitamente como criterio.
+
+### Definition of done
+
+`evidence/E3c-fix.md` completo, los nueve criterios cerrados con salida cruda, gates verdes, y
+`/reflexiones` sirviendo su estado vacío en producción. Después, review independiente de Codex sobre
+el diff acumulado más la evidencia.
+
+### Rollback
+
+**Consciente de que el rollback es peor que el problema.** Revertir la columna exige `DROP`, que las
+reglas duras del repo prohíben (D9). Así que:
+
+- **No hay rollback de esquema.** La migración es aditiva y ya está revisada y aprobada por Codex en
+  `E3a`; el riesgo de aplicarla es menor que el de dejar la página en `400`.
+- Si la aplicación falla a mitad, el estado se reporta tal cual y **no se improvisa una limpieza**.
+  La migración no está envuelta en transacción explícita, así que un fallo parcial es posible: los
+  criterios E3c.2/E3c.3 existen justamente para detectarlo objeto por objeto.
+- Si el registro de versión queda mal, se corrige el registro — nunca borrando objetos de esquema.
+- La fila de prueba de E3c.6 se borra por `id`. Es el único `DELETE` autorizado en la fase, y sólo
+  sobre una fila que la propia fase creó.
+
+### Riesgos e incógnitas declaradas
+
+| Riesgo | Cómo se acota |
+|---|---|
+| El mecanismo elegido registra una versión con timestamp propio ≠ `20260808120000` | E3c.1 y E3c.7 lo detectan; la reconciliación es criterio, no efecto secundario |
+| Fallo parcial sin transacción | E3c.2/E3c.3 verifican objeto por objeto, no "corrió sin error" |
+| Un `db push` accidental despliega las dos de WhatsApp | Prohibido por contrato; E3c.7 lo comprueba a posteriori |
+| Otra sesión concurrente aplica migraciones | Volver a leer `schema_migrations` justo antes y justo después; anotar las dos lecturas |
+| `E3c.5` depende de render, no de HTTP | Declarado en el propio criterio; es la única aserción que necesita navegador |
+
+**Punto ciego que esta fase NO cierra:** que `/reflexiones` sirva su estado vacío **no** demuestra
+que sirva bien un episodio. Eso necesita un episodio, y sembrarlo está fuera de alcance. La fase
+entrega "la página no está rota", no "la página funciona con contenido".
+
+### Depende de
+
+`E3a` ✅ y `E3b` ✅, las dos en `origin/main`. Nada más.
+
+---
+
 # 📝 Borrador — E4-spike (NO congelado)
 
 **No es contrato.** Codex r9 demostró que E3a y E3b escondían la unidad de infraestructura que
@@ -1379,39 +1578,97 @@ en vez de declarar el límite del offset.
 
 ## Phase E4-spike — Previsualización: prototipo desplegado
 
-**Precondición declarada (Codex r8/S4):** necesita **credenciales de despliegue en Vercel** y
-cuentas reales de WhatsApp y Facebook para comprobar el preview. Si no están disponibles, la
-unidad reporta `BLOCKED` — no entrega una matriz teórica.
+> ## 🔴 BLOQUEADA en la revisión 24 (2026-08-12) — no despachar
+>
+> La pasada de falsificación del bootstrap refutó **tres** claims de este bloque. Salida cruda en
+> `evidence/E4-spike-preview-blocked.md` y `evidence/E3c-fix-drift.md`.
+>
+> | Claim del borrador | Resultado | Qué se midió |
+> |---|---|---|
+> | «se comprueba en un preview de Vercel con WhatsApp y Facebook» | **REFUTADA** | el preview da `302` a `vercel.com/sso-api`, también con `facebookexternalhit` |
+> | «depende de E3b, que ya está» | **REFUTADA en el entorno real** | la columna `slug` no existe en la base desplegada; `/reflexiones` da `400` |
+> | «hay una URL de episodio que previsualizar» | **REFUTADA** | `church_podcast_episodes` tiene **cero filas** |
+> | «faltan credenciales de Vercel» (precondición de Codex r8/S4) | **SOPORTADA — y satisfecha** | `vercel whoami` → `brentcurtis76`; proyecto `casa-web` existe |
+>
+> **Las dos precondiciones que faltan para poder redactar esto como contrato:**
+> 1. `E3c-fix` cerrada — el esquema desplegado.
+> 2. **Un episodio publicado con slug en una base real.** Sembrarlo está fuera del alcance de
+>    `E3c-fix` por decisión de Brent, así que es una decisión pendiente: contenido real o fila
+>    sintética. **Sin esto el spike no puede empezar**, y no vale inventarlo.
+>
+> Lo que sigue ya está corregido con lo medido, pero **sigue siendo borrador**: se convierte en
+> contrato cuando las dos precondiciones estén resueltas.
 
-**El problema, medido:** `vercel.json` tiene un solo rewrite `/(.*)` → `/index.html`; hoy todas
-las rutas reciben el mismo HTML con las 12 líneas genéricas de `index.html`.
+**Precondición de credenciales (Codex r8/S4) — verificada, ya no es incógnita:** `vercel whoami` →
+`brentcurtis76`; proyecto `casa-web` = `prj_QkXgT1iWKGf9KjMx4FubidffUQ2F`, preset Vite, Node 22.x.
+Lo que falta no son credenciales.
 
-**Arquitectura base heredada de A10a:** shell HTML enriquecido **para todos**, sin branching por
-user-agent. Cualquier alternativa se justifica contra ella.
+**El problema, medido el 2026-08-12 en producción:** `vercel.json` en `db8ed2e` tiene un solo rewrite
+`"/(.*)"` → `"/index.html"`, y **no existe directorio `api/`** en `main`. Toda ruta recibe el mismo
+HTML genérico:
 
-**Scope:** un **prototipo desplegado en preview de Vercel** (rama desechable, no se mergea) y
-`evidence/E4-spike.md`.
+```
+$ curl -L https://www.anglicanasanandres.cl/reflexiones/slug-que-no-existe-xyz | grep -E 'og:|canonical|<title>'
+    <title>CASA - Comunidad Anglicana San Andrés</title>
+    <meta property="og:title" content="CASA - Comunidad Anglicana San Andrés" />
+    <meta property="og:url" content="https://anglicanasanandres.cl" />
+    <link rel="canonical" href="https://anglicanasanandres.cl" />
+$ curl -o /dev/null -w '%{http_code}' ...   → 200   (no 404)
+```
+
+**Arquitectura base a batir (viene de A10a, y aquí va escrita en vez de referenciada):** **servir un
+shell HTML enriquecido a todos los clientes, sin ramificar por user-agent.** Evita cloaking y el
+branching frágil que lo acompaña. Cualquier alternativa que el spike proponga se justifica contra
+ella, con su razón y su costo. **A10a.1 sigue sin medir:** que este proyecto Vite admita funciones
+serverless es una incógnita —no hay `api/`—, y el spike lo determina **desplegando una**, no
+razonando.
+
+**Scope (corregido por D25):** un **prototipo desplegado en un proyecto Vercel desechable con la
+protección desactivada** —no en un preview de `casa-web`, que los crawlers no pueden leer— y
+`evidence/E4-spike.md`. Rama desechable, no se mergea. El proyecto desechable se borra al cerrar la
+unidad.
 
 **Acceptance criteria:**
-- [ ] E4s.1 Prototipo desplegado y accesible en una URL de preview.
+- [ ] E4s.1 Prototipo desplegado y accesible **sin credenciales** en una URL pública. Se demuestra
+      con `curl` sin cookies devolviendo `200`, **no** `302` a `vercel.com/sso-api`.
 - [ ] E4s.2 Un crawler recibe metadatos **por episodio** — título, portada, predicador,
       canonical — verificado con `curl`, no con el navegador.
 - [ ] E4s.3 **La SPA arranca correctamente sobre el HTML enriquecido.**
-- [ ] E4s.4 Las 12 etiquetas genéricas de `index.html` quedan **reemplazadas, no duplicadas**.
-- [ ] E4s.5 Comprobado sobre la URL desplegada con **WhatsApp y Facebook**, con evidencia.
+- [ ] E4s.4 **Las 15 etiquetas genéricas** de `index.html` quedan **reemplazadas, no duplicadas**.
+      *Corregido en la r24: eran 12 (6 `og:` + 5 `twitter:` + 1 JSON-LD), pero `<title>` (`:7`),
+      `description` (`:8`) y `canonical` (`:28`) también son genéricas y E4s.2 exige título y
+      canonical por episodio. El recuento viejo dejaba fuera justo las que el criterio pide.*
+- [ ] E4s.4b **`og:url` y `canonical` emiten el origen de D19** (`https://www.anglicanasanandres.cl`).
+      *Nuevo en la r24:* hoy `index.html` emite el **apex** en `:17` y `:28`, y la r2 midió que el
+      apex responde `307 → www`. El HTML estático contradice a D19 y a `CANONICAL_ORIGIN`
+      (`publishService.ts:20`), que el código de `E3a`/`E3b` ya respeta.
+- [ ] E4s.5 Comprobado sobre la URL pública con **WhatsApp y Facebook**, con evidencia.
 - [ ] E4s.6 `og:audio` sólo se declara obligatorio **si E4s.5 demuestra que algún canal lo usa**.
 - [ ] E4s.7 **Resuelve el HTTP 404** que E3b dejó fuera: cómo `/reflexiones/<slug-inexistente>`
-      devuelve 404 real bajo la técnica elegida.
-- [ ] E4s.8 Bloque de plan para E4-impl: superficie, ficheros, arquitectura de servido, 404 y
-      tests automatizados — los cinco huecos que Codex r8/B1 nombró.
+      devuelve 404 real bajo la técnica elegida. *Medido en la r24: hoy devuelve `200`.*
+- [ ] E4s.8 Bloque de plan para E4-impl, cubriendo los cinco huecos que Codex r8/B1 nombró y que
+      aquí van enumerados en vez de referenciados: **(1)** superficie de rutas afectadas,
+      **(2)** ficheros a crear o tocar, **(3)** arquitectura de servido elegida y la descartada con
+      su razón, **(4)** cómo se produce el `404` real, **(5)** qué tests automatizados la cubren en
+      `E4-impl` — que este spike no tenga tests no exime a la implementación de tenerlos.
+- [ ] E4s.9 **Medido a qué base de datos habla el despliegue del prototipo.** *Nuevo en la r24:*
+      punto ciego declarado — no pude leer las variables de entorno (`vercel env ls` exige enlazar
+      el repo y escribir `.vercel/`, que no es un artefacto de planificación). Por
+      `src/integrations/supabase/client.ts:5-6` la hipótesis es que cae al proyecto de producción
+      hardcodeado. **Se mide, no se hereda.**
+- [ ] E4s.10 **El proyecto Vercel desechable queda borrado** al cerrar la unidad, o el ledger dice
+      por qué sigue vivo.
 
 **Test plan:** ninguno automatizado. La verificación es el prototipo desplegado y la evidencia
 cruda de E4s.2 y E4s.5.
 
-**Definition of done:** `evidence/E4-spike.md` con la URL de preview, salidas crudas y el bloque
+**Definition of done:** `evidence/E4-spike.md` con la URL pública, salidas crudas y el bloque
 de plan. **El prototipo no se mergea**, así que no pasa por el gate.
 
-**Depende de:** E3b — sin ruta y sin slug no hay URL de episodio que previsualizar.
+**Depende de:** `E3c-fix` (esquema desplegado) **y de un episodio publicado con slug en una base
+real**. La razón original —*"sin ruta y sin slug no hay URL de episodio que previsualizar"*— era
+correcta; lo que falló fue dar por satisfecha la dependencia porque `E3b` estaba en `main`. **Estaba
+en `main` y no en la base.**
 # ⛔ Unidades `A*` — RETIRADAS en la revisión 7
 
 **Nada de lo que sigue está vigente.** Son los cuerpos de las 12 unidades del plan de
@@ -2166,6 +2423,9 @@ Riesgos vigentes de las unidades actuales:
 | E1-spike no consigue los dispositivos de la matriz | media | medio | Celdas como **no medidas**, nunca inferidas; Brent decide si E1-impl arranca con cobertura parcial |
 | Liturgias antiguas con `SlideGroup` de forma distinta | media | bajo | E2.4 y E2.6: degrada a Gemini con aviso, sin romper la publicación |
 | E4-spike concluye que el preview obliga a cambiar el modelo de despliegue | media | alto | El spike lo determina desplegando, no razonando; el costo se declara en su bloque |
+| **Una fase pasa Codex, se mergea, y su esquema no llega a la base desplegada** | **ocurrida — `E3b`, 2026-08-09 → detectada 2026-08-12** | **alto: página pública en `400` tres días** | **D26**: verificación obligatoria contra la base desplegada en toda fase de esquema. `E3c-fix` repara ésta |
+| Un `supabase db push` despliega migraciones de otro workstream | media | alto | Medido: hay **2** migraciones de WhatsApp pendientes. D26 obliga a aplicar por versión explícita; `E3c.7` lo comprueba a posteriori |
+| El spike se queda sin episodio que previsualizar | **alta — es el estado actual** | medio: bloquea E4 entero | La tabla está vacía en producción. Precondición explícita de `E4-spike`, y una decisión pendiente de Brent: contenido real o fila sintética |
 | **El PM vuelve a escribir "verificado" sobre una inferencia** | **ha ocurrido tres veces** | alto | Registro explícito en §5; toda afirmación de estado lleva el comando que la produjo |
 
 ---
