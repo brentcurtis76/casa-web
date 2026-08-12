@@ -245,3 +245,149 @@ volvió a quedar limpio.
   `Deno.inspect`, permanece **0/0/0/0**.
 - `npm run build`: exit **0**.
 - Estado final antes de anexar esta revisión: worktree limpio.
+
+---
+
+## CODEX REVIEW — P5c (round 4, cumulative)
+
+STATE CHECKS: `1 · 1 · 0 · 1 · 0`
+
+- `git log --oneline | grep -c 6b98e74` → **1**.
+- `git log --oneline | grep -c 7fb483b` → **1**.
+- `grep -c 'round 4' docs/plan/upgrade/reviews/REVIEW-P5c.md` → **0**.
+- `grep -c 'invitado de producción' src/components/mesa-abierta/__tests/MesaAbiertaSignup.mainDish.test.tsx` → **1**.
+- `grep -c 'deepRender' supabase/functions/create-mesa-matches/handler_test.ts` → **0**.
+
+VERDICT: FINDINGS
+
+BLOCKING:
+
+- Ninguno en el diff de código de r3/r4. Las guardas añadidas son tests, están dentro de
+  los cuatro ficheros de `F` y detectan las mutaciones alcanzables que dicen detectar.
+  El veredicto es `FINDINGS`, no otro `FAIL`: la premisa de producción y el contrato de
+  alcance/aritmética necesitan una decisión del PM antes de escribir una quinta
+  corrección serial.
+
+SHOULD-FIX:
+
+- Ninguno. No corresponde prescribir aquí un parche (a), aceptar deuda (c) ni inventar
+  una fase dueña (b): el PM debe decidir primero cuál de los dos contratos descritos en
+  «NOTES ON THE PLAN ITSELF» es el deseado.
+
+NITS:
+
+- Ninguno.
+
+RULING ON r4's LEGITIMACY: **Debió ser `FINDINGS` antes de cambiar código.** r4 sí cambia
+la hipótesis —de «añadir el siguiente recorrido que se nos ocurrió» a enumerar entradas—
+y sus dos ajustes de test son técnicamente útiles. Pero el ejecutor ya había constatado
+que el contrato `+2` no describía las pruebas necesarias y que una premisa de producción
+(`preferredRole` ausente) era falsa. El overlay deja al PM como dueño del contrato y
+define `FINDINGS` precisamente para un contrato equivocado. r3, además, fue código
+después de dos fallos consecutivos de la misma categoría sin cambio de hipótesis ni
+split, en contradicción directa con §5. r4 repara la dirección técnica, no legitima de
+forma retroactiva el crecimiento no autorizado de `+2` a `+4`.
+
+RULING ON THE GRID: **La factorización sirve para la guarda estrecha B-18, pero la grilla
+publicada no es un modelo correcto de producción y omite la semántica de montaje.**
+
+El caller activo es `src/components/mesa-abierta/MesaAbiertaSection.tsx`, importado por
+`src/pages/Index.tsx`. Allí:
+
+1. `signupRole` nace como `guest` (`MesaAbiertaSection.tsx:53`).
+2. El único CTA activo invoca `handleSignUp('guest')` (`:523`); no existe ninguna llamada
+   a `handleSignUp('host')` en ese fichero. Por tanto las celdas 5–6 con
+   `preferredRole="host"` **no son hoy producción**, igual que 3–4 con prop ausente.
+3. El wizard se monta cuando existe `nextMonth`, no cuando `open` pasa a `true`
+   (`:725-731`). Queda montado cerrado con prop `guest`.
+4. `MesaAbiertaSignup` copia la prop una sola vez en `useState` (`:35`) y no tiene efecto
+   de sincronización. `open: false → true` no remonta el wizard ni reaplica la prop.
+
+Lo confirmé con una prueba temporal de lifecycle: montar cerrado con
+`preferredRole="guest"`, hacer `rerender` abierto con `preferredRole="host"` y exigir el
+radio de anfitrión. Falló: `aria-checked` siguió en `false` (**1 failed / 7 skipped**). La
+prueba temporal fue retirada y el fichero quedó idéntico al commit.
+
+Corregida la alcanzabilidad, las cuatro celdas actuales sí están cubiertas: invitado
+`preferredRole="guest"`, ambas polaridades, y cambio invitado→anfitrión en paso 1, ambas
+polaridades. Así, B-18 está guardada para la UI que hoy existe. Cambiar después el rol de
+vuelta y navegar hacia atrás no añaden una costura necesaria al criterio H2: el estado
+del opt-out es deliberadamente independiente del rol y permanece en el mismo montaje.
+Pueden ser tests de interacción futuros, pero no justifican ampliar otra vez P5c.
+
+Conservar los tests de celdas inalcanzables es aceptable como contrato unitario barato
+del componente; **no** es aceptable contarlos como evidencia de recorridos de usuario.
+En particular, el test de anfitrión con `preferredRole="host"` protege una API posible,
+no un CTA presente en `MesaAbiertaSection.tsx`.
+
+NOTES ON THE PLAN ITSELF:
+
+- La deriva `Vitest +2 → +4` no es aceptable como deriva silenciosa. Si el PM conserva
+  r3/r4, debe enmendar H5 y la aritmética global `1072 → 1074`, y describir las cuatro
+  celdas realmente alcanzables sin llamar producción a `preferredRole="host"`.
+- Si la intención del producto es que un CTA pueda cambiar `signupRole` a `host` antes
+  de abrir, el contrato actual es insuficiente: hay que ensanchar `F` para incluir
+  `MesaAbiertaSection.tsx` y una prueba del lifecycle caller→wizard, y decidir si la prop
+  debe sincronizar estado o si el wizard debe remontarse. Eso es una enmienda/split, no
+  una quinta edición del test aislado.
+- Si esa entrada directa de anfitrión no forma parte del producto, el PM puede cerrar el
+  descubrimiento declarando inalcanzables también 5–6. En ese contrato, los tests r4 de
+  invitado y r3 de cambio en paso 1 bastan para la superficie actual; el test de prop
+  host queda sólo como regresión unitaria.
+- Las tres notas de plan de r1 siguen en sus dueños ya aceptados y no se reabren aquí.
+
+## EVIDENCIA DE LA RONDA 4
+
+### Estado, alcance y toolchain
+
+- Branch `feat/mesa-md-guards`, padre `d5b16e8`, commits r3 `6b98e74` y r4 `7fb483b`
+  presentes. `fee5203..<tip>` es docs-only; no hay producción sobre el último commit de
+  contenido.
+- r3/r4 no modifican producción. El acumulado sigue limitado a los cuatro ficheros de
+  `F`; `handler.ts` conserva como único cambio no-test el comentario ya revisado.
+- Node **v22.22.0** y `/opt/homebrew/bin/deno` **2.7.11**.
+- Antes de anexar esta revisión, `git status --short` quedó vacío.
+
+### Diez mutaciones
+
+Cada mutación se aplicó de una en una y se revirtió con el árbol limpio:
+
+1. **R4a**, ocultar el switch al invitado de producción: **6 passed / 1 failed**; cayó
+   únicamente `el invitado de producción...`.
+2. **R4b**, forzar exclusión al invitado de producción en el payload: **6/1**; cayó
+   únicamente el nuevo test en la polaridad sin tocar.
+3. **H1**, responder `tablesWithShortfall: []`: **14/1**; cayó sólo el déficit real.
+4. **H2**, mostrar el switch sólo a `rolePreference === 'guest'`: **5/2**; cayeron los
+   dos recorridos de anfitrión.
+5. **H3**, quitar `can_bring_main_dish` del `select`: **0/1**; el diálogo recibió el
+   switch apagado en vez de encendido.
+6. **B1a**, añadir `participants[0]` como segundo argumento del warning: **0/1**; aridad
+   actual 2, esperada 1.
+7. **B1b**, concatenar el participante serializado al warning: **0/1**; cayó el golden
+   exacto y la salida mostró nombre, correo y teléfono sintéticos.
+8. **S1**, forzar a todo anfitrión a excluirse: **5/2**; cayeron las polaridades sin
+   tocar de ambos recorridos host.
+9. **R3a**, visibilidad por
+   `preferredRole === 'host' || rolePreference === 'guest'`: **6/1**; cayó sólo el
+   anfitrión elegido desde la entrada guest.
+10. **R3b**, forzar la celda prop ausente + host: **7/7 verdes**. Se **elimina como
+    mutación exigible**: no afecta a ningún caller de producción y su supervivencia no
+    demuestra un defecto de B-18. La afirmación del prompt de que aún caía por P5a no se
+    reprodujo después de que el helper r3 pasara a prop guest explícita.
+
+### Gates reproducidos
+
+- Suites P5c aisladas: **8/8** (Signup 7, Admin 1).
+- Vitest serial exacto (`npx vitest run --no-file-parallelism`): punta
+  **1097 passed / 6 failed** (1103), 212.97 s; padre `d5b16e8`
+  **1093 / 6** (1099), 213.10 s. Los seis rojos son en ambos los mismos de
+  `MesaAbiertaDashboard.test.tsx`; delta P5c **+4**.
+- Deno: punta **457/0**; padre **456/0**; delta **+1**.
+- D8 punta/padre: los mismos cinco diagnósticos con desplazamiento +3 en
+  `handler.ts`; totales idénticos
+  `tsc=1039 eslint=161 deno-lint=92 deno-check=43`. Los tres ficheros de test quedan
+  `0/0/0/0`.
+- `npm run build`: exit **0**. Los avisos de Browserslist, clase Tailwind ambigua y
+  tamaño de chunks son preexistentes.
+- `npm run lint` y Playwright permanecen descargados por la revisión r1, como autoriza
+  el prompt r4; no se repitieron.
