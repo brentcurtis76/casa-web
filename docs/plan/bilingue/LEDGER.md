@@ -1177,8 +1177,9 @@ D-N blind spot, recorded as one.
 
   The single grep hit is the quoted text of an explicitly retracted claim, which the contract allows.
   Gate set is the document-only set defined at D1a bootstrap ([S4]): `lint`/`test`/`build`/Playwright
-  stay excluded on a zero-line source diff, and `SOP-PILOT.md` records the CASA base as red today
-  (118 lint errors, 15 failing tests at `d5b16e8`) — repository debt, not this diff.
+  stay excluded on a zero-line source diff. The CASA base is red today (118 lint errors, 15 failing
+  tests at `d5b16e8`), recorded in `SOP-PILOT.md` as of `98f4e51` — which after the [B5] remediation
+  lives on `pilot/lean-v2`, not on this branch. Repository debt, not this diff.
 - **BRANCH CAPABILITY VERIFIED BY CONSTRUCTION**, because branch 2 never fires against the live tree.
   Complete harness, then its unedited output (D-M — no prose stands in for either):
 
@@ -1225,23 +1226,105 @@ D-N blind spot, recorded as one.
 
   The `sha256` pins which text was sourced, so the run cannot be confused with one against an edited
   copy of the function.
-- **A7 / D1a.8 NOT MET, AND NOT CAUSED BY THIS ROUND.** `git diff --name-only pilot/sop-v2...HEAD`
-  also lists `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`. `git log` attributes both
-  to `98f4e51 docs(plan): activate lean workflow v2`, committed onto this phase branch before r4
-  began. They are workflow-process documents — no source, schema, configuration or database change —
-  so the substance of **D-A** holds. The executor did not rewrite another owner's commit. Reviewer to
-  rule on whether A7 is satisfied by the branch as constituted, or whether `98f4e51` belongs
-  elsewhere.
+- **A7 / D1a.8 — initially NOT MET; resolved in the same round, see the remediation entry below.**
+  The first submission's `git diff --name-only pilot/sop-v2...HEAD` also listed
+  `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`, both from
+  `98f4e51 docs(plan): activate lean workflow v2`, committed onto this phase branch before r4 began.
+  The executor declined to rewrite another owner's commit unilaterally and referred it to the
+  reviewer. Codex ruled it BLOCKING [B5].
 - OPEN / DEFERRED:
   - `PLAN_SHA` in all five artifacts still points at `c842161` (freeze), not `f2be4f2` (amendment).
-    Updating it would touch `SURFACE-SCHEMA.md` and `wordlist-passB.txt`, both out of scope this
-    round, and rehash artifacts Codex already passed. Flagged, not changed.
+    Raised by Codex as [S1] and **deferred by Brent 2026-08-12** — see the backlog entry below.
   - D1b must derive the *excluded* path list itself; `census.sh` records ambiguous keeps only, per
     the round's scope. The standalone stage-two command in `CENSUS-METHOD.md` produces it.
   - **Weakest point, named before the reviewer names it:** the ambiguity record lives on stderr. It
     keeps the reviewed stdout byte-identical, but `census.sh 2>/dev/null` — what this round's own
     test command runs — silently discards it. Two documents require D1b to capture it; nothing
     mechanically enforces it. A `D1b-verify.sh` assertion would close that, and belongs to D1b.
+    *(Codex agreed in its NOTES: durable capture is enforceable in D1b's verifier.)*
 - REVIEW REQUEST: `docs/plan/bilingue/reviews/D1a-r4-review-request.md`
-- CODEX: pending.
+- CODEX: **FAIL(5)** — `reviews/D1a-r4-codex-review.md`. Remediated in the same conversation, below.
 - ESCAPED DEFECT: n/a — not yet passed.
+
+### 2026-08-12 — D1a round 4, Codex FAIL remediation — EXECUTOR (same conversation)
+
+- SESSION: `BILINGUE · D1a · r4 · EXEC` — the same durable executor conversation, per lean overlay
+  §4.2: a consolidated blocker list is fixed by the same executor, not a fresh one.
+- STARTED: 2026-08-11T22:05Z · ENDED: 2026-08-12T00:12Z
+- ATTEMPT: still **4 cumulative** — this is the remediation of round 4, not a fifth round.
+- CODEX VERDICT REMEDIATED: FAIL, 5 BLOCKING + 1 SHOULD-FIX + 1 NIT. Full text and executor triage
+  in `reviews/D1a-r4-codex-review.md`. **All five accepted; none disputed.** Codex's own note: *"No
+  re-plan is needed. The amended contract is sound."*
+- FIXES:
+  - **[B1]** `CENSUS-METHOD.md` — the importer probe is now reported as the single specifier shape
+    it searches (`from '…_test'` / `from '…_test.ts'`, two roots, SOURCE_SHA). Named as unseen: the
+    side-effect import `import './helper_test.ts';` Codex supplied, dynamic `import()`, runtime
+    specifiers, re-export chains, `require`, aliased/extensionless specifiers, out-of-root
+    importers. No replacement regex was written — that is the refuted approach (**D-O**).
+  - **[B2]** Two laundered absolutes removed. "No test, spec or mock naming convention beyond the
+    three already excluded occurs…" is replaced by a report of the two searches and their four
+    literal substrings, plus the explicit statement that a convention using none of them would
+    appear in neither search. "No name predicate could have reached it" is corrected: a predicate
+    naming the basename literally *could* have; what the name lacks is a convention to key on.
+  - **[B3]** The fourth stage-one predicate now carries its own named failure case — a production
+    module whose basename legitimately ends in a space plus a decimal digit (`Slide 2.tsx`) is
+    over-excluded, because the predicate reads shape, not provenance.
+  - **[B4]** The placeholder harness (`. <function extracted…>`, `for f in …; do … done`) is
+    replaced by the complete runnable script and its unedited output, in **both** the review request
+    and this ledger, with `harness function sha256:` pinning the exact text sourced from `census.sh`.
+  - **[B5]** Phase ancestry rebuilt, by the first remedy Codex named, with Brent's explicit
+    authorisation for the history rewrite:
+
+    ```text
+    $ /usr/bin/git branch pilot/lean-v2 98f4e51
+    $ /usr/bin/git push origin pilot/lean-v2
+    $ /usr/bin/git rebase --onto f2be4f2 98f4e51 phase/d1a-method
+    Successfully rebased and updated refs/heads/phase/d1a-method.
+    $ /usr/bin/git diff --name-only pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'
+    (exit 1, no output)
+    $ /usr/bin/git branch -a --contains 98f4e51
+      pilot/lean-v2
+      remotes/origin/pilot/lean-v2
+    ```
+
+    `98f4e51` was pushed to its own branch **before** the rebase, so the workflow-activation work is
+    not lost and every citation to that SHA — including the byte-identical census proof — still
+    resolves. Only r4's three commits were replayed; they touch `docs/plan/bilingue/` only, so the
+    replay was conflict-free. Commit SHAs changed: `2f0924f`→`f306895`, `138d002`→`f1c87dd`,
+    `6b9a27d`→`c0f8ee9`.
+  - **[N1]** "two conventions" → "the two test-module conventions this repository uses, across three
+    path shapes".
+- **BACKLOG — [S1] `PLAN_SHA` provenance, deferred by Brent 2026-08-12.** All five artifacts label
+  `c842161` (the freeze) as `PLAN_SHA` although three of them were modified under the `f2be4f2`
+  amendment. Codex classed it SHOULD-FIX and noted the manifest and D1a merge anchor preserve
+  integrity. Deferred because the fix touches `SURFACE-SCHEMA.md` and `wordlist-passB.txt` — both
+  out of scope for r4, both byte-identical to versions Codex has passed, and that byte-identity is
+  itself worth keeping. **D1b.8 anchors integrity to D1a's merge commit, which is where provenance
+  resolves.** Recorded here so it is deferred, not dropped.
+- GATES AFTER REMEDIATION (all re-run against the rebased head):
+
+  ```text
+  $ /usr/bin/git show 98f4e51:docs/plan/bilingue/evidence/census.sh > /tmp/census-r3.sh
+  $ bash /tmp/census-r3.sh > /tmp/cs-r3.txt 2>/dev/null
+  $ bash docs/plan/bilingue/evidence/census.sh > /tmp/cs-r4c.txt 2>/dev/null
+  $ /usr/bin/diff /tmp/cs-r3.txt /tmp/cs-r4c.txt && echo IDENTICAL
+  IDENTICAL
+  $ /usr/bin/grep -rniE "never drop|drops no|every excluded file is a test|no other (test|fixture|spec)" docs/plan/bilingue/evidence/
+  docs/plan/bilingue/evidence//CENSUS-METHOD.md:212:Round 2 of this artifact stated: *"No other test, spec, mock or fixture convention occurs in the
+  $ cd docs/plan/bilingue/evidence && /usr/bin/grep -vE '^#' METHOD-MANIFEST.txt | /usr/bin/shasum -a 256 -c
+  CENSUS-METHOD.md: OK
+  census.sh: OK
+  SURFACE-SCHEMA.md: OK
+  wordlist-passB.txt: OK
+  $ /usr/bin/grep -rnE '^\s*[A-Za-z ]+\s*=\s*[0-9]+|files=|copy=|TOTAL' docs/plan/bilingue/evidence/CENSUS-METHOD.md docs/plan/bilingue/evidence/SURFACE-SCHEMA.md
+  (exit 1, no output)
+  $ bash -n docs/plan/bilingue/evidence/census.sh; echo "bash -n=$?"
+  bash -n=0
+  $ npx tsc --noEmit; echo "tsc=$?"
+  tsc=0
+  ```
+
+  `census.sh` is unchanged by this remediation — its manifest hash is the same as at first
+  submission; only `CENSUS-METHOD.md` was rehashed.
+- HANDOFFS: 2 (Brent pasted the Codex verdict; Brent authorised the history rewrite).
+- CODEX: pending re-review of the cumulative diff.

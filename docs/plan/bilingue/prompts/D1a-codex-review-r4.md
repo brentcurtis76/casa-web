@@ -3,6 +3,11 @@
 > Paste everything below the line into Codex (`gpt-5.6-sol`, `model_reasoning_effort = high`).
 > Run from `/Users/brentcurtis/dev/casa-pilot`, branch `phase/d1a-method`, head `2f0924f`.
 > Phase review (SOP §3.6). Codex has final say on BLOCKING.
+>
+> **HISTORICAL — this prompt produced the FAIL(5) verdict in `reviews/D1a-r4-codex-review.md`.**
+> Its remedy [B5] rebuilt the phase ancestry, so the head it names no longer exists on the branch:
+> `2f0924f`→`f306895`, `138d002`→`f1c87dd`. `98f4e51`, cited in check 5, is preserved on
+> `pilot/lean-v2` and still resolves. The re-review prompt is `D1a-codex-rereview-r4.md`.
 
 ---
 

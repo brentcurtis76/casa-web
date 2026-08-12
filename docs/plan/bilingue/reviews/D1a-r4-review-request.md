@@ -191,27 +191,38 @@ tsc=0
 `LEDGER.md` (D1a bootstrap, `[S4]`): `git diff --stat`, the verify/manifest check, and
 `npx tsc --noEmit`. `npm run lint`, `npm test`, `npm run build` and Playwright are deliberately
 excluded on a **zero-line source diff**, where they re-test the base branch rather than the phase;
-`tsc` is retained precisely because it catches a source file that leaked in. `SOP-PILOT.md` records
-the CASA base as red today (118 lint errors, 15 failing tests at `d5b16e8`) — repository debt routed
-to a stabilization phase, not a result of this diff.
+`tsc` is retained precisely because it catches a source file that leaked in. The CASA base is red
+today — 118 lint errors, 15 failing tests at `d5b16e8` — recorded in `SOP-PILOT.md` as of `98f4e51`,
+which after the A7 remediation below lives on `pilot/lean-v2` rather than on this branch. Repository
+debt routed to a stabilization phase, not a result of this diff.
 
-### Diff confinement (A7) — **not met, and not caused by this round**
+### Diff confinement (A7) — **met, after the r4 review**
+
+The first submission of this round left `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`
+in the phase diff. They arrived in `98f4e51 docs(plan): activate lean workflow v2`, a workflow
+commit made on this branch before r4 began. Codex ruled [B5] that ownership and
+documentation-only content preserve **D-A** but do not satisfy **D1a.8**'s explicit branch
+confinement, and that the phase ancestry had to be rebuilt without it. Brent authorised the history
+rewrite; the commit was preserved before it was moved.
 
 ```text
-$ git diff --name-only pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'
-docs/plan/HANDOFF-PROCESS.md
-docs/plan/SOP-PILOT.md
+$ /usr/bin/git branch pilot/lean-v2 98f4e51
+$ /usr/bin/git push origin pilot/lean-v2
+$ /usr/bin/git rebase --onto f2be4f2 98f4e51 phase/d1a-method
+Successfully rebased and updated refs/heads/phase/d1a-method.
 
-$ git log --oneline pilot/sop-v2..HEAD -- docs/plan/HANDOFF-PROCESS.md docs/plan/SOP-PILOT.md
-98f4e51 docs(plan): activate lean workflow v2
+$ /usr/bin/git diff --name-only pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'
+(exit 1, no output)
+
+$ /usr/bin/git branch -a --contains 98f4e51
+  pilot/lean-v2
+  remotes/origin/pilot/lean-v2
 ```
 
-Both files entered the branch in `98f4e51`, the lean-workflow activation commit, before this round
-began. They are workflow-process documents: no source, schema, configuration or database change, so
-the substance of **D-A** holds. Restricted to this round's own commits, and to D1a's artifacts, the
-criterion holds. The executor did not revert or rewrite another owner's commit; the reviewer should
-rule on whether D1a.8/A7 is satisfied by the branch as constituted or whether `98f4e51` belongs on a
-different branch.
+`98f4e51` is preserved on `pilot/lean-v2`, pushed, so the workflow-activation work is not lost and
+**every citation to that SHA in this file and in `LEDGER.md` still resolves** — including the
+byte-identical census proof, re-run after the rebase and still `IDENTICAL`. Only this round's three
+commits were replayed; they touch `docs/plan/bilingue/` only, so the replay was conflict-free.
 
 ## Known limits of this diff, stated rather than defended
 
@@ -222,9 +233,11 @@ different branch.
    The method now says so; D1b's `D1-exclusions.md` is where a reviewer would catch it. Making the
    method detect it is out of scope by **D-O** — it would be a new untested guarantee.
 3. **`PLAN_SHA` in all five artifacts still points at `c842161`**, the freeze commit, not at
-   `f2be4f2`, the approved amendment. Updating it would touch `SURFACE-SCHEMA.md` and
-   `wordlist-passB.txt`, both explicitly out of scope this round, and would rehash artifacts the
-   reviewer has already passed. Flagged for the reviewer to direct.
+   `f2be4f2`, the approved amendment. Codex raised this as [S1]. **Deferred by Brent's decision on
+   2026-08-12:** updating it would touch `SURFACE-SCHEMA.md` and `wordlist-passB.txt`, both
+   explicitly out of scope this round, and would rehash two artifacts Codex has already passed —
+   whose byte-identity is itself worth keeping. D1b.8 anchors integrity to D1a's merge commit, so
+   provenance resolves there. Recorded as backlog in `LEDGER.md`, not silently dropped.
 4. **D1b must derive the excluded-path list itself.** `census.sh` records ambiguous *keeps* only, per
    the round's scope. The standalone stage-two command already committed in `CENSUS-METHOD.md`
    produces the excluded set, so D1b.13 is reachable without another D1a round.
