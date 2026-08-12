@@ -4065,3 +4065,68 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - OPEN AFTER THIS ROUND: (1) Revisión independiente de Codex sobre el diff acumulado.
   (2) Sigue abierta **B-05** y ahora con una medición más: la regla del padre la dirime
   bien, pero cuesta ~7 minutos de suite por ronda. (3) Después, `/pm-boot UPGRADE P5b`.
+
+### 2026-08-12 — P5c round 2 — EXEC (Claude Opus 5)
+- SESSION: UPGRADE · P5c · r2 · EXEC
+- STARTED: 2026-08-12T13:46:44Z · ENDED: 2026-08-12T13:56:00Z · ATTEMPT: 2 · RISK: STANDARD
+- CODEX r1: **FAIL(1)** — B1 bloqueante, S1 en estado (a). **Ambos aceptados sin
+  discusión: los dos eran ciertos y los dos venían con la mutación que los prueba.**
+- CONTEXT PRESSURE: comfortable — dos correcciones acotadas en la misma conversación,
+  sin re-planificación.
+- COMMITS: `7b6f837`. Rama `feat/mesa-md-guards`, base `main`@`d5b16e8`.
+  Sigue tocando exactamente los 4 ficheros de `F`; cero cambios de conducta.
+- **B1 — LA ASERCIÓN DE PII ERA UNA FACHADA, Y ESE ES EL HALLAZGO ÚTIL.** El stub hacía
+  `args.map(String).join(" ")`. Con eso, `console.warn(msg, participante)` se convierte
+  en `"… [object Object]"` y los tres campos sintéticos desaparecen **antes** de que el
+  test los busque. La ironía es exacta: la r1 metió PII en las fixtures precisamente para
+  que la aserción no fuera vacua, y luego la volvió vacua al capturarla. Codex lo midió
+  —fila completa como segundo argumento, **1/1 verde**— y tenía razón.
+  **Reparación:** los argumentos se guardan crudos (`unknown[][]`) y ahora se afirma la
+  **forma de la llamada**, no sólo su texto: `warnCalls.length === 1`, **un solo
+  argumento**, `typeof === "string"`, y el **mensaje exacto completo** en vez de
+  `includes("h1")` / `includes("2")` —que, como anotó Codex, no fijaban el número textual—.
+  Debajo queda `deepRender()` (JSON con respaldo `Deno.inspect`) barriendo PII sobre
+  **todo** lo que recibió el logger.
+- **LAS DOS FORMAS DE FUGA, MEDIDAS.** (1) La fila como **segundo argumento** —la
+  mutación de Codex— ahora cae por aridad: `2 != 1`. (2) La fila **embebida en el propio
+  string** (`… + JSON.stringify(participants[0])`) cae por el mensaje exacto, y la salida
+  del fallo enseña la fuga entera: `… h1 short 2 {"id":"h1",…,"full_name":"Ana Fulana",
+  "email":"ana.fulana@example.invalid","phone":"+56 9 8765 4321"}`. Son formas distintas
+  y las dos están cubiertas.
+- **HONESTIDAD SOBRE `deepRender`:** mientras la aserción de mensaje exacto siga en pie,
+  la red profunda **nunca llega a dispararse** — la de arriba cae primero en los dos
+  casos. Es defensa en profundidad para el día que alguien relaje el golden, no una
+  guarda ejercitada de forma independiente. Se anota para que nadie la cuente dos veces.
+- **S1 — EL MISMO ERROR DE FORMA QUE B-18, UNA CAPA MÁS ADENTRO.** El test del anfitrión
+  encendía el switch antes del único submit, así que no separaba «el anfitrión **puede**
+  excluirse» de «el anfitrión **queda** excluido siempre». Codex cableó
+  `cannotBringMainDish: rolePreference === 'host' ? true : cannotBringMainDish` —que viola
+  D2 y excluye en silencio a todo anfitrión que no toca nada— y los **5/5 siguieron
+  verdes**. Ahora el test recorre las **dos polaridades**, como el del invitado: submit
+  sin tocar el switch afirma `can_bring_main_dish: true`, y con el switch encendido
+  afirma `false`. Con la corrección, esa mutación cae (`true` esperado, `false` recibido).
+- MUTATION EVIDENCE (las **cinco**, aplicadas y revertidas, `git status` limpio):
+  H1 `tablesWithShortfall: []` → rojo · H2 switch sólo para `guest` → **1 failed / 4
+  passed** · H3 columna fuera del `select` → `aria-checked="false"` en vez de `"true"` ·
+  **B1** fila como 2º argumento del warn → rojo (antes 1/1 verde) · **S1** anfitrión
+  forzado a excluido → rojo (antes 5/5 verde).
+- TESTS: `deno test --allow-all --no-check .` → **457 / 0** · `npx vitest run
+  --no-file-parallelism` → **1095 passed / 6 failed** (1101) en 216 s, **los seis de
+  `MesaAbiertaDashboard.test.tsx` y ninguno más**. Esta vez **no apareció el séptimo
+  rojo**: tercera medición consecutiva que apunta a carga (B-05) y no al commit.
+- GATES: `npm run build` → **exit 0**. Gate D8 difeado contra `d5b16e8`: **cero
+  diagnósticos nuevos**, las mismas 5 diferencias de **desplazamiento de línea** (+3) con
+  mensajes byte a byte idénticos. Totales del proyecto **idénticos**:
+  `tsc=1039 eslint=161 deno-lint=92 deno-check=43`. `handler_test.ts` sigue en 0/0/0/0.
+- SIN CAMBIOS: `npm run lint` (161 preexistentes, 0 en `F`) y `playwright` (guarda
+  anti-producción sin `.env.test`, idéntica en padre y punta) siguen como en la r1.
+  Codex los aceptó como descarga y pidió que el carve-out se **escriba**; eso es trabajo
+  de plan, no de esta fase.
+- FINDINGS RAISED: ninguno. **Las tres notas de plan de Codex quedan para el PM**, no
+  para P5c: (1) H7 debe nombrar el boundary `b9675e6..adc641f` en vez de `main..HEAD`;
+  (2) **D8.2 debería formalizar «repetir primero la punta, y sólo comparar con el padre si
+  persiste»** —su literal actual castiga una punta cargada frente a un padre tranquilo, y
+  ya ha costado dos fases—; (3) el conflicto entre la lista absoluta de gates de
+  `CLAUDE.md` y D8 necesita un carve-out explícito para fases sin conducta.
+- OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado
+  `b9675e6..7b6f837`. (2) Las tres notas de plan de arriba. (3) Después, `/pm-boot UPGRADE P5b`.
