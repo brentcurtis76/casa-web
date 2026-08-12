@@ -159,10 +159,34 @@ async function limpiar(token: string): Promise<void> {
   }
 }
 
-/** Los títulos de las tarjetas del índice, en el orden en que se pintan. */
+/** Lo que pinta la página mientras `cargando` es true. Es su señal de re-render. */
+const TEXTO_CARGANDO = 'Cargando reflexiones…';
+
+/**
+ * Los títulos de las tarjetas del índice, en el orden en que se pintan.
+ *
+ * **Esperar al selector NO basta, y por eso este paso parpadeaba.** Mientras `cargando` es
+ * true la página DESMONTA el `<ul>`. Entre la página 1 y la 2 el selector sigue existiendo
+ * —es el de la página ANTERIOR—, así que `waitForSelector` volvía al instante y la lectura
+ * caía en el hueco del re-render: `allTextContents()` devolvía `[]` y el paso 6 fallaba con
+ * «página 2 = []». Intermitente, y sólo bajo la suite completa.
+ *
+ * Medido antes de tocarlo: **falla también en el árbol de la r4, sin una línea de la r5**, en
+ * 2 de 4 corridas completas. No es contención de datos —cada spec borra sólo sus ids (D24)—,
+ * es una espera que no espera a lo que cree.
+ *
+ * Se ancla en el indicador de carga de la propia página, que es su declaración de que el
+ * re-render terminó, y no en el contenido esperado: si se esperase a lo que el test afirma,
+ * la aserción no probaría nada y la mutación de offset moriría por timeout en vez de por su
+ * propio mensaje.
+ */
 async function titulosEnPantalla(page: Page): Promise<string[]> {
-  await page.waitForSelector('main ul li h2');
-  return page.locator('main ul li h2').allTextContents();
+  await expect(page.getByText(TEXTO_CARGANDO)).toBeHidden();
+
+  const titulos = page.locator('main ul li h2');
+  await expect(titulos.first()).toBeVisible();
+
+  return titulos.allTextContents();
 }
 
 test.describe('Paginación por keyset de /reflexiones', () => {
@@ -249,7 +273,16 @@ test.describe('Paginación por keyset de /reflexiones', () => {
     });
 
     await test.step('6 · E3b.3c · la página 2 no repite ni salta', async () => {
+      // Se engancha la respuesta ANTES del clic: así la lectura no puede ocurrir mientras la
+      // consulta de la página 2 sigue en vuelo. Se filtra sólo por tabla, no por `or=`, para
+      // que la mutación de offset —que pide por rango, sin `or=`— siga muriendo por su propia
+      // aserción y no por un timeout.
+      const respuestaPagina2 = page.waitForResponse((r) =>
+        r.url().includes('church_podcast_episodes')
+      );
       await page.getByRole('button', { name: 'Más antiguas' }).click();
+      await respuestaPagina2;
+
       const titulos = await titulosEnPantalla(page);
       console.log(`[E3b.3] página 2 = ${JSON.stringify(titulos)}`);
 
