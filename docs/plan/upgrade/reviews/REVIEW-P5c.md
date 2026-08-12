@@ -136,3 +136,112 @@ Los datos son sintéticos, en memoria y sin enlace a `auth.users`; no se commite
 evidencia con datos de miembros. Los nombres de test son españoles y los comentarios
 siguen el idioma predominante de cada fichero. B-14 permanece correctamente en el
 estado (c) ya aceptado por Brent.
+
+---
+
+## CODEX REVIEW — P5c (round 2, cumulative)
+
+VERDICT: FAIL
+
+BLOCKING:
+
+- Ninguno. B1 de la ronda 1 está cerrado: los argumentos del warning se capturan crudos,
+  la forma de la llamada queda fijada y las dos formas de fuga pedidas ponen el test en
+  rojo.
+
+SHOULD-FIX:
+
+- [S1] **El recorrido de anfitrión distingue las dos polaridades, pero solo cuando el
+  rol viene inicializado por `preferredRole`; no fija el camino real de cambiar de
+  invitado a anfitrión en el paso 1** —
+  `src/components/mesa-abierta/__tests__/MesaAbiertaSignup.mainDish.test.tsx:80` —
+  envolví el bloque del switch con
+  `rolePreference === 'guest' || preferredRole === 'host'`. Los **5/5** tests siguieron
+  verdes: los recorridos de invitado satisfacen la primera rama y el recorrido de
+  anfitrión satisface la segunda porque monta directamente con `preferredRole="host"`.
+  Sin embargo, el asistente permite abrir con `preferredRole="guest"`, elegir
+  «Quiero ser anfitrión» en el paso 1 y llegar al paso 3 con `rolePreference === 'host'`;
+  en ese camino alcanzable la mutación oculta la exclusión. Cambié temporalmente el
+  helper para hacer exactamente esa transición y entonces el mismo test quedó **4/5**:
+  no encontró el switch. **Estado (a): corregir ahora en P5c antes del cierre**,
+  conservando el recorrido de anfitrión inicial y añadiendo dentro del mismo `it` un
+  tercer recorrido que empiece como invitado, seleccione anfitrión y persista la
+  exclusión. No requiere aumentar el conteo de tests ni tocar producción. Bajo la regla
+  de tres estados, la fase no puede cerrar mientras esta reparación todavía no existe;
+  por eso el veredicto es FAIL aun sin un hallazgo BLOCKING.
+
+NITS:
+
+- [N1] **`deepRender()` no aporta una garantía independiente mientras se conserve el
+  golden exacto** — `supabase/functions/create-mesa-matches/handler_test.ts:109` — sí se
+  ejecuta en el caso verde, pero ninguna fuga puede llegar a sus aserciones: un segundo
+  argumento cae antes por aridad y una fuga dentro del string cae antes por igualdad
+  exacta. Mantenerlo no rompe nada y el ledger no lo cuenta dos veces, así que no merece
+  otra ronda; retirarlo en la corrección de S1 dejaría más claro cuál es la prueba real.
+
+NOTES ON THE PLAN ITSELF: Ninguna nueva. Las tres notas de la ronda 1 están aceptadas y
+correctamente encaminadas a `/pm-boot`; no son bloqueos de P5c.
+
+## EVIDENCIA DE LA RONDA 2
+
+### Juicio sobre las nuevas aserciones
+
+El golden exacto debe quedarse. Aquí no congela copy de usuario: congela la única llamada
+operativa mediante la cual D4 informa el déficit y, junto con aridad y tipo, demuestra
+que el logger recibe solo ids y números. Una reescritura benigna en una fase futura
+deberá actualizarlo deliberadamente y volver a ejecutar las dos mutaciones de fuga; eso
+es una revisión útil, no fragilidad accidental. Una aserción estructural más laxa
+reabriría precisamente B1b.
+
+La doble polaridad cierra **S1 de la ronda 1**: la mutación
+`cannotBringMainDish: rolePreference === 'host' ? true : cannotBringMainDish` deja ahora
+**4 passed / 1 failed**, con `can_bring_main_dish: false` recibido donde el submit sin
+tocar exige `true`. El S1 nuevo de esta ronda es distinto: separa el estado vivo del rol
+de la prop que solo lo inicializa.
+
+### Mutaciones
+
+Todas se ejecutaron con Node **v22.22.0** y `/opt/homebrew/bin/deno` **2.7.11**, el mismo
+`deno` del `PATH`. Cada parche se revirtió explícitamente; antes de los gates el árbol
+volvió a quedar limpio.
+
+1. **B1a**, `participants[0]` como segundo argumento del warning: **0/1**; falla en
+   aridad, actual `2`, esperado `1`.
+2. **B1b**, participante serializado dentro del único string: **0/1**; falla el golden y
+   la salida imprime la fuga completa, incluidos `Ana Fulana` y
+   `ana.fulana@example.invalid`.
+3. **S1 r1**, anfitrión forzado a `cannotBringMainDish: true`: **4/5**; el submit sin
+   tocar recibe `false` donde espera `true`.
+4. **H1**, respuesta con `tablesWithShortfall: []`: **14/15**; falla solo
+   `el déficit real cruza el borde HTTP`.
+5. **H2**, switch restringido a `rolePreference === 'guest'`: **4/5**; falla el
+   recorrido del anfitrión al no encontrar el switch.
+6. **H3**, columna borrada del `select`: **0/1**; el diálogo recibe
+   `aria-checked="false"` donde espera `"true"`.
+7. **Contraejemplo S1 r2**, switch visible si
+   `rolePreference === 'guest' || preferredRole === 'host'`: **5/5 verdes**. Con el
+   helper cambiado para elegir anfitrión desde una prop invitado: **4/5**.
+
+### Alcance y gates limpios
+
+- `66e3a50..99c2e0f` añade solo
+  `docs/plan/upgrade/prompts/P5c-codex-rereview.md`. Los únicos commits de código son
+  `56505ae` y `7b6f837`; r2 toca exactamente los dos tests declarados y ninguna
+  producción. El acumulado sigue limitado a los cuatro ficheros de `F`.
+- Deno punta: **457 passed / 0 failed**. Padre `d5b16e8`: **456/0**. Delta **+1**.
+- La medición Vitest limpia esperada no apareció hoy. Punta produjo primero
+  **1087/14**, luego **1086/15** más un error tardío de Radix, y finalmente **1087/14**.
+  Los ocho rojos adicionales estables fueron todos los de
+  `usePresentationState.test.ts` por `localStorage === undefined`; el segundo intento
+  cambió esos rojos por timeouts de `CuentacuentoEditor.ph.*`, confirmando la sensibilidad
+  a carga ya catalogada. Al persistir el conjunto de `localStorage`, apliqué D8.2 y corrí
+  el padre completo: **1085/14**. Padre y punta comparten exactamente esos ocho más los
+  seis conocidos de `MesaAbiertaDashboard`; el delta vinculante sigue siendo **+2** y
+  ningún fichero de P5c está rojo. Los dos ficheros Vitest de P5c pasan aislados **6/6**.
+- Gate D8 en punta y padre: los cinco mensajes son byte-idénticos, con el mismo
+  desplazamiento +3 en `handler.ts` (`eslint` 32→35, `deno lint` 299→302,
+  `deno check` 356/151/150→359/154/153). Totales idénticos:
+  `tsc=1039 eslint=161 deno-lint=92 deno-check=43`. `handler_test.ts`, incluido
+  `Deno.inspect`, permanece **0/0/0/0**.
+- `npm run build`: exit **0**.
+- Estado final antes de anexar esta revisión: worktree limpio.
