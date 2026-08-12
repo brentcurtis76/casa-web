@@ -1646,3 +1646,104 @@ RESULT: SUPPORTED. 77 excluded paths across four rules, plus one ambiguous keep.
   table, 4 decision-log rows) · `evidence/BASE-GATES-d5df247.md` · `prompts/D1b1-r1.md` · this entry.
 - GATES: none required of the PM. No source file was read for edit and none was written.
 - CODEX: n/a — dispatch, not review.
+
+---
+
+### 2026-08-12 — D1b-1 round 1 — EXECUTOR — submitted for Codex review
+
+```text
+PHASE:    D1b-1 — recipient-facing channels (PDF · email · WhatsApp · file download · print)
+STARTED:  2026-08-12T14:05:58Z
+ENDED:    2026-08-12T14:26:35Z
+ATTEMPT:  1 (cumulative for this phase)
+RISK:     DISCOVERY
+HANDOFFS: 1 (PM prompt -> executor). Same conversation holds the phase under the lean overlay.
+WORKTREE: /Users/brentcurtis/dev/casa-pilot   COMMON DIR: /Users/brentcurtis/dev/casa-web/.git
+BRANCH:   phase/d1b1-output   BASE: pilot/sop-v2 @ 0fd80f2   ARTIFACTS: 46f11e3
+GATES:    shasum -a 256 -c METHOD-MANIFEST.txt      -> 4/4 OK, exit 0   PASS
+          bash census.sh > raw 2> stderr            -> exit 0, 3.24s     PASS
+          candidate floor (literal SINKS block)     -> 154 / 62          PASS
+          git diff --stat pilot/sop-v2...HEAD       -> docs/plan/bilingue/ only, 6 files  PASS
+          git diff --quiet e0c9342 -- src supabase  -> exit 0            PASS
+          (lint/test/build/Playwright/tsc excluded by contract: source diff is zero lines by D-A;
+           npx tsc --noEmit compiles zero files — evidence/BASE-GATES-d5df247.md)
+CODEX:    pending
+ESCAPED DEFECT: n/a — no PASS yet
+```
+
+- **Every reference value in the contract's §9 reproduced exactly**, so nothing needed reporting
+  under D-K: Pass A 168/1242 · Pass B 173/369/308 · 1 `AMBIGUOUS_KEEP`
+  (`src/data/elementos-fijos/index.json`, `basename-collision`) · floor 154 repo-wide / 62 liturgy ·
+  15 `children-ministry` admin files in the 62 · 250 → 174 → 173, i.e. 76 stage-one + 1 stage-two = 77
+  exclusions. No stale total from `PLAN.md` or the six plan reviews was carried forward.
+- **OUTPUT: 35 records** — 14 `PDF`, 9 `WhatsApp`, 8 `email`, 4 `file download`, **0 `print`**. All
+  seven schema fields present on all 35, no blanks, checked mechanically. 7 records carry
+  `UNVERIFIED`, each with `materiality:` — six on recipient-facing email, one on the music packet PDF.
+- **`print` yields no records.** Three probes (`window.print`/`.print()`/`react-to-print`/`printJS`,
+  `@media print`, a `print` dependency in `package.json`) all return nothing at SOURCE_SHA. Recorded
+  as what the probes searched, not as a proven absence.
+- **TRIAGE of the 62:** 16 `D1b-1` · 17 `D1b-2` · 29 `no surface`. A `diff` proves the triage table
+  covers exactly the candidate floor. Of the 29: 3 are regex false positives with no emission
+  (`downscaleImage.ts` as [D1b1.4] anticipated, plus `liturgyService.ts` and `useCuentacuentosDraft.ts`,
+  whose `download` matches are Supabase **storage reads**), and 26 emit but fall outside the inclusion
+  boundary.
+- **BOTH NAMED BOUNDARY PROBES DECIDED BY EVIDENCE CHAIN, BOTH EXCLUDED** ([D1b1.5]). The 15
+  `children-ministry` admin components have exactly one importer outside their directory,
+  `ChildrenMinistryPage.tsx`, routed as `/admin/ninos`; the builder's children path imports
+  `@/lib/children-ministry/*` **services**, and the packet email composes from `church_children_*`
+  rows, not from component literals. `whatsapp-signup` has one caller, `InstagramFeed.tsx:76`, a public
+  marketing section, and the email it sends asks an administrator to add a contact to a broadcast list
+  — it touches no keyed reminder/status/reply chain. Chains were recorded before the verdicts.
+- **AUDIT YIELD ([D1b1.7]), stated in two halves because they are different answers.** At *file* level
+  the reverse audit swept the whole repository for the five channels' terminal calls, independently of
+  the floor's path filter: 24 files, 8 not in the 62, and all 8 fail clause 1 — so the path filter
+  dropped no in-scope file at this commit. At *record* level it found four emissions the floor pointed
+  nowhere near: `wa-reminders`' `formatDateEs` Spanish months and `"voluntario"` fallback substituted
+  into an approved template as `{{2}}`/`{{3}}` (file in the 62 only via `templateName`, `PASS_A hits=0`);
+  the literal `Reflexión` at `UniversalSlide.tsx:486` rasterised into the projection PDF (file in the
+  62 only via `toDataURL`, a D1b-2 token); the preacher name baked into cover pixels at
+  `Portadas.tsx:315,449` (file in the 62 only via `toast(`); and — not a record, because the schema
+  records emissions — the opt-out keyword grammar at `_shared/whatsapp/payload.ts:42`, which is not in
+  the 62 at all and is the receiving half of the `opt_in_bienvenida` template's promise.
+- **BLIND SPOT MEASURED, NOT ASSERTED** ([D1b1.11], D-N/D-O). The Pass A gap is worst precisely on this
+  phase's channels because the edge functions are written without accents:
+  `send-children-service-packet/index.ts` carries a complete Spanish email and scores `PASS_A hits=0`;
+  `send-music-service-packet/index.ts` scores `1` over 606 lines; `wa-reminders/index.ts` and
+  `packetGenerationService.ts` both score `0` while emitting Spanish. Seven blind spots are recorded
+  with their error directions; six fail toward under-reporting.
+- **WEAKEST POINT, self-declared:** the boundary exclusion of `OracionesAntifonalesGenerator.tsx` +
+  `SlideGenerator.tsx`. They reach `/admin/liturgia/oraciones`, persist to the legacy `liturgias`
+  table, and the builder has its own prayer path (`editors/OracionEditor.tsx:326`) — but
+  `SlideGenerator` downloads prayer PNGs/PDFs with Spanish names and paints text with 4 `fillText`
+  calls. If a reviewer reads clause 1's "prayer" bullet more broadly, both become `D1b-1` and gain
+  records **in this phase**. The pair moves together; nothing else does.
+- **SCHEMA OBSERVATION, for the reviewer to rule on (D-I).** `language-axis` offers `UI copy`
+  (operator locale) and `stored-or-output copy` (liturgy language), and neither describes an email to a
+  musician or a children's volunteer. Rather than force a fit or return FINDINGS, those six records —
+  plus the packet PDF that reaches the same recipients by signed link — carry
+  `UNVERIFIED (materiality: BLOCKS-REPLAN)`, on the ground that resolving the axis could require a
+  per-recipient language column, i.e. a data-shape change. **This is the materiality call most in need
+  of review.** Stated as an observation about the schema, not a proposal to change it (D-E).
+- **CONTRACT IMPERFECTIONS RECORDED, NOT BLOCKING.** (1) The triage vocabulary has no label for "emits,
+  but outside the boundary" — 26 of the 62 are in that state and `no surface` is misleading for them;
+  D1b-2's contract should add a fourth label. (2) [D1b.8] cannot be discharged here because
+  `D1-verify.sh` is D1b-2's and producing it here is BLOCKING; the hash check it mandates was run
+  anyway (4/4) and the anchor `dee6a1a` is recorded. (3) See the schema observation above.
+- **PRIVACY:** no personal-data value anywhere in the diff (D-D). PII-bearing emissions are recorded by
+  field name and position. Two source files hardcode a personal Gmail destination
+  (`whatsapp-signup/index.ts:49`, `prayer-request/index.ts:49`); recorded as a shape, address not
+  reproduced. No database access. Nothing merged, pushed to `main`, or deployed.
+- **`2>/dev/null` audit:** one occurrence in the whole diff, `D1-exclusions.md:269`, and it is prose
+  stating that the redirect is forbidden. No command in any artifact uses it ([D1b1.2]).
+- ARTIFACTS: `evidence/D1-surfaces-output.md` · `evidence/fixtures/D1-census.json` ·
+  `evidence/D1-census-raw.txt` · `evidence/D1-census-stderr.txt` · `evidence/D1-sink-triage.md` ·
+  `evidence/D1-exclusions.md` · `reviews/D1b1-r1-review-request.md`.
+- NOT DONE, BY CONTRACT: `D1-verify.sh` · `D1-SUMMARY.md` · the combined surfaces document ·
+  `slide render` and `toast/UI` records · the `LITURGY_ORDER` seed — all D1b-2's. Backlog **[S1]**
+  stays open to D1b-2's close.
+- HANDED TO D1b-2: the 17 `D1b-2` files, the toast/slide-render halves of `ExportPanel`, `Portadas`,
+  `UniversalSlide` and `send-core`, and one audit find outside the 62 —
+  `_shared/whatsapp/phone.ts` emits six Spanish rejection reasons that reach an operator toast through
+  `describePacketSendResult`.
+- NEXT: independent Codex review of the cumulative diff `pilot/sop-v2...phase/d1b1-output`. Findings
+  return to the same executor conversation as one batch (lean overlay §4.2).
