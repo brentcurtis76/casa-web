@@ -848,7 +848,7 @@ compartida. **No revertir `165e5f2`**: eso rompería `supabase start` para todo 
 **✅ DONE — 2026-08-09.** `phase/E3a-slug@6054d55`, SHA padre `4b44b5b`.
 **`CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** — 0 BLOCKING, 0 SHOULD-FIX, 0 NIT. Dos rondas de
 ejecución: la r1 cayó por una aserción de cableado vacua (Codex B1), la r2 la cerró tocando
-**un solo fichero de test**. **Pendiente:** merge a `main`, cuando Brent lo autorice.
+**un solo fichero de test**. **✅ Mergeada a `main` el 2026-08-09 (`62e9158`) y en `origin/main`.**
 
 **Revisión 17 (2026-08-08) — congelada ese día.** `CODEX REVIEW E3a ROUND 3: PASS`, 0 BLOCKING, 2
 SHOULD-FIX de contabilidad aplicados en este mismo commit. **Tres rondas de review de plan:** la
@@ -1093,7 +1093,7 @@ cinco, y la única decisión de diseño nueva —la paginación— se toma, no s
 
 **✅ DONE — 2026-08-09.** `phase/E3b-pages@b89fe93`, SHA padre `62e9158`. **9 ficheros,
 +1941/-9.** `CODEX REVIEW E3b SECOND RE-REVIEW FINAL: **PASS**` — 0 BLOCKING, 0 SHOULD-FIX,
-1 NIT. **Seis rondas de ejecución.** **Pendiente:** merge a `main`, cuando Brent lo autorice.
+1 NIT. **Seis rondas de ejecución.** **✅ MERGEADA Y EMPUJADA el 2026-08-09** en `db8ed2e`; `main` y `origin/main` coinciden. **Nada queda pendiente de esta unidad.**
 
 **CONGELADA en la r20.** Codex falló la r19 con 4 BLOCKING **mecánicos** y dictaminó que **no
 justifican otra ronda de diseño**: se aplican como enmiendas vinculantes previas a la ejecución,
