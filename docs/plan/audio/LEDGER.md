@@ -2558,3 +2558,69 @@ hardcodeado. Es `E4s.9`, y se mide.
      fila sintética. **`E4-spike` no puede empezar sin eso**, ni siquiera con `E3c-fix` cerrada.
   3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** No son de AUDIO. Alguien de ese
      workstream debería saberlo; queda escrito aquí porque lo medí yo.
+
+### 2026-08-12 — E3c-fix round 1 — EXEC (Opus)
+- SESSION: `AUDIO · E3c-fix · r1 · EXEC`
+- STARTED: 2026-08-12T14:19:56Z · ENDED: 2026-08-12T14:49:00Z
+- ATTEMPT: 1 (acumulativo de la fase) · HANDOFFS: 0
+- RISK: HIGH — esquema sobre base de producción compartida con Life OS
+- STATUS: **FINDINGS** — 8 de 9 criterios cumplidos; **`E3c.6` refuta una premisa del contrato**.
+- ÁRBOL: `phase/E3c-fix` @ `db8ed2e`, **idéntico al padre**. `F` (ficheros fuente) = ∅.
+  Sin diff de código: la fase es un cambio de estado de la base, no del repo.
+
+- **LA MIGRACIÓN ESTÁ APLICADA Y LA VERSIÓN RECONCILIADA.** `60 → 61` versiones, delta exacto
+  `20260808120000 | church_podcast_episodes_slug`. Cero duplicados en las 61. Las dos lecturas de
+  `schema_migrations` (14:25:29Z antes / después) no muestran escritura de ninguna otra sesión.
+- **MECANISMO, y por qué no fue ninguno de los obvios:** `supabase db push --workdir <espejo>`
+  contra un proyecto espejo en el scratchpad con las 63 migraciones **menos las dos de WhatsApp**.
+  **El repo no se tocó.** La CLI aplica el fichero y escribe la fila de historial **en la misma
+  transacción**, y deriva la versión del nombre del fichero — por eso queda `20260808120000` y no
+  un timestamp inventado. Descartados con medición: `db push` a secas (**la propia CLI lo rechaza**,
+  `LegacyDbPushMissingRemoteError`), `apply_migration` del MCP (registra versión propia ⇒ rompe
+  E3c.1), `psql` (ausente). Fichero verificado byte a byte por SHA-256 contra `db8ed2e` antes de aplicar.
+- **HALLAZGO DE HERRAMIENTA, no estaba escrito:** la CLI **rechaza** un directorio local que no
+  explique todo el historial remoto (`LegacyDbPushMissingLocalError`). Por eso el espejo lleva 61
+  ficheros y no 1. Dos intentos fallidos antes del bueno, los dos en la evidencia.
+- **PRODUCCIÓN ARREGLADA.** `curl` de la consulta exacta de la página: `400 (42703)` → **`200`** con
+  cuerpo `[]`. `/reflexiones` pinta el **estado vacío** («Todavía no hay reflexiones publicadas.»),
+  verificado sobre el **DOM renderizado** —no por el código HTTP— con el estado de error ausente y
+  cero errores de consola. El `ESCAPED DEFECT` de `E3b` queda cerrado.
+- **ESQUEMA VERIFICADO OBJETO POR OBJETO:** `0/6` antes → `6/6` después, leídos de
+  `pg_constraint`/`pg_indexes`/`pg_proc`/`pg_trigger`. 18 → 19 columnas. Sin fallo parcial.
+  **Extra no pedido:** el `prosrc` desplegado de las dos funciones **coincide por SHA-256** con el
+  cuerpo del fichero revisado en `E3a`, y las dos llevan `search_path=""`.
+- **E3c.7 CERRADO:** tras reconciliar, `db push --include-all --dry-run` lista como pendientes
+  **exactamente** `20260612000000` y `20260612000001`, y **no** `20260808120000`. Ningún push futuro
+  reintentará la migración no idempotente.
+
+- **⚠️ `E3c.6` NO CUMPLIDO — PREMISA DEL CONTRATO REFUTADA.** El contrato §5 da por disponible el
+  MCP `execute_sql` para escribir. **No lo es:** conecta como **`supabase_read_only_user`**
+  (`42501 permission denied`, con `transaction_read_only = off` — es el **rol**, no el modo). Y los
+  demás caminos están cerrados por el propio contrato: `apply_migration` y cualquier `db push`
+  **registran una versión nueva**, que rompería E3c.1, el criterio central; `psql` no está; no hay
+  clave `service_role` en repo ni entorno; y una conexión directa exigiría **sacar la contraseña de
+  la base del llavero y ponerla en claro** — no se hizo. **E3c.1 y E3c.6 son mutuamente
+  insatisfacibles con las herramientas que el contrato nombra.** Se reportó en vez de forzarlo.
+  La tabla quedó en **0 filas**: el INSERT denegado no dejó basura.
+- GATES: `npm run build` **VERDE** (`✓ built in 7.27s`). `npx vitest run --no-file-parallelism`
+  **ROJO**: `6 failed | 1155 passed (1161)`, las **6 en `mesa-abierta`**, familia roja de base;
+  **cero** en `reflexiones`/`slug`/`podcast` — los 112 tests del contrato del slug pasan contra el
+  esquema recién aplicado. **Cero fallos nuevos**, y la prueba es más dura que una comparación: el
+  árbol medido **es** `db8ed2e`. `npm run lint` `161 problems` = total de base exacto de `E3b`.
+  `npx tsc --noEmit` exit 0 **pero vacuo**: `--listFiles` → **0 ficheros propios**; se registra, no
+  se usa como evidencia. Gate por ficheros de D18 **NO APLICA** (`F = ∅`) y **no se corrió** — se
+  dice en vez de reportarlo verde. e2e no corrida (condicional en el contrato, `F = ∅`).
+  **No se reetiqueta nada `PASS`:** bajo el overlay §5 un gate requerido rojo es `BLOCKED`; bajo el
+  criterio del propio contrato («cero fallos nuevos») se cumple. Las dos lecturas quedan explícitas.
+- ALCANCE: cero ficheros fuente. Un fichero nuevo de evidencia en `docs/plan-audio`.
+- FINDINGS RAISED: **1 blocking** — E3c.6 inejecutable por el rol de sólo lectura del MCP (arriba).
+  Secundario: `db push` a secas ya **falla** en este repo por las dos migraciones ajenas sin aplicar.
+- OPEN AFTER THIS ROUND:
+  1. **Review independiente de Codex** sobre `phase/E3c-fix` + esta evidencia. El diff de código es
+     vacío: lo que se revisa es el **cambio de estado de la base** y la evidencia que lo sostiene.
+  2. **Decisión del PM/Brent sobre `E3c.6`**: (a) aceptarlo como diferido apoyándose en la
+     equivalencia por SHA-256 del cuerpo desplegado + los 112 tests, o (b) habilitar un camino de
+     escritura —clave `service_role` en el entorno, o MCP sin el rol de sólo lectura— y ejecutarlo
+     en una r2. **No se decide aquí.**
+  3. **`/reflexiones/<slug>` sigue sin verificarse en producción**: sin episodios no hay slug que pedir.
+  4. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.
