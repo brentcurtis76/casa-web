@@ -1520,3 +1520,43 @@ D-N blind spot, recorded as one.
 - OPEN AFTER THIS ROUND: merge `phase/d1a-method` into `pilot/sop-v2` (fast-forward), then D1b-1
   begins from the merged, hash-locked method. D1b.8 uses the **merge commit** as its provenance
   anchor, so the merge must land before D1b starts.
+
+### 2026-08-11 — PM session handoff (SOP §4: the PM session is disposable)
+
+- SESSION: `BILINGUE · plan · PM` — **this session ends here.**
+- ELAPSED: ~9h wall clock across 9 plan rounds, 4 executor rounds, 3 phase reviews, one §3.9
+  re-plan and one phase close.
+- WHY NOW: SOP §4 says re-bootstrap when a PM session gets heavy or starts agreeing too easily.
+  Both apply. The measurable signal is not fatigue, it is **four properties asserted without being
+  tested** — the `find -regex` diagnosis, "five methods all agree at 596", D-C's consistency with
+  its own phase test plans, and "both branches fail toward inclusion". Each was one command from
+  being caught; each was caught by someone else. A successor reading the files cold does not
+  inherit that.
+
+**STATE, verified at handoff:**
+- `pilot/sop-v2` = `dee6a1a`, **D1a merged** (fast-forward). `phase/d1a-method` still exists and
+  can be deleted; **do not remove the `casa-pilot` worktree** — it is the workstream's home, not a
+  phase worktree.
+- D1a is **DONE**, Codex PASS at `1809ed5`. Method artifacts are hash-locked by
+  `METHOD-MANIFEST.txt` and verify 4/4.
+- Next: **D1b-1** (recipient-facing channels), then D1b-2 (operator-facing + reconciliation +
+  summary). No executor prompt exists for either — writing D1b-1's is the successor's first job.
+
+**OPEN ITEMS THE FILES DO NOT ALREADY ANSWER:**
+1. **Which SOP governs D1b?** A commit `98f4e51` "activate lean workflow v2" rewrote
+   `docs/plan/SOP-PILOT.md` (−291/+162) and `HANDOFF-PROCESS.md`. It was moved **off** this branch
+   to `pilot/lean-v2` so it would not sit inside D1a's diff. **I never read it.** D1a ran under the
+   old SOP-PILOT (C1–C4). Resolve this before writing D1b-1: if C2's self-review block or C4's
+   ledger fields changed, the executor prompt must match the version actually in force.
+2. **Backlog [S1]** — the five method artifacts record `PLAN_SHA=c842161`, the pre-amendment freeze,
+   not `f2be4f2`. Deferred by Brent, accepted by Codex. Close it at D1b's close, not later.
+3. **[D1b.14] is new and easy to lose:** the D1a.10 ambiguity records go to **stderr**.
+   `2>/dev/null` appears in several commands published in this workstream, including mine.
+4. **Every census total published anywhere in `PLAN.md` and the six reviews is stale** — 166/1,402,
+   180/1,418, 185/376/316, 186/381/320. All predate the test-file and fixture exclusions. D1b
+   re-derives from the locked method. Carry none of them forward.
+
+**WHAT I WOULD TELL MY SUCCESSOR IN ONE LINE:** the two decisions that finally worked — D-N and
+D-O — both say the same thing, that you cannot prove completeness or safety in advance and should
+state the error direction instead. Everything in this ledger before them is the cost of learning it
+twice.
