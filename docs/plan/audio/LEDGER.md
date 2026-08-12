@@ -2341,3 +2341,42 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   1. Decidir sobre el parpadeo de `reflexiones-paginacion.spec.ts` (arreglo mínimo: esperar al
      contenido nuevo, p. ej. a que el primer `h2` deje de ser el de la página 1).
   2. Re-review de Codex sobre `phase/E3b-pages@af0b11c`.
+
+### 2026-08-12 — E3b round 6 — EXEC (Opus), el parpadeo arreglado por autorización de Brent
+- SESSION: `AUDIO · E3b · r6 · EXEC` (`b89fe93`, sobre `af0b11c`, padre de fase `62e9158`)
+- QUÉ LA ABRE: el hallazgo que la r5 levantó y **no** arregló. Brent autoriza tocarlo
+  explícitamente («can you fix it here?»), que es lo que faltaba: el PLAN congela ese spec y por
+  eso la r5 se paró en seco en vez de decidir por su cuenta.
+- **CAUSA, leída en el código y no adivinada:** `titulosEnPantalla` esperaba a
+  `main ul li h2` y leía. La página **desmonta el `<ul>`** mientras `cargando` es true
+  (`Reflexiones.tsx:155`), así que entre la página 1 y la 2 ese selector **sigue existiendo —es
+  el de la anterior—**: la espera volvía al instante y la lectura caía en el hueco del
+  re-render. De ahí `página 2 = []`.
+- **NO ERA DE LA r5, y quedó medido antes de tocar nada** — cuatro corridas completas:
+  r4 #1 (`2e7092a`) pasa · r5 #1 (`af0b11c`) falla · r5 #2 falla · **r4 #2, revertido a
+  propósito al árbol de la r4, FALLA**. El defecto es de la r1 y sólo asoma bajo
+  `fullyParallel`. Tampoco era contención de datos: los dos specs ya borran sólo sus ids (D24).
+- **EL ARREGLO NO TOCA NADA CONGELADO:** ni el fixture, ni los 13 ids, ni el orden de inserción,
+  ni una sola aserción. **Sólo la espera.** Se ancla en `Cargando reflexiones…` —la declaración
+  de la propia página de que el re-render terminó— y **no en el contenido esperado**: esperar a
+  lo que el test afirma habría vaciado la aserción. Y engancha la respuesta de la página 2 antes
+  del clic, filtrando por tabla y **no** por `or=`, para que la mutación de offset —que pide por
+  rango, sin `or=`— siga muriendo por su mensaje y no por un timeout.
+- **LAS DOS MUTACIONES DEL SPEC SIGUEN LETALES Y POR SU PROPIA ASERCIÓN**, verificado hoy:
+  offset ⇒ «`[PAG] 112` se repite ⇒ la paginación es por offset»; quitar el desempate por `id`
+  ⇒ `toEqual` de orden exacto. **Ninguna muere por timeout**, que era el riesgo del arreglo.
+- **TRES CORRIDAS COMPLETAS SEGUIDAS**, las tres con la paginación **fuera** de la lista de
+  fallos y con `página 2 = ["[PAG] 113","[BASELINE] Reflexion publicada"]`: 6, 7 y 15 fallos
+  respectivamente, todos de las familias preexistentes. **La tercera fue una corrida degradada**
+  (15 fallos, 5 sin correr, `financial-*` en masa por contención) **y la paginación aguantó
+  igual** — que es la prueba más dura que tengo de que la espera ya no depende del reloj.
+- **`E3b.14` VUELVE A SOSTENERSE.** Ya no hay un spec de `E3b` que parpadee, así que el conjunto
+  de fallos de HEAD es de nuevo el de las familias preexistentes del padre.
+- GATES: D18 sobre el spec **0/0/0/0**, totales del proyecto sin cambio
+  (`tsc=1039 eslint=161 deno-lint=92 deno-check=43`). `tsc --noEmit` 0. Build verde.
+- ALCANCE: un solo fichero, `tests/e2e/reflexiones-paginacion.spec.ts` (+36/−3).
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: re-review de Codex sobre `phase/E3b-pages@b89fe93`, que ahora incluye
+  r4 + r5 + r6. **Nota de accounting:** la r6 no es una remediación de un FAIL de Codex —es un
+  arreglo autorizado por Brent sobre un hallazgo propio—, así que no consume el tope de §1.5,
+  que sigue agotado para remediaciones de review.
