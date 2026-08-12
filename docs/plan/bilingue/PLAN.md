@@ -224,7 +224,14 @@ npx tsc --noEmit; echo $?                                    # -> 0  (clean base
 
 ---
 
-## Phase D1a — Lock the method
+## Phase D1a — Lock the method — **DONE 2026-08-11**
+
+**Codex PASS at `1809ed5`** (substantive remediation `b847510`), branch `phase/d1a-method`.
+Four executor rounds: r1–r3 under the original contract, r4 under the §3.9 amendment. The first
+PASS in this workstream. Backlog item carried forward: **[S1]** the five method artifacts record
+`PLAN_SHA=c842161`, the pre-amendment freeze, rather than `f2be4f2`. Deferred by Brent and accepted
+by the reviewer, because `METHOD-MANIFEST.txt` locks the artifact bytes and D1b.8 anchors provenance
+to D1a's merge commit instead.
 
 **Branch:** `phase/d1a-method` from `pilot/sop-v2`.
 
@@ -405,6 +412,11 @@ marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its hal
   structurally cannot see. Known already — text *declared* in one file and *rendered* in another
   (`LITURGY_ORDER`, `WA_TEMPLATES`), and unaccented Spanish outside the frozen word list. Say what
   else, and say how a future pass would extend the method.
+- [D1b.14] **Capture `census.sh`'s stderr.** The D1a.10 ambiguity branch emits its records there —
+  `AMBIGUOUS_KEEP <path> reason=<why>` — not on stdout. Every invocation in D1b's test plan and
+  verify script must capture or tee stderr. **`2>/dev/null` discards exactly the evidence D1b.13
+  requires**, and it appears in several commands published earlier in this workstream, including the
+  PM's own. Added 2026-08-11 at phase close.
 - [D1b.13] **`evidence/D1-exclusions.md` — the audit surface that replaces the guarantee.** Every
   path the method excluded, the rule that excluded it, and the evidence. Ordered by rule. This is
   where a reviewer confirms nothing real was dropped, by reading a short derived list rather than

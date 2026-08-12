@@ -1476,3 +1476,47 @@ D-N blind spot, recorded as one.
   comment-only, above the two `sed` ranges.
 - HANDOFFS: 1 (Brent pasted the re-review verdict).
 - CODEX: pending third re-review of the cumulative diff.
+
+### 2026-08-11 — D1a CLOSED — Codex PASS — PM phase close (SOP §3.8)
+
+- SESSION: `BILINGUE · plan · PM`
+- ELAPSED: ~20 min (verification + close-out)
+- STAGE: Codex review (external) | PM verification + close 20m
+- EFFORT: PM `high` · Codex `high`
+- FIRST-PASS: **no** — but **PASS at last**, at `1809ed5` (remediation `b847510`).
+  **The first PASS anywhere in this workstream**, after six failed plan reviews and three failed
+  phase reviews. Cumulative executor attempts on D1a: 4 (r1–r3 old contract, r4 amended).
+- WHAT I VERIFIED MYSELF BEFORE CLOSING — this is the moment a PM rubber-stamps, so none of it is
+  taken from the review:
+  - Manifest **4/4 OK**. Selection unchanged: `corpus_pd_base` **0**, `elementos-fijos` **14**,
+    test shapes **0**. Diff confined. Fast-forward into `pilot/sop-v2` confirmed possible.
+  - **The ambiguity branch works in practice, not just in prose.** `census.sh` stderr emits
+    `AMBIGUOUS_KEEP  src/data/elementos-fijos/index.json  reason=basename-collision` — the exact
+    collision I found during r3 verification and then wrongly waved through as "fails toward
+    inclusion in both branches". The code now surfaces what my prose asserted away. That is D-O
+    doing its job, and it is the clearest evidence the amendment was the right call.
+  - **Branch surgery checked, not assumed.** `98f4e51` ("activate lean workflow v2") is **out of
+    the phase ancestry** and preserved on `pilot/lean-v2`, local and remote. The SOP-PILOT rewrite I
+    flagged before r4 therefore does not sit inside this phase's diff.
+- **BACKLOG — [S1]** the five method artifacts record `PLAN_SHA=c842161`, the pre-amendment freeze,
+  rather than `f2be4f2`. Deferred by Brent, accepted by the reviewer: `METHOD-MANIFEST.txt` locks
+  the bytes and D1b.8 anchors provenance to D1a's merge commit. Carry into D1b's close, not later.
+- **D1b RE-READ IN LIGHT OF WHAT WAS BUILT (§3.8 step 5) — one amendment made:**
+  - **New [D1b.14]: capture `census.sh`'s stderr.** The ambiguity records go to stderr, not stdout.
+    **`2>/dev/null` discards precisely the evidence D1b.13 requires** — and that redirect appears in
+    several commands published in this workstream, including my own verification commands and the
+    r4 test block. Left unstated, D1b would have produced an exclusions document missing every
+    ambiguity-kept path, and the verify script would have passed.
+  - Checked and **not** amended: D1b.3's 62-file sink figure carries **no** `_test.` contamination
+    (measured: 0), unlike the census totals — so it stands, unlike D1b.11's stale 185.
+  - D1b.12 (blind spot) and D1b.13 (exclusions) overlap; not merged, because 12 is about what the
+    method cannot see and 13 about what it chose to drop. Different questions.
+- **DEVIATION FROM §3.8's CLOSE SCRIPT, DELIBERATE:** the standard teardown removes the phase
+  worktree. **`casa-pilot` must not be torn down** — it is not a per-phase worktree, it is where
+  this entire workstream's plan, ledger, reviews and prompts live (§1.8: keep worktrees per active
+  workstream). Only the branch is disposable, and only after merge.
+- FINDINGS: BLOCKING 0 · SHOULD-FIX 1 (→ backlog) · NIT 0.
+- **PHASE STATUS: DONE.** `PLAN.md` updated with the date and passing SHA.
+- OPEN AFTER THIS ROUND: merge `phase/d1a-method` into `pilot/sop-v2` (fast-forward), then D1b-1
+  begins from the merged, hash-locked method. D1b.8 uses the **merge commit** as its provenance
+  anchor, so the merge must land before D1b starts.
