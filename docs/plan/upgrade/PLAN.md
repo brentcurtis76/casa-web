@@ -241,15 +241,19 @@ Para cada fase, siendo `F` la lista de ficheros que la fase modifica o crea:
 1. `npm run build` termina con éxito.
 2. `npx vitest run --no-file-parallelism`: el conjunto de tests en rojo **atribuibles a los
    ficheros de `F`** no crece. La base sigue siendo los 6 de `MesaAbiertaDashboard.test.tsx`
-   hasta P8, que los repara y declara el conjunto nuevo. **Un rojo fuera de `F` se dirime
-   reejecutando la suite completa en el commit padre**: si también aparece allí, es
-   preexistente, se anota en el reporte y no bloquea; si no aparece, es BLOCKING.
+   hasta P8, que los repara y declara el conjunto nuevo. **Un rojo inesperado fuera de
+   `F` se dirime repitiendo primero el comando exacto en la punta**, con el mismo runtime
+   y sin cambiar el árbol. Si desaparece, se registra como flake no reproducible y no se
+   corre el padre. **Sólo si persiste en la segunda punta** se ejecuta el mismo comando en
+   el commit padre: si también aparece allí, es preexistente, se anota en el reporte y no
+   bloquea; si el padre sale limpio, es BLOCKING.
    (Enmendado 2026-08-08, Decision Log. La redacción anterior —«el conjunto en rojo, por
    nombre, es exactamente el de la base»— no es comprobable mientras los tres ficheros
    `CuentacuentoEditor.ph.*` de B-05 flakeen bajo carga: el PM midió **7 rojos en el propio
    commit padre**, sin cambios de ninguna fase. La regla del padre no es una invención nueva:
    es la misma disciplina de comparación que el punto 4 ya usa para los diagnósticos, y no se
-   puede burlar, porque un rojo que la fase haya causado no se reproduce en el padre.)
+   puede burlar, porque un rojo que la fase haya causado persiste al repetir el mismo commit
+   y no se reproduce en el padre. Orden de triage afinado 2026-08-12, Decision Log.)
 3. `deno test --allow-all --no-check .` desde `supabase/functions/`: **0 fallos**.
    (Enmendado 2026-08-08, Decision Log. Era `deno test --allow-all .`. El type-check que
    `deno test` hace de su grafo es **duplicado** del paso 4, que corre `deno check .` sobre
@@ -723,11 +727,17 @@ deuda en vez de construir.
 - `supabase/functions/create-mesa-matches/handler_test.ts` — +1 test (B-13)
 - `supabase/functions/create-mesa-matches/handler.ts` — **solo** el comentario de
   cabecera (`:11`), que sigue citando `shuffle` como consumidor del seam (N1)
-- `src/components/mesa-abierta/__tests__/MesaAbiertaSignup.mainDish.test.tsx` — +1 (B-18)
+- `src/components/mesa-abierta/__tests__/MesaAbiertaSignup.mainDish.test.tsx` — +3
+  (B-18: invitado de producción, anfitrión por paso 1 y contrato unitario de prop host)
 - `src/components/mesa-abierta/__tests__/MesaAbiertaAdmin.mainDish.test.tsx` — nuevo, +1
   (B-15)
 
 **Ninguna conducta cambia.** El único cambio fuera de un fichero de test es un comentario.
+P5c queda clasificada explícitamente como **behaviour-free** bajo la regla estrecha de
+`CLAUDE.md`: los rojos preexistentes de Vitest/lint pueden descargarse sólo por cero
+regresiones/diagnósticos nuevos en `F` y paridad padre/punta; Playwright puede descargarse
+sólo si ambos árboles abortan con la misma guarda anti-producción por falta de
+`.env.test`. Está prohibido saltarse la guarda o apuntar la suite a producción.
 
 **Acceptance criteria — cada uno se demuestra POR MUTACIÓN, no por verde** (la práctica
 que P5a r2 estableció: un test que pasa no prueba que guarde nada):
@@ -735,24 +745,37 @@ que P5a r2 estableció: un test que pasa no prueba que guarde nada):
   `handler.ts` pone un test en rojo. Medido el 2026-08-11 sobre `main`: hoy deja
   **28/0**.
 - [ ] H2 — **B-18**: envolver el switch de `MesaAbiertaSignup.tsx:373` con
-  `rolePreference === 'guest'` pone un test en rojo. Hoy deja **12/12**.
+  `rolePreference === 'guest'` pone en rojo el recorrido **de producción**
+  `preferredRole="guest"` → seleccionar anfitrión en el paso 1, en ambas polaridades.
+  Ésta es la única entrada host que ofrece hoy `MesaAbiertaSection.tsx`; el test directo
+  con `preferredRole="host"` no cuenta como protección de usuario.
 - [ ] H3 — **B-15**: borrar `can_bring_main_dish` del `select` de `fetchParticipants`
   pone un test en rojo. Hoy deja **12/12**.
 - [ ] H4 — **N1**: la cabecera de `handler.ts` describe el seam como es tras P3b/P4
   (`pick` lo consumen `matching.ts` y `allocateAll`; `shuffle` ya no vive aquí).
-- [ ] H5 — `deno test --allow-all --no-check .` **+1, 0 fallos**; `vitest` **+2**, rojos
+- [ ] H5 — `deno test --allow-all --no-check .` **+1, 0 fallos**; `vitest` **+4**, rojos
   sin cambios.
 - [ ] H6 — Gate D8 sobre `F` = los 4 ficheros. Build ok.
+- [ ] H7 — Alcance acumulado: entre el bootstrap PM `b9675e6` y el último commit de
+  contenido `fee5203`, el diff **fuera de `docs/plan/upgrade/`** toca exactamente los
+  cuatro ficheros de `F`; los commits posteriores a `fee5203` son sólo documentación de
+  revisión/enmienda. No se usa `main..HEAD`, porque incluye por construcción el bootstrap
+  que creó la fase.
 
 **Test plan:**
 - `handler_test.ts`: `el déficit real cruza el borde HTTP` — una mesa cuyo déficit no se
   puede reequilibrar; afirma que `results.tablesWithShortfall` **no** está vacío y trae
   `{tableId, shortfall}`, y que el `console.warn` de D4 lleva **solo ids y números**
   (D12: nada de PII).
-- `MesaAbiertaSignup.mainDish.test.tsx`: `el anfitrión también puede excluirse` — recorre
-  el asistente con `rolePreference: 'host'` y afirma que el switch existe y que su estado
-  llega al `.insert()`. **D7 hace del anfitrión el primer candidato a `main_course`**, así
-  que es el caso que más importa y el único rol que los doce tests actuales no recorren.
+- `MesaAbiertaSignup.mainDish.test.tsx`: dos tests de producción forman la prueba
+  canónica de B-18: `el invitado de producción entra con preferredRole y conserva el
+  opt-out` y `el anfitrión elegido en el paso 1 también puede excluirse`; cada uno recorre
+  las dos polaridades hasta `.insert()`. La grilla alcanzable es
+  `{guest con preferredRole="guest", host elegido en paso 1} × {sin tocar, encendido}`.
+  El test `el anfitrión también puede excluirse` con `preferredRole="host"` y los cuatro
+  tests heredados de P5a sin prop se conservan como contrato unitario barato de una API
+  opcional/default, pero son **over-coverage**: no cuentan como recorridos de producción
+  ni como evidencia necesaria de H2.
 - `MesaAbiertaAdmin.mainDish.test.tsx`: `el fetch entrega can_bring_main_dish al diálogo`
   — monta el panel con un participante `can_bring_main_dish: false`, abre el diálogo de
   edición y afirma que el switch aparece encendido. Es la condición que Codex puso para
@@ -1004,6 +1027,7 @@ Abierto durante la ejecución. Ninguno bloquea una fase; se revisan al cerrar el
 | 2026-08-11 | **`buildParticipantInsert` devuelve `status: 'pending'` literal, no `status: string`** | El prompt de ejecutor de P5a r1 prescribió el tipo ancho. No compila: la unión literal del tipo `Insert` de la tabla rechaza un `string` ancho y aparece un **TS2769 nuevo** en `MesaAbiertaSignup.tsx` — es decir, aplicar la prescripción al pie de la letra habría sido BLOCKING por D8.4. El ejecutor midió las dos variantes con el gate antes de decidir y lo declaró; el PM lo corroboró contra el `TS2322` preexistente de `EditParticipantDialog.tsx:104`, misma tabla y misma columna; **Codex lo ratificó** en la revisión final. Lección para los prompts que quedan: **no prescribir tipos de retorno contra el cliente tipado de Supabase sin haberlos compilado** | Ejecutor P5a r1 (hallazgo y medición), PM (corroboración), Codex Sol (ratificación) |
 | 2026-08-11 | **Se añade la fase P5c, que no construye nada: paga las cuatro deudas de cobertura huérfanas** (B-13, B-15, B-18, N1) | Los cuatro compartían una sola causa: **su fichero no estaba en la `F` de ninguna fase posterior**, así que «al backlog» significaba «sin dueño para siempre». Dos son riesgo real y medido: **B-13** —blanquear `tablesWithShortfall` en la respuesta HTTP deja **28/0**, verificado sobre `main` el 2026-08-11— es el contrato que P6, P7 y P8 van a consumir; **B-18** —ocultar el switch al anfitrión deja **12/12**— guarda código **ya desplegado**, y por D7 el anfitrión es el primer candidato a `main_course`. Se ejecuta **antes de P5b** para que las tres fases que quedan se construyan sobre un contrato probado y no supuesto. Alternativa descartada: repartirlos por P6 y P7, que dejaba B-13 abierta durante toda P6 y metía B-18 en una fase de panel de admin con la que no tiene nada que ver | PM (propuesta y medición), Codex Sol (B-13 y B-18), Brent (decisión) |
 | 2026-08-11 | **Se adopta la regla de los tres estados para los SHOULD-FIX** (SOP §1.4). Antes de cerrar una fase, todo SHOULD-FIX de corrección o cobertura debe quedar en uno de tres estados auditables: **(a)** reparado en la fase actual; **(b)** asignado a una fase concreta **con el fichero en su `F` y un criterio o test nombrados**; o **(c)** aceptado explícitamente por Brent como deuda, con responsable e hito. **«Al backlog» deja de ser un estado válido** | Propuesta de Codex al cerrar P5a, en respuesta a una pregunta de plan que le hizo el PM. El agujero es demostrable: por él se colaron B-13, B-14 y el N1 de P4, y B-16 y B-17 iban camino de lo mismo hasta que la enmienda de P5a r2 los rescató — **dos fallos en cuatro fases**. La condición «fichero en `F`» no basta sola, y de ahí el criterio nombrado: Codex señaló que P6 podía tener `MesaAbiertaAdmin.tsx` en su alcance y aun así no montar nunca la costura de B-15 | Codex Sol (propuesta), Brent (decisión) |
+| 2026-08-12 | **P5c se enmienda tras `FINDINGS`: Vitest `+2 → +4`, H2 se demuestra por la entrada host real del paso 1 y la over-coverage inalcanzable se conserva sin contarla como protección de usuario.** También se corrigen H7, el orden de triage de D8.2 y el conflicto de gates para fases behaviour-free | Codex demostró que `preferredRole="host"` no tiene caller activo y que `open` no remonta el wizard. La grilla real tiene cuatro celdas y las cuatro están cubiertas por los tests r3/r4; nueve mutaciones válidas caen y R3b se descarta por inalcanzable. Revertir tests verdes sería otra alteración unilateral. Los deltas medidos son Vitest **+4** y Deno **+1**, sin código de producción ni diagnósticos nuevos. D8.2 repite primero la punta para no comparar carga desigual; la excepción de `CLAUDE.md` sólo permite descargar rojos unitarios/lint preexistentes o la guarda Playwright cuando una fase no cambia conducta, existe paridad padre/punta y jamás se elude la protección de producción | PM (enmienda por `FINDINGS` de Codex `7d01fa4`) |
 
 ---
 
@@ -1013,16 +1037,17 @@ Con las tres garantías nuevas de D5, que llevan P2 de 16 a 19 tests Deno:
 
 - **Deno**: P2 **+19** · P3a +10 · P3b +8 · P4 +10 · **P5c +1** · P5b +4 · P7 +11 = **+63** →
   409 + 63 = **472 pass / 0 fail**.
-- **Vitest**: P2 +1 · P5a **+12** · **P5c +2** · P6 +12 · P8 +9 = **+36** → 1036 + 36 = 1072,
-  más los 6 rojos reparados por P8 = **1078 pass / 0 fail**.
-  (P5a enmendada de +10 a +12 el 2026-08-10, Decision Log.)
+- **Vitest**: P2 +1 · P5a **+12** · **P5c +4** · P6 +12 · P8 +9 = **+38** → 1036 + 38 = 1074,
+  más los 6 rojos reparados por P8 = **1080 pass / 0 fail**.
+  (P5a enmendada de +10 a +12 el 2026-08-10; P5c de +2 a +4 el 2026-08-12,
+  Decision Log.)
 
 > **Los absolutos de Vitest están desfasados desde el 2026-08-08** (Decision Log; backlog
 > **B-07**). Los **deltas siguen siendo correctos y son lo que D8 exige**; lo que ha caducado
 > es la base de la que parten. El 1036 se midió en `1732bee`; el PM midió el padre de P2
 > (`main`@`981c00f`) y da **1062 pass / 6 fail (80 ficheros)** — el repo ganó 26 tests por
 > trabajo de otros workstreams, no de este plan. Con eso, la proyección real es
-> `1062 + 32 = 1094`, y `1100 pass / 0 fail` tras las reparaciones de P8. **La base de Deno
+> `1062 + 34 = 1096`, y `1102 pass / 0 fail` tras las reparaciones de P8. **La base de Deno
 > (409) no se ha movido y sigue siendo exacta.** Ninguna fase se dirime por estos absolutos:
 > D8 punto 2 compara rojos atribuibles contra el padre, y el punto 5 registra los totales
 > como observación. Se corrigen aquí en vez de reescribirlos para no perder de vista que la

@@ -65,12 +65,28 @@ Vercel auto-deploys on push to `main`. When Brent explicitly approves a merge/sh
 
 ## Quality Gates
 
-ALL must pass before any task is reported complete:
+ALL must pass or be discharged by the narrow behaviour-free rule below before any task
+is reported complete:
 - `npx tsc --noEmit`
 - `npm run lint`
 - `npm test`
 - `npm run build`
 - `npx playwright test` (E2E)
+
+**Behaviour-free exception.** A phase whose frozen contract changes only tests,
+documentation and comments —no runtime source, dependency, migration, config, generated
+artifact or E2E surface— may discharge a pre-existing red unit-test/lint gate or a
+Playwright run that stops at the anti-production guard, but only when all of the
+following are recorded:
+
+1. the phase-specific changed-file gate proves zero new diagnostics;
+2. the exact failure and exit are reproduced on the phase parent with the same runtime;
+3. the phase plan explicitly classifies the work as behaviour-free and authorizes the
+   discharge; and
+4. the report includes the raw command and result.
+
+Any runtime/E2E/config change loses this exception. Never bypass the Playwright guard,
+invent credentials, reuse another local Supabase project or point E2E at production.
 
 ## Hard Rules
 

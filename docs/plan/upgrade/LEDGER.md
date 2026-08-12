@@ -4299,3 +4299,59 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
 - ATTEMPT: 4 · RISK: STANDARD · CODEX: `FAIL` ×2 + `FINDINGS` ×1.
 - ESTADO: **P5c ABIERTA, esperando enmienda del PM.** Ninguna línea de código nueva hasta
   que el contrato se corrija.
+
+### 2026-08-12 — P5c amendment — PM — contrato corregido tras `FINDINGS`
+- SESSION: UPGRADE · P5c-amend · PM
+- STARTED: `2026-08-12T18:15:04-04:00` · ATTEMPT: 4 · RISK: STANDARD ·
+  HANDOFFS: 1 · CODEX previo: `FINDINGS` (`7d01fa4`).
+- STATE: rama `feat/mesa-md-guards` en `34f90fc`, igual a origin y árbol limpio al
+  empezar. El commit de handoff sólo añadió el reporte de cierre de ronda. Open Brain no
+  estuvo disponible en esta sesión; `PLAN.md` y este ledger son el registro durable.
+- **DECISIÓN 1 — SE RATIFICA VITEST `+2 → +4`.** Los dos tests extra ya existen, pasan,
+  quedan dentro del único fichero de signup de `F` y uno de ellos es la prueba canónica
+  de la entrada host real que H2 necesitaba. Revertirlos no reduce riesgo ni recupera una
+  propiedad del contrato; sólo escondería la evidencia que produjo el `FINDINGS`. La
+  aritmética congelada pasa de `+36` a `+38`, total histórico `1072 → 1074` y `1078 →
+  1080` tras P8. La proyección corregida de B-07 sube también en dos: `1094 → 1096` y
+  `1100 → 1102`.
+- **DECISIÓN 2 — LOS TESTS INALCANZABLES SE CONSERVAN COMO OVER-COVERAGE UNITARIA.** No
+  se reescriben los cuatro tests P5a sin prop ni el test r1 con
+  `preferredRole="host"`: el prop es opcional y esos casos fijan su fallback/API a bajo
+  costo. Pero quedan declarados explícitamente como no producción y no cuentan como
+  protección de usuarios, cierre de B-18 ni celdas alcanzables. No se levanta la
+  prohibición histórica de reescribir P5a porque no hay un defecto que reparar allí.
+- **DECISIÓN 3 — H2 ESTÁ SATISFECHO.** Su evidencia canónica pasa a ser
+  `el anfitrión elegido en el paso 1 también puede excluirse`, desde
+  `preferredRole="guest"` y en ambas polaridades hasta `.insert()`. La mutación nominal
+  `rolePreference === 'guest'` cae. El test r1 directo-host es suplementario, no la
+  demostración de H2. La grilla de producción congelada son cuatro celdas:
+  `{guest con prop guest, host elegido en paso 1} × {sin tocar, encendido}`.
+- **DECISIÓN 4A — H7 CORREGIDO.** El boundary normativo es `b9675e6..fee5203`: fuera de
+  `docs/plan/upgrade/` sólo puede tocar los cuatro ficheros de `F`; sobre `fee5203` sólo
+  puede haber documentación de review/enmienda. `main..HEAD` queda descartado porque
+  incluye por construcción el bootstrap PM.
+- **DECISIÓN 4B — D8.2 CORREGIDO.** Un rojo inesperado fuera de `F` obliga primero a
+  repetir el comando exacto en la punta. Si desaparece, se registra como flake no
+  reproducible. Sólo si persiste se compara con el padre; padre limpio = BLOCKING,
+  reproducción en padre = preexistente. Así no se compara otra vez una punta cargada con
+  un padre tranquilo.
+- **DECISIÓN 4C — CARVE-OUT ESTRECHO EN `CLAUDE.md`.** Una fase que sólo cambia
+  tests/docs/comentarios puede descargar rojos unitarios/lint preexistentes o un
+  Playwright detenido por la guarda anti-producción únicamente con contrato explícito,
+  cero regresiones/diagnósticos nuevos en `F`, paridad exacta padre/punta y evidencia
+  cruda. Cualquier cambio de
+  runtime/E2E/config pierde la excepción. Saltarse la guarda, inventar credenciales o
+  apuntar a producción sigue prohibido.
+- PLAN AMENDMENT: scope Signup `+1 → +3`; H2 y test plan nombran los dos recorridos de
+  producción; H5 `+2 → +4`; nuevo H7; P5c clasificada behaviour-free; D8.2, Decision Log
+  y aritmética actualizados. No se toca producción ni ningún test.
+- VERIFICATION (Node `v22.22.0`): `npx tsc --noEmit --pretty false` → exit **0**;
+  suites P5c → **8/8**; `npm run build` → exit **0**. `npm run lint` → exit **1** y
+  **161 problemas (118 errores, 43 warnings)** tanto en punta como en padre. `npx
+  playwright test` → exit **1** en ambos, con el mismo error de capa 1
+  `VITE_SUPABASE_URL no está definida` en `tests/e2e/helpers/guard.ts:47` y
+  `playwright.config.ts:41`. La descarga cumple la nueva regla; no se creó `.env.test`,
+  no se inventaron credenciales y no se apuntó a producción.
+- NEXT: no hay otra ronda de ejecutor. Se despacha una re-revisión Codex r5 sobre el
+  contrato enmendado y el diff de código ya congelado. P5c sigue abierta hasta `PASS`.
+- ENDED: `2026-08-12T18:21:34-04:00`.
