@@ -188,6 +188,21 @@ describe('MesaAbiertaSignup — plato principal', () => {
     // El switch existe para el anfitrión y nace apagado, igual que para el invitado (D2).
     expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'false');
 
+    advanceToStep5();
+
+    // Las DOS polaridades, como en el test del invitado. Sin este primer submit
+    // el test no distingue "el anfitrión puede excluirse" de "el anfitrión queda
+    // excluido siempre": excluir a todo anfitrión que no toca el switch viola D2
+    // y dejaba verde la versión de la r1.
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      role_preference: 'host',
+      can_bring_main_dish: true,
+    });
+
+    cleanup();
+    participantInserts.length = 0;
+
+    advanceToStep3AsHost();
     fireEvent.click(mainDishSwitch());
     expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'true');
 

@@ -101,6 +101,21 @@ function withPii(p: Participant): Participant {
   return { ...p, ...PII } as Participant;
 }
 
+/**
+ * Serializa RECURSIVAMENTE, para que un objeto anidado no se esconda tras
+ * `"[object Object]"`. `Deno.inspect` es el respaldo porque `JSON.stringify`
+ * lanza ante referencias circulares.
+ */
+function deepRender(value: unknown): string {
+  try {
+    const json = JSON.stringify(value);
+    if (typeof json === "string") return json;
+  } catch {
+    // circular u otro valor no serializable: cae al inspector.
+  }
+  return Deno.inspect(value, { depth: 10 });
+}
+
 // ----------------------------------------------------- the Supabase double
 
 type Verb = "getUser" | "select" | "insert" | "update" | "delete";
@@ -678,10 +693,13 @@ Deno.test("el déficit real cruza el borde HTTP", async () => {
   });
   const handler = createHandler({ supabase: db, pick: () => 0 });
 
-  const warnings: string[] = [];
+  // Los argumentos se guardan CRUDOS. Aplicarles `String()` al capturarlos
+  // convertiría un participante en `"[object Object]"` y borraría justo la PII
+  // que este test dice vigilar — el agujero que Codex encontró en la r1.
+  const warnCalls: unknown[][] = [];
   const realWarn = console.warn;
   console.warn = (...args: unknown[]): void => {
-    warnings.push(args.map(String).join(" "));
+    warnCalls.push(args);
   };
 
   let body: HandlerBody;
@@ -709,14 +727,31 @@ Deno.test("el déficit real cruza el borde HTTP", async () => {
   assertEquals(coverage[0].mainDishCount, 0);
   assertEquals(coverage[0].shortfall, 2);
 
-  // D4 warns exactly once, and D12 keeps that line to ids and numbers.
-  assertEquals(warnings.length, 1);
-  assertEquals(warnings[0].includes("h1"), true);
-  assertEquals(warnings[0].includes("2"), true);
-  assertEquals(warnings[0].includes("@"), false);
+  // D4 avisa exactamente una vez...
+  assertEquals(warnCalls.length, 1);
+
+  // ...con UN SOLO argumento y de tipo string. Pasar un participante al logger
+  // es precisamente la fuga que D12 prohíbe, así que la forma de la llamada es
+  // parte de la garantía, no un detalle.
+  assertEquals(warnCalls[0].length, 1);
+  assertEquals(typeof warnCalls[0][0], "string");
+
+  // El mensaje entero, no un `includes`: ids y números, y el 2 es el déficit
+  // exacto, no un dígito que aparece por casualidad.
+  assertEquals(
+    warnCalls[0][0],
+    "Main dish shortfall on 1 table(s): h1 short 2",
+  );
+
+  // Y una red por debajo: ninguna pieza de PII sobrevive a una serialización
+  // PROFUNDA de todo lo que recibió el logger. Si alguien añade un segundo
+  // argumento con la fila dentro, esto lo caza aunque la aserción de arriba se
+  // relaje algún día.
+  const logged = deepRender(warnCalls[0]);
+  assertEquals(logged.includes("@"), false);
   for (const secret of Object.values(PII)) {
     assertEquals(
-      warnings[0].includes(secret),
+      logged.includes(secret),
       false,
       `el aviso de déficit filtró PII: ${secret}`,
     );
