@@ -101,20 +101,6 @@ function withPii(p: Participant): Participant {
   return { ...p, ...PII } as Participant;
 }
 
-/**
- * Serializa RECURSIVAMENTE, para que un objeto anidado no se esconda tras
- * `"[object Object]"`. `Deno.inspect` es el respaldo porque `JSON.stringify`
- * lanza ante referencias circulares.
- */
-function deepRender(value: unknown): string {
-  try {
-    const json = JSON.stringify(value);
-    if (typeof json === "string") return json;
-  } catch {
-    // circular u otro valor no serializable: cae al inspector.
-  }
-  return Deno.inspect(value, { depth: 10 });
-}
 
 // ----------------------------------------------------- the Supabase double
 
@@ -736,26 +722,18 @@ Deno.test("el déficit real cruza el borde HTTP", async () => {
   assertEquals(warnCalls[0].length, 1);
   assertEquals(typeof warnCalls[0][0], "string");
 
-  // El mensaje entero, no un `includes`: ids y números, y el 2 es el déficit
+  // El mensaje ENTERO, no un `includes`: ids y números, y el 2 es el déficit
   // exacto, no un dígito que aparece por casualidad.
+  //
+  // Esta igualdad es lo que hace cumplir D12, y por eso es exacta y no laxa: las
+  // filas del doble llevan PII sintética (`withPii`), así que cualquier fuga
+  // —la fila como segundo argumento, o embebida en el propio string— cambia esta
+  // llamada y cae aquí. Si algún día hay que relajarla, hay que reemplazar la
+  // garantía, no sólo el literal.
   assertEquals(
     warnCalls[0][0],
     "Main dish shortfall on 1 table(s): h1 short 2",
   );
-
-  // Y una red por debajo: ninguna pieza de PII sobrevive a una serialización
-  // PROFUNDA de todo lo que recibió el logger. Si alguien añade un segundo
-  // argumento con la fila dentro, esto lo caza aunque la aserción de arriba se
-  // relaje algún día.
-  const logged = deepRender(warnCalls[0]);
-  assertEquals(logged.includes("@"), false);
-  for (const secret of Object.values(PII)) {
-    assertEquals(
-      logged.includes(secret),
-      false,
-      `el aviso de déficit filtró PII: ${secret}`,
-    );
-  }
 });
 
 Deno.test("golden: sin cupo → lista de espera", async () => {
