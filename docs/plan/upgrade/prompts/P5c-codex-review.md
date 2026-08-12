@@ -1,3 +1,7 @@
+> **SUPERSEDED — DO NOT REVIEW FROM THIS FILE.**
+> Kept only as the historical prompt for its round. The single current review
+> prompt is `docs/plan/upgrade/prompts/P5c-codex-rereview-r4.md`.
+
 SESSION: UPGRADE · P5c · REVIEW
 
 Final review of phase **P5c — Guardas de cobertura huérfanas** for **UPGRADE**
