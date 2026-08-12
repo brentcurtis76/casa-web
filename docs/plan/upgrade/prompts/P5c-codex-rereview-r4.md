@@ -1,8 +1,11 @@
+> **SUPERSEDED — DO NOT REVIEW FROM THIS FILE.**
+> Kept only as the historical prompt for its round. The single current review
+> prompt is `docs/plan/upgrade/prompts/P5c-codex-rereview-r5.md`.
+
 SESSION: UPGRADE · P5c · r4 · RE-REVIEW
 
-**This is the ONE current review prompt for P5c.** The other `P5c-codex-*.md` files in
-this directory are superseded and carry a banner saying so. If you were handed one of
-those, stop and use this file.
+**Historical r4 prompt.** Its verdict is committed at `7d01fa4`; use the r5 prompt named
+in the banner above for the amended-contract review.
 
 ---
 

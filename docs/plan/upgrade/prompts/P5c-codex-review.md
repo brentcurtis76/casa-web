@@ -1,6 +1,6 @@
 > **SUPERSEDED — DO NOT REVIEW FROM THIS FILE.**
 > Kept only as the historical prompt for its round. The single current review
-> prompt is `docs/plan/upgrade/prompts/P5c-codex-rereview-r4.md`.
+> prompt is `docs/plan/upgrade/prompts/P5c-codex-rereview-r5.md`.
 
 SESSION: UPGRADE · P5c · REVIEW
 
