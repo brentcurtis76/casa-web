@@ -667,8 +667,15 @@ fichado como D26** —el comando era real, el árbol no era el que la afirmació
 aquí el eje no era la rama sino la capa: historial contra esquema. La corrección de la r2 no es
 sólo reescribir la frase: es que **ninguna aserción negativa de esta fase se apoya ya en el
 historial de migraciones**. La afirmación que sobrevive —«`E3c-fix` no desplegó nada ajeno»— se
-sostiene sobre las sentencias registradas, el contenido del espejo y la cronología por OID, que son
-tres fuentes independientes del historial.
+sostiene sobre **las sentencias registradas de `20260808120000`, el contenido del proyecto espejo y
+la transcripción del push**: tres fuentes independientes del historial, **y ninguna de ellas es una
+fecha**.
+
+**Precisión de la r3 (Codex S1):** la r2 ponía aquí «la cronología por OID» como tercera pata. **No
+lo es.** La cronología —fechada o por OID— dice cuándo apareció la **deriva ajena**, que es contexto
+para su workstream; **no** dice nada sobre lo que hizo esta fase. La tercera pata correcta es la
+transcripción del push, que nombra una sola migración. Confundir las dos habría dejado el alcance de
+la fase colgando de una inferencia cronológica que, para las 9 columnas, **no está medida**.
 
 **Tercer punto débil: el mecanismo del espejo es correcto pero poco convencional.** Depende de que
 la CLI derive la versión del nombre del fichero. Está verificado a posteriori por `E3c.1` y `E3c.7`,

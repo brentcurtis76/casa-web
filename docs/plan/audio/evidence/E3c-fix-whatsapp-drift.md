@@ -208,7 +208,21 @@ Nada de lo que se aplicó hoy pudo producir un OID inferior.
 ## 7. Riesgo que esto crea para cualquiera, no sólo para AUDIO
 
 `supabase db push` a secas **falla** en este repo hasta que el historial se alinee. Peor: quien lo
-«arregle» con `--include-all` **reaplicaría las dos migraciones**. `20260612000000` es idempotente
-(`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`), así que probablemente sobreviviría.
-**`20260612000001` no se ha auditado para eso** — y crear un segundo cron duplicado sí tendría
-efecto observable. **Nadie debería correr `--include-all` en este repo hasta cerrar el punto 2 del §6.**
+«arregle» con `--include-all` **reejecutaría las dos migraciones**.
+
+**CORREGIDO en la r3 (Codex S2).** Este párrafo advertía de «un segundo cron duplicado». **Es
+falso.** `20260612000001` hace `PERFORM cron.unschedule(jobid) FROM cron.job WHERE jobname =
+'wa_reminders_daily'` (`:43`) **antes** de `cron.schedule` (`:47`): por su camino normal **no puede
+dejar dos jobs con ese nombre**. La advertencia se escribió sin leer el fichero — exactamente el
+defecto que este documento existe para corregir, cometido dentro del propio documento.
+
+**El riesgo real, medido sobre el fichero:**
+
+| Migración | Qué haría un `--include-all` hoy |
+|---|---|
+| `20260612000000` | Idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`): sobreviviría sin cambio observable |
+| `20260612000001` | Con las GUC **vacías** —el estado de hoy— **retorna en `:37-39` y no toca nada**. Si hubiera configuración puesta, **desprograma y reprograma** el cron: no lo duplica, pero lo **reemplaza** |
+
+**Sigue siendo cierto que nadie debe correr `--include-all` en este repo hasta cerrar el punto 2 del
+§6** — no por el cron, sino porque **ejecuta migraciones ajenas no verificadas sin que su
+workstream lo haya decidido.**

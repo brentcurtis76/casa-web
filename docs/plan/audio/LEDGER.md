@@ -2556,7 +2556,7 @@ hardcodeado. Es `E4s.9`, y se mide.
      `prompts/E3c-fix-r1.md`, commiteado porque el ejecutor usa otro worktree.
   2. **Decisión pendiente de Brent:** cómo llega el primer episodio publicado — contenido real o
      fila sintética. **`E4-spike` no puede empezar sin eso**, ni siquiera con `E3c-fix` cerrada.
-  3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO. Alguien de ese
+  3. **Las 2 migraciones de WhatsApp siguen sin aplicar.** **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos materiales YA estaban desplegados y siguen estándolo; lo que falta es la fila de historial. Sólo el cron está fechado (2026-06-12); los índices únicamente constan anteriores a E3c-fix por orden de OID, y las columnas no tienen fecha medida. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO. Alguien de ese
      workstream debería saberlo; queda escrito aquí porque lo medí yo.
 
 ### 2026-08-12 — E3c-fix round 1 — EXEC (Opus)
@@ -2620,7 +2620,7 @@ hardcodeado. Es `E4s.9`, y se mide.
      vacío: lo que se revisa es el **cambio de estado de la base** y la evidencia que lo sostiene.
   2. ~~Decisión del PM/Brent sobre `E3c.6`~~ → **RESUELTA, ver la entrada de abajo.**
   3. **`/reflexiones/<slug>` sigue sin verificarse en producción**: sin episodios no hay slug que pedir.
-  4. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
+  4. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos materiales YA estaban desplegados y siguen estándolo; lo que falta es la fila de historial. Sólo el cron está fechado (2026-06-12); los índices únicamente constan anteriores a E3c-fix por orden de OID, y las columnas no tienen fecha medida. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
 
 ### 2026-08-12 — E3c-fix — DECISIÓN DE BRENT: `E3c.6` DIFERIDO · enrutado a Codex
 - SESSION: `AUDIO · E3c-fix · r1 · EXEC` (misma conversación durable; no se abrió ejecutor nuevo)
@@ -2656,7 +2656,7 @@ hardcodeado. Es `E4s.9`, y se mide.
      FAIL espurio: el diff de código **es vacío por contrato**, y `E3c.6` **está diferido por
      decisión de Brent**. Y le deja explícitamente a Codex la decisión sobre el gate rojo.
   2. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
-  3. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos YA estaban desplegados desde el 2026-06-12; lo que falta es la fila de historial. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
+  3. Las 2 migraciones de WhatsApp siguen sin aplicar. **[SUPERADO 2026-08-12, Codex B1 r2: sus efectos materiales YA estaban desplegados y siguen estándolo; lo que falta es la fila de historial. Sólo el cron está fechado (2026-06-12); los índices únicamente constan anteriores a E3c-fix por orden de OID, y las columnas no tienen fecha medida. Ver `evidence/E3c-fix-whatsapp-drift.md`.]** No son de AUDIO.
 
 ### 2026-08-12 — E3c-fix round 2 — EXEC (Opus), remediación del FAIL de Codex
 - SESSION: `AUDIO · E3c-fix · r2 · EXEC` (misma conversación durable, según overlay §4.2)
@@ -2758,7 +2758,10 @@ hardcodeado. Es `E4s.9`, y se mide.
   **Nota de Codex que conviene retener:** su primera corrida heredó **Node 26.5.0** y dio **15**
   fallos; con el runtime congelado `v22.22.0` reprodujo 6/1155. **El número de fallos de base
   depende de la versión de Node**, así que toda comparación con la base tiene que fijarla.
-- ALCANCE: 6 ficheros de documentación. **Cero ficheros fuente**, cero mutación de producción.
+- ALCANCE: **8 ficheros** de documentación en el diff acumulado de la ronda (`875a525` → `13f2780`):
+  los 6 artefactos de remediación más la review r2 guardada y el prompt de re-review r3.
+  **Cero ficheros fuente**, cero mutación de producción. **[Corregido en el cierre: la r3 apuntó 6,
+  contando sólo los de remediación. Codex S3 lo midió — contabilidad de evidencia, sin efecto en el alcance.]**
 - FINDINGS RAISED: ninguno nuevo.
 - OPEN AFTER THIS ROUND:
   1. **Re-review de Codex** sobre r1+r2+r3. Prompt en `prompts/E3c-fix-codex-r3.md`.
@@ -2766,3 +2769,74 @@ hardcodeado. Es `E4s.9`, y se mide.
      verdicts, stop and re-plan»). Vamos por dos.
   2. La deriva de WhatsApp espera a su workstream. No es de AUDIO y no se toca.
   3. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
+
+### 2026-08-12 — E3c-fix CIERRE DE UNIDAD — EXEC (Opus), Codex PASS
+- SESSION: `AUDIO · E3c-fix · r3 · EXEC` (cierre mecánico, misma conversación durable)
+- **CODEX r3: `PASS` — 0 BLOCKING, 3 SHOULD-FIX, 0 NIT.** «E3c-fix passes and may close.»
+  Reviews guardadas: `reviews/REVIEW-E3c-fix-r1.md`, `-r2.md`, `-r3.md`.
+- **FASE `E3c-fix` → DONE.** Marcada en la cabecera del bloque y en la tabla de fases del PLAN.
+- CIERRE: `phase/E3c-fix @ db8ed2e`, empujada a `origin`. **Sin merge y sin despliegue** — no
+  autorizados, y **no hacen falta**: esta fase no cambió código, cambió el estado de la base, y ese
+  cambio ya está en producción desde las 14:26 UTC.
+
+**LO QUE ENTREGA, en una línea:** `/reflexiones` volvió a servir su estado vacío en producción y el
+esquema del slug está desplegado y **registrado** como `20260808120000`, exactamente una vez.
+
+**LOS TRES SHOULD-FIX SE ARREGLARON EN EL CIERRE, no se difirieron.** El overlay permite
+backlogearlos, pero **el entregable de esta fase es documentación**: dejar prosa incorrecta dentro
+del propio artefacto que existe para corregir prosa incorrecta habría sido peor que el defecto.
+- **S1 — la acotación cronológica, propagada al resto del registro.** Quedaban sobreafirmaciones
+  fechando **toda** la deriva el 2026-06-12: la línea de *out of scope*, la fila de riesgos §7, tres
+  notas de supersesión del ledger y §11 de la evidencia. Ahora todas dicen el alcance exacto: cron
+  **fechado**, índices sólo **ordenados** por OID, columnas **sin fecha medida**. Y el *out of
+  scope* ya no dice que falte «sólo la fila de historial»: falta **también** la comparación objeto
+  por objeto con los ficheros de hoy, como el traspaso venía diciendo.
+- **S1b — §11 nombraba mal la tercera pata.** Decía que el alcance se sostiene en «la cronología por
+  OID». **No.** Se sostiene en las **sentencias registradas, el espejo y la transcripción del push**
+  — tres fuentes, **ninguna una fecha**. La cronología describe la deriva ajena, no lo que hizo esta
+  fase. Confundirlas dejaba el alcance colgando de una inferencia que, para las 9 columnas, **no
+  está medida**.
+- **S2 — una advertencia que me inventé, y Codex la mató leyendo el fichero.** El PLAN y el
+  documento de deriva avisaban de que reaplicar `20260612000001` podría **duplicar el cron**.
+  **Falso:** hace `PERFORM cron.unschedule(jobid) … WHERE jobname='wa_reminders_daily'` (`:43`)
+  **antes** de `cron.schedule` (`:47`), así que por su camino normal no puede dejar dos jobs; y con
+  las GUC vacías retorna en `:37-39` sin tocar nada. **Es el mismo defecto que costó dos rondas —
+  afirmar sin medir— cometido dentro del documento que existe para corregirlo.** Sustituido por el
+  riesgo real, medido sobre el fichero: `--include-all` **ejecuta migraciones ajenas no verificadas**
+  sin decisión de su workstream, y con configuración puesta **reemplazaría** el cron, no lo duplicaría.
+- **S3 — contabilidad.** La r3 apuntó «6 ficheros»; el diff acumulado `875a525` → `13f2780` tiene
+  **8** (los 6 de remediación más la review r2 y el prompt r3). Corregido.
+
+**MÉTRICAS DE LA FASE**
+- ATTEMPTS a PASS: **3** · CODEX: FAIL(1) → FAIL(1) → **PASS** · HANDOFFS: **3**
+- Elapsed: `2026-08-12T14:19:56Z` → `2026-08-12T21:52:00Z` (~7 h 30 min, con esperas de review)
+- **ESCAPED DEFECT: ninguno** hasta la fecha. La fase **nació** de uno (`E3b`), y esa es la métrica
+  que importa vigilar aquí.
+- Ficheros fuente tocados: **0**, en las tres rondas. Mutación de producción: **una**, en la r1.
+
+**DIFERIDOS — se llevan a quien corresponda, no se pierden aquí**
+1. **`E3c.6`** — prueba de comportamiento del trigger. Diferido por decisión de Brent. **Se reabre
+   solo al publicar el primer episodio real**: publicarlo *es* la prueba. Riesgo asumido y escrito:
+   no está demostrado que el trigger *se ejecute* bien en esta instancia; el hash del cuerpo
+   sobreviviría a un `DISABLE TRIGGER`, y sólo lo acota la lectura de `tgenabled` de hoy.
+2. **`/reflexiones/<slug>`** sin verificar en producción: sin episodios no hay slug que pedir.
+3. **La deriva huérfana de WhatsApp** — `evidence/E3c-fix-whatsapp-drift.md`, listo para su
+   workstream. **No es de AUDIO y no se tocó.** Incluye el aviso de que **nadie debe correr
+   `db push --include-all`** en este repo hasta que hagan la comparación objeto por objeto.
+
+**DERIVA DE PLAN registrada en el camino:** `E3c.7` medía el historial y afirmaba sobre el esquema
+(2 FAIL); `E3c.6` era inejecutable con las herramientas que el propio contrato nombraba, porque el
+MCP `execute_sql` conecta como `supabase_read_only_user`; y `E3c.1` y `E3c.6` eran **mutuamente
+insatisfacibles**. Las tres son fallos de contrato, no de ejecución, y ya están corregidos en el PLAN.
+
+**LO QUE ESTA FASE ENSEÑA, y conviene que sobreviva a la fase**
+- **«Pendiente en el historial» ≠ «DDL ausente».** Es D26 en un eje nuevo: no la rama equivocada,
+  sino la **capa** equivocada. Merece leerse junto a D26.
+- **Un barrido afirmado no es un barrido hecho.** La r2 escribió «ninguna aserción se apoya ya en el
+  historial» sin barrer. Costó una ronda entera. Desde la r3, todo barrido lleva su `grep` de control.
+- **El número de fallos de base depende de la versión de Node** — Codex midió 15 con Node 26.5.0 y
+  6 con la v22.22.0 congelada. Cualquier comparación con la base tiene que fijar el runtime.
+
+**SIGUIENTE:** `E4-spike` sigue **🔴 BLOQUEADA**, y `E3c-fix` **no la desbloquea**. Le faltaba un
+episodio publicado, y sigue faltando: **es la decisión pendiente de Brent** (contenido real o fila
+sintética) la que la destraba — y de paso cerraría `E3c.6`.

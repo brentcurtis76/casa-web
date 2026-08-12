@@ -341,7 +341,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
 | E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **✅ DONE — 2026-08-09, `phase/E3b-pages@b89fe93`, `CODEX REVIEW E3b SECOND RE-REVIEW FINAL: PASS`** | E3a ✅, E-infra-impl ✅ |
-| E3c-fix | **Desplegar el esquema de `E3a` a la base real** y devolver `/reflexiones` a verde | Infra + DB | **CONTRATO CANDIDATO — r1 sin despachar** (revisión 24) | E3a ✅, E3b ✅ |
+| E3c-fix | **Desplegar el esquema de `E3a` a la base real** y devolver `/reflexiones` a verde | Infra + DB | **✅ DONE** — Codex PASS r3, 2026-08-12. `E3c.6` diferido | E3a ✅, E3b ✅ |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **🔴 BLOQUEADA** — método refutado y precondiciones incumplidas (revisión 24) | E3c-fix, **+ un episodio publicado** |
 
 **`E3c-fix` nace en la r24 y no es una fase más: es la reparación de un defecto vivo en producción.**
@@ -1398,7 +1398,15 @@ arranque —que ya contendrá `6054d55`— y anota su SHA exacto.
 
 ---
 
-## Phase E3c-fix — Desplegar el esquema de `E3a` a la base real
+## Phase E3c-fix — Desplegar el esquema de `E3a` a la base real ✅ **DONE**
+
+> **✅ CERRADA el 2026-08-12.** Codex `PASS` en la r3 (0 BLOCKING) sobre `phase/E3c-fix @ db8ed2e`.
+> Review: `reviews/REVIEW-E3c-fix-r3.md` (r1 y r2 también guardadas). **8 de 9 criterios cumplidos;
+> `E3c.6` DIFERIDO** por decisión explícita de Brent — ver el criterio, que lleva su condición de
+> reapertura. **3 rondas, 2 FAIL de Codex, cero ficheros fuente.**
+> **Lo que entrega:** `/reflexiones` vuelve a servir su estado vacío en producción y el esquema del
+> slug está desplegado y registrado. **Lo que NO entrega:** que la página funcione **con contenido**
+> — falta un episodio, y sembrarlo estaba fuera de alcance.
 
 **RIESGO: `HIGH`.** Cambio de esquema sobre la base de producción, que además es **compartida con
 Life OS**. No hay lectura de esta fase en la que sea `STANDARD`.
@@ -1440,13 +1448,18 @@ Evidencia completa: `evidence/E3c-fix-drift.md`.
 
 - **La deriva huérfana de WhatsApp.** `20260612000000_casa_whatsapp_scheduling.sql` y
   `20260612000001_casa_wa_reminders_cron.sql` **no son de AUDIO**.
-  **CORREGIDO el 2026-08-12 (Codex B1, r2).** Esta línea decía «las otras dos migraciones
-  pendientes» y que «desplegarlas» era la decisión pendiente. **Los dos supuestos eran falsos:**
-  sus efectos materiales **ya están desplegados** —las 9 columnas, los 3 índices y el cron
-  `wa_reminders_daily`, activo desde el 2026-06-12— y lo único que les falta es **la fila de
-  historial**. Lo que queda por decidir no es desplegarlas: es **reconciliar despliegue e
-  historial**, y esa decisión sigue siendo de su workstream, no de AUDIO. El overlay §5 aplica
-  igual: enrutar a una fase acotada *"rather than expanding an unrelated feature's scope"*.
+  **CORREGIDO el 2026-08-12 (Codex B1 en r2, acotado por S1 en r3).** Esta línea decía «las otras
+  dos migraciones pendientes» y que «desplegarlas» era la decisión pendiente. **Los dos supuestos
+  eran falsos:** sus efectos materiales **ya están desplegados** — las 9 columnas, los 3 índices y
+  el cron `wa_reminders_daily`, **activo**.
+  **Dicho con el alcance exacto de lo medido:** el **cron** está fechado el 2026-06-12
+  (`cron.job_run_details`); los **3 índices** sólo constan **anteriores a `E3c-fix`** por orden de
+  OID, sin fecha; las **9 columnas** consta que existen, **sin fecha medida**.
+  **Y falta más que la fila de historial:** tampoco está establecido que lo desplegado **coincida
+  objeto por objeto** con lo que dicen esos dos ficheros hoy — los ficheros pueden haber cambiado
+  desde junio. Así que lo pendiente es **reconciliar despliegue e historial tras una comparación
+  objeto por objeto**, y esa decisión sigue siendo de su workstream, no de AUDIO. El overlay §5
+  aplica igual: enrutar a una fase acotada *"rather than expanding an unrelated feature's scope"*.
   Medición y traspaso: `evidence/E3c-fix-whatsapp-drift.md`.
 - **Sembrar episodios.** Brent lo dejó fuera de esta fase el 2026-08-12. Se decide aparte.
 - **Tocar `index.html`, `vercel.json`, meta tags, canonical o el `404`.** Todo eso es `E4`.
@@ -1466,10 +1479,22 @@ es lo que pasa.** El comportamiento real, con salida cruda en `evidence/E3c-fix.
 | `supabase db push --include-all` | **Éste sí** intentaría **reaplicar** las dos de WhatsApp — cuyos efectos ya están en la base. Es el comando peligroso, y el que nadie debe correr en este repo. |
 
 **Sigue prohibido en esta fase**, pero por el motivo correcto: no porque `db push` despliegue
-esquema ajeno, sino porque **`--include-all` reaplicaría** una migración ya desplegada y sin
-registrar. `20260612000000` es idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT
-EXISTS`) y probablemente sobreviviría; **`20260612000001` no se ha auditado para eso**, y duplicar
-el cron sí tendría efecto observable.
+esquema ajeno, sino porque **`--include-all` reejecutaría** dos migraciones ajenas ya desplegadas y
+sin registrar, **sin que su workstream lo haya aprobado**.
+
+**CORREGIDO en la r3 (Codex S2).** La r3 decía aquí que reaplicar `20260612000001` podría
+**duplicar el cron**. **Es falso, y basta con leer el fichero:** antes de programar hace
+`PERFORM cron.unschedule(jobid) FROM cron.job WHERE jobname = 'wa_reminders_daily'` (`:43`) y sólo
+después `cron.schedule` (`:47`), así que por su camino normal **no puede dejar dos jobs con ese
+nombre**. Y con las GUC vacías —que es el estado de hoy— **retorna antes todavía** (`:37-39`) y no
+toca el cron existente. Era una advertencia inventada sobre un fichero que no se había leído: el
+mismo defecto de afirmar sin medir que costó dos rondas.
+
+**El riesgo real, que sigue en pie:** `--include-all` **ejecuta una migración ajena no verificada**.
+`20260612000000` es idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) y
+sobreviviría; `20260612000001` **no tocaría nada mientras las GUC estén vacías**, pero **si hubiera
+configuración puesta, reprogramaría el cron** (lo desprograma y lo vuelve a crear). Nada de eso es
+decisión de AUDIO.
 
 Y la migración de `E3a` **no es idempotente en dos puntos**: los `ADD CONSTRAINT` de las líneas 39
 y 146 no llevan guard, así que **aplicarla dos veces falla con `42710 duplicate_object`**. De ahí
@@ -2481,7 +2506,7 @@ Riesgos vigentes de las unidades actuales:
 | Liturgias antiguas con `SlideGroup` de forma distinta | media | bajo | E2.4 y E2.6: degrada a Gemini con aviso, sin romper la publicación |
 | E4-spike concluye que el preview obliga a cambiar el modelo de despliegue | media | alto | El spike lo determina desplegando, no razonando; el costo se declara en su bloque |
 | **Una fase pasa Codex, se mergea, y su esquema no llega a la base desplegada** | **ocurrida — `E3b`, 2026-08-09 → detectada 2026-08-12** | **alto: página pública en `400` tres días** | **D26**: verificación obligatoria contra la base desplegada en toda fase de esquema. `E3c-fix` repara ésta |
-| Un `supabase db push --include-all` **reaplica** la deriva huérfana de WhatsApp | media | alto | **Reescrito el 2026-08-12 (Codex B1, r2).** Decía «un `db push` despliega migraciones de otro workstream»: falso por partida doble. Sus efectos **ya están desplegados** (desde el 2026-06-12) y sólo falta la fila de historial; y `db push` **a secas aborta** (`LegacyDbPushMissingRemoteError`), no despliega. El peligro real es **`--include-all`**, que reintentaría `20260612000001` —no auditada para idempotencia— y podría duplicar el cron. D26 obliga a aplicar por versión explícita; `E3c.7` comprueba **el historial**, no el esquema |
+| Un `supabase db push --include-all` **reejecuta** la deriva huérfana de WhatsApp | media | alto | **Reescrito el 2026-08-12 (Codex B1 en r2, acotado por S1 y S2 en r3).** Decía «un `db push` despliega migraciones de otro workstream»: falso por partida doble. Sus efectos **ya están desplegados** —el cron fechado el 2026-06-12, los índices sólo *anteriores a `E3c-fix`* por OID, las columnas sin fecha medida— y falta la fila de historial **más** una comparación objeto por objeto con los ficheros de hoy; y `db push` **a secas aborta** (`LegacyDbPushMissingRemoteError`), no despliega nada. El peligro real es **`--include-all`**, que **ejecuta migraciones ajenas no verificadas** sin decisión de su workstream. **No** duplicaría el cron: `20260612000001` hace `cron.unschedule` (`:43`) antes de `cron.schedule` (`:47`), y con las GUC vacías retorna en `:37-39` sin tocar nada. D26 obliga a aplicar por versión explícita; `E3c.7` comprueba **el historial**, no el esquema |
 | El spike se queda sin episodio que previsualizar | **alta — es el estado actual** | medio: bloquea E4 entero | La tabla está vacía en producción. Precondición explícita de `E4-spike`, y una decisión pendiente de Brent: contenido real o fila sintética |
 | **El PM vuelve a escribir "verificado" sobre una inferencia** | **ha ocurrido tres veces** | alto | Registro explícito en §5; toda afirmación de estado lleva el comando que la produjo |
 
