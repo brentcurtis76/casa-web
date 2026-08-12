@@ -63,6 +63,17 @@ sobre un gate vacío.
 Se dejó **sin tocar** `.skills/skills/genera-project/SKILL.md:48`: es otro proyecto
 (Genera), con su propia configuración de TypeScript.
 
+**PENDIENTE Y BLOQUEANTE:** los agentes que ejecuta el bridge **no** son estos. Viven en
+`~/SecondBrain/pipeline/agents/` (`pipeline-orchestrator.md:153` los carga desde ahí) y
+siguen con el comando vacío: `dev.md:52`, `dev.md:172`, `qa.md:78`, `qa.md:133`. Mientras
+sigan así, **cualquier tarea del bridge corre el gate vacío**, diga lo que diga este repo.
+
+No se corrigió aquí a propósito: son agentes compartidos entre proyectos y `npm run
+typecheck` no existe en todos. El diseño correcto (recomendado por la revisión externa) es
+declarar los comandos de calidad de cada proyecto en `.pipeline/project-context.md`, hacer
+que los agentes compartidos ejecuten lo que ahí se declare y **fallen cerrado si falta**.
+Decisión de Brent — toca SecondBrain, fuera de este repo.
+
 Los archivos históricos (`reports/*/GATE-REPORT.md`, `docs/PROMPT_027_*`,
 `docs/CUENTACUENTOS_OVERHAUL_REVIEW.md`) conservan el comando viejo a propósito: son
 registro de lo que se ejecutó entonces, no instrucciones.
@@ -99,21 +110,54 @@ resolviendo 5.9.3).
 Los 1.039 errores son lo que produce esa configuración **ya laxa**. No hay margen de
 "aflojar más" sin desactivar la comprobación por completo.
 
-## 4. Triaje: 1.039 errores / 120 archivos
+## 4. Triaje: 1.039 errores / 126 archivos
 
-Clasificados por **causa raíz**, no por código TS (un solo defecto produce cascadas de
-códigos distintos).
+> **Corregido tras revisión externa (BLOCKING, 2026-08-12).** La versión anterior de esta
+> sección decía 120 archivos y atribuía 638 errores al grupo A. Ambas cifras estaban mal:
+>
+> - **120 → 126.** El regex de conteo por archivo (`^[^ (]+\(`) se cortaba en el primer
+>   espacio y descartaba en silencio justo los seis archivos con nombre duplicado
+>   (`PresenterView 4.tsx`, etc.) — precisamente el grupo E.
+> - **638 era una atribución falsa.** El clasificador buscaba la firma `mesa_abierta_` en el
+>   *texto* del error, y ese texto imprime el tipo `Database` completo en **todo** error de
+>   sobrecarga. Así, errores de `.insert()` sobre tablas **ya declaradas** —
+>   `GraphicsGeneratorV2.tsx:1068` (`casa_graphics_batches`),
+>   `MesaAbiertaAdmin.tsx:952` (`mesa_abierta_assignments`) — se contaban como "tabla
+>   ausente". Regenerar no los toca.
+>
+> El desglose de abajo ya no es una predicción: se **midió** intercambiando `types.ts` por la
+> versión regenerada en una copia de trabajo, corriendo el gate y revirtiendo.
 
-| # | grupo | errores | archivos | códigos dominantes |
+| # | grupo | errores | archivos | ¿lo arregla regenerar? |
 |---|---|---:|---:|---|
-| A | Tipos generados de Supabase obsoletos | **638** (61%) | 59 | TS2769×354, TS2352×161, TS2339×103 |
-| E | Archivos duplicados muertos (`Nombre 2.tsx`) | **134** (13%) | 6 | TS2339×106, TS2322×11 |
-| D2 | Errores reales de aplicación | **130** (13%) | 66 | TS2339×27, TS2345×25, TS2353×19 |
-| B | `Transition.ease` de framer-motion | **76** (7%) | 14 | TS2322×76 |
-| C | TS2589 "excessively deep" | **41** (4%) | 24 | TS2589×41 |
-| D1 | `ringColor` en objetos `style` | **20** (2%) | 8 | TS2353×20 |
+| A | tabla ausente de los tipos generados (firma explícita) | **311** | 58 | sí |
+| A' | cascada aguas abajo (`SelectQueryError`, uniones de filas, TS2589) | **355** | — | sí (medido) |
+| E | archivos duplicados muertos (`Nombre 2.tsx`) | **134** | 6 | no |
+| B | transiciones de framer-motion | **76** | 14 | no |
+| D1 | `ringColor` en objetos `style` | **20** | 8 | no |
+| D2 | errores reales de aplicación | **~143** | — | no |
 
-### Grupo A — tipos generados obsoletos (638, una sola regeneración)
+**Medición real de la regeneración** (128 tablas frente a las 17 actuales):
+
+```
+antes:    1.039 errores / 126 archivos
+después:    373 errores /  89 archivos
+delta:     −666
+```
+
+Sub-mediciones del mismo experimento:
+
+| señal | antes | después |
+|---|---:|---:|
+| TS2589 "excessively deep" | 41 | **3** |
+| errores en archivos duplicados | 134 | 134 |
+| `ringColor` | 20 | 20 |
+
+O sea: el grupo C **sí** era Supabase (93% desaparece), y los grupos E, B y D1 son
+independientes, como se dijo. La predicción original de −638/−679 quedó cerca del −666
+real, pero por un método que no la sostenía. La cifra que vale es la medida.
+
+### Grupo A — tipos generados obsoletos (−666 medido, una sola regeneración)
 
 `src/integrations/supabase/types.ts` declara **17 tablas**. La base tiene ~128 tablas
 CASA. Lo que hay dentro:
@@ -136,11 +180,19 @@ Falta **todo** `church_*` (salvo podcast), `music_*`, `liturgias*`, `presentatio
 Tablas más golpeadas: `liturgias`×17, `music_songs`×10, `church_leadership_recordings`×9,
 `church_children_lessons`×9.
 
-**El grupo C (41 × TS2589) casi con certeza es la misma causa** — profundidad de los
-genéricos de PostgREST al resolver contra el esquema incorrecto. A confirmar tras regenerar.
+**El grupo C (41 × TS2589) era la misma causa — ya no es conjetura:** tras regenerar bajan
+a 3. Es la profundidad de los genéricos de PostgREST resolviendo contra el esquema equivocado.
 
-**Acción:** regenerar `types.ts` contra `mulsqxfhxxdsadxsljss`. Es lectura de esquema, no
-una migración. Estimado: 638 (+41 si C cae) = **~679 errores, 65%, de un solo cambio**.
+**Acción:** regenerar `types.ts` contra `mulsqxfhxxdsadxsljss`. Es lectura de esquema, no una
+migración. Medido: **−666 errores (1.039 → 373), 64%, de un solo cambio.**
+
+> ⚠️ **Trampa de ruta.** El comando de generación documentado en los agentes compartidos
+> (`~/SecondBrain/pipeline/agents/architect.md:327` y `db.original.md:81`) escribe en
+> **`src/types/supabase.ts`**, archivo que **no existe** en este repo. El cliente importa
+> `./types` desde `src/integrations/supabase/client.ts:3`, es decir
+> **`src/integrations/supabase/types.ts`**. Seguir el comando documentado crearía un archivo
+> huérfano y no arreglaría ni un error. El destino correcto es
+> `src/integrations/supabase/types.ts`; el comando compartido debe corregirse.
 
 ### Grupo E — archivos duplicados muertos (134, borrado puro)
 
@@ -202,11 +254,11 @@ lista de roles puede estar llegando vacía en runtime. Es RBAC — verificar ant
 | paso | acción | errores esperados |
 |---|---|---:|
 | 0 | gate correcto + CLAUDE.md (**hecho**, `ea1e1b6`) | 1.039 → 1.039 |
-| 1 | regenerar `types.ts` de Supabase | −638 (−679 si C cae) |
+| 1 | regenerar `types.ts` de Supabase | **−666 (medido)** |
 | 2 | `git rm` de los 18 duplicados (requiere OK de Brent) | −134 |
 | 3 | constante de easing compartida | −76 |
 | 4 | `ringColor` → `className` | −20 |
-| 5 | cola D2, archivo por archivo | −130 |
+| 5 | cola D2, archivo por archivo | −143 |
 
 Pasos 1–4 son mecánicos y verificables. El paso 5 es el trabajo real y debe ir en su
 propia fase, no absorbido en una fase de feature.

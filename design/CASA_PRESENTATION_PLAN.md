@@ -331,7 +331,7 @@ export function createSyncChannel() {
 ## Verification
 
 ```bash
-npx tsc --noEmit
+npm run typecheck
 npm run lint
 npm run dev
 ```

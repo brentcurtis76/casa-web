@@ -84,13 +84,26 @@ $ npx tsc --noEmit --listFiles | wc -l
 
 `npm run typecheck` runs `tsc -b --force --noEmit`, which follows the project
 references into `tsconfig.app.json` (677 files under `src/`) and `tsconfig.node.json`.
-`--force` defeats the `.tsbuildinfo` incremental cache so the gate can never report a
-stale PASS. Runtime ~23s.
+`--force` prevents `.tsbuildinfo` up-to-date skips, so the gate always re-checks every
+file rather than trusting a cached result. Runtime ~23s.
 
-**The typecheck gate is currently RED** — 1,039 errors across 120 files on `main` as of
-db8ed2e. Stabilization is tracked on `fix/typecheck-gate`. Until that lands, a phase may
-not relabel this gate PASS; record it as KNOWN-RED with the current count and confirm the
-count did not increase.
+**The typecheck gate is currently RED** — 1,039 errors across 126 files on `main` as of
+db8ed2e. Stabilization is tracked on `fix/typecheck-gate`, which fixes none of them; it
+only makes them visible.
+
+Until the gate is green, a phase may not relabel it PASS. Record it as KNOWN-RED and
+compare **diagnostic identity**, not the total:
+
+```bash
+npm run typecheck 2>&1 | LC_ALL=C grep -E '^.+\([0-9]+,[0-9]+\): error TS' | sort > /tmp/head.txt
+git stash && npm run typecheck 2>&1 | LC_ALL=C grep -E '^.+\([0-9]+,[0-9]+\): error TS' | sort > /tmp/base.txt; git stash pop
+diff /tmp/base.txt /tmp/head.txt    # any '>' line is a new error this branch introduced
+```
+
+An aggregate count is **not** sufficient: one error added and one removed leaves the
+total at 1,039 and would pass a count check while shipping a regression. Note also that
+the file-counting regex must tolerate spaces — six error-bearing paths contain them
+(`PresenterView 4.tsx` and friends), and a `[^ ]` character class silently drops them.
 
 ## Hard Rules
 
