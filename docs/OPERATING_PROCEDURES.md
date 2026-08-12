@@ -179,7 +179,7 @@ Fix the TypeScript errors in the DonationModal component.
 - [ ] Tests still pass
 
 ## Instructions
-1. Run `npx tsc --noEmit` to see current errors
+1. Run `npm run typecheck` to see current errors
 2. Fix each error
 3. Run tests with `npm test`
 4. Check each criterion
@@ -267,7 +267,8 @@ Before approving any code from CCVSC, verify:
 - [ ] E2E tests for user-facing features
 
 ### TypeScript
-- [ ] Strict mode passes (`npx tsc --noEmit`)
+- [ ] Type check passes (`npm run typecheck`) — note: `strict` is **off** in
+      `tsconfig.app.json`, so this is not a strict-mode check
 - [ ] Proper interfaces/types defined
 - [ ] No type assertions without justification
 
@@ -350,7 +351,7 @@ npm run test:e2e     # Run Playwright tests
 
 # Quality
 npm run lint         # Run ESLint
-npx tsc --noEmit     # Type check
+npm run typecheck     # Type check
 ```
 
 ---

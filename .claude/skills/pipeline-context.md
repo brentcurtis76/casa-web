@@ -101,7 +101,7 @@ Every protected feature MUST check the user's role before granting access. Use t
 9. QA tests staging → `qa-report.md`
 
 ## Quality Commands
-- `npx tsc --noEmit` — TypeScript check
+- `npm run typecheck` — TypeScript check
 - `npm run lint` — ESLint
 - `npm test` — Vitest
 - `npm run build` — Vite production build

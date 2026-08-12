@@ -83,7 +83,7 @@ $ npx tsc --noEmit --listFiles | wc -l
 ```
 
 `npm run typecheck` runs `tsc -b --force --noEmit`, which follows the project
-references into `tsconfig.app.json` (665 files under `src/`) and `tsconfig.node.json`.
+references into `tsconfig.app.json` (677 files under `src/`) and `tsconfig.node.json`.
 `--force` defeats the `.tsbuildinfo` incremental cache so the gate can never report a
 stale PASS. Runtime ~23s.
 

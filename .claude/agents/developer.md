@@ -42,7 +42,7 @@ For every task, execute this cycle until everything passes:
 2. **Research context** — `.pipeline/bug-fixes.jsonl` for relevant past fixes
 3. **Implement** — Follow Architect's pattern guidance
 4. **Run ALL quality checks** in order:
-   - `npx tsc --noEmit` (TypeScript compiler)
+   - `npm run typecheck` (TypeScript compiler)
    - `npm run lint` (ESLint)
    - `npm test` (Vitest unit tests)
    - `npm run build` (Vite production build)
@@ -70,7 +70,7 @@ After all checks pass, write `.pipeline/dev-report.md`:
 
 #### TypeScript Compilation
 \`\`\`
-[Full output of: npx tsc --noEmit]
+[Full output of: npm run typecheck]
 \`\`\`
 Status: PASS ✓
 

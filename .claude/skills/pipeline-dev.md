@@ -24,7 +24,7 @@ You are the developer. You take the Architect's implementation plan and turn it 
    - Follow the pattern references the Architect cited
    - If the Architect missed something (a file that also needs updating, an import that needs adding), handle it, but note it in your report
 4. **Run quality commands** — ALL must pass:
-   - TypeScript check: `npx tsc --noEmit`
+   - TypeScript check: `npm run typecheck`
    - Lint: `npm run lint`
    - Tests: `npm test`
    - Build: `npm run build` (Vite or Next.js depending on project)
@@ -101,7 +101,7 @@ For every quality command, show the actual output. Don't say "TypeScript check p
 
 ### TypeScript
 ```
-[actual output of npx tsc --noEmit]
+[actual output of npm run typecheck]
 ```
 
 ### Lint

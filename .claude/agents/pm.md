@@ -106,7 +106,7 @@ When given a task request, you:
   - `[ ] Data Privacy Impact section complete`
   - `[ ] BroadcastChannel sync tested (presenter + output)`
   - `[ ] Build passes: npm run build`
-  - `[ ] TypeScript: npx tsc --noEmit`
+  - `[ ] TypeScript: npm run typecheck`
   - `[ ] Lint: npm run lint`
   - `[ ] Tests pass: npm test`
   - `[ ] E2E: npm run test:e2e (if applicable)`
@@ -169,7 +169,7 @@ Read ALL reports in this order:
 - Are all security CRITICAL/HIGH findings resolved?
 - Are all UX MUST FIX items resolved?
 - Build passes: `npm run build`?
-- TypeScript clean: `npx tsc --noEmit`?
+- TypeScript clean: `npm run typecheck`?
 - Lint clean: `npm run lint`?
 - Tests pass: `npm test`?
 - E2E tests pass (if applicable): `npm run test:e2e`?
@@ -405,7 +405,7 @@ Escalate task back to user (STOP pipeline) if:
 | Verdict | Can override? | Requires |
 |---------|---------------|----------|
 | Build fails | NO | Must pass: `npm run build` |
-| TypeScript errors exist | NO | Must pass: `npx tsc --noEmit` |
+| TypeScript errors exist | NO | Must pass: `npm run typecheck` |
 | Lint errors | NO | Must pass: `npm run lint` |
 | RLS policies missing (member data) | NO | Must pass: Supabase MCP schema check |
 | All 11 roles tested (if feature touches auth) | NO | Must pass: Role Access Matrix in spec |

@@ -46,7 +46,7 @@ Trigger this skill whenever the user's primary focus is the CASA church platform
 | Project dir | `/Users/brentcurtis/Documents/casa-web` |
 | Auth | Supabase Auth, 11 RBAC roles |
 | Design | Tailwind 3, shadcn/ui (55 components), Montserrat + Merriweather fonts |
-| Quality checks | `tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, Playwright E2E |
+| Quality checks | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, Playwright E2E |
 
 **Key features:**
 - Presentation System
@@ -141,7 +141,7 @@ Do not deploy under any circumstances. Do not run `vercel`, `vercel --prod`, or 
 
 ### Code Changes
 - All code changes go through bridge tasks with `project='casa'`
-- Run quality checks before marking any task complete: `tsc --noEmit && npm run lint && npm run build`
+- Run quality checks before marking any task complete: `npm run typecheck && npm run lint && npm run build`
 
 ### Privacy
 - Member PII never goes in AI prompts or Open Brain

@@ -23,7 +23,7 @@ Run ALL quality commands and capture their output. Every single one must pass.
 
 **For all projects:**
 ```bash
-npx tsc --noEmit       # TypeScript check
+npm run typecheck       # TypeScript check
 npm run lint           # ESLint
 npm test               # Vitest
 npm run build          # Production build
@@ -73,7 +73,7 @@ Write `qa-report.md` using the format below.
 
 ### TypeScript Check
 ```
-$ npx tsc --noEmit
+$ npm run typecheck
 [actual output]
 ```
 **Result**: PASS/FAIL

@@ -44,6 +44,46 @@ reportar PASS sin haber revisado nada. Se verificó que la salida de
 `tsc -b --force --noEmit` es **idéntica** a la de `tsc -p tsconfig.app.json --noEmit`
 (el proyecto node está limpio, exit 0).
 
+### 2.1 Propagación a los agentes (sin esto el arreglo no sirve)
+
+Cambiar `CLAUDE.md` no basta: los agentes del pipeline leen sus propios archivos y
+son ellos quienes ejecutan el gate. Se actualizaron a `npm run typecheck`:
+
+```
+.claude/agents/developer.md:45,73        .claude/skills/pipeline-qa.md:26,76
+.claude/agents/pm.md:109,172,408         .skills/skills/casa-project/SKILL.md:49,144
+.claude/skills/pipeline-context.md:104   docs/OPERATING_PROCEDURES.md:182,270,353
+.claude/skills/pipeline-dev.md:27,104
+```
+
+`.claude/agents/pm.md:408` era el caso crítico — la tabla de decisión aprobar/rechazar
+del PM decía literalmente ``Must pass: `npx tsc --noEmit` ``, así que el PM aprobaba
+sobre un gate vacío.
+
+Se dejó **sin tocar** `.skills/skills/genera-project/SKILL.md:48`: es otro proyecto
+(Genera), con su propia configuración de TypeScript.
+
+Los archivos históricos (`reports/*/GATE-REPORT.md`, `docs/PROMPT_027_*`,
+`docs/CUENTACUENTOS_OVERHAUL_REVIEW.md`) conservan el comando viejo a propósito: son
+registro de lo que se ejecutó entonces, no instrucciones.
+
+### 2.2 Piso de versión de TypeScript
+
+`tsc -b --noEmit` exige TypeScript **≥ 5.6**. `package.json` declaraba `^5.5.3`.
+Medido:
+
+```
+$ npx -p typescript@5.5.3 tsc -b --force --noEmit
+error TS5094: Compiler option '--noEmit' may not be used with '--build'.
+$ echo $?
+1
+```
+
+Falla cerrado (exit 1), no en falso verde — pero el rango declarado mentía sobre lo
+que el repo necesita, y el "arreglo" evidente ante ese mensaje es quitar `--noEmit`,
+que deshace el gate. Subido a `^5.6.0`; `package-lock.json` sincronizado (sigue
+resolviendo 5.9.3).
+
 ## 3. Las opciones de tsconfig NO se tocaron
 
 `tsconfig.app.json` **no hace `extends`** del raíz — es autónomo. Ya trae:
