@@ -1507,11 +1507,24 @@ el estado final, no la herramienta.
       real: publicarlo **es** la prueba, y esa decisión ya está pendiente para `E4-spike`.
 - [ ] **E3c.7** `supabase db push --dry-run` (o equivalente que no aplique nada) muestra como
       pendientes **exactamente** `20260612000000` y `20260612000001`, y **no** `20260808120000`.
-      Es la prueba de que la reconciliación de E3c.1 quedó bien y de que no se desplegó nada ajeno.
-- [ ] **E3c.8** **Ninguna tabla de Life OS tocada.** Declarado y verificable en la evidencia: la
-      fase no emite DDL fuera de `church_podcast_episodes` y sus objetos.
+      Es la prueba de que **la reconciliación de E3c.1 quedó bien** — y **sólo** eso.
+      **CORREGIDO el 2026-08-12 (Codex B1, r1).** La redacción original añadía «y de que no se
+      desplegó nada ajeno». **Era una inferencia falsa y la producción la desmiente:** los objetos
+      de `20260612000000` y el cron de `20260612000001` **están desplegados desde el 2026-06-12**,
+      sin fila de historial. **«Pendiente en el historial» ≠ «DDL ausente»:** este criterio mide el
+      **historial de migraciones**, nunca el esquema real. Es el mismo fallo que **D26** ya fichaba
+      —comando real, objeto equivocado—, aquí sobre la capa en vez de sobre la rama.
+      **Lo que sí debe demostrarse, y por otras vías:** que *esta fase* no desplegó nada ajeno —
+      sentencias registradas de `20260808120000`, contenido del proyecto espejo y cronología por
+      OID, tres fuentes independientes del historial. La deriva heredada se documenta y **se
+      entrega sin tocarla**: `evidence/E3c-fix-whatsapp-drift.md`.
+- [ ] **E3c.8** **Esta fase no toca nada ajeno.** No emite DDL fuera de `church_podcast_episodes` y
+      sus objetos, y ninguna tabla de Life OS se lee ni se nombra. **Precisión del 2026-08-12:** es
+      una afirmación sobre **lo que hace la fase**, no sobre el estado global de la base — que sí
+      tiene deriva previa, ajena y documentada aparte.
 - [ ] **E3c.9** `evidence/E3c-fix.md` con toda la salida cruda, el mecanismo elegido y su
-      justificación, y el estado antes/después de cada aserción.
+      justificación, y el estado antes/después de cada aserción. Desde el 2026-08-12 incluye también
+      `evidence/E3c-fix-whatsapp-drift.md`, el traspaso de la deriva a su workstream.
 
 ### Gates del repo (D18)
 

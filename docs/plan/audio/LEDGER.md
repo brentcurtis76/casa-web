@@ -2657,3 +2657,55 @@ hardcodeado. Es `E4s.9`, y se mide.
      decisión de Brent**. Y le deja explícitamente a Codex la decisión sobre el gate rojo.
   2. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.
   3. Las 2 migraciones de WhatsApp siguen sin aplicar. No son de AUDIO.
+
+### 2026-08-12 — E3c-fix round 2 — EXEC (Opus), remediación del FAIL de Codex
+- SESSION: `AUDIO · E3c-fix · r2 · EXEC` (misma conversación durable, según overlay §4.2)
+- STARTED: 2026-08-12T20:33:27Z · ENDED: 2026-08-12T20:52:00Z
+- ATTEMPT: 2 (acumulativo) · HANDOFFS: 1 (veredicto de Codex pegado por Brent)
+- CODEX r1: **FAIL(1 BLOCKING, 1 SHOULD-FIX)** — guardada literal en `reviews/REVIEW-E3c-fix-r1.md`
+- ÁRBOL: `phase/E3c-fix` sigue en `db8ed2e`. **Cero código.** La remediación es documental.
+
+- **B1 VALIDADO ANTES DE ARREGLAR NADA — Codex tiene razón.** Las 9 columnas y los 3 índices de
+  `20260612000000` **están en la base desplegada** sin fila de historial. La r1 leyó «pendiente en
+  `schema_migrations`» como «DDL ausente» y **son cosas distintas**. Era la afirmación negativa de
+  más consecuencia de la fase, y estaba mal fundada.
+- **ES EL PATRÓN DE D26 OTRA VEZ, en un eje nuevo.** D26 decía: el comando era real, el árbol no era
+  el que la afirmación nombraba. Aquí el comando era real y el **objeto** no era el que la
+  afirmación nombraba: se midió el **historial** y se concluyó sobre el **esquema**.
+- **HALLAZGO PROPIO QUE LA REVIEW NO VIO, y es el que tiene consecuencia operativa:** los efectos de
+  `20260612000001` **también** están desplegados. El cron `wa_reminders_daily` (`0 18 * * *`) está
+  **ACTIVO** y dispara un `http_post` diario a la edge function `wa-reminders`. Codex sólo había
+  documentado los objetos de `…000000`.
+- **CRONOLOGÍA FECHADA, que es lo que B1.1 exigía.** `cron.job_run_details` es registro de auditoría
+  con marca de tiempo: **62 ejecuciones, la primera el 2026-06-12, la última hoy, 62/62 correctas.**
+  Coincide con la fecha del nombre de las migraciones y sitúa la deriva **dos meses antes** de esta
+  fase. Corroborado por orden de OID: los tres índices de WhatsApp son **consecutivos**
+  (455068-455070), caen 95 OID después de una tabla del 10-jun y **1.460 OID antes** de todo lo que
+  `E3c-fix` creó hoy (456530+). Salvedad del wraparound declarada.
+- **QUE `E3c-fix` NO DESPLEGÓ NADA AJENO queda probado por tres vías independientes del historial:**
+  (a) las sentencias registradas de `20260808120000` son **10, 9 de podcast, 0 de WhatsApp**;
+  (b) el proyecto espejo **no contenía** los dos ficheros (`63 → 61`); (c) los dos dry-run y el push
+  nombraron una sola migración. Más el orden por OID de arriba.
+- **NO SE TOCÓ NADA DE WHATSAPP** — ni aplicar, ni `migration repair`, ni revertir, ni desactivar el
+  cron (B1.4). Se documenta y se entrega: **`evidence/E3c-fix-whatsapp-drift.md`**, con lo medido,
+  la cronología, lo que su workstream tiene que decidir y el aviso de que **nadie debe correr
+  `db push --include-all`** en este repo hasta entonces. El comando del cron se **recorta a
+  propósito** en toda la evidencia: lleva `WA_REMINDERS_CRON_SECRET` en cabeceras.
+- **S1 CERRADO CON MEDICIÓN, no sólo con una salvedad escrita.** `prosrc` es sólo el cuerpo; se
+  midieron los atributos que faltaban: las dos funciones son **`SECURITY INVOKER`** (`prosecdef =
+  false`, ninguna escala privilegios), propietario `postgres`, ACL estándar de Supabase.
+- **CAMBIOS EN EL PLAN (revisión 26):** `E3c.7` reescrito — mide el **historial** y **sólo** eso; se
+  le quita «y de que no se desplegó nada ajeno» y se explica por qué era falso. `E3c.8` reformulado
+  como «esta fase no toca nada ajeno», afirmación sobre la fase y no sobre el estado global de la
+  base. `E3c.9` incluye ahora el documento de deriva.
+- GATES (recorridos de nuevo sobre el mismo árbol, resultados idénticos a la r1): `npm run build`
+  **VERDE** (`✓ built in 9.54s`); `npx vitest run --no-file-parallelism` `6 failed | 1155 passed
+  (1161)`, las **mismas 6** de `MesaAbiertaDashboard`; `npm run lint` `161 problems (118 errors, 43
+  warnings)`, idéntico; `npx tsc --noEmit` exit 0 y **vacuo** (`--listFiles` → 0 ficheros propios).
+  Gate por ficheros de D18 sigue **sin aplicar** (`F = ∅`).
+- ALCANCE: 4 ficheros de documentación en `docs/plan-audio`. **Cero ficheros fuente.**
+- FINDINGS RAISED: 1 — el cron de WhatsApp activo y sin registrar, que la review no había visto.
+- OPEN AFTER THIS ROUND:
+  1. **Re-review de Codex** sobre la r1+r2 acumuladas. Prompt en `prompts/E3c-fix-codex-r2.md`.
+  2. **La deriva de WhatsApp espera a su workstream.** No es de AUDIO y no se toca.
+  3. `/reflexiones/<slug>` sigue sin verificarse en producción: sin episodios no hay slug que pedir.

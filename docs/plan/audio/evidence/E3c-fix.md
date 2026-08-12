@@ -126,6 +126,30 @@ Would push these migrations:
 **Pendientes = exactamente las dos ajenas. `20260808120000` ya NO aparece.** Que es justo la prueba
 de que ningún `db push` futuro reintentará la migración no idempotente y morirá con `42710`.
 
+> ### ⚠️ CORRECCIÓN (r2, tras el BLOCKING B1 de Codex) — esto NO prueba que no se desplegara nada ajeno
+>
+> La r1 leyó este resultado como «las dos de WhatsApp siguen sin desplegarse». **Es falso, y la
+> producción lo desmiente:** las 9 columnas y los 3 índices de `20260612000000` **están en la base**,
+> y el cron de `20260612000001` **lleva activo desde el 2026-06-12 con 62 ejecuciones**.
+>
+> **«Pendiente en el historial» ≠ «DDL ausente».** Lo que este dry-run prueba es exactamente una
+> cosa —**el estado del historial de migraciones**— y nada sobre el esquema realmente desplegado.
+> La r1 confundió las dos, y era precisamente la afirmación negativa de más consecuencia de la fase.
+>
+> **Lo que sí queda probado, y con eso basta para el alcance de esta fase:** que **`E3c-fix` no
+> desplegó nada ajeno**. Tres pruebas independientes, más una cronología fechada que sitúa esa
+> deriva **dos meses antes** de esta fase:
+>
+> - las sentencias registradas de `20260808120000` son **10, 9 tocan `church_podcast_episodes`, 0
+>   tocan WhatsApp**;
+> - el proyecto espejo **no contenía** los dos ficheros (`63 → 61`, §1);
+> - los dos dry-run y el push **nombraron una sola migración**;
+> - `cron.job_run_details` fecha la primera ejecución en **2026-06-12**, y los OID de los objetos de
+>   WhatsApp (455068-455070) están **1.460 por debajo** de los que esta fase creó hoy (456530+).
+>
+> **Medición completa, cronología y entrega al workstream dueño: `evidence/E3c-fix-whatsapp-drift.md`.**
+> AUDIO **no ha tocado** nada de eso y no debe hacerlo.
+
 ---
 
 ## 3. Las dos lecturas de `schema_migrations`
@@ -317,6 +341,27 @@ bbe078d337ad55218e73c6916b4b2de257a42c1c30f1e411d027d785b7827eae
 112 tests de `E3a`/`E3b` ejercitan contra un Postgres real. **No** prueba que se ejecute
 correctamente en esta instancia. Eso era `E3c.6`, y sigue abierto.
 
+**Ampliación (r2, SHOULD-FIX S1 de Codex).** `prosrc` es **sólo el cuerpo**. No cubre los atributos
+de la función, y decir «el hash coincide» sin esta salvedad hacía sonar la cobertura más ancha de lo
+que es: una función con el mismo cuerpo pero `SECURITY DEFINER` sería un objeto muy distinto. Medido
+para cerrar el hueco en vez de sólo declararlo:
+
+```sql
+select p.proname, p.prosecdef as security_definer, pg_get_userbyid(p.proowner) as propietario,
+       array_to_string(p.proacl,',') as acl, p.proisstrict, p.prokind
+from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+  and p.proname in ('church_podcast_episode_slug_body','assign_podcast_episode_slug');
+```
+
+| Función | `security_definer` | Propietario | ACL | `proisstrict` | `prokind` |
+|---|---|---|---|---|---|
+| `assign_podcast_episode_slug` | **false** (INVOKER) | `postgres` | `=X/postgres, postgres, anon, authenticated, service_role` | false | `f` |
+| `church_podcast_episode_slug_body` | **false** (INVOKER) | `postgres` | idem | false | `f` |
+
+**Las dos son `SECURITY INVOKER`** —ninguna escala privilegios—, propiedad de `postgres`, con la ACL
+estándar de Supabase. Sumado a `search_path=""` y a la volatilidad de §5, los atributos que importan
+quedan verificados y no sólo el cuerpo.
+
 > **E3c.3 CUMPLIDO.** Los seis objetos existen, consultados objeto por objeto. Sin fallo parcial:
 > `0/6` antes, `6/6` después.
 
@@ -471,7 +516,19 @@ ciego declarado de la fase.
 Sin `DROP`, sin `TRUNCATE`, sin `ALTER` destructivo. El único `DROP` del fichero es
 `DROP TRIGGER IF EXISTS` (`:138`), patrón de recreación idempotente ya aprobado en `E3a`.
 
-> **E3c.8 CUMPLIDO.**
+**Precisión del alcance (r2, a raíz de B1).** Esta afirmación es sobre **lo que hizo esta fase**, no
+sobre el estado global de la base. La r1 no marcaba la diferencia con suficiente claridad, y es
+justo la distinción que B1 destapó en `E3c.7`. Dicho sin ambigüedad:
+
+- **`E3c-fix` no emitió DDL fuera de `church_podcast_episodes`** — probado por las sentencias
+  registradas (10, 9 de podcast, 0 de WhatsApp), por el contenido del espejo y por el rol de sólo
+  lectura del resto de las consultas.
+- **`E3c-fix` no afirma nada sobre qué más pueda haber en la base sin registrar.** De hecho **hay**
+  deriva —la de WhatsApp, del 2026-06-12— y está documentada aparte, sin tocarla, en
+  `evidence/E3c-fix-whatsapp-drift.md`.
+- Las 11 tablas de Life OS siguen sin leerse ni nombrarse en ninguna sentencia de esta fase.
+
+> **E3c.8 CUMPLIDO**, entendido como «esta fase no tocó nada ajeno», que es lo que el criterio pide.
 
 ---
 
@@ -563,9 +620,18 @@ familias rojas de base ajenas a AUDIO. Se dice en vez de reportar un gate no eje
 | **E3c.4** `curl` 400 → 200, cuerpo `[]` | ✅ | §6 |
 | **E3c.5** `/reflexiones` pinta el estado vacío | ✅ | §6 |
 | **E3c.6** trigger probado en la base real | ❌ **NO CUMPLIDO** | §7 — premisa del contrato refutada |
-| **E3c.7** pendientes = exactamente las dos ajenas | ✅ | §2C |
-| **E3c.8** ninguna tabla de Life OS tocada | ✅ | §8 |
-| **E3c.9** esta evidencia | ✅ | este fichero |
+| **E3c.7** pendientes = exactamente las dos ajenas | ✅ | §2C — **con la corrección de la r2**: mide el **historial**, no el esquema |
+| **E3c.8** esta fase no tocó nada ajeno | ✅ | §8 |
+| **E3c.9** esta evidencia | ✅ | este fichero + `E3c-fix-whatsapp-drift.md` |
+
+### 10.1 Qué cambió en la r2 (BLOCKING B1 + SHOULD-FIX S1 de Codex)
+
+| | Cambio |
+|---|---|
+| **B1** | `E3c.7` ya **no** afirma que no se desplegara nada ajeno. Se separa historial de esquema, se documenta la deriva real de WhatsApp con cronología fechada (2026-06-12, 62 ejecuciones) y se entrega a su workstream sin tocarla. **Se encontró además que la review se quedaba corta:** el cron de `20260612000001` también está desplegado y **activo**. |
+| **S1** | La equivalencia por SHA-256 declara ahora que `prosrc` **no** cubre atributos, y se miden los que faltaban: las dos funciones son `SECURITY INVOKER`, `postgres`, ACL estándar. |
+| Gates | Recorridos de nuevo sobre el mismo árbol; resultados idénticos (§9). |
+| Código fuente | **Ninguno.** `phase/E3c-fix` sigue en `db8ed2e`. Los cambios de la r2 son de documentación, en `docs/plan-audio`. |
 
 ---
 
@@ -576,7 +642,17 @@ familias rojas de base ajenas a AUDIO. Se dice en vez de reportar un gate no eje
 trigger no disparara —por un `ALTER TABLE … DISABLE TRIGGER` posterior, por ejemplo— el hash
 seguiría coincidiendo. Lo único que lo acota es `tgenabled = 'O'`, leído hoy.
 
-**Segundo punto débil: el mecanismo del espejo es correcto pero poco convencional.** Depende de que
+**Segundo punto débil, y es el error que Codex encontró: la r1 verificó el registro y dedujo el
+mundo.** `E3c.7` medía `schema_migrations` y de ahí concluyó que no había esquema ajeno desplegado.
+Son dos cosas distintas y la base lo demostró. **Es exactamente el patrón que este plan ya tenía
+fichado como D26** —el comando era real, el árbol no era el que la afirmación nombraba—, sólo que
+aquí el eje no era la rama sino la capa: historial contra esquema. La corrección de la r2 no es
+sólo reescribir la frase: es que **ninguna aserción negativa de esta fase se apoya ya en el
+historial de migraciones**. La afirmación que sobrevive —«`E3c-fix` no desplegó nada ajeno»— se
+sostiene sobre las sentencias registradas, el contenido del espejo y la cronología por OID, que son
+tres fuentes independientes del historial.
+
+**Tercer punto débil: el mecanismo del espejo es correcto pero poco convencional.** Depende de que
 la CLI derive la versión del nombre del fichero. Está verificado a posteriori por `E3c.1` y `E3c.7`,
 que es exactamente por lo que el contrato puso esos dos criterios; pero si esa derivación cambiara
 en una versión futura de la CLI, el método habría que revalidarlo.
@@ -587,9 +663,11 @@ en una versión futura de la CLI, el método habría que revalidarlo.
    está fuera de alcance. Sigue siendo la decisión pendiente de Brent.
 2. **`/reflexiones/<slug>`** no se verificó en producción: sin episodios no hay slug que pedir.
    `E3c.4` cubre la consulta del índice, no la del detalle.
-3. **Las 2 migraciones de WhatsApp siguen sin aplicar**, y ahora `db push` a secas **falla** en este
-   repo hasta que alguien de ese workstream decida. Es estado heredado, no creado aquí, pero
-   cualquiera que corra `db push` se topará con ello.
+3. **Las 2 migraciones de WhatsApp están desplegadas pero sin registrar** — corregido en la r2; la
+   r1 decía aquí «siguen sin aplicar», que era **falso**. `db push` a secas **falla** en este repo
+   hasta que su workstream alinee el historial, y **nadie debe correr `--include-all`** mientras
+   tanto. Estado heredado del 2026-06-12, no creado aquí:
+   `evidence/E3c-fix-whatsapp-drift.md`.
 4. **El apex devuelve 307 y el canónico es `www`** — material de `E4`/`D19`.
 5. **La corrida de tests es de un solo pase.** `mesa-abierta` ya dio parpadeos en esta suite
    (ledger, `E3b` r6). No se repitió: `F = ∅` y las 6 no tocan AUDIO.
