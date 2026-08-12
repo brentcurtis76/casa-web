@@ -3,6 +3,28 @@
 Phase **D1b-1**. One record per emission whose `sink/channel` is `PDF`, `email`, `WhatsApp`,
 `file download`, or `print`. Records follow `SURFACE-SCHEMA.md` exactly: seven fields, no blanks.
 
+> **STATUS AFTER CODEX ROUND 2 — `FAIL(2)`, phase BLOCKED pending re-plan.**
+>
+> **The record model in this document is not accepted.** Codex [B2] ruled that the per-origin
+> splitting is still internally inconsistent — `graph.ts` and `send-core.ts` carry terminal-only
+> records that duplicate their callers' emissions, the fan-out combines a proper noun with a stored
+> role string under one materiality, and two distinct download routes remain one record — so
+> **the total of 43 is not reliable and must not be quoted.**
+>
+> Overlay §5 has fired: second consecutive failure in this category. The correction Codex prescribes
+> is a **changed derivation method** — a reconciliation keyed by emission route × sink × origin ×
+> axis, derived rather than written prose-by-prose — plus PM resolution of two defects that live in
+> the contract and the hash-locked schema, not in this file:
+>
+> 1. **[D1b.5]/[D1b1.8] require records for `templates.ts`, which §2.0 proves emits nothing.** The
+>    schema records emissions. Mirror records are not emission records.
+> 2. **`text-origin` has no value for platform-locale (CLDR) output.** Three date records say in prose
+>    that the text is not a repository string while carrying `literal in source`. No legal value fixes
+>    that; the enum needs one, and the enum is hash-locked (D-L → return to D1a).
+>
+> §§1, 5 and 6 — the audit yield, the `print` finding and the blind spots — were not challenged and
+> stand. See `reviews/D1b1-r1-review-request.md` §0 (round 3).
+
 RUN METADATA
 
 - SOURCE_SHA: `e0c9342edcd1d9eddea0662244bf1934bfdb5cb0`

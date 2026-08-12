@@ -1826,3 +1826,69 @@ ESCAPED DEFECT: none — no PASS yet
   and position only. No database access — the [B4] table map was read from `.from('…')` call sites and
   two migration files, never queried. Nothing merged, pushed to `main`, or deployed.
 - NEXT: Codex re-review of the cumulative diff `pilot/sop-v2...phase/d1b1-output`.
+
+---
+
+### 2026-08-12 — D1b-1 round 3 — EXECUTOR — **FINDINGS. Phase BLOCKED, overlay §5 stop rule fired**
+
+```text
+PHASE:    D1b-1 — recipient-facing channels
+ATTEMPT:  3 (cumulative)
+RISK:     DISCOVERY
+CODEX:    round 1 FAIL(4) -> all four fixed -> round 2 FAIL(2), both in round-1 categories
+VERDICT:  FINDINGS — no third remediation batch attempted, and none should be
+GATES:    re-run after the truth corrections, all green — manifest 4/4; census exit 0 with both
+          streams byte-identical; floor 154/62; triage covers exactly the 62; source tree untouched;
+          diff confined to docs/plan/bilingue/
+```
+
+- **THE STOP RULE FIRED AND WAS OBEYED.** Codex round 2 closed with: *"This is the second consecutive
+  failure in the round-1 [B2]/[B3]/[B4] categories. Overlay §5 therefore requires a hypothesis change
+  or phase split before round 3; another prose-only batch correction is not sufficient."* Two of the
+  three underlying defects live in the **contract** and in the **hash-locked `SURFACE-SCHEMA.md`**,
+  which [D1b.1] and D-L put out of this phase's reach. Handing back rather than patching.
+- **ROUND 3 MADE TRUTH CORRECTIONS ONLY, NO MODEL CHANGES.** Three committed statements were known
+  false once the verdict landed, and leaving them would itself breach D-B/D-M: [B1] the retracted
+  "legacy `liturgias`" claim still standing in triage row #31; [S1] an unquoted grep cited as evidence
+  whose real output has a fourth line; [S2] three triage rows asserting record counts the artifact no
+  longer matches. All corrected, counts replaced by pointers, and a BLOCKED banner added to both
+  affected artifacts. **`D1-surfaces-output.md`'s record model was deliberately not touched.**
+- **F1 — [D1b.5]/[D1b1.8] require records for a file the schema forbids recording.** The criteria name
+  `src/lib/whatsapp/templates.ts` and demand records; §2.0 proves it has no importer, that no edge
+  function can import from `src/`, and that three of its six templates are named by no sender. The
+  schema records **emissions**. Codex: *"Mirror records are not acceptable as emission records."*
+  Round 2 kept two and flagged the tension — wrong call; it is a contract question.
+- **F2 — `text-origin` has no truthful value for platform-locale output.** Three date records emit CLDR
+  data while carrying `literal in source`, and the artifact says in prose that the text is not a
+  repository string. No legal value resolves that. The enum is in a hash-locked artifact → **return to
+  D1a** under D-L, not an edit here.
+- **F3 — the contract fixes a record's *shape* but never how to *derive the set*.** That is why two
+  rounds of hand-written records produced inconsistent splits in both directions. Codex's prescription
+  is a method, not a prose edit: a reconciliation keyed by **emission route × sink × origin × axis**,
+  derived rather than typed. Under D-L a counting/classification method is committed and reviewed in a
+  phase that produces no results — which is D1a's job description.
+- **WHAT SURVIVED ROUND 2 AND MUST NOT BE RE-LITIGATED**, per Codex explicitly: all mechanical and
+  privacy gates; **the Group 3 exclusion now holds** — Codex searched views, RPCs, embedded relations,
+  `presentationService` and `saveToLiturgyService` and found no read carrying `liturgia_oraciones.tiempos`
+  into the builder/export path; rows #30 and #32 correctly moved to `no surface`; all `#n` pointers now
+  identify the intended rows; the audit yield (§1), the `print` finding (§5) and the nine blind spots
+  (§6) were not challenged.
+- **MATERIALITY RULINGS (D-I).** `BLOCKS-REPLAN` **approved** for registry-free WhatsApp copy and for
+  template variables — round 2's unrequested extension was right. `DETAIL` **approved** for
+  proper-noun-only records; **not approved** for the combined display-name/role record, which is part
+  of F3's rework.
+- **RECOMMENDED RE-PLAN, the PM's call.** Preferred: **split the phase** — `D1b-1a` as a method phase
+  producing no records (amend the schema for F1/F2, specify the derivation for F3 including a script
+  that emits the record list so the count is derived and not typed), then `D1b-1b` to re-run the
+  inventory. That is the D1a/D1b shape that already worked in this workstream, applied one level down,
+  and it keeps D-L intact. Alternative: amend D1b-1 in place — cheaper, but it puts a schema change
+  inside a results phase, which is what D-L exists to prevent.
+- **REUSABLE AS-IS ACROSS THE RE-PLAN:** the census and its fixture, the candidate floor, the 62-row
+  triage and its labels, `D1-exclusions.md` in full, the audit yield, the `print` finding and the blind
+  spots. **Rebuilt:** `D1-surfaces-output.md` §§2-4 and §7 only.
+- ONE HISTORICAL NOTE: `LEDGER.md:1715` (the round-1 entry) still contains the retracted "legacy
+  `liturgias`" phrasing. It is left as written — a ledger is a record of what was believed when, and
+  the round-2 entry at :1796 retracts it explicitly. Only live claims in the evidence artifacts were
+  corrected.
+- NEXT: PM re-plan. No executor work until the three FINDINGS are resolved and a new contract is
+  dispatched.

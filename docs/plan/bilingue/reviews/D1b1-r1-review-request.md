@@ -1,4 +1,4 @@
-# D1b-1 · rounds 1–2 — review request
+# D1b-1 · rounds 1–3 — review request and FINDINGS
 
 | | |
 |---|---|
@@ -145,6 +145,94 @@ Round 1 said `2>/dev/null` "appears exactly once in the whole diff". Measured pr
 lines**, it appears five times — in the ledger entry, `D1-exclusions.md:269`, the review prompt, and
 this file — every one of them prose *about* the prohibition. The precise statement, with its command,
 is in §4 below. The claim was true of the evidence artifacts and false as written.
+
+---
+
+## 0-bis. Round 3 — **FINDINGS, phase BLOCKED.** Codex round 2 = `FAIL(2)`
+
+**No third remediation batch was attempted, and none should be.** Codex round 2 returned two blockers,
+both in round-1 categories, and closed with: *"This is the second consecutive failure in the round-1
+[B2]/[B3]/[B4] categories. Overlay §5 therefore requires a hypothesis change or phase split before
+round 3; another prose-only batch correction is not sufficient."* That is also this repository's rule
+(`LEAN-WORKFLOW.md` §5) and the executor prompt's own instruction to stop with FINDINGS when a
+load-bearing plan assumption is false. Three such assumptions are false.
+
+### What round 3 did do — truth corrections only, no model changes
+
+Three statements in the committed artifacts were **known to be false** once the verdict landed, and
+leaving them would itself violate D-B/D-M. They are corrected; nothing else was touched.
+
+| Codex item | Correction | Verified |
+|---|---|---|
+| [B1] | `D1-sink-triage.md` row #31 still carried the retracted "legacy `liturgias` table, not into the builder's liturgy". Replaced with the narrower table trace and an explicit retraction note. | `/usr/bin/grep -rn 'legacy \`liturgias\`' docs/plan/bilingue/` now returns only the two retraction paragraphs and the historical round-1 ledger entry. |
+| [S1] | Row #30 cited an unquoted `fetch-bible-passage` grep whose output has four lines, one a doc comment. Replaced with the quoted pattern and its literal three invocation sites. | `liturgia/BiblePassageFetcher.tsx:68`, `presentation/BibleVerseCreator.tsx:86`, `liturgia-builder/ContextoTransversal.tsx:213`. |
+| [S2] | Rows #25, #57 and #58 asserted record counts the artifact no longer matches (four email vs six, one WhatsApp vs three, two downloads vs one). Counts replaced by pointers; a BLOCKED banner added to both artifacts. | Confirmed against `grep -c '^- path: '` per file. |
+
+**The record model itself was not touched.** Fixing it is the changed-hypothesis work, and two of its
+inputs are not this phase's to decide.
+
+### FINDINGS — three load-bearing assumptions that are false
+
+**F1 — [D1b.5]/[D1b1.8] require records for a file the schema forbids recording.**
+The criteria name `src/lib/whatsapp/templates.ts` and demand it "appear with records". §2.0 proves,
+with commands, that it has no importer, that no edge function can import from `src/`, and that three
+of its six templates are named by no sender. `SURFACE-SCHEMA.md` records **emissions**. Codex:
+*"Mirror records are not acceptable as emission records."* Round 2 kept two of them and flagged the
+tension; that was the wrong call and it is now a contract question, not an editing question.
+*Resolution needed:* amend the criteria so `templates.ts` is audited in a **non-record subsection**
+while the actual bodies and buttons are recorded once as `external registry` emissions.
+
+**F2 — `text-origin` has no truthful value for platform-locale output, and the enum is hash-locked.**
+Three records (`exportService.ts:761`, `ExportPanel.tsx:311`, `:484`) emit text produced by
+`toLocaleDateString('es-CL', …)`. The artifact says in prose that this text is CLDR data and *not* a
+repository string, while carrying `text-origin: literal in source` — a self-contradiction no legal
+value resolves. The enum lives in `SURFACE-SCHEMA.md`, one of the four hash-locked artifacts, so under
+D-L and [D1b.1] changing it is **a return to D1a, not an edit here**.
+*Resolution needed:* add a platform-locale origin to the schema in a method phase, or define an
+approved mapping onto an existing value.
+
+**F3 — the contract specifies a record's *shape* but never how to *derive the set*.** That gap is why
+two rounds of hand-written records produced inconsistent splits: round 1 under-split, round 2
+over-split in some places and under-split in others, and both totals were unreliable. Codex prescribes
+the fix and it is a method, not a prose edit: *"change the hypothesis from prose-by-prose splitting to
+a derived reconciliation keyed by actual emission route, sink, origin, and axis."* Under D-L a
+counting-and-classification method is committed and reviewed in a phase that produces **no results**,
+before the phase that produces them. That is D1a's job description.
+
+### What survived round 2, and should not be re-litigated
+
+Codex confirmed all of this explicitly:
+
+- **Mechanical and privacy gates pass** — manifest 4/4, census exit 0 with both streams byte-identical,
+  168/1242 and 173/369/308 unchanged, floor 154/62, exact triage path coverage, source tree untouched,
+  diff confined, **no personal-data value found**.
+- **The Group 3 exclusion now holds.** Codex searched for views, RPCs, embedded relations,
+  `presentationService` and `saveToLiturgyService` and found no read carrying
+  `liturgia_oraciones.tiempos` into the builder or export path. Rows #30 and #32 correctly moved to
+  `no surface`; all `#n` pointers now identify the intended rows.
+- **Materiality rulings (D-I):** `BLOCKS-REPLAN` **approved** for registry-free WhatsApp copy and
+  template variables — which was round 2's unrequested extension, and it was right. `DETAIL`
+  **approved** for proper-noun-only records, **not approved** for the combined display-name/role
+  record. That one combination is part of F3's rework.
+- **The audit yield (§1), the `print` finding (§5) and the nine blind spots (§6) were not challenged.**
+- The `outside boundary` triage label stays a **D1b-2** contract amendment.
+
+### Recommended shape of the re-plan — the PM's call, not the executor's
+
+Recorded because the overlay asks for a named hypothesis change rather than "try again". Two options,
+and I recommend the first:
+
+1. **Split the phase.** `D1b-1a` — a method phase that produces **no records**: amend `SURFACE-SCHEMA.md`
+   for F1 and F2, and specify the derivation for F3 (the route × sink × origin × axis table, plus a
+   script that emits the record list from it so the count is derived and not typed). `D1b-1b` — re-run
+   the inventory under the new method. This is exactly the D1a/D1b shape that already worked once in
+   this workstream, applied one level down, and it keeps D-L intact.
+2. **Amend D1b-1 in place** with the three resolutions and re-dispatch. Cheaper, but it puts a schema
+   change inside a results phase, which is the thing D-L exists to prevent.
+
+Either way the surviving evidence — the census, the floor, the 62-row triage, the exclusions, the audit
+yield and the blind spots — is reusable as-is. What is rebuilt is `D1-surfaces-output.md` §§2–4 and §7.
+
 
 ---
 
