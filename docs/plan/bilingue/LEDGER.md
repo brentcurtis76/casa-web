@@ -1560,3 +1560,89 @@ D-N blind spot, recorded as one.
 D-O — both say the same thing, that you cannot prove completeness or safety in advance and should
 state the error direction instead. Everything in this ledger before them is the cost of learning it
 twice.
+
+### 2026-08-12 — D1b-1 PM bootstrap — contract completed and dispatched
+
+- SESSION: `BILINGUE · D1b-1 · PM` — successor to the session that closed D1a.
+- STARTED: 2026-08-12T09:40-04:00 · ENDED: 2026-08-12T10:05-04:00
+- ATTEMPT: **r1** for D1b-1 (cumulative; D1a's four rounds do not carry over — different phase).
+- RISK: **DISCOVERY**, per `pilot/lean-v2:docs/plan/SOP-PILOT.md` ("inventory work whose
+  completeness cannot be established is DISCOVERY"). The overlay's HIGH falsification pass was run
+  anyway: this workstream has six failed plan reviews and three failed phase reviews, all from
+  untested assertions, and the cost of the pass is minutes.
+- HANDOFFS: 1 (PM → executor).
+- WORKFLOW: lean overlay **ACTIVE** — `git rev-parse --path-format=absolute --git-common-dir` ->
+  `/Users/brentcurtis/dev/casa-web/.git`.
+- AUTHORITATIVE CHECKOUT: `/Users/brentcurtis/dev/casa-pilot`, `pilot/sop-v2` = `d5df247`,
+  clean, ahead 1 of origin. **The `/pm-boot` was issued from `casa-web` on `plan/bilingue`, which
+  has no `docs/plan/bilingue/` directory at all** — the registry's branch hazard note is accurate
+  and cost nothing this time only because it was read first.
+
+**CONTRACT FALSIFICATION PASS — six claims, three refuted.**
+
+```text
+CLAIM:  [D1b.8]'s "D1a's merge commit" exists and can anchor provenance.
+CHECK:  git rev-parse phase/d1a-method -> dee6a1a; --is-ancestor pilot/sop-v2 -> true.
+RESULT: REFUTED. The merge was a fast-forward; there is no merge commit. Amended to name
+        dee6a1a, the commit at which the four artifacts entered pilot/sop-v2.
+BLIND SPOT: a later rebase moves the SHA. The manifest hashes are the real lock, and they
+        verify 4/4 at HEAD; git diff dee6a1a..HEAD -- evidence/ is empty.
+
+CLAIM:  The D1b-1/D1b-2 split table partitions the work.
+CHECK:  PLAN.md split table vs [D1b.5] vs SURFACE-SCHEMA.md:39.
+RESULT: REFUTED. The table gave "declarations/registries" to D1b-2 while [D1b.5] demands
+        src/lib/whatsapp/templates.ts — text-origin=declaration, sink=WhatsApp — in D1b-1.
+        Amended: partition by sink/channel, which the schema already makes scalar with one
+        record per sink. text-origin partitions nothing.
+BLIND SPOT: a record whose sink cannot be determined from source has no home in either phase.
+        It becomes UNVERIFIED with materiality, and D1b-2 reconciles.
+
+CLAIM:  npx tsc --noEmit gates this repo and passes clean on the base.
+CHECK:  npx tsc --noEmit --listFiles | wc -l -> 0.  Root tsconfig.json is a solution file
+        ("files": [], two references); plain tsc honours files:[] and compiles nothing. 0.4s.
+        npx tsc -p tsconfig.app.json --noEmit -> 665 files, 1,039 errors, 122 files, ~22s.
+RESULT: REFUTED, and it was refuted for D1a too — every "tsc -> 0 (clean base)" in this plan
+        and in D1a's test plan was a vacuous pass. Removed from D1b's gates; the job it was
+        given (catch a leaked source file) is done by the two git diff assertions.
+        Base-red under overlay §5 -> bounded stabilization phase, NOT this phase's scope.
+        Recorded: evidence/BASE-GATES-d5df247.md.
+BLIND SPOT: tsconfig.node.json not separately measured. lint/test/build not run at d5df247.
+
+CLAIM:  census.sh runs unmodified from this checkout.
+CHECK:  bash census.sh -> exit 0, 3.6s. PASS_A files=168 hits=1242; PASS_B files=173 hits=369
+        no_accent_hits=308. stderr: one AMBIGUOUS_KEEP (elementos-fijos/index.json).
+        Manifest shasum -c -> 4/4 OK.
+RESULT: SUPPORTED.
+BLIND SPOT: census.sh hard-pins SOURCE_SHA=e0c9342 and aborts on a dirty src/supabase tree.
+        Verified identical and clean at d5df247. An untracked file under src/ or supabase/ —
+        casa-web currently has supabase/.branches/ — would break it. Flagged in the prompt.
+
+CLAIM:  The 62-file candidate floor still reproduces.
+CHECK:  the literal SURFACE-SCHEMA.md block at d5df247 -> 154 repo-wide, 62 liturgy path.
+RESULT: SUPPORTED. [D1b.3]'s figure stands, as the D1a close predicted.
+
+CLAIM:  [D1b.13]'s exclusions document is tractable in one phase.
+CHECK:  250 candidates under the roots -> 174 after stage one -> 173 after stage two.
+RESULT: SUPPORTED. 77 excluded paths across four rules, plus one ambiguous keep.
+```
+
+- **SIZING RUN, EXPLICITLY NOT THE PHASE'S OUTPUT.** The totals above are recorded in PLAN.md
+  §"Sizing" under that label, and the contract requires the executor to re-derive from the locked
+  method. Publishing PM totals as fact is the failure that produced four stale number sets in this
+  plan; publishing them as sizing, labelled and SHA-stamped, is what stops the next PM re-running
+  them blind. D-L was never a claim that no measurement happened — PLAN.md says so in the decision
+  itself.
+- **PREVIOUS PM'S OPEN ITEM 1 — RESOLVED.** `git show pilot/lean-v2:docs/plan/SOP-PILOT.md` is v2,
+  ACTIVE from 2026-08-11: the executable rules live at `~/.claude/agent-workflow/LEAN-WORKFLOW.md`
+  and SOP-PILOT is now CASA-specific gates and history, not another copy of the workflow. So D1b
+  runs under the shared overlay; v1's C1–C4 are superseded. **Hazard left standing:** the v1 file is
+  still physically at `docs/plan/SOP-PILOT.md` on `pilot/sop-v2`. Not merged, because that diff
+  would land outside `docs/plan/bilingue/` and break [D1b.9]. The prompt tells the executor which
+  file governs.
+- OPEN ITEMS 2–4 from the handoff: **[S1]** carried to D1b-2's close, recorded in the contract ·
+  **[D1b.14]** promoted to a first-class D1b-1 criterion with `2>/dev/null` named as BLOCKING ·
+  **stale totals** superseded in writing by the sizing table.
+- ARTIFACTS WRITTEN: `PLAN.md` (D1b-1 contract, D1b-2 outline, META, [D1b.8], D1b test plan, split
+  table, 4 decision-log rows) · `evidence/BASE-GATES-d5df247.md` · `prompts/D1b1-r1.md` · this entry.
+- GATES: none required of the PM. No source file was read for edit and none was written.
+- CODEX: n/a — dispatch, not review.

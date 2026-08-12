@@ -6,7 +6,13 @@ META
 - MEASUREMENT ENVIRONMENT: macOS (Darwin 24.3.0), `/usr/bin/grep` (BSD), `/usr/bin/find` (BSD),
   locale `en_US.UTF-8` available and used. Numbers are OS- and locale-dependent — see D-K.
 - PLAN ROOT: `docs/plan/bilingue/`. **Never write BILINGUE entries into `docs/plan/LEDGER.md`.**
-- BRANCHES: `phase/d1a-method`, then `phase/d1b-census`, base `pilot/sop-v2`.
+- BRANCHES: `phase/d1a-method` (DONE, landed `dee6a1a`), then **`phase/d1b1-output`** (current),
+  then `phase/d1b2-ui`. Base for both D1b branches: `pilot/sop-v2`.
+- WORKFLOW IN FORCE: `~/.claude/agent-workflow/LEAN-WORKFLOW.md` (ACTIVE 2026-08-11 for every
+  checkout whose Git common dir is `/Users/brentcurtis/dev/casa-web/.git`). **`docs/plan/SOP-PILOT.md`
+  on this branch is the superseded v1** (C1–C4); v2 is `git show pilot/lean-v2:docs/plan/SOP-PILOT.md`
+  and says the executable rules live in the shared overlay, not in the repo. D1a ran under v1.
+  *(Resolved 2026-08-12 — this was open item 1 in the previous PM's handoff.)*
 - PLAN FROZEN: **YES — draft 5 + review-6 corrections, 2026-08-10, by Brent's explicit decision.**
   Codex review 6 returned FAIL (6 BLOCKING). Brent elected to **stop the plan-review loop and
   execute**, after six reviews and a trajectory of 11 → 10 → 8 → 7 → 5 → 6 findings. This is a
@@ -365,13 +371,22 @@ None.
 **211 unique candidates** (215 with `lib/whatsapp`), already past draft 5's ~200-record trigger
 before execution began. "Split and report when it runs long" is not a plan; this is the split:
 
-| ID | Branch | Covers | Owns |
+| ID | Branch | Covers — by the record's `sink/channel` value | Owns |
 |---|---|---|---|
-| **D1b-1** | `phase/d1b1-output` | Recipient-facing channels: PDF, email, WhatsApp, print/download | its own records + fixture |
-| **D1b-2** | `phase/d1b2-ui` | Operator-facing: UI/toast, slide render, and source **declarations/registries** | its records, **plus** the combined fixture, `D1-verify.sh` and `D1-SUMMARY.md` |
+| **D1b-1** | `phase/d1b1-output` | `PDF` · `email` · `WhatsApp` · `file download` · `print` | the corpus census run, the sink triage, the exclusions document, and its own records |
+| **D1b-2** | `phase/d1b2-ui` | `slide render` · `toast/UI` | its records, **plus** the combined surfaces document, `D1-verify.sh` and `D1-SUMMARY.md` |
 
 D1b-2 depends on D1b-1 and performs the reconciliation. Criteria below apply to **both** unless
 marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its half.
+
+**The partition is by `sink/channel`, which `SURFACE-SCHEMA.md` defines as a scalar with the
+instruction "if one origin reaches distinct sinks, write one record for each sink."** The unit of
+assignment is therefore the **record**, never the file — a file that emits both a toast and a PDF
+yields records in both phases, and that is correct, not duplication. *(Amended 2026-08-12. Draft 5's
+table assigned "source declarations/registries" to D1b-2, which contradicted [D1b.5]: `WA_TEMPLATES`
+in `src/lib/whatsapp/templates.ts` has `text-origin = declaration/registry in source` but
+`sink/channel = WhatsApp`. `text-origin` does not partition anything; only `sink/channel` does.
+`LITURGY_ORDER` lands in D1b-2 because its sink is `toast/UI`, not because it is a declaration.)*
 
 **One question:** what does the locked method actually find, and how does each emission classify?
 
@@ -401,8 +416,15 @@ marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its hal
 - [D1b.6] Every record carries all seven schema fields. No blanks.
 - [D1b.7] Every `UNVERIFIED` carries `materiality:` (D-I); `D1-verify.sh` fails on a missing field.
 - [D1b.8] `D1-verify.sh` verifies **every** artifact in `METHOD-MANIFEST.txt` against its `sha256`
-  from D1a's merge commit, and records that commit SHA. Checking `census.sh` alone would leave the
-  word list, schema, inclusion rule and audit procedure mutable ([D5-B2]).
+  and records the provenance SHA. Checking `census.sh` alone would leave the word list, schema,
+  inclusion rule and audit procedure mutable ([D5-B2]).
+  **The provenance anchor is `dee6a1a446aa108110f0beeefafc74ce6f706b78`.** D1a landed on
+  `pilot/sop-v2` by **fast-forward**, so there is no merge commit and the phrase "D1a's merge
+  commit" — as this criterion read until 2026-08-12 — names nothing. `dee6a1a` is the tip of
+  `phase/d1a-method`, and is where the four method artifacts entered `pilot/sop-v2`. Verified:
+  `git rev-parse phase/d1a-method` -> `dee6a1a…`; `git merge-base --is-ancestor phase/d1a-method
+  pilot/sop-v2` -> true; `git diff --stat dee6a1a HEAD -- docs/plan/bilingue/evidence/` -> empty.
+  The hashes, not the SHA, are the real lock — cite the SHA, verify the hashes.
 - [D1b.11] Pass B is run over the set **defined as** Pass A roots ∪ `src/lib/whatsapp`, under the
   locked exclusions — not the 135-root set the PM used. **The definition controls; the figure 185
   does not.** That number predates D1a round 2's test exclusion and is stale, as is every other
@@ -431,11 +453,23 @@ marked. Where a criterion names a deliverable D1b-2 owns, D1b-1 produces its hal
 ### Test plan
 
 ```bash
-cd /Users/brentcurtis/dev/casa-pilot && npm ci
+cd /Users/brentcurtis/dev/casa-pilot
 bash docs/plan/bilingue/evidence/D1-verify.sh    # must exit 0
 git diff --stat pilot/sop-v2...HEAD              # only docs/plan/bilingue/
-npx tsc --noEmit                                 # catches a source file leaked into the diff
+git diff --quiet e0c9342 -- src supabase         # source tree byte-identical to SOURCE_SHA
 ```
+
+**`npx tsc --noEmit` was removed from this test plan on 2026-08-12, because it checks nothing.**
+The root `tsconfig.json` is a solution file (`"files": []` + two `references`), so plain `tsc`
+compiles **zero** files and exits 0 in 0.4 s — measured, `--listFiles | wc -l` -> `0`. Every
+`tsc --noEmit -> 0 (clean base)` in this plan is therefore a vacuous pass. The real check,
+`npx tsc -p tsconfig.app.json --noEmit`, examines 665 files and **fails on the base with 1,039
+errors across 122 files** — repository debt, unrelated to a phase whose source diff is zero lines.
+Full baseline: `evidence/BASE-GATES-d5df247.md`. The job the plan gave `tsc` — catching a source
+file leaked into the diff — is done directly by the two `git diff` assertions above.
+`npm ci` was also dropped: `node_modules` is populated at `d5df247` (360 entries) and no gate in
+this phase needs it. **If `npm ci` is ever run here, it must not leave an untracked file under
+`src/` or `supabase/` — `census.sh` refuses to run on a dirty source tree.**
 
 `D1-verify.sh` must: assert `census.sh` matches D1a byte-for-byte; re-run both passes and diff
 against the fixture; assert every path in `D1-surfaces.md` exists; assert every record has all
@@ -470,6 +504,187 @@ Delete the branch. D1a stands on its own.
 ### Dependencies
 
 D1a, merged and Codex-passed.
+
+---
+
+## Phase D1b-1 — Recipient-facing channels — **THE CURRENT PHASE**
+
+Contract completed 2026-08-12 at PM bootstrap. Everything an executor needs is here or in the
+four hash-locked D1a method artifacts; nothing above this line needs to be excavated, and the
+census totals published earlier in this plan are **stale and must not be carried forward**.
+
+- **RISK TIER: `DISCOVERY`.** `docs/plan/SOP-PILOT.md` on `pilot/lean-v2`: "Inventory work whose
+  completeness cannot be established is `DISCOVERY` and must name blind spots and safe failure
+  direction." That is exactly D-N and D-O. A `DISCOVERY` phase produces evidence and a revised
+  contract; it does not smuggle implementation into research.
+- **BRANCH:** `phase/d1b1-output` (18 chars) from the **current tip of `pilot/sop-v2`** — the
+  commit carrying this contract. `d5df247` is the SHA at which the gate baseline was measured;
+  the contract commit is docs-only, so that baseline still holds.
+- **WORKTREE:** `/Users/brentcurtis/dev/casa-pilot`. Not `casa-web` — that checkout is on
+  `plan/bilingue` and has **no `docs/plan/bilingue/` directory at all**.
+- **PROVENANCE ANCHOR:** `dee6a1a` (see [D1b.8]).
+
+**One question:** of the text this codebase sends to a person — by PDF, email, WhatsApp, download
+or print — what exactly is emitted, from where, and which language axis does each emission follow?
+
+### Scope — D1b-1 owns these five artifacts
+
+1. **`evidence/D1-surfaces-output.md`** — one record per emission whose `sink/channel` is `PDF`,
+   `email`, `WhatsApp`, `file download`, or `print`. Seven fields, per `SURFACE-SCHEMA.md`.
+2. **`evidence/fixtures/D1-census.json`** — the corpus census. Both passes, per-file rows and
+   summaries, plus `source_sha`, `base_sha`, OS, locale, and the `AMBIGUOUS_KEEP` records from
+   stderr. **Run once, here; D1b-2 does not re-run it.**
+3. **`evidence/D1-census-raw.txt`** and **`evidence/D1-census-stderr.txt`** — `census.sh`'s literal
+   stdout and stderr, committed unedited (D-M, [D1b.14]).
+4. **`evidence/D1-sink-triage.md`** — all 62 candidate-floor files, each labelled `D1b-1`,
+   `D1b-2`, or `no surface`, with the reason. **This is D1b-2's starting input**; without it D1b-2
+   cannot know what it owns.
+5. **`evidence/D1-exclusions.md`** — [D1b.13]. Every path the method excluded, its rule, its
+   evidence; plus every ambiguity-kept path. **77 paths** — see sizing below.
+
+**Out of scope for D1b-1**, and a BLOCKING finding if produced here: `slide render` and `toast/UI`
+records · `D1-verify.sh` · `D1-SUMMARY.md` · the combined surfaces document · any recommendation
+about how a surface should be made bilingual (D-E) · any source, schema or config change (D-A).
+
+### Acceptance criteria — D1b-1
+
+Criteria [D1b.1]–[D1b.14] above apply, scoped to this phase's five channels. These are the
+additional, D1b-1-specific ones:
+
+- [D1b1.1] **`census.sh` is run unmodified and its integrity proven first.** Before running it,
+  `shasum -a 256 -c` all four entries of `METHOD-MANIFEST.txt`; record the 4/4 output. If it
+  must change, that is a FINDINGS report and a return to D1a — not an edit here (D-L, [D1b.1]).
+- [D1b1.2] **Both streams are captured.** `census.sh > raw.txt 2> stderr.txt`, both committed
+  verbatim. **`2>/dev/null` anywhere in this phase is a BLOCKING finding** — the D1a.10 ambiguity
+  records exist only on stderr, and that redirect appears in several commands published earlier in
+  this workstream including the previous PM's own ([D1b.14]).
+- [D1b1.3] **The candidate-floor procedure is run as the literal block in `SURFACE-SCHEMA.md`
+  §"Candidate-floor procedure"**, and its path output retained as audit evidence. It reproduced at
+  `d5df247` on 2026-08-12: **154 repo-wide, 62 in the liturgy path.** If your run differs, stop and
+  report — do not adjust the regex (D-J).
+- [D1b1.4] **Every one of the 62 is triaged** ([D1b.3]) into `D1-sink-triage.md`. `D1b-2` is a
+  legitimate verdict; `no surface` requires a reason (as `downscaleImage.ts` plausibly does).
+- [D1b1.5] **The two named boundary probes are decided with an evidence chain, not by path name.**
+  `SURFACE-SCHEMA.md` §"Exact liturgy-path inclusion rule" fixes both: a `whatsapp-signup` emission
+  is in scope only if that exact text participates in the keyed reminder/status/reply chain;
+  a `children-ministry` admin emission only if that exact text flows into the builder UI or a child
+  packet. Text visible only on `/admin/ninos` is out. **Record the chain before deciding.** The
+  candidate floor contains 1 `whatsapp-signup` file and 15 `children-ministry` admin components —
+  the largest single block in the 62, and the place where a path-name shortcut is most tempting.
+- [D1b1.6] **The reverse call-path audit covers all five of this phase's channels** ([D1b.4],
+  `SURFACE-SCHEMA.md` §"Call-path audit"): at least one in-scope terminal call per channel, traced
+  back to its origin. Mandatory seeds for this phase: `WA_TEMPLATES`, and a WhatsApp **reply**
+  handler — inbound, not only outbound sends. *(`LITURGY_ORDER` is D1b-2's seed; its sink is
+  `toast/UI`.)*
+- [D1b1.7] **A surface found by the audit and not by the regex is this phase's most valuable
+  output** ([D1b.4]). List those separately and unmissably at the top of `D1-surfaces-output.md`,
+  for D1b-2 to carry into `D1-SUMMARY.md`. If the audit finds none, say so explicitly and say what
+  you traced — silence is indistinguishable from not having looked.
+- [D1b1.8] **[D1b.5] is discharged here**: `supabase/functions/wa-webhook/index.ts` and
+  `src/lib/whatsapp/templates.ts` both appear with records, and the template registry's **24–48 h
+  WhatsApp re-approval lead time** on body edits is recorded as a constraint, not merely as a
+  string. Both are `sink/channel = WhatsApp`, so both are D1b-1's regardless of `text-origin`.
+- [D1b1.9] **No PII values.** Record paths, symbols, shapes and counts (D-D). Celebrant, preacher,
+  recipient names and phone numbers are described by role and never quoted. This is a CASA
+  `CLAUDE.md` hard rule and outranks every criterion here.
+- [D1b1.10] **Diff confined** ([D1b.9]): `git diff --stat pilot/sop-v2...HEAD` lists only
+  `docs/plan/bilingue/`, and `git diff --quiet e0c9342 -- src supabase` exits 0.
+- [D1b1.11] **Blind spot stated** ([D1b.12], D-N, D-O): what this phase's method structurally
+  cannot see for these five channels, in which direction it fails, and how a future pass extends
+  it. Known already: text declared in one file and rendered in another; unaccented Spanish outside
+  the frozen word list; anything reached by a runtime-constructed path.
+
+### Test plan — D1b-1
+
+```bash
+cd /Users/brentcurtis/dev/casa-pilot
+
+# 1. method integrity, before anything is measured
+( cd docs/plan/bilingue/evidence \
+  && /usr/bin/shasum -a 256 -c <(/usr/bin/grep -E '^[0-9a-f]{64}' METHOD-MANIFEST.txt) )
+
+# 2. the census — BOTH streams, never 2>/dev/null
+bash docs/plan/bilingue/evidence/census.sh \
+  >  docs/plan/bilingue/evidence/D1-census-raw.txt \
+  2> docs/plan/bilingue/evidence/D1-census-stderr.txt
+echo "census exit=$?"
+
+# 3. diff confinement — this replaces the vacuous tsc gate
+git diff --stat pilot/sop-v2...HEAD
+git diff --quiet e0c9342 -- src supabase && echo "source tree untouched"
+```
+
+`lint`, `test`, `build` and Playwright are excluded: the source diff is zero lines by D-A.
+`npx tsc --noEmit` is excluded because it checks zero files — see the amended D1b test plan above
+and `evidence/BASE-GATES-d5df247.md`. There is no database gate; D1 has no DB-derived facts.
+
+### Sizing — measured at `d5df247` on 2026-08-12, not estimated
+
+Run by the PM to size the phase. **These are not the phase's output** and must be re-derived by
+the executor from the locked method; they are recorded so nobody has to guess whether this phase
+fits in one session.
+
+| Quantity | Measured | Command |
+|---|---:|---|
+| `census.sh` runtime, exit code | 3.6 s, `0` | `time bash …/census.sh` |
+| Pass A | files **168**, hits **1242** | `PASS_A_SUMMARY` row |
+| Pass B | files **173**, hits **369**, no-accent **308** | `PASS_B_SUMMARY` row |
+| `AMBIGUOUS_KEEP` records on stderr | **1** (`src/data/elementos-fijos/index.json`, basename-collision) | stderr |
+| Candidate floor | **154** repo-wide, **62** liturgy path | the literal `SINKS` block |
+| Excluded paths for [D1b.13] | **77** = 76 stage-one + 1 stage-two | 250 candidates → 174 after stage one → 173 |
+| Of the 62: `children-ministry` admin | 15 | the floor's path output |
+
+**This sizing supersedes every census total published earlier in this plan** (180/1,418 ·
+185/376/316 · 186/381/320 · 166/1,402). All predate D1a round 2's test-file and fixture
+exclusions. Carry none of them forward — including the four in this row.
+
+The ~200-record split trigger from [D1b] Risks is not expected to fire: the five output channels
+draw on roughly 25 of the 62 candidate files. If your record count for **this phase alone** passes
+200, stop and report rather than truncating.
+
+### Definition of done — D1b-1
+
+All eleven D1b1 criteria checked · `METHOD-MANIFEST` verifies 4/4 · `census.sh` exits 0 with both
+streams committed · all 62 candidates triaged · diff confined and source tree untouched · every
+`UNVERIFIED` carries `materiality:` · blind spot stated · **Codex PASS on the cumulative diff** ·
+branch mergeable into `pilot/sop-v2`.
+
+`D1-SUMMARY.md` and its recorded human acceptance belong to **D1b-2**, which is where the D1b
+Definition of done's `[D4-S3]` clause is discharged.
+
+### Risks — D1b-1
+
+- **[D1b.4]'s audit is the criterion most likely to be satisfied shallowly**, because the regex
+  output looks complete. It was wrong by 3× once already. This is the plan's own stated weakest
+  point and it lands in this phase.
+- **The 15 `children-ministry` admin components invite a path-name shortcut.** The inclusion rule
+  demands an evidence chain per emission; "it's the admin route" is a conclusion, not evidence.
+- **Guess, labelled:** that the five output channels fit one session. If they do not, report at
+  the boundary rather than thinning the audit.
+
+### Rollback — D1b-1
+
+Delete `phase/d1b1-output`. D1a stands; D1b-2 has not started.
+
+### Dependencies — D1b-1
+
+D1a, merged at `dee6a1a` and Codex-passed. No other phase.
+
+### Backlog carried into this phase
+
+**[S1]** — the five method artifacts record `PLAN_SHA=c842161`, the pre-amendment freeze, rather
+than `f2be4f2`. Deferred by Brent, accepted by the reviewer. **Close it at D1b-2's close**, with
+the rest of D1b — not here, and not later.
+
+---
+
+## Phase D1b-2 — Operator-facing surfaces and reconciliation — OUTLINE ONLY
+
+Not yet a contract. It is written when D1b-1 passes, from D1b-1's `D1-sink-triage.md`.
+
+`slide render` and `toast/UI` records · the combined surfaces document · `D1-verify.sh` ·
+`D1-SUMMARY.md` and its recorded human acceptance ([D4-S3]) · the `LITURGY_ORDER` declaration seed
+· backlog **[S1]** · the re-plan gate below.
 
 ---
 
@@ -550,6 +765,10 @@ mechanism the next plan must choose, since **D-K governs shell hygiene, not SQL*
 | 2026-08-10 | `D1-SUMMARY.md` requires **recorded** human acceptance in the DoD | Brent said he lacked visibility to judge; "written" is not "understood" | review 5 [D4-S3] |
 | **2026-08-11** | **D1a re-scoped (approved re-plan, SOP §3.9): the method states its rule and error direction; D1b proves exclusion safety by enumeration.** New D-O; new criteria D1a.9–D1a.11 and D1b.13. | Three executor rounds and two Codex reviews established that a bash text heuristic cannot support the absolute safety claims D1a's criteria demanded — "never drops a copy surface" is false where production reaches a file by a constructed path, and a regex cannot tell `Deno.test(…)` in code from the same text in a comment or a string. Both §1.5 caps reached. Proposal in `REPLAN-D1a.md`; approved by Brent 2026-08-11. | PM, per Codex D1a review round 2 |
 | **2026-08-11** | **Amendment to frozen plan: D1b.11 cites a set *definition*, not the number 185** | D1a r2 excluded test files, which invalidated 185 — and every other census total published in this plan and its six reviews. A criterion naming a stale figure would have made D1b unpassable or, worse, passable against the wrong set. | Codex D1a review, NOTES ON THE PLAN |
+| **2026-08-12** | **D1b-1 written as a self-contained contract; D1b-2 reduced to an outline** | Lean overlay §4.1: the current phase is made self-contained before dispatch. D1b existed only as one criteria list plus a two-row split table. | PM bootstrap |
+| **2026-08-12** | **The D1b-1/D1b-2 partition is by `sink/channel`, not by file and not by `text-origin`** | The split table assigned "declarations/registries" to D1b-2 while [D1b.5] required `WA_TEMPLATES` — a declaration whose sink is WhatsApp — in D1b-1. `text-origin` does not partition; `SURFACE-SCHEMA.md` already makes `sink/channel` scalar with one record per sink. | PM falsification pass |
+| **2026-08-12** | **[D1b.8]'s provenance anchor is `dee6a1a`, named explicitly** | D1a landed by fast-forward, so "D1a's merge commit" named nothing and the criterion was unsatisfiable as written. | PM falsification pass |
+| **2026-08-12** | **`npx tsc --noEmit` removed from D1b's gates; base type-check baseline recorded** | The root `tsconfig.json` is a solution file with `"files": []`, so plain `tsc` checks **zero** files — measured. Every `tsc -> 0 (clean base)` in this plan was vacuous. The real check fails on the base with 1,039 errors across 122 files: repository debt, base-red under overlay §5, routed to a bounded stabilization phase rather than into this phase. `evidence/BASE-GATES-d5df247.md`. | PM falsification pass |
 
 ---
 
