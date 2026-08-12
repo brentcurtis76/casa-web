@@ -1,0 +1,343 @@
+PASS_A	src/components/liturgia-builder/Anuncios.tsx	hits=16
+PASS_A	src/components/liturgia-builder/ChildrenActivityDialog.tsx	hits=22
+PASS_A	src/components/liturgia-builder/ConstructorLiturgias.tsx	hits=28
+PASS_A	src/components/liturgia-builder/ContextoTransversal.tsx	hits=15
+PASS_A	src/components/liturgia-builder/ExportPanel.tsx	hits=5
+PASS_A	src/components/liturgia-builder/MaterialsStepView.tsx	hits=9
+PASS_A	src/components/liturgia-builder/Portadas.tsx	hits=17
+PASS_A	src/components/liturgia-builder/UniversalSlide.tsx	hits=4
+PASS_A	src/components/liturgia-builder/VistaPrevia.tsx	hits=18
+PASS_A	src/components/liturgia-builder/editors/CancionSelector.tsx	hits=15
+PASS_A	src/components/liturgia-builder/editors/CuentacuentoEditor.tsx	hits=162
+PASS_A	src/components/liturgia-builder/editors/CustomElementEditor.tsx	hits=15
+PASS_A	src/components/liturgia-builder/editors/CustomElementPicker.tsx	hits=6
+PASS_A	src/components/liturgia-builder/editors/ElementoFijoEditor.tsx	hits=15
+PASS_A	src/components/liturgia-builder/editors/LecturaBiblicaEditor.tsx	hits=18
+PASS_A	src/components/liturgia-builder/editors/OracionEditor.tsx	hits=59
+PASS_A	src/components/liturgia-builder/editors/PropSheetSection.tsx	hits=3
+PASS_A	src/components/liturgia-builder/editors/index.ts	hits=0
+PASS_A	src/components/liturgia-builder/index.ts	hits=0
+PASS_A	src/components/liturgia/BiblePassageFetcher.tsx	hits=7
+PASS_A	src/components/liturgia/LiturgiaForm.tsx	hits=9
+PASS_A	src/components/liturgia/OracionEditor.tsx	hits=0
+PASS_A	src/components/liturgia/OracionesAntifonalesGenerator.tsx	hits=1
+PASS_A	src/components/liturgia/SavedLiturgias.tsx	hits=0
+PASS_A	src/components/liturgia/SlideGenerator.tsx	hits=8
+PASS_A	src/components/liturgia/SlidePreview.tsx	hits=3
+PASS_A	src/components/liturgia/TiempoEditor.tsx	hits=2
+PASS_A	src/components/liturgia/constants.ts	hits=17
+PASS_A	src/components/liturgia/index.ts	hits=0
+PASS_A	src/components/liturgia/types.ts	hits=8
+PASS_A	src/components/presentation/ApplyScopeDropdown.tsx	hits=3
+PASS_A	src/components/presentation/BibleVerseCreator.tsx	hits=11
+PASS_A	src/components/presentation/CollapsiblePanel.tsx	hits=0
+PASS_A	src/components/presentation/ElementSelectorModal.tsx	hits=0
+PASS_A	src/components/presentation/ExitWarningModal.tsx	hits=4
+PASS_A	src/components/presentation/ExportDialog.tsx	hits=7
+PASS_A	src/components/presentation/ImageOverlayControls.tsx	hits=11
+PASS_A	src/components/presentation/ImageSlideCreator.tsx	hits=3
+PASS_A	src/components/presentation/ImportDialog.tsx	hits=6
+PASS_A	src/components/presentation/LiturgySelectorModal.tsx	hits=0
+PASS_A	src/components/presentation/LoadSessionDialog.tsx	hits=5
+PASS_A	src/components/presentation/LogoControls.tsx	hits=2
+PASS_A	src/components/presentation/LogoOverlay.tsx	hits=0
+PASS_A	src/components/presentation/LowerThirdDisplay.tsx	hits=0
+PASS_A	src/components/presentation/LowerThirdManager.tsx	hits=0
+PASS_A	src/components/presentation/NavigationStrip.tsx	hits=4
+PASS_A	src/components/presentation/OutputView.tsx	hits=1
+PASS_A	src/components/presentation/PresenterControls.tsx	hits=7
+PASS_A	src/components/presentation/PresenterNotes.tsx	hits=0
+PASS_A	src/components/presentation/PresenterView.tsx	hits=16
+PASS_A	src/components/presentation/QuickAddButton.tsx	hits=2
+PASS_A	src/components/presentation/QuickTextCreator.tsx	hits=2
+PASS_A	src/components/presentation/RecoveryModal.tsx	hits=2
+PASS_A	src/components/presentation/SaveSessionDialog.tsx	hits=9
+PASS_A	src/components/presentation/SaveToLiturgyDialog.tsx	hits=8
+PASS_A	src/components/presentation/SceneSelector.tsx	hits=2
+PASS_A	src/components/presentation/ServiceNavigator.tsx	hits=0
+PASS_A	src/components/presentation/SlideCreatorModal.tsx	hits=5
+PASS_A	src/components/presentation/SlideEditor.tsx	hits=4
+PASS_A	src/components/presentation/SlidePreview.tsx	hits=0
+PASS_A	src/components/presentation/SlideStrip.tsx	hits=1
+PASS_A	src/components/presentation/SlideStyleWrapper.tsx	hits=0
+PASS_A	src/components/presentation/StyleControls.tsx	hits=5
+PASS_A	src/components/presentation/TextOverlayControls.tsx	hits=1
+PASS_A	src/components/presentation/TextOverlayDisplay.tsx	hits=0
+PASS_A	src/components/presentation/TextOverlayEditor.tsx	hits=7
+PASS_A	src/components/presentation/TimerClock.tsx	hits=0
+PASS_A	src/components/presentation/VideoBackgroundControls.tsx	hits=7
+PASS_A	src/components/presentation/VideoBackgroundLayer.tsx	hits=0
+PASS_A	src/components/presentation/VideoControls.tsx	hits=0
+PASS_A	src/components/presentation/VideoSlideCreator.tsx	hits=9
+PASS_A	src/components/presentation/VideoSlideRenderer.tsx	hits=2
+PASS_A	src/components/presentation/index.ts	hits=0
+PASS_A	src/data/elementos-fijos/accion-de-gracias.json	hits=7
+PASS_A	src/data/elementos-fijos/bendicion-final.json	hits=10
+PASS_A	src/data/elementos-fijos/index.json	hits=2
+PASS_A	src/data/elementos-fijos/la-paz.json	hits=2
+PASS_A	src/data/elementos-fijos/ofrenda.json	hits=2
+PASS_A	src/data/elementos-fijos/padre-nuestro.json	hits=6
+PASS_A	src/data/elementos-fijos/santa-cena.json	hits=4
+PASS_A	src/hooks/presentation/index.ts	hits=0
+PASS_A	src/hooks/presentation/useAutoSave.ts	hits=0
+PASS_A	src/hooks/presentation/useFullscreen.ts	hits=0
+PASS_A	src/hooks/presentation/useKeyboardShortcuts.ts	hits=0
+PASS_A	src/hooks/presentation/useNavigationWarning.ts	hits=1
+PASS_A	src/hooks/presentation/usePresentationState.ts	hits=1
+PASS_A	src/hooks/presentation/usePresentationSync.ts	hits=0
+PASS_A	src/lib/children-ministry/ageGroupService.ts	hits=0
+PASS_A	src/lib/children-ministry/attendanceService.ts	hits=0
+PASS_A	src/lib/children-ministry/calendarService.ts	hits=0
+PASS_A	src/lib/children-ministry/childrenLessonPdfExporter.ts	hits=8
+PASS_A	src/lib/children-ministry/childrenPublicationStateService.ts	hits=0
+PASS_A	src/lib/children-ministry/inventoryService.ts	hits=0
+PASS_A	src/lib/children-ministry/lessonService.ts	hits=0
+PASS_A	src/lib/children-ministry/liturgyChildrenPublishService.ts	hits=13
+PASS_A	src/lib/children-ministry/materialsList.ts	hits=0
+PASS_A	src/lib/children-ministry/parseMaterials.ts	hits=0
+PASS_A	src/lib/children-ministry/volunteerService.ts	hits=0
+PASS_A	src/lib/cuentacuentos/approvalGate.ts	hits=0
+PASS_A	src/lib/cuentacuentos/autoKick.ts	hits=0
+PASS_A	src/lib/cuentacuentos/concurrency.ts	hits=0
+PASS_A	src/lib/cuentacuentos/downscaleImage.ts	hits=1
+PASS_A	src/lib/cuentacuentos/imageFeedback.ts	hits=7
+PASS_A	src/lib/cuentacuentos/imageUtils.ts	hits=0
+PASS_A	src/lib/cuentacuentos/immutableImageUpload.ts	hits=3
+PASS_A	src/lib/cuentacuentos/index.ts	hits=0
+PASS_A	src/lib/cuentacuentos/pipelineTaskAdapter.ts	hits=0
+PASS_A	src/lib/cuentacuentos/promptBuilders.ts	hits=52
+PASS_A	src/lib/cuentacuentos/recoverySnapshot.ts	hits=0
+PASS_A	src/lib/cuentacuentos/snapshotHash.ts	hits=0
+PASS_A	src/lib/cuentacuentos/storyPdfExporter.ts	hits=5
+PASS_A	src/lib/cuentacuentos/storyToSlides.ts	hits=0
+PASS_A	src/lib/cuentacuentos/taskFactories.ts	hits=5
+PASS_A	src/lib/liturgia/exportService.ts	hits=30
+PASS_A	src/lib/liturgia/liturgyService.ts	hits=2
+PASS_A	src/lib/liturgia/slideRenderer.tsx	hits=1
+PASS_A	src/lib/music-planning/availabilityHelpers.ts	hits=0
+PASS_A	src/lib/music-planning/availabilityService.ts	hits=0
+PASS_A	src/lib/music-planning/formatters.ts	hits=0
+PASS_A	src/lib/music-planning/index.ts	hits=0
+PASS_A	src/lib/music-planning/liturgyMusicPublishService.ts	hits=1
+PASS_A	src/lib/music-planning/musicianLabels.ts	hits=6
+PASS_A	src/lib/music-planning/musicianService.ts	hits=0
+PASS_A	src/lib/music-planning/notificationLabels.ts	hits=5
+PASS_A	src/lib/music-planning/notificationService.ts	hits=11
+PASS_A	src/lib/music-planning/packetGenerationService.ts	hits=0
+PASS_A	src/lib/music-planning/practiceLabels.ts	hits=2
+PASS_A	src/lib/music-planning/practiceService.ts	hits=0
+PASS_A	src/lib/music-planning/publicationStateService.ts	hits=0
+PASS_A	src/lib/music-planning/rehearsalLabels.ts	hits=0
+PASS_A	src/lib/music-planning/rehearsalService.ts	hits=0
+PASS_A	src/lib/music-planning/setlistLabels.ts	hits=4
+PASS_A	src/lib/music-planning/setlistService.ts	hits=0
+PASS_A	src/lib/music-planning/songService.ts	hits=0
+PASS_A	src/lib/music-planning/songUsageService.ts	hits=0
+PASS_A	src/lib/presentation/exportImport.ts	hits=6
+PASS_A	src/lib/presentation/imageUploadService.ts	hits=2
+PASS_A	src/lib/presentation/presentationService.ts	hits=0
+PASS_A	src/lib/presentation/saveToLiturgyService.ts	hits=2
+PASS_A	src/lib/presentation/sessionService.ts	hits=0
+PASS_A	src/lib/presentation/syncChannel.ts	hits=0
+PASS_A	src/lib/presentation/themes.ts	hits=1
+PASS_A	src/lib/presentation/types.ts	hits=9
+PASS_A	src/lib/presentation/videoService.ts	hits=3
+PASS_A	src/pages/ConstructorLiturgiasPage.tsx	hits=2
+PASS_A	src/types/shared/liturgy.ts	hits=61
+PASS_A	supabase/functions/_shared/whatsapp/graph.ts	hits=0
+PASS_A	supabase/functions/_shared/whatsapp/payload.ts	hits=0
+PASS_A	supabase/functions/_shared/whatsapp/phone.ts	hits=5
+PASS_A	supabase/functions/_shared/whatsapp/send-core.ts	hits=2
+PASS_A	supabase/functions/_shared/whatsapp/signature.ts	hits=0
+PASS_A	supabase/functions/fetch-bible-passage/index.ts	hits=37
+PASS_A	supabase/functions/generate-children-lesson/index.ts	hits=8
+PASS_A	supabase/functions/generate-children-lesson/prompt.ts	hits=37
+PASS_A	supabase/functions/generate-oraciones/handler.ts	hits=37
+PASS_A	supabase/functions/generate-oraciones/index.ts	hits=0
+PASS_A	supabase/functions/generate-story/handler.ts	hits=119
+PASS_A	supabase/functions/generate-story/index.ts	hits=0
+PASS_A	supabase/functions/process-reflexion-pdf/handler.ts	hits=14
+PASS_A	supabase/functions/process-reflexion-pdf/index.ts	hits=0
+PASS_A	supabase/functions/refine-children-lesson/index.ts	hits=9
+PASS_A	supabase/functions/refine-children-lesson/prompt.ts	hits=23
+PASS_A	supabase/functions/refine-story/handler.ts	hits=45
+PASS_A	supabase/functions/refine-story/index.ts	hits=0
+PASS_A	supabase/functions/send-children-service-packet/index.ts	hits=0
+PASS_A	supabase/functions/send-music-service-packet/index.ts	hits=1
+PASS_A	supabase/functions/wa-reminders/index.ts	hits=0
+PASS_A	supabase/functions/wa-send/index.ts	hits=0
+PASS_A_SUMMARY	files=168	hits=1242
+PASS_B	src/components/liturgia-builder/Anuncios.tsx	hits=12	no_accent_hits=10
+PASS_B	src/components/liturgia-builder/ChildrenActivityDialog.tsx	hits=10	no_accent_hits=10
+PASS_B	src/components/liturgia-builder/ConstructorLiturgias.tsx	hits=8	no_accent_hits=8
+PASS_B	src/components/liturgia-builder/ContextoTransversal.tsx	hits=12	no_accent_hits=9
+PASS_B	src/components/liturgia-builder/ExportPanel.tsx	hits=20	no_accent_hits=20
+PASS_B	src/components/liturgia-builder/MaterialsStepView.tsx	hits=5	no_accent_hits=5
+PASS_B	src/components/liturgia-builder/Portadas.tsx	hits=1	no_accent_hits=0
+PASS_B	src/components/liturgia-builder/UniversalSlide.tsx	hits=1	no_accent_hits=1
+PASS_B	src/components/liturgia-builder/VistaPrevia.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia-builder/editors/CancionSelector.tsx	hits=7	no_accent_hits=3
+PASS_B	src/components/liturgia-builder/editors/CuentacuentoEditor.tsx	hits=50	no_accent_hits=44
+PASS_B	src/components/liturgia-builder/editors/CustomElementEditor.tsx	hits=10	no_accent_hits=10
+PASS_B	src/components/liturgia-builder/editors/CustomElementPicker.tsx	hits=3	no_accent_hits=2
+PASS_B	src/components/liturgia-builder/editors/ElementoFijoEditor.tsx	hits=7	no_accent_hits=7
+PASS_B	src/components/liturgia-builder/editors/LecturaBiblicaEditor.tsx	hits=6	no_accent_hits=5
+PASS_B	src/components/liturgia-builder/editors/OracionEditor.tsx	hits=4	no_accent_hits=1
+PASS_B	src/components/liturgia-builder/editors/PropSheetSection.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/liturgia-builder/editors/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia-builder/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia/BiblePassageFetcher.tsx	hits=2	no_accent_hits=2
+PASS_B	src/components/liturgia/LiturgiaForm.tsx	hits=2	no_accent_hits=1
+PASS_B	src/components/liturgia/OracionEditor.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia/OracionesAntifonalesGenerator.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/liturgia/SavedLiturgias.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/liturgia/SlideGenerator.tsx	hits=4	no_accent_hits=3
+PASS_B	src/components/liturgia/SlidePreview.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia/TiempoEditor.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/liturgia/constants.ts	hits=8	no_accent_hits=8
+PASS_B	src/components/liturgia/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/components/liturgia/types.ts	hits=3	no_accent_hits=0
+PASS_B	src/components/presentation/ApplyScopeDropdown.tsx	hits=2	no_accent_hits=2
+PASS_B	src/components/presentation/BibleVerseCreator.tsx	hits=8	no_accent_hits=3
+PASS_B	src/components/presentation/CollapsiblePanel.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/ElementSelectorModal.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/ExitWarningModal.tsx	hits=3	no_accent_hits=2
+PASS_B	src/components/presentation/ExportDialog.tsx	hits=3	no_accent_hits=2
+PASS_B	src/components/presentation/ImageOverlayControls.tsx	hits=10	no_accent_hits=9
+PASS_B	src/components/presentation/ImageSlideCreator.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/presentation/ImportDialog.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/LiturgySelectorModal.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/LoadSessionDialog.tsx	hits=7	no_accent_hits=4
+PASS_B	src/components/presentation/LogoControls.tsx	hits=1	no_accent_hits=1
+PASS_B	src/components/presentation/LogoOverlay.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/LowerThirdDisplay.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/LowerThirdManager.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/NavigationStrip.tsx	hits=5	no_accent_hits=5
+PASS_B	src/components/presentation/OutputView.tsx	hits=1	no_accent_hits=1
+PASS_B	src/components/presentation/PresenterControls.tsx	hits=6	no_accent_hits=3
+PASS_B	src/components/presentation/PresenterNotes.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/PresenterView.tsx	hits=3	no_accent_hits=2
+PASS_B	src/components/presentation/QuickAddButton.tsx	hits=2	no_accent_hits=0
+PASS_B	src/components/presentation/QuickTextCreator.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/RecoveryModal.tsx	hits=3	no_accent_hits=2
+PASS_B	src/components/presentation/SaveSessionDialog.tsx	hits=6	no_accent_hits=3
+PASS_B	src/components/presentation/SaveToLiturgyDialog.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/presentation/SceneSelector.tsx	hits=4	no_accent_hits=3
+PASS_B	src/components/presentation/ServiceNavigator.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/SlideCreatorModal.tsx	hits=6	no_accent_hits=5
+PASS_B	src/components/presentation/SlideEditor.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/SlidePreview.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/SlideStrip.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/SlideStyleWrapper.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/StyleControls.tsx	hits=3	no_accent_hits=3
+PASS_B	src/components/presentation/TextOverlayControls.tsx	hits=4	no_accent_hits=4
+PASS_B	src/components/presentation/TextOverlayDisplay.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/TextOverlayEditor.tsx	hits=5	no_accent_hits=5
+PASS_B	src/components/presentation/TimerClock.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/VideoBackgroundControls.tsx	hits=11	no_accent_hits=11
+PASS_B	src/components/presentation/VideoBackgroundLayer.tsx	hits=0	no_accent_hits=0
+PASS_B	src/components/presentation/VideoControls.tsx	hits=1	no_accent_hits=1
+PASS_B	src/components/presentation/VideoSlideCreator.tsx	hits=6	no_accent_hits=5
+PASS_B	src/components/presentation/VideoSlideRenderer.tsx	hits=1	no_accent_hits=0
+PASS_B	src/components/presentation/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/accion-de-gracias.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/bendicion-final.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/index.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/la-paz.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/ofrenda.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/padre-nuestro.json	hits=0	no_accent_hits=0
+PASS_B	src/data/elementos-fijos/santa-cena.json	hits=0	no_accent_hits=0
+PASS_B	src/hooks/presentation/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/hooks/presentation/useAutoSave.ts	hits=0	no_accent_hits=0
+PASS_B	src/hooks/presentation/useFullscreen.ts	hits=0	no_accent_hits=0
+PASS_B	src/hooks/presentation/useKeyboardShortcuts.ts	hits=0	no_accent_hits=0
+PASS_B	src/hooks/presentation/useNavigationWarning.ts	hits=1	no_accent_hits=0
+PASS_B	src/hooks/presentation/usePresentationState.ts	hits=2	no_accent_hits=1
+PASS_B	src/hooks/presentation/usePresentationSync.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/ageGroupService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/attendanceService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/calendarService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/childrenLessonPdfExporter.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/childrenPublicationStateService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/inventoryService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/lessonService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/liturgyChildrenPublishService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/materialsList.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/parseMaterials.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/children-ministry/volunteerService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/approvalGate.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/autoKick.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/concurrency.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/downscaleImage.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/imageFeedback.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/imageUtils.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/immutableImageUpload.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/pipelineTaskAdapter.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/promptBuilders.ts	hits=2	no_accent_hits=2
+PASS_B	src/lib/cuentacuentos/recoverySnapshot.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/snapshotHash.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/storyPdfExporter.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/storyToSlides.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/cuentacuentos/taskFactories.ts	hits=2	no_accent_hits=2
+PASS_B	src/lib/liturgia/exportService.ts	hits=2	no_accent_hits=2
+PASS_B	src/lib/liturgia/liturgyService.ts	hits=1	no_accent_hits=1
+PASS_B	src/lib/liturgia/slideRenderer.tsx	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/availabilityHelpers.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/availabilityService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/formatters.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/liturgyMusicPublishService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/musicianLabels.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/musicianService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/notificationLabels.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/notificationService.ts	hits=1	no_accent_hits=0
+PASS_B	src/lib/music-planning/packetGenerationService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/practiceLabels.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/practiceService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/publicationStateService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/rehearsalLabels.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/rehearsalService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/setlistLabels.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/setlistService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/songService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/music-planning/songUsageService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/exportImport.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/imageUploadService.ts	hits=1	no_accent_hits=0
+PASS_B	src/lib/presentation/presentationService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/saveToLiturgyService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/sessionService.ts	hits=5	no_accent_hits=5
+PASS_B	src/lib/presentation/syncChannel.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/themes.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/presentation/types.ts	hits=1	no_accent_hits=1
+PASS_B	src/lib/presentation/videoService.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/whatsapp/index.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/whatsapp/payload.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/whatsapp/phone.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/whatsapp/summary.ts	hits=0	no_accent_hits=0
+PASS_B	src/lib/whatsapp/templates.ts	hits=3	no_accent_hits=3
+PASS_B	src/pages/ConstructorLiturgiasPage.tsx	hits=6	no_accent_hits=6
+PASS_B	src/types/shared/liturgy.ts	hits=5	no_accent_hits=4
+PASS_B	supabase/functions/_shared/whatsapp/graph.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/_shared/whatsapp/payload.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/_shared/whatsapp/phone.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/_shared/whatsapp/send-core.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/_shared/whatsapp/signature.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/fetch-bible-passage/index.ts	hits=3	no_accent_hits=1
+PASS_B	supabase/functions/generate-children-lesson/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/generate-children-lesson/prompt.ts	hits=2	no_accent_hits=2
+PASS_B	supabase/functions/generate-oraciones/handler.ts	hits=1	no_accent_hits=0
+PASS_B	supabase/functions/generate-oraciones/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/generate-story/handler.ts	hits=3	no_accent_hits=3
+PASS_B	supabase/functions/generate-story/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/process-reflexion-pdf/handler.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/process-reflexion-pdf/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/refine-children-lesson/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/refine-children-lesson/prompt.ts	hits=1	no_accent_hits=1
+PASS_B	supabase/functions/refine-story/handler.ts	hits=4	no_accent_hits=2
+PASS_B	supabase/functions/refine-story/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/send-children-service-packet/index.ts	hits=1	no_accent_hits=1
+PASS_B	supabase/functions/send-music-service-packet/index.ts	hits=2	no_accent_hits=2
+PASS_B	supabase/functions/wa-reminders/index.ts	hits=0	no_accent_hits=0
+PASS_B	supabase/functions/wa-send/index.ts	hits=0	no_accent_hits=0
+PASS_B_SUMMARY	files=173	hits=369	no_accent_hits=308
