@@ -3,10 +3,14 @@ SESSION: UPGRADE · P5c · r2 · RE-REVIEW
 Re-review of phase **P5c — Guardas de cobertura huérfanas** after your `FAIL(1)` on
 round 1. **You have final say; the phase does not close until you pass it.**
 
-- **Tip:** `66e3a50` · **Parent:** `main`@`d5b16e8`
-- **Cumulative executor diff:** `b9675e6..66e3a50` (`b9675e6` is the PM's bootstrap
+- **Parent:** `main`@`d5b16e8` · **Last content commit:** `66e3a50`
+- **Cumulative executor diff:** `b9675e6..<tip>` (`b9675e6` is the PM's bootstrap
   commit — contract, not executor work).
-- **Code commits:** `56505ae` (r1) + `7b6f837` (r2). Ledger: `adc641f`, `66e3a50`.
+- **Code commits — the only ones that matter for review:** `56505ae` (r1) + `7b6f837`
+  (r2). Ledger: `adc641f`, `66e3a50`.
+- The branch tip sits **above** `66e3a50` because this prompt is itself committed to
+  `docs/plan/upgrade/prompts/`. Anything above `66e3a50` is docs-only; verify that
+  rather than assuming it (`git diff --stat 66e3a50..<tip>`).
 - Your r1 review is committed at `ef40be9`,
   `docs/plan/upgrade/reviews/REVIEW-P5c.md`.
 
