@@ -378,7 +378,15 @@ as `slideRenderer` — it simply belongs to the announcement-graphics workflow, 
 inclusion rule does not cover. If BILINGUE later widens beyond the liturgy path, `/admin/graphics` is
 the first place to look.
 
-### Group 3 — `OracionesAntifonalesGenerator.tsx` + `SlideGenerator.tsx` — **the closest call**
+### Group 3 — the standalone `oraciones` component graph — **the closest call**
+
+**Rewritten at round 1 remediation.** Codex [B4] found that round 1's reason rested on a false
+persistence distinction, and it was right: the standalone generator and the builder **do** share
+`liturgias` and `liturgia_lecturas`. Round 1's phrase "the legacy `liturgias` table rather than the
+builder's liturgy" is retracted. The verdict survives, but on a different and narrower fact, traced
+below. This group also grew from 2 files to 4 — see "a triage inconsistency" at the end.
+
+#### The component graph is closed
 
 ```bash
 /usr/bin/grep -rn "OracionesAntifonalesGenerator" src --include='*.tsx' --include='*.ts' \
@@ -387,29 +395,79 @@ the first place to look.
 # src/pages/OracionesAntifonalesPage.tsx:5,27
 /usr/bin/grep -n "OracionesAntifonales" src/appRoutes.tsx
 # 57:  { path: "/admin/liturgia/oraciones", element: <ProtectedRoute requires={{ resource: 'oraciones', action: 'write' }}><OracionesAntifonalesPage /></ProtectedRoute> },
-/usr/bin/grep -rn "SlideGenerator" src --include='*.ts' --include='*.tsx' \
-  | /usr/bin/grep -v '^src/components/liturgia/SlideGenerator.tsx'
-# src/components/liturgia/OracionesAntifonalesGenerator.tsx:31,495
-# src/components/liturgia/index.ts:11     — barrel re-export
-/usr/bin/grep -rn "generate-oraciones" src --include='*.ts' --include='*.tsx'
-# src/components/liturgia/OracionesAntifonalesGenerator.tsx:106,181
-# src/components/liturgia/types.ts:140    — a comment
-# src/components/liturgia-builder/editors/OracionEditor.tsx:326
+/usr/bin/grep -rn "SlideGenerator\|LiturgiaForm\|SavedLiturgias\|BiblePassageFetcher" src \
+  --include='*.ts' --include='*.tsx' | /usr/bin/grep -vE '^src/components/liturgia/(SlideGenerator|LiturgiaForm|SavedLiturgias|BiblePassageFetcher)\.tsx'
+# SlideGenerator        <- OracionesAntifonalesGenerator.tsx:31,495   + index.ts:11 (barrel)
+# LiturgiaForm          <- OracionesAntifonalesGenerator.tsx:29,390   + index.ts:6  (barrel)
+# SavedLiturgias        <- OracionesAntifonalesGenerator.tsx:32,394
+# BiblePassageFetcher   <- LiturgiaForm.tsx:17,222                    + index.ts:7  (barrel)
 ```
 
-The inclusion rule's clause 1 anchors on *"a liturgy that begins at
-`src/pages/ConstructorLiturgiasPage.tsx`"* and on producing a prayer *"from data selected or saved in
-that liturgy workflow."* This generator begins at its own route, takes its inputs from its own form,
-and persists to the legacy `liturgias` table (`OracionesAntifonalesGenerator.tsx:239-243`) rather than
-to the builder's liturgy. The builder reaches the same `generate-oraciones` edge function through its
-own component, `editors/OracionEditor.tsx:326` — so these are two parallel prayer paths, not one chain.
+Every referrer is inside the graph or the barrel. The single entry point is
+`/admin/liturgia/oraciones`. Nothing in `liturgia-builder/`, `PresenterPage` or `OutputPage` imports
+any of them.
 
-**Verdict: excluded, and flagged for the reviewer as the decision most likely to be wrong.** The cost
-if it is wrong is concrete, which is why it is spelled out: `SlideGenerator.tsx` downloads PNGs named
-`oracion_<tipo>_<NN>_<kind>.png` (351-395) and PDFs named `oracion_<tipo>.pdf` and
-`oraciones_antifonales_completas.pdf` (417, 442), and paints prayer text into canvases with 4
-`fillText` calls. Overturning this exclusion adds `PDF` and `file download` records for
-`SlideGenerator.tsx` to **this** phase. The two files move together; nothing else does.
+#### The tables are shared — the part round 1 got wrong
+
+```bash
+for t in liturgias liturgia_lecturas liturgia_oraciones liturgia_elementos; do
+  printf '\n--- %s ---\n' "$t"
+  /usr/bin/grep -rn "from('$t')" src supabase --include='*.ts' --include='*.tsx' \
+    | /usr/bin/grep -vE '_test\.|\.test\.'
+done
+```
+
+| Table | Standalone graph | Builder / export path |
+|---|---|---|
+| `liturgias` | writes — `OracionesAntifonalesGenerator.tsx:240`; reads — `SavedLiturgias.tsx:63,95` | `liturgyService.ts:556` (save), `:814` (**`loadLiturgy`**), `:922`, `:953` (`listLiturgies`), `:981`; also `presentationService.ts:190,218` |
+| `liturgia_lecturas` | writes — `OracionesAntifonalesGenerator.tsx:265` | `liturgyService.ts:590,604` (save), **`:828` (`loadLiturgy`)** |
+| `liturgia_oraciones` | writes — `OracionesAntifonalesGenerator.tsx:281`; reads — `SavedLiturgias.tsx:66,140` | **nothing** |
+| `liturgia_elementos` | **nothing** | `liturgyService.ts:762,780`, **`:835` (`loadLiturgy`)**, `presentationService.ts:232`, `saveToLiturgyService.ts:380` |
+
+So round 1's claim is refuted twice over: a row this generator writes to `liturgias` **is** listed by
+the builder's `listLiturgies` and **is** loadable by `loadLiturgy`, and the readings it writes to
+`liturgia_lecturas` are read by `loadLiturgy:828` and end up in the celebrant PDF's
+`database content` record. Those are real chains and they are now named in that record's reason.
+
+#### The fact the verdict actually rests on
+
+`loadLiturgy` queries exactly three tables:
+
+```bash
+/usr/bin/sed -n '810,914p' src/lib/liturgia/liturgyService.ts | /usr/bin/grep -nE "\.from\("
+#  5:      .from('liturgias')
+# 19:      .from('liturgia_lecturas')
+# 26:      .from('liturgia_elementos')
+```
+
+**The prayer text is not in any of them.** The generator writes its prayers to `liturgia_oraciones`
+(`OracionesAntifonalesGenerator.tsx:281`), and the only reader of that table anywhere in `src/` or
+`supabase/` is `SavedLiturgias.tsx:66,140` — which loops the prayers back into the same standalone
+page via `onLoad`, reconstructing them with its own Spanish `titulo` literals at 145-155. The builder's
+element store is `liturgia_elementos`, which the generator never writes.
+
+So the *prayer text* — the copy `SlideGenerator` paints into canvases and downloads — has **no path
+into the builder or any export**, while the *title, summary and readings* around it do. That is the
+distinction that decides the group, and it is narrower than round 1 claimed.
+
+**Verdict: excluded, and still the decision most likely to be overturned.** The cost is concrete:
+`SlideGenerator.tsx` downloads PNGs named `oracion_<tipo>_<NN>_<kind>.png` (351-395) and PDFs named
+`oracion_<tipo>.pdf` and `oraciones_antifonales_completas.pdf` (417, 442), and paints prayer text into
+canvases with 4 `fillText` calls. Overturning this adds `PDF` and `file download` records for
+`SlideGenerator.tsx` to **this** phase. The four files move together.
+
+*Direction of error: `liturgia_oraciones` having exactly one writer and one reader is a fact about this
+commit, not a property. A future builder read of that table would silently pull the prayer text into
+the export path, and nothing here would flag it.*
+
+#### A triage inconsistency this trace exposed — executor-found, not in the Codex verdict
+
+Working [B4] surfaced a defect the reviewer did not raise. Round 1's triage labelled
+`BiblePassageFetcher.tsx` (#30) and `SavedLiturgias.tsx` (#32) as `D1b-2` while giving their reason as
+"reached from `LiturgiaForm.tsx` and `OracionesAntifonalesGenerator.tsx`" — the very chain that puts
+them **outside** the boundary. The stated reason contradicted the assigned label. Both are now
+`no surface`, on the Group 3 chain, and the tallies in `D1-sink-triage.md` are re-derived:
+`D1b-2` 17 → 15, `no surface` 29 → 31, boundary exclusions 26 → 28.
 
 ### Group 4 — `src/components/sermon-editor/admin/MusicTrackManager.tsx`
 

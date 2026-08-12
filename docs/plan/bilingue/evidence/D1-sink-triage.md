@@ -30,7 +30,7 @@ match [D1b1.3]'s reference exactly, so no discrepancy needed reporting.
 A file may be labelled `D1b-1` *and* still owe D1b-2 a toast record; the partition in `PLAN.md` is by
 **record**, not by file. Where that happens the reason column says so.
 
-**Twenty-six files carry the `outside the inclusion boundary` reason, in five groups. They are what a
+**Twenty-eight files carry the `outside the inclusion boundary` reason, in five groups. They are what a
 reviewer should read first**, because excluding a file that genuinely emits Spanish is the expensive
 mistake here. Every group is re-derived with its full evidence chain in `D1-exclusions.md` §3.
 
@@ -62,23 +62,23 @@ mistake here. Every group is re-derived with its full evidence chain in `D1-excl
 | 20 | `src/components/graphics/ThemeManager.tsx` | `no surface` | Outside the boundary, same chain as #16. 10 `toast(`. |
 | 21 | `src/components/graphics/canvasCompositor.ts` | `no surface` | Outside the boundary, same chain as #16. Bakes text into pixels with 7 `fillText` calls — a real surface on `/admin/graphics`, not on any liturgy path. |
 | 22 | `src/components/graphics/templateCompositor.ts` | `no surface` | Outside the boundary, same chain as #16. 21 `fillText` plus `downloadAllGraphics` at 2131. The largest text-into-pixels site in the repository and the strongest single argument for auditing `/admin/graphics` in a later phase. |
-| 23 | `src/components/liturgia-builder/ChildrenActivityDialog.tsx` | `D1b-2` | In the builder (`ConstructorLiturgias.tsx`). 15 `toast(` and no output-channel emission of its own; it drives the children's lesson data that #48 later typesets. Imports `@/lib/children-ministry/*` services, **not** the `/admin/ninos` components of #1-15 — this is the evidence that separates the two. |
+| 23 | `src/components/liturgia-builder/ChildrenActivityDialog.tsx` | `D1b-2` | In the builder (`ConstructorLiturgias.tsx`). 15 `toast(` and no output-channel emission of its own; it drives the children's lesson data that #45 later typesets. Imports `@/lib/children-ministry/*` services, **not** the `/admin/ninos` components of #1-15 — this is the evidence that separates the two. |
 | 24 | `src/components/liturgia-builder/ContextoTransversal.tsx` | `D1b-2` | In the builder. 8 `toast(`; no PDF/email/WhatsApp/download emission. |
 | 25 | `src/components/liturgia-builder/ExportPanel.tsx` | `D1b-1` | Two `file download` records (lines 521, 628) in `D1-surfaces-output.md` §4b, and the invocation root for `send-music-service-packet` (344) and `send-children-service-packet` (389). **Also owes D1b-2** 5 `toast(` records. |
 | 26 | `src/components/liturgia-builder/Portadas.tsx` | `D1b-1` | Audit find R-25: `subtitle: context.preacher` at 315/449 is baked into cover pixels and reaches the projection PDF. **Also owes D1b-2** 7 `toast(` records. |
 | 27 | `src/components/liturgia-builder/UniversalSlide.tsx` | `D1b-1` | Audit find R-24: the literal `Reflexión` at 486 is rasterised into the exported PDF/PPTX. **Also owes D1b-2** its `slide render` records — this file is the slide renderer, so its principal ownership is D1b-2's. |
-| 28 | `src/components/liturgia-builder/editors/CuentacuentoEditor.tsx` | `D1b-2` | In the builder. 1 `toast(`. The story text it edits reaches PDF through #46, which holds that record. |
-| 29 | `src/components/liturgia-builder/editors/CustomElementEditor.tsx` | `D1b-2` | In the builder. 6 `toast(`; the custom element's `bodyText` reaches the celebrant PDF, and that record sits on #49. |
-| 30 | `src/components/liturgia/BiblePassageFetcher.tsx` | `D1b-2` | Reached from `LiturgiaForm.tsx` and `OracionesAntifonalesGenerator.tsx`. 5 `toast(`; the passage text it fetches reaches the celebrant PDF via #49's `database content` record. |
+| 28 | `src/components/liturgia-builder/editors/CuentacuentoEditor.tsx` | `D1b-2` | In the builder. 1 `toast(`. The story text it edits reaches PDF through #47, which holds that record. |
+| 29 | `src/components/liturgia-builder/editors/CustomElementEditor.tsx` | `D1b-2` | In the builder. 6 `toast(`; the custom element's `bodyText` reaches the celebrant PDF, and that record sits on #48. |
+| 30 | `src/components/liturgia/BiblePassageFetcher.tsx` | `no surface` | Outside the boundary, Group 3. **Corrected at round 1 remediation** — round 1 labelled this `D1b-2` while giving as its reason the very chain that excludes it. Its only referrer is `LiturgiaForm.tsx:17,222`, whose only referrer is `OracionesAntifonalesGenerator.tsx:29,390`. 5 `toast(`, all on `/admin/liturgia/oraciones`. The builder calls the same `fetch-bible-passage` edge function through its own component — `liturgia-builder/ContextoTransversal.tsx:213` — not through this one; `/usr/bin/grep -rn "fetch-bible-passage" src` returns exactly three call sites, and the third is `presentation/BibleVerseCreator.tsx:86`. |
 | 31 | `src/components/liturgia/OracionesAntifonalesGenerator.tsx` | `no surface` | Outside the boundary — **the closest call in this phase**, flagged for the reviewer. Reached only from `src/pages/OracionesAntifonalesPage.tsx`, routed at `appRoutes.tsx:57` as `/admin/liturgia/oraciones`. It inserts into the legacy `liturgias` table (239-243), not into the builder's liturgy, and the builder has its own prayer generator (`editors/OracionEditor.tsx:326` calls the same `generate-oraciones` function). 7 `toast(`. Full chain in `D1-exclusions.md` §3. |
-| 32 | `src/components/liturgia/SavedLiturgias.tsx` | `D1b-2` | Same referrers as #30. 3 `toast(`. |
+| 32 | `src/components/liturgia/SavedLiturgias.tsx` | `no surface` | Outside the boundary, Group 3. **Corrected at round 1 remediation**, same defect as #30. Its only referrer is `OracionesAntifonalesGenerator.tsx:32,394`. 3 `toast(`. It is also the **only reader of `liturgia_oraciones` in the repository** (66, 140) and reconstructs the prayers with its own Spanish `titulo` literals at 145-155 — feeding them back into the same standalone page, never into the builder. That read is what makes the Group 3 verdict narrow rather than absolute. |
 | 33 | `src/components/liturgia/SlideGenerator.tsx` | `no surface` | Outside the boundary, inherited from #31 — its only referrer is `OracionesAntifonalesGenerator.tsx:495` (plus the barrel `liturgia/index.ts:11`). It emits heavily: 4 `fillText`, PNG downloads named `oracion_<tipo>_<NN>_<kind>.png` (351-395) and PDFs named `oracion_<tipo>.pdf` / `oraciones_antifonales_completas.pdf` (417, 442). **If the reviewer overturns #31, this file becomes `D1b-1` and gains PDF and file-download records.** |
 | 34 | `src/components/liturgia/constants.ts` | `D1b-2` | A UI label registry. `downloadAll: 'Descargar Todo'` (150) is a button caption, not text carried by a download; `fileNamePattern` (192) documents #33's naming and is inert at this commit. |
-| 35 | `src/components/music-library/ChordChartUpload.tsx` | `D1b-2` | 5 `toast(`. Uploads chord charts that #52 later merges into the music packet PDF; that record sits on #52. |
+| 35 | `src/components/music-library/ChordChartUpload.tsx` | `D1b-2` | 5 `toast(`. Uploads chord charts that #51 later merges into the music packet PDF; that record sits on #51. |
 | 36 | `src/components/music-library/StemUploadGrid.tsx` | `D1b-2` | 3 `toast(`. |
-| 37 | `src/components/music-scheduling/ServiceDateManager.tsx` | `D1b-2` | 2 `toast(`. Its four `resend` matches are the React state name `resendingPacket` — a **regex false positive** for the email service. It does *trigger* the packet email (`invoke('send-music-service-packet')` at 135) but emits none of its text; those records sit on #57. |
+| 37 | `src/components/music-scheduling/ServiceDateManager.tsx` | `D1b-2` | 2 `toast(`. Its four `resend` matches are the React state name `resendingPacket` — a **regex false positive** for the email service. It does *trigger* the packet email (`invoke('send-music-service-packet')` at 135) but emits none of its text; those records sit on #58. |
 | 38 | `src/components/presentation/ImageOverlayControls.tsx` | `D1b-2` | `sonner` import; toast-only. |
-| 39 | `src/components/presentation/PresenterView.tsx` | `D1b-2` | `sonner` import; toast-only. Also the root that reaches #51's `file download` records via `ExportDialog` (1344). |
+| 39 | `src/components/presentation/PresenterView.tsx` | `D1b-2` | `sonner` import; toast-only. Also the root that reaches #52's `file download` records via `ExportDialog` (1344). |
 | 40 | `src/components/presentation/SlideStrip.tsx` | `D1b-2` | `sonner` import; toast-only. |
 | 41 | `src/components/presentation/VideoBackgroundControls.tsx` | `D1b-2` | `sonner` import; toast-only. |
 | 42 | `src/components/sermon-editor/admin/MusicTrackManager.tsx` | `no surface` | Outside the boundary. Sermon-editor admin; `sonner` import only, and no chain from the builder-anchored workflow. |
@@ -110,8 +110,8 @@ mistake here. Every group is re-derived with its full evidence chain in `D1-excl
 | Label | Files |
 |---|---:|
 | `D1b-1` | 16 |
-| `D1b-2` | 17 |
-| `no surface` | 29 |
+| `D1b-2` | 15 |
+| `no surface` | 31 |
 | **Total** | **62** |
 
 Counted from the table's own label column, not by hand:
@@ -120,26 +120,32 @@ Counted from the table's own label column, not by hand:
 /usr/bin/grep -E '^\| [0-9]+ \| `' docs/plan/bilingue/evidence/D1-sink-triage.md \
   | /usr/bin/awk -F' \\| ' '{print $3}' | /usr/bin/sort | /usr/bin/uniq -c
 #   16 `D1b-1`
-#   17 `D1b-2`
-#   29 `no surface`
+#   15 `D1b-2`
+#   31 `no surface`
 /usr/bin/grep -E '^\| [0-9]+ \| `' docs/plan/bilingue/evidence/D1-sink-triage.md \
   | /usr/bin/awk -F' \\| ' '$3=="`no surface`"' | /usr/bin/grep -c 'false positive'   # -> 3
 /usr/bin/grep -E '^\| [0-9]+ \| `' docs/plan/bilingue/evidence/D1-sink-triage.md \
-  | /usr/bin/awk -F' \\| ' '$3=="`no surface`"' | /usr/bin/grep -cE 'boundary|Boundary' # -> 26
+  | /usr/bin/awk -F' \\| ' '$3=="`no surface`"' | /usr/bin/grep -cE 'boundary|Boundary' # -> 28
 ```
 
-So of the 29 `no surface`: **3** are regex false positives with no emission at all (#43, #46, #49) and
-**26 emit but sit outside the D1 inclusion boundary** — 15 `children-ministry` admin components,
-7 `graphics` modules, `OracionesAntifonalesGenerator` + `SlideGenerator`, `MusicTrackManager`, and
-`whatsapp-signup`. Two further false-positive *tokens* are noted on #37 and #54, but those two files
-are labelled `D1b-2` for their real toast emissions and so do not appear in the 3.
+So of the 31 `no surface`: **3** are regex false positives with no emission at all (#43, #46, #49) and
+**28 emit but sit outside the D1 inclusion boundary** — 15 `children-ministry` admin components,
+7 `graphics` modules, the 4-file standalone `oraciones` graph (#30, #31, #32, #33),
+`MusicTrackManager`, and `whatsapp-signup`. Two further false-positive *tokens* are noted on #37 and
+#54, but those two files are labelled `D1b-2` for their real toast emissions and so do not appear in
+the 3.
+
+**Changed at round 1 remediation:** #30 and #32 moved from `D1b-2` to `no surface`. Round 1 labelled
+them `D1b-2` while giving as their reason the very referrer chain that excludes them — the reason
+contradicted the label. Found while working Codex [B4]; not itself a Codex finding. See
+`D1-exclusions.md` §3 Group 3.
 
 ## What D1b-2 inherits
 
-- The 17 files labelled `D1b-2`, plus the toast/slide-render halves explicitly noted on `D1b-1` files
+- The 15 files labelled `D1b-2`, plus the toast/slide-render halves explicitly noted on `D1b-1` files
   #25, #26, #27 and #56.
 - `LITURGY_ORDER` as its mandatory declaration seed — untouched here by design.
 - One audit find handed over: `supabase/functions/_shared/whatsapp/phone.ts` (not in the 62) emits six
   Spanish rejection reasons that reach an operator toast through `describePacketSendResult`.
-- The 26 boundary exclusions, if the reviewer overturns any of them. #31 and #33 are the pair most
+- The 28 boundary exclusions, if the reviewer overturns any of them. #30, #31, #32 and #33 are the group most
   likely to move, and they move together.

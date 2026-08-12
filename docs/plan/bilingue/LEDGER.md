@@ -1747,3 +1747,82 @@ ESCAPED DEFECT: n/a — no PASS yet
   `describePacketSendResult`.
 - NEXT: independent Codex review of the cumulative diff `pilot/sop-v2...phase/d1b1-output`. Findings
   return to the same executor conversation as one batch (lean overlay §4.2).
+
+---
+
+### 2026-08-12 — D1b-1 round 2 — EXECUTOR — Codex FAIL(4) remediation (same conversation)
+
+```text
+PHASE:    D1b-1 — recipient-facing channels
+STARTED:  2026-08-12T20:12:40Z
+ENDED:    2026-08-12T20:44:21Z
+ATTEMPT:  2 (cumulative for this phase)
+RISK:     DISCOVERY
+HANDOFFS: 1 (Codex verdict pasted back into the same executor conversation, per overlay 4.2/4.3)
+BRANCH:   phase/d1b1-output   BASE: pilot/sop-v2 @ 0fd80f2   ROUND 1: 46f11e3, eb20507
+GATES:    shasum -a 256 -c METHOD-MANIFEST.txt      -> 4/4 OK, exit 0                       PASS
+          bash census.sh > raw 2> stderr            -> exit 0; both streams byte-identical  PASS
+          candidate floor (literal SINKS block)     -> 154 / 62                             PASS
+          triage table vs floor (diff)              -> EXACT MATCH                          PASS
+          git diff --quiet e0c9342 -- src supabase  -> exit 0                               PASS
+          git diff --stat pilot/sop-v2...HEAD       -> docs/plan/bilingue/ only             PASS
+CODEX:    FAIL(4) on round 1 -> all four accepted and fixed; re-review pending
+ESCAPED DEFECT: none — no PASS yet
+```
+
+- **ALL FOUR BLOCKERS VERIFIED AGAINST SOURCE BEFORE ANY EDIT, ALL FOUR ACCEPTED.** Nothing argued
+  down. Two were worse than the verdict stated, and the extra facts are recorded with their commands.
+- **[B1] — the `WA_TEMPLATES` chain does not exist.** `/usr/bin/grep -rn "WA_TEMPLATES" src supabase`
+  minus its own file returns **no importer**. Every send site hardcodes its template name
+  (`send-music-service-packet:558`, `wa-reminders:57`). Two facts the review did not have: no edge
+  function imports from `src/` at all, so the claimed flow is impossible across the runtime boundary;
+  and **three of the six declared templates are named by no sender** — `cambio_servicio`,
+  `solicitud_disponibilidad`, `opt_in_bienvenida`. The third forced a second correction: round 1's
+  `wa-webhook:150` record called that emission the compliance leg of `opt_in_bienvenida`'s opt-out
+  promise, and **this codebase never sends that template**, so the promise is not made here. New
+  `D1-surfaces-output.md` §2.0 carries the two-directional trace; `templates.ts` is recorded as a
+  hand-maintained mirror of registry copy, and the record for the copy a recipient actually reads is
+  the `external registry` one on `send-core.ts`.
+- **[B2] — composite payloads split per origin**, all four instances, per `SURFACE-SCHEMA.md`
+  §"Record syntax". Two of them round 1 had described as multiple emissions in its own reason text
+  while filing one record. The rule is now stated once in §0.1 instead of decided per record.
+- **[B3] — axis contradictions fixed, and extended.** `channel-fixed` is reserved for registry-fixed
+  copy; three registry-free `sendText` literals were using it and are now
+  `UNVERIFIED (materiality: BLOCKS-REPLAN)`. **Extended beyond the finding:** a template *variable* is
+  not registry-fixed either — Meta approves the body, not the substitutions — so `wa-reminders`'
+  `formatDateEs` and the fan-out's `formattedDate` moved too. Locale-generated dates were split out of
+  their database-content records rather than relabelled: `ExportPanel.tsx:311` and `:484` are their own
+  `literal in source` records now. Proper nouns carry `UNVERIFIED (materiality: DETAIL)`.
+- **[B4] — the closest-call exclusion survives on a narrower fact.** Round 1's "legacy `liturgias`
+  table rather than the builder's liturgy" is **retracted**: both write `liturgias` and
+  `liturgia_lecturas`, a generator row **is** listed by `listLiturgies` and loadable by `loadLiturgy`,
+  and its readings **are** read by `loadLiturgy:828` into the celebrant PDF. What decides it is that
+  `loadLiturgy` queries exactly `liturgias`, `liturgia_lecturas`, `liturgia_elementos` — and the prayer
+  text lives in `liturgia_oraciones`. **One correction to the finding itself:** that table is not
+  readerless. `SavedLiturgias.tsx:66,140` reads it and loops the prayers back into the same standalone
+  page, which is inside the graph — so the verdict holds but is narrower than "nothing reads it", and
+  the error direction is now recorded.
+- **EXECUTOR-FOUND, not in the verdict.** Tracing [B4] exposed that round 1 labelled
+  `BiblePassageFetcher.tsx` (#30) and `SavedLiturgias.tsx` (#32) `D1b-2` while giving as their reason
+  the referrer chain that **excludes** them — the reason contradicted the label. Both moved to
+  `no surface`. Also corrected six off-by-N `#n` cross-references in the triage's reason column, found
+  by mapping every `#n` against the row it names.
+- **[S1] [S2] [N1] [N2] all applied.** [D1b.8] now reads "D1b-1 half met; script deferred" rather than
+  "not applicable". §1a pastes the literal 24-file sweep output and both `comm` derivations. "Four
+  probes" → "three". The [D1b.1] row says explicitly that it is the same check as [D1b1.1].
+- **ONE ROUND-1 CLAIM OF MINE CORRECTED.** Round 1 said `2>/dev/null` "appears exactly once in the
+  whole diff". Measured over added lines it appears **five** times — ledger, `D1-exclusions.md:269`,
+  the review prompt, and the review request — every one prose *about* the prohibition, no command
+  using it. The claim was true of the evidence artifacts and false as written.
+- **COUNTS RE-DERIVED, never carried:** records **35 → 43** (16 PDF · 12 email · 11 WhatsApp ·
+  4 file download · 0 print); axes 8 `UI copy` · 15 `UNVERIFIED BLOCKS-REPLAN` · 6 `UNVERIFIED DETAIL` ·
+  4 `channel-fixed` · 10 `stored-or-output copy`; 21 of 43 carry `materiality:`; seven fields on all
+  43, no blanks. Triage **16/17/29 → 16/15/31**; boundary exclusions 26 → 28. No record was removed.
+- **REVIEWER RULINGS RECORDED** (D-I): `BLOCKS-REPLAN` approved for the email copy and the music-packet
+  PDF chrome; filenames confirmed as `file download` emissions belonging to this phase; no plan-level
+  `FINDINGS`. The `outside boundary` triage label the reviewer asked for is carried to **D1b-2's**
+  contract, since D1b-1's contract fixes the three labels.
+- **PRIVACY:** no personal-data value in the diff (D-D). The six new personal-data records name column
+  and position only. No database access — the [B4] table map was read from `.from('…')` call sites and
+  two migration files, never queried. Nothing merged, pushed to `main`, or deployed.
+- NEXT: Codex re-review of the cumulative diff `pilot/sop-v2...phase/d1b1-output`.
