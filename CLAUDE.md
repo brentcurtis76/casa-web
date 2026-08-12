@@ -66,11 +66,31 @@ Vercel auto-deploys on push to `main`. When Brent explicitly approves a merge/sh
 ## Quality Gates
 
 ALL must pass before any task is reported complete:
-- `npx tsc --noEmit`
+- `npm run typecheck`
 - `npm run lint`
 - `npm test`
 - `npm run build`
 - `npx playwright test` (E2E)
+
+**Never use bare `npx tsc --noEmit` as the typecheck gate.** The root `tsconfig.json`
+is a solution-style file (`"files": []` + `references`). Plain `tsc` honours `files: []`,
+so it type-checks **zero** files and exits 0 in ~0.4s — a gate that always passes.
+Verified 2026-08-12 (node v22.22.0, TypeScript 5.9.3):
+
+```
+$ npx tsc --noEmit --listFiles | wc -l
+       0
+```
+
+`npm run typecheck` runs `tsc -b --force --noEmit`, which follows the project
+references into `tsconfig.app.json` (665 files under `src/`) and `tsconfig.node.json`.
+`--force` defeats the `.tsbuildinfo` incremental cache so the gate can never report a
+stale PASS. Runtime ~23s.
+
+**The typecheck gate is currently RED** — 1,039 errors across 120 files on `main` as of
+db8ed2e. Stabilization is tracked on `fix/typecheck-gate`. Until that lands, a phase may
+not relabel this gate PASS; record it as KNOWN-RED with the current count and confirm the
+count did not increase.
 
 ## Hard Rules
 
