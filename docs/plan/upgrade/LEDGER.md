@@ -4188,3 +4188,62 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   fases sin conducta), más la deriva de aritmética de arriba.
 - OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado. (2) Las cuatro
   notas de plan. (3) Después, `/pm-boot UPGRADE P5b`.
+
+### 2026-08-12 — P5c round 4 — EXEC (Claude Opus 5)
+- SESSION: UPGRADE · P5c · r4 · EXEC
+- STARTED: 2026-08-12T17:26:00Z · ENDED: 2026-08-12T19:06:00Z · ATTEMPT: 4 · RISK: STANDARD
+- **RONDA SIN VEREDICTO DE CODEX DE POR MEDIO.** No responde a un hallazgo: responde a la
+  **regla de parada del overlay** —«dos fallos consecutivos de Codex en la misma categoría
+  de defecto exigen un cambio de hipótesis o partir la fase **antes de más código**»—. Los
+  hallazgos de la r1 (S1) y de la r2 son la misma categoría: *una dimensión que los tests
+  no varían deja sobrevivir una mutación escrita sobre ella*. La r3 fue otro parche serial
+  sin declarar el cambio de hipótesis. Esto lo corrige.
+- **EL CAMBIO DE HIPÓTESIS.** Dejar de buscar celdas de una en una y **enumerar la rejilla**
+  `rol × vía de entrada × polaridad` (8 celdas), contrastándola con **lo que producción
+  produce de verdad**. Eso se comprueba, no se recuerda: `MesaAbiertaSection.tsx:730` pasa
+  **siempre** `preferredRole` (`signupRole`, estado que arranca en `'guest'`).
+- **LO QUE APARECIÓ, Y ES PEOR QUE LO QUE CODEX ENCONTRÓ.** `preferredRole === undefined`
+  es un caso que **la aplicación no produce nunca** — y era el único que recorrían **los
+  cuatro tests de invitado de P5a** y también el test de anfitrión que añadí en la r3.
+  Dicho claro: **ningún test tocaba el camino real del invitado**, que es la mayoría de
+  los inscritos. Una condición sobre `preferredRole === 'guest'` apagaba el opt-out a
+  **todo invitado real** y dejaba los seis tests verdes.
+- REPARACIÓN, en dos movimientos y sin tocar los tests de P5a:
+  (1) `advanceToStep3ChoosingHostInStep1` pasa a entrar con `preferredRole="guest"` — el
+  camino real de «entré como invitado y cambié de idea», y la única combinación donde una
+  condición sobre el **prop** difiere de una sobre el **estado**.
+  (2) Nuevo test `el invitado de producción entra con preferredRole y conserva el
+  opt-out`, con **las dos polaridades**.
+- MUTATION EVIDENCE (las **diez**, aplicadas y revertidas, `git status` limpio). Las dos
+  nuevas **sobrevivían la suite de la r3** y ahora caen, y en las dos cae **sólo** el test
+  nuevo (**1 failed / 6 passed**): **R4a** esconde el switch a los invitados de producción
+  (`!(preferredRole === 'guest' && rolePreference === 'guest')`); **R4b** les fuerza la
+  exclusión en el payload. Las ocho anteriores —H1, H2, H3, B1a, B1b, S1, R3a, R3b— siguen
+  rojas; **R3a**, la de Codex en la r2, sigue cayendo con el helper ya en `preferredRole="guest"`.
+- **LA REJILLA, PARA QUE LA REVISIÓN SEA CONCLUYENTE Y NO OTRA RONDA.** Ocho celdas
+  `rol × entrada × polaridad`. Alcanzables en producción: las cuatro de invitado con prop
+  y las cuatro de anfitrión (prop directo y cambio en el paso 1). **Todas cubiertas
+  ahora.** Las de `preferredRole === undefined` quedan cubiertas de más por los tests de
+  P5a, que no toco: producción no las genera, pero tampoco estorban.
+- TESTS: `deno test --allow-all --no-check .` → **457 / 0** · `npx vitest run
+  --no-file-parallelism` → **1097 passed / 6 failed** (1103) en 221 s, **los seis de
+  `MesaAbiertaDashboard.test.tsx` y ninguno más**. Quinta medición seguida sin el séptimo
+  rojo (B-05).
+- **DERIVA DE PLAN, ACTUALIZADA: la aritmética de Vitest de P5c pasa de `+2` a `+4`**
+  (era `+3` al cerrar la r3). Deno sigue en **+1**. Total del plan 1072 → **1074**. Los dos
+  tests de más son consecuencia directa del SHOULD-FIX de la r2 y de la regla de parada,
+  no alcance que yo haya añadido.
+- GATES: `npm run build` → **exit 0**. Gate D8 difeado contra `d5b16e8`: **cero
+  diagnósticos nuevos**; las 10 líneas que difieren son las 5 parejas de desplazamiento
+  (+3) ya conocidas. Totales idénticos: `tsc=1039 eslint=161 deno-lint=92 deno-check=43`.
+- SIN CAMBIOS: `npm run lint` y `playwright`, idénticos en padre y punta, ya descargados
+  por Codex en la r1.
+- **POSICIÓN RESPECTO A LA REGLA DE PARADA.** Van **dos** veredictos `FAIL`. **Un tercero
+  obliga a parar y re-planificar** (§5 del overlay), y ninguna de las tres notas de plan
+  abiertas se arregla dentro de esta fase. Si la re-revisión encuentra una quinta celda de
+  esta misma categoría, la respuesta correcta **no** es una r5: es `FINDINGS` y devolver la
+  fase al PM.
+- FINDINGS RAISED: ninguno bloqueante. Siguen abiertas para el PM las tres notas de plan
+  de la r1 más la deriva de aritmética.
+- OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado. (2) Las cuatro
+  notas de plan. (3) Después, `/pm-boot UPGRADE P5b`.
