@@ -1,4 +1,4 @@
-# PLAN — BILINGUE, phases D1a and D1b
+# PLAN — BILINGUE, phases D1a, D1a-2 and D1b
 
 META
 - REPO / ROOT: `casa-web`, branch `pilot/sop-v2`, worktree `/Users/brentcurtis/dev/casa-pilot`.
@@ -6,8 +6,15 @@ META
 - MEASUREMENT ENVIRONMENT: macOS (Darwin 24.3.0), `/usr/bin/grep` (BSD), `/usr/bin/find` (BSD),
   locale `en_US.UTF-8` available and used. Numbers are OS- and locale-dependent — see D-K.
 - PLAN ROOT: `docs/plan/bilingue/`. **Never write BILINGUE entries into `docs/plan/LEDGER.md`.**
-- BRANCHES: `phase/d1a-method` (DONE, landed `dee6a1a`), then **`phase/d1b1-output`** (current),
-  then `phase/d1b2-ui`. Base for both D1b branches: `pilot/sop-v2`.
+- BRANCHES: `phase/d1a-method` (DONE, landed `dee6a1a`) → `phase/d1b1-output` (**BLOCKED** at
+  `5f8de92`, alive, not merged) → **`phase/d1a2-method`** (current, cut from `5f8de92`) →
+  D1b-1's rebuild → `phase/d1b2-ui`.
+- **BRANCH TOPOLOGY, READ THIS BEFORE RESOLVING ANYTHING.** `pilot/sop-v2` @ `0fd80f2` does **not**
+  carry D1b-1's three rounds — its ledger stops at the D1b-1 bootstrap. The complete workstream
+  record, the census, the exclusions and the triage live only on `phase/d1b1-output` @ `5f8de92`,
+  which is why `phase/d1a2-method` is cut from that commit and not from `pilot/sop-v2`. Nothing
+  merges to `pilot/sop-v2` until a results phase passes Codex. *(Decided 2026-08-12 at the D1b-1
+  re-plan — see the Decision log for the tradeoff this accepts.)*
 - WORKFLOW IN FORCE: `~/.claude/agent-workflow/LEAN-WORKFLOW.md` (ACTIVE 2026-08-11 for every
   checkout whose Git common dir is `/Users/brentcurtis/dev/casa-web/.git`). **`docs/plan/SOP-PILOT.md`
   on this branch is the superseded v1** (C1–C4); v2 is `git show pilot/lean-v2:docs/plan/SOP-PILOT.md`
@@ -411,8 +418,17 @@ in `src/lib/whatsapp/templates.ts` has `text-origin = declaration/registry in so
   schema, the executor traces at least one emission end-to-end and reports any route the regex does
   not match. **A surface found by the audit and not by the regex is the single most valuable output
   of this phase** and must be called out in `D1-SUMMARY.md`.
-- [D1b.5] `wa-webhook/index.ts` and `src/lib/whatsapp/templates.ts` both appear with records. The
-  template registry's 24–48h re-approval lead time is recorded as a constraint.
+- [D1b.5] **AMENDED 2026-08-12 (finding F1).** `supabase/functions/wa-webhook/index.ts` appears with
+  records. `src/lib/whatsapp/templates.ts` **must not be given an emission record** — it appears in a
+  named non-emitting-declaration section instead, with its two-directional trace. The schema records
+  emissions, and this file emits nothing: it has **no importer** anywhere in `src` or `supabase`, and
+  **no edge function imports from `src/` at all**, so no runtime path reaches it. The criterion as
+  originally written demanded a record the schema forbids, which is a contract defect and not an
+  executor error. Verified by the PM at `5f8de92`:
+  `/usr/bin/grep -rn "WA_TEMPLATES" src supabase | /usr/bin/grep -v '^src/lib/whatsapp/templates.ts:'`
+  -> no output, exit 1; `/usr/bin/grep -rnE "from ['\"].*(@/|\.\./\.\./\.\./src)" supabase/functions`
+  -> 0 matches. The WhatsApp registry's **24–48 h re-approval lead time** is still recorded as a
+  constraint, but on the records that carry registry copy a recipient actually reads, not on the mirror.
 - [D1b.6] Every record carries all seven schema fields. No blanks.
 - [D1b.7] Every `UNVERIFIED` carries `materiality:` (D-I); `D1-verify.sh` fails on a missing field.
 - [D1b.8] `D1-verify.sh` verifies **every** artifact in `METHOD-MANIFEST.txt` against its `sha256`
@@ -507,11 +523,212 @@ D1a, merged and Codex-passed.
 
 ---
 
-## Phase D1b-1 — Recipient-facing channels — **THE CURRENT PHASE**
+## Phase D1a-2 — Amend the method — **THE CURRENT PHASE**
 
-Contract completed 2026-08-12 at PM bootstrap. Everything an executor needs is here or in the
-four hash-locked D1a method artifacts; nothing above this line needs to be excavated, and the
-census totals published earlier in this plan are **stale and must not be carried forward**.
+A **second method phase**, not a fourth round of D1a. D1a is DONE and passed; this phase amends what
+two Codex reviews of D1b-1 proved wrong in it. Written 2026-08-12 at the D1b-1 re-plan; everything an
+executor needs is here or in the artifacts named below.
+
+- **RISK TIER: `HIGH`.** Not by the overlay's trigger list — there is no auth, PII value, schema
+  migration, external side effect or release here, and the source diff is zero lines. By the
+  overlay's *"when uncertain, use `HIGH`"*: this is the artifact both Codex FAILs traced back to, it
+  is hash-locked, and every downstream record depends on it. A wrong amendment here buys a fourth
+  failed attempt at D1b-1.
+- **BRANCH:** `phase/d1a2-method` (17 chars) cut from **`phase/d1b1-output` @ `5f8de92`** — *not*
+  from `pilot/sop-v2`, which does not carry D1b-1's ledger or evidence. See META.
+- **WORKTREE:** `/Users/brentcurtis/dev/casa-pilot`. Not `casa-web`, which is on `plan/bilingue` and
+  has no `docs/plan/bilingue/` directory at all.
+- **EXECUTOR: fresh conversation, and this is required, not incidental.** The overlay permits a new
+  executor after a material re-plan. D-L independently *demands* it here: D1b-1's executor is
+  holding the results, and a method author who already knows the totals is the exact failure D-L
+  exists to prevent. Recorded in the ledger.
+
+**One question:** the schema can say what a record *looks like*; what makes it say which records
+*exist*, and which two values does its vocabulary not have?
+
+### Scope — D1a-2 owns these artifacts
+
+1. **`evidence/SURFACE-SCHEMA.md`** — amended in place, answering F1, F2 and F3.
+2. **`evidence/derive-sites.sh`** — pure shell; derives the **emission-site set**.
+3. **`evidence/validate-records.sh`** — pure shell; validates a records file against that set.
+4. **`evidence/fixtures/schema/`** — the fixtures that prove both scripts, in both directions.
+5. **`evidence/SCHEMA-CHANGELOG.md`** — what changed, why, and what it deliberately does not fix.
+6. **`evidence/METHOD-MANIFEST.txt`** — regenerated over the full method.
+
+**Out of scope, and a BLOCKING finding if produced here:** any surface record · any count or total ·
+any edit to `census.sh`, `CENSUS-METHOD.md` or `wordlist-passB.txt` · any edit to
+`D1-surfaces-output.md`, `D1-sink-triage.md`, `D1-exclusions.md` or the census outputs · any source,
+schema or config change (D-A) · any recommendation about how a surface should be made bilingual (D-E).
+
+### Acceptance criteria — D1a-2
+
+- [D1a2.1] **F2 — `text-origin` gains a value for platform-locale output.** The enum gains exactly
+  one scalar for text produced by the **runtime's locale data** rather than by any repository string,
+  database row, model, canonical JSON file or external registry. The schema states the discriminating
+  test — the emitted vocabulary is not enumerable from this repository at all — and names
+  `toLocaleDateString('es-CL', …)` as the illustrating call. Contrast it explicitly with
+  `wa-reminders/index.ts:24-31`, whose `formatDateEs` hardcodes its month array in source and
+  therefore stays `literal in source`. That contrast is the point: both emit Spanish month names and
+  only one is a repository string.
+- [D1a2.2] **F1 — a non-emitting declaration is not an emission record.** The schema states the rule,
+  its test (a *traced route* reaching an allowed sink — not the presence of a declaration), and the
+  named section such a file goes to instead. `LITURGY_ORDER` is recorded via its renderer and stays
+  a record; `WA_TEMPLATES` has no importer and no runtime path, and is not one. State the error
+  direction (D-O).
+- [D1a2.3] **F3 — the schema defines the record *set*, not only the record *shape*.** §"Record
+  syntax" today distinguishes records by *"different text origins, **emissions**, sinks, or
+  language-axis sets"* — `emission` is undefined and is the term carrying the whole rule. The
+  amendment must (a) define `emission` operationally, (b) fix the reconciliation key
+  **route × sink × origin × axis**, and (c) state the split/merge rule **once**, so it is not
+  re-decided per record. Two rounds of hand-written records split inconsistently in both directions;
+  that is the symptom this criterion exists to remove.
+- [D1a2.4] **A derivation exists and is executable.** `derive-sites.sh` enumerates the emission-site
+  set — `(path, line, terminal call, sink)` — mechanically, sweeping the repository independently of
+  the candidate floor's path filter (D-J). It derives **sites only**: it does not classify
+  `text-origin` or `language-axis`, and the schema says so plainly rather than implying more.
+- [D1a2.5] **A validator exists and actually fails.** `validate-records.sh` takes a records file and
+  exits non-zero on each of: a missing or blank field · a value outside its enum · an `UNVERIFIED`
+  without `materiality:` (D-I) · a duplicate reconciliation key · a derived site that is neither
+  recorded nor explicitly dismissed with a written reason. Each rule names itself in the failure
+  output.
+- [D1a2.6] **Fixtures prove it, in both directions, and nothing else does.**
+  `evidence/fixtures/schema/` holds one valid records file that exits 0, and **one deliberately
+  broken file per rule in [D1a2.5]** that exits non-zero naming that rule. **Running either script
+  against `D1-surfaces-output.md` in this phase is a BLOCKING finding** — that is D1b-1's first gate,
+  and running it here would be measuring inside a method phase (D-L).
+- [D1a2.7] **The census is not touched.** `census.sh`, `CENSUS-METHOD.md` and `wordlist-passB.txt`
+  are byte-identical to `dee6a1a`, proven by command. D1b-1's committed census output must stay
+  valid; invalidating it would discard the part of that phase the reviewer explicitly preserved.
+- [D1a2.8] **No result, and no reverse-engineering of one.** No D1a-2 artifact contains a record
+  count or measurement total ([D1a.6], extended). **No rule, threshold or fixture may be justified by
+  how many records it yields.** The reviewer is asked to check specifically for a derivation shaped
+  to reproduce D1b-1's blocked record list. You may read `D1-sink-triage.md`, `D1-exclusions.md`, the
+  census outputs and `D1-surfaces-output.md` §§0/1/5/6; §§2–4 and §7 are a blocked draft, not a target.
+- [D1a2.9] **`METHOD-MANIFEST.txt` regenerated and self-verifying** over the full method including
+  both new scripts, with `SOURCE_SHA`, OS and locale. `shasum -a 256 -c` → all OK. **Backlog [S1]
+  closes here**: record the current `PLAN_SHA` instead of the stale `c842161`. It was deferred to
+  D1b-2 on the ground that the manifest locks the bytes anyway — but the manifest is being rewritten
+  in this phase, and writing a known-stale SHA into a new file creates debt rather than carrying it.
+- [D1a2.10] **Every new rule states its error direction (D-O)**, and where evidence is ambiguous
+  fails toward **inclusion**, in code rather than in prose. No artifact asserts a safety property it
+  has not tested — in particular, neither script may claim to establish that the record set is
+  complete. It establishes that the record set is **consistent with a derived floor**, and the floor
+  is a floor (D-J).
+- [D1a2.11] **Diff confined.** `git diff --stat phase/d1b1-output...HEAD` lists only
+  `docs/plan/bilingue/`, and `git diff --quiet e0c9342 -- src supabase` exits 0.
+- [D1a2.12] **`SCHEMA-CHANGELOG.md`** records each change, the finding it answers, the evidence, its
+  error direction, and **what it deliberately does not fix**.
+
+### Test plan — D1a-2
+
+```bash
+cd /Users/brentcurtis/dev/casa-pilot
+export LC_ALL=en_US.UTF-8
+
+# 1. the census is untouched — must print nothing  [D1a2.7]
+git diff --stat dee6a1a HEAD -- \
+  docs/plan/bilingue/evidence/census.sh \
+  docs/plan/bilingue/evidence/CENSUS-METHOD.md \
+  docs/plan/bilingue/evidence/wordlist-passB.txt
+
+# 2. both scripts parse, then run against FIXTURES ONLY  [D1a2.4] [D1a2.5] [D1a2.6]
+bash -n docs/plan/bilingue/evidence/derive-sites.sh
+bash -n docs/plan/bilingue/evidence/validate-records.sh
+bash docs/plan/bilingue/evidence/validate-records.sh \
+     docs/plan/bilingue/evidence/fixtures/schema/valid.md; echo "valid -> expect 0, got $?"
+for f in docs/plan/bilingue/evidence/fixtures/schema/invalid-*.md; do
+  bash docs/plan/bilingue/evidence/validate-records.sh "$f"
+  echo "$f -> expect non-zero, got $?"
+done
+
+# 3. manifest regenerated and self-verifying  [D1a2.9]
+( cd docs/plan/bilingue/evidence \
+  && /usr/bin/shasum -a 256 -c <(/usr/bin/grep -E '^[0-9a-f]{64}' METHOD-MANIFEST.txt) )
+
+# 4. no results leaked into a method phase  [D1a2.8]
+/usr/bin/grep -rnE '[0-9]+[[:space:]]*(records?|surfaces?|files|hits|matches|total)' \
+  docs/plan/bilingue/evidence/SURFACE-SCHEMA.md \
+  docs/plan/bilingue/evidence/SCHEMA-CHANGELOG.md \
+  && echo "FAIL: a result leaked into D1a-2" || echo "OK: no results in D1a-2"
+
+# 5. diff confinement  [D1a2.11]
+git diff --stat phase/d1b1-output...HEAD
+git diff --quiet e0c9342 -- src supabase && echo "source tree untouched"
+```
+
+`lint`, `test`, `build` and Playwright are excluded: the source diff is zero lines by D-A.
+`npx tsc --noEmit` is excluded because it compiles **zero** files and is a vacuous pass — the root
+`tsconfig.json` is a solution file with `"files": []`; the real check fails on the base with 1,039
+errors across 122 files, which is repository debt and base-red under overlay §5. Full baseline:
+`evidence/BASE-GATES-d5df247.md`. There is no database gate. As in D1b-1: **`2>/dev/null` anywhere in
+this phase is a BLOCKING finding**, and if `npm ci` is ever run it must not leave an untracked file
+under `src/` or `supabase/`.
+
+### Sizing
+
+One amended prose artifact, one new prose artifact, two shell scripts, a fixture directory and a
+regenerated manifest. Zero source lines. Comfortably one session — the risk here is subtlety, not
+volume, which is why the tier is `HIGH` and the sizing note is short.
+
+### Definition of done — D1a-2
+
+All twelve criteria checked · both scripts parse and behave correctly on fixtures in both directions
+· manifest verifies · census artifacts byte-identical to `dee6a1a` · no counts present · diff confined
+and source tree untouched · **Codex PASS on the cumulative diff** — this review is the method-lock and
+D1b-1 may not resume without it · branch mergeable.
+
+### Risks — D1a-2
+
+- **[D1a2.10] is the criterion most likely to be violated while looking satisfied.** A validator that
+  reads as thorough will invite the claim that the record set is now provably complete. It is not,
+  and cannot be: the site set is a regex-derived floor, and that regex was wrong by 3× once already.
+- **`derive-sites.sh` inherits D-J's problem, not a solution to it.** It is a floor paired with the
+  call-path audit, and the audit still has to exceed it. If the script is written as though it
+  replaces the audit, D1b-1 will under-report and look rigorous doing it.
+- **Guess, labelled:** that `emission` can be defined operationally enough that two people split the
+  same composite payload the same way. This is [D1a.5]'s difficulty one level down, and [D1a.5] was
+  this workstream's hardest criterion. **If it cannot be made precise, say so and propose the
+  boundary as a question for Brent rather than inventing one** — that is the correct outcome (D-N),
+  and inventing a rule that only its author can apply is what produced F3.
+
+### Rollback — D1a-2
+
+Delete `phase/d1a2-method`. `phase/d1b1-output` is untouched and still holds its evidence; nothing
+merges to `pilot/sop-v2` in this phase.
+
+### Dependencies — D1a-2
+
+D1a's method artifacts at `dee6a1a`, and D1b-1's FINDINGS at `5f8de92`. No other phase.
+
+### Handoff to D1b-1 — written at D1a-2's close, outline only
+
+D1b-1 resumes at **cumulative attempt 4** with: `validate-records.sh` as a gate it must pass before
+submitting · the fourth triage label `outside boundary` the reviewer asked for, which 28 of the 62
+need and `no surface` misdescribes · [D1b.8]'s provenance anchor re-pointed from `dee6a1a` to
+D1a-2's tip · and §§2–4 and §7 of `D1-surfaces-output.md` rebuilt under the amended method.
+
+---
+
+## Phase D1b-1 — Recipient-facing channels — **BLOCKED, awaiting D1a-2**
+
+**Status 2026-08-12: BLOCKED after 3 cumulative attempts.** Codex FAIL(4) → all four fixed →
+FAIL(2), both in round-1 categories; overlay §5's two-consecutive-failures rule fired and round 3
+returned FINDINGS rather than a third prose batch. Two of the three defects live in the hash-locked
+`SURFACE-SCHEMA.md`, which [D1b.1] and D-L put out of this phase's reach. **The remedy is the
+phase split the overlay names: `D1a-2` below fixes the method, then D1b-1 resumes at attempt 4.**
+
+- **Reusable as-is, do not rebuild:** the census and its fixture, `D1-census-raw.txt` /
+  `D1-census-stderr.txt`, the candidate floor, the 62-row triage and its labels, `D1-exclusions.md`
+  in full, and `D1-surfaces-output.md` **§§0, 1, 5 and 6** — the audit yield, the `print` finding
+  and the nine blind spots, none of which Codex challenged.
+- **To be rebuilt under the amended method:** `D1-surfaces-output.md` **§§2–4 and §7** only.
+- Both affected artifacts carry a BLOCKED banner added in round 3. The record counts they state are
+  **not** a target for D1a-2 — see [D1a2.8].
+
+*Contract below completed 2026-08-12 at PM bootstrap and still governs the resumed phase, with
+[D1b.5]/[D1b1.8] amended for F1 above and the additions [D1a2→D1b-1] listed at D1a-2's close.
+Everything an executor needs is here or in the hash-locked method artifacts; the census totals
+published earlier in this plan are **stale and must not be carried forward**.*
 
 - **RISK TIER: `DISCOVERY`.** `docs/plan/SOP-PILOT.md` on `pilot/lean-v2`: "Inventory work whose
   completeness cannot be established is `DISCOVERY` and must name blind spots and safe failure
@@ -580,10 +797,13 @@ additional, D1b-1-specific ones:
   output** ([D1b.4]). List those separately and unmissably at the top of `D1-surfaces-output.md`,
   for D1b-2 to carry into `D1-SUMMARY.md`. If the audit finds none, say so explicitly and say what
   you traced — silence is indistinguishable from not having looked.
-- [D1b1.8] **[D1b.5] is discharged here**: `supabase/functions/wa-webhook/index.ts` and
-  `src/lib/whatsapp/templates.ts` both appear with records, and the template registry's **24–48 h
-  WhatsApp re-approval lead time** on body edits is recorded as a constraint, not merely as a
-  string. Both are `sink/channel = WhatsApp`, so both are D1b-1's regardless of `text-origin`.
+- [D1b1.8] **AMENDED 2026-08-12 (finding F1) — [D1b.5] as amended is discharged here**:
+  `supabase/functions/wa-webhook/index.ts` appears with records; `src/lib/whatsapp/templates.ts`
+  appears in the non-emitting-declaration section with its trace and **no emission record**; and the
+  **24–48 h WhatsApp re-approval lead time** on body edits is recorded as a constraint on the records
+  carrying registry copy, not merely as a string. `wa-webhook` is `sink/channel = WhatsApp`, so it is
+  D1b-1's regardless of `text-origin`. *(Superseded text required a record for `templates.ts`; see
+  [D1b.5] for the evidence that no such emission exists.)*
 - [D1b1.9] **No PII values.** Record paths, symbols, shapes and counts (D-D). Celebrant, preacher,
   recipient names and phone numbers are described by role and never quoted. This is a CASA
   `CLAUDE.md` hard rule and outranks every criterion here.
@@ -768,6 +988,11 @@ mechanism the next plan must choose, since **D-K governs shell hygiene, not SQL*
 | **2026-08-12** | **D1b-1 written as a self-contained contract; D1b-2 reduced to an outline** | Lean overlay §4.1: the current phase is made self-contained before dispatch. D1b existed only as one criteria list plus a two-row split table. | PM bootstrap |
 | **2026-08-12** | **The D1b-1/D1b-2 partition is by `sink/channel`, not by file and not by `text-origin`** | The split table assigned "declarations/registries" to D1b-2 while [D1b.5] required `WA_TEMPLATES` — a declaration whose sink is WhatsApp — in D1b-1. `text-origin` does not partition; `SURFACE-SCHEMA.md` already makes `sink/channel` scalar with one record per sink. | PM falsification pass |
 | **2026-08-12** | **[D1b.8]'s provenance anchor is `dee6a1a`, named explicitly** | D1a landed by fast-forward, so "D1a's merge commit" named nothing and the criterion was unsatisfiable as written. | PM falsification pass |
+| **2026-08-12** | **D1b-1 BLOCKED and split: new method phase `D1a-2`, then D1b-1 resumes at attempt 4** | Codex FAIL(4) → FAIL(2) in the same categories fired overlay §5, whose named remedy is *"a hypothesis change or phase split"*. Two of the three defects (F2, F3) live in the hash-locked `SURFACE-SCHEMA.md`, which [D1b.1] and D-L put out of a results phase's reach; amending it inside D1b-1 would put a method change in a results phase, which is exactly what D-L exists to prevent. PM verified all three findings independently — see the D1b-1 re-plan ledger entry for the commands. | PM re-plan, per Codex D1b-1 review round 2 |
+| **2026-08-12** | **F1 is a plan defect, fixed by the PM in place — [D1b.5] and [D1b1.8] amended** | Both criteria demanded an emission record for `src/lib/whatsapp/templates.ts`, which the schema forbids because it emits nothing: no importer in `src` or `supabase`, and no edge function imports from `src/` at all. The executor was asked for something unsatisfiable. Unlike F2 and F3 this is in the plan, not the hash-locked schema, so it needs no method phase. | PM falsification pass |
+| **2026-08-12** | **`phase/d1a2-method` is cut from `phase/d1b1-output`, not from `pilot/sop-v2`** | `pilot/sop-v2` does not carry D1b-1's three rounds — cutting from it would give the new phase a ledger with a hole and no access to the census, exclusions and triage it must read. **Tradeoff accepted:** D1a-2's ancestry then contains a blocked results phase, which is untidy in the git graph. D-L's guarantee is method review plus hash lock before the results that depend on it, and both hold; the record continuity is worth more than the graph. Nothing merges to `pilot/sop-v2` until a results phase passes. | PM re-plan |
+| **2026-08-12** | **D1a-2 gets a fresh executor; the D1b-1 conversation does not continue it** | The overlay permits a new executor after a material re-plan. D-L makes it mandatory here: D1b-1's executor holds the results, and a method author who already knows the totals is the precise failure D-L was written against. | PM re-plan |
+| **2026-08-12** | **Backlog [S1] closes in D1a-2 rather than at D1b-2's close** | It was deferred on the ground that `METHOD-MANIFEST.txt` locks the artifact bytes regardless of a stale `PLAN_SHA`. D1a-2 rewrites that manifest, so recording the correct SHA is free — and writing a known-stale value into a newly authored file would be creating debt rather than carrying it. Reverses a Brent-approved deferral on changed circumstances; flagged for him to overrule. | PM re-plan |
 | **2026-08-12** | **`npx tsc --noEmit` removed from D1b's gates; base type-check baseline recorded** | The root `tsconfig.json` is a solution file with `"files": []`, so plain `tsc` checks **zero** files — measured. Every `tsc -> 0 (clean base)` in this plan was vacuous. The real check fails on the base with 1,039 errors across 122 files: repository debt, base-red under overlay §5, routed to a bounded stabilization phase rather than into this phase. `evidence/BASE-GATES-d5df247.md`. | PM falsification pass |
 
 ---

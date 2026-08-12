@@ -1892,3 +1892,94 @@ GATES:    re-run after the truth corrections, all green — manifest 4/4; census
   corrected.
 - NEXT: PM re-plan. No executor work until the three FINDINGS are resolved and a new contract is
   dispatched.
+
+---
+
+### 2026-08-12 — D1b-1 re-plan APPROVED and applied — PM — **phase split, new phase D1a-2**
+
+- SESSION: `BILINGUE · D1a-2 · PM` — successor to the session that dispatched D1b-1.
+- WORKTREE: `/Users/brentcurtis/dev/casa-pilot`  COMMON DIR: `/Users/brentcurtis/dev/casa-web/.git`
+- BRANCH AT RE-PLAN: `phase/d1b1-output` @ `5f8de92`, in sync with origin, working tree clean.
+- OVERLAY: `~/.claude/agent-workflow/LEAN-WORKFLOW.md` **ACTIVE**.
+
+```text
+STARTED:  2026-08-12T21:30:00Z
+ATTEMPT:  D1b-1 stays at 3 and resumes at 4. D1a-2 is a NEW phase and starts at 1.
+          This is a phase split, not a counter reset — recorded explicitly because relabelling
+          to dodge a stop rule is the obvious way to abuse overlay §5.
+RISK:     D1a-2 = HIGH. Stated honestly: not by the overlay's trigger list — no auth, PII value,
+          migration, side effect or release, and zero source lines — but by "when uncertain, use
+          HIGH", because this is the artifact both Codex FAILs traced back to.
+HANDOFFS: 1 (executor FINDINGS -> PM)
+GATES:    read-only diagnostics; the PM wrote planning artifacts only, no source, no tests.
+CODEX:    D1b-1 round 1 FAIL(4) -> round 2 FAIL(2), same categories -> round 3 FINDINGS.
+```
+
+**THE THREE FINDINGS WERE VERIFIED BY THE PM, NOT ACCEPTED ON REPORT.** A FINDINGS report is a
+claim. All three reproduce at `5f8de92`, under `LC_ALL=en_US.UTF-8` with absolute binary paths (D-K):
+
+```text
+CLAIM (F1):     [D1b.5]/[D1b1.8] demand emission records for a file that emits nothing.
+CHECK:          /usr/bin/grep -rn "WA_TEMPLATES" src supabase \
+                  | /usr/bin/grep -v '^src/lib/whatsapp/templates.ts:'   -> no output, exit 1
+                /usr/bin/grep -rnE "from ['\"].*(@/|\.\./\.\./\.\./src)" supabase/functions
+                                                                        -> 0 matches
+RESULT:         supported. No importer, and no edge function can import from src/ at all.
+BLIND SPOT:     a runtime-constructed import would not appear; none is claimed to exist.
+
+CLAIM (F2):     text-origin has no truthful value for platform-locale output.
+CHECK:          SURFACE-SCHEMA.md:41 enumerates literal in source | declaration/registry in
+                source | database content | AI-generated | canonical JSON | external registry.
+                Three records — exportService.ts:761, childrenLessonPdfExporter.ts:270,
+                ExportPanel.tsx:311 — carry `literal in source` while their own reason field
+                says the text is CLDR data and not a repository string.
+RESULT:         supported, and sharper than the report put it: wa-reminders/index.ts:24-31
+                hardcodes its month array, so `literal in source` IS correct there. The enum
+                gap is real but narrower than "all Spanish dates".
+BLIND SPOT:     I did not enumerate every toLocaleString-family call; the artifact says three.
+
+CLAIM (F3):     the method fixes a record's shape but never how to derive the set.
+CHECK:          SURFACE-SCHEMA.md §"Record syntax" splits records by "different text origins,
+                EMISSIONS, sinks, or language-axis sets" — `emission` is undefined and is the
+                term carrying the rule. §"Call-path audit" step 4 reconciles at FILE level only.
+RESULT:         supported. The definition is circular, which is why two rounds of hand-written
+                records split inconsistently in both directions.
+BLIND SPOT:     that F1-F3 are the ONLY method defects is unestablished. Two review rounds found
+                three; a third could find more. This is the accepted risk in dispatching D1a-2.
+```
+
+`/usr/bin/shasum -a 256 -c` over `METHOD-MANIFEST.txt` -> **4/4 OK**, so F2 and F3 sit inside a
+hash-locked artifact that [D1b.1] and D-L put out of a results phase's reach.
+
+**DECISIONS, all five logged in `PLAN.md`:**
+
+1. **Split, do not patch in place.** Overlay §5 names "a hypothesis change or phase split" as the
+   remedy for two consecutive failures in one category, and D-L forbids a method change inside a
+   results phase. Amending the schema inside D1b-1 would have been cheaper and would have violated
+   the one decision this workstream has paid for most.
+2. **F1 is mine, not a method phase's.** It lives in the plan, so [D1b.5] and [D1b1.8] are amended
+   in place with the evidence above. The executor was asked for something unsatisfiable; that is a
+   contract defect and it is recorded as one.
+3. **`phase/d1a2-method` is cut from `phase/d1b1-output` @ `5f8de92`, not from `pilot/sop-v2`.**
+   `pilot/sop-v2` @ `0fd80f2` does not carry D1b-1's rounds — its ledger stops at the bootstrap.
+   Cutting from it would hand the new phase a ledger with a hole and no census, exclusions or
+   triage. Tradeoff accepted and stated: D1a-2's ancestry then contains a blocked results phase.
+4. **Fresh executor, required rather than incidental.** D1b-1's executor holds the results; a method
+   author who knows the totals is precisely what D-L was written against.
+5. **[S1] closes in D1a-2.** The manifest is being rewritten there, so recording the correct
+   `PLAN_SHA` is free, and writing a stale one into a new file would create debt rather than carry
+   it. This reverses a Brent-approved deferral on changed circumstances — flagged for him to overrule.
+
+**WHAT I DID NOT DO.** I did not re-review D1b-1's diff or re-run its gates: the overlay puts that
+with the executor and the independent reviewer, and round 3 already re-ran them green after its
+truth corrections. I did not touch source, tests, or any evidence artifact. I did not re-open the
+findings Codex explicitly preserved (the audit yield, the `print` finding, the nine blind spots, the
+Group 3 exclusion, rows #30/#32) — those stand and D1b-1 must not re-litigate them.
+
+- PLAN AMENDED: title; META branch topology; [D1b.5]; [D1b1.8]; D1b-1 retitled **BLOCKED** with its
+  reusable/rebuild split stated; new **Phase D1a-2** contract with twelve criteria; five Decision
+  log rows.
+- PROMPT: `prompts/D1a2-r1.md`, committed so the executor can open it by path.
+- OPEN AFTER THIS ROUND: D1a-2 dispatch. D1b-1's rebuild and its handoff list are an outline until
+  D1a-2 passes (overlay §3 — only the next executable phase is a full contract).
+- NEXT: `/exec BILINGUE D1a-2 r1`, fresh conversation, in `/Users/brentcurtis/dev/casa-pilot`.
