@@ -118,3 +118,81 @@ The [B1] edit to `census.sh` is comment-only. Verified two ways: stdout remains 
 the r3 script, and the `sha256` of the function text the harness extracts is unchanged
 (`ca6e9ce7…`), because both `sed` ranges begin below the edited comment block. `CENSUS-METHOD.md`
 and `census.sh` were both rehashed in `METHOD-MANIFEST.txt`.
+
+---
+
+# CODEX RE-REVIEW 2 — D1a round 4
+
+Received 2026-08-12. Same reviewer and settings. Prompt:
+`docs/plan/bilingue/prompts/D1a-codex-rereview2-r4.md`. Reviewed head: `381501d`.
+
+VERDICT: **FAIL** — 1 BLOCKING, 2 SHOULD-FIX, 0 NIT. Confirmed fixed: [B2] (the literal harness
+reproduced every displayed line, including the SHA and `loop exit=0`) and the original [S2]
+re-export disclosure. Confirmed: the `census.sh` edit is comment-only; selection byte-identical;
+ambiguity stderr, both manifest hashes, syntax, TypeScript, diff hygiene and remediation scope all
+pass.
+
+## BLOCKING
+
+- **[B1]** The replacement still generalizes beyond its evidence. It correctly proves that
+  `corpus_pd_base.json` matches none of the four frozen stage-one predicates, but then says any
+  "convention-based" predicate cannot reach it and that its name carries no convention for a general
+  predicate. A convention such as `corpus_*_base.json` plainly could match it; only the four frozen
+  predicates were tested — `CENSUS-METHOD.md:68`, `CENSUS-METHOD.md:152`, `census.sh:87` —
+  D1a.9 / D-O — say only that the current path matches none of the four frozen stage-one predicates;
+  remove the general claim about convention-based predicates. If future naming matters, state
+  narrowly that the documented capture command accepts its output path as an argument.
+
+## SHOULD-FIX
+
+- **[S1]** The `PLAN_SHA` deferral remains accepted; the manifest and D1b.8 merge anchor preserve
+  integrity.
+- **[S2]** The A1 grep remains phrase-specific and therefore missed this third paraphrase. Use a
+  broad candidate scan — not as proof, but as a mandatory manual-review list — covering absolute
+  terms near selection concepts, for example `all|every|none|no|never|only|cannot|nothing` near
+  `exclude|drop|keep|test|fixture|predicate|convention|referrer`.
+
+## NOTES ON THE PLAN ITSELF
+
+No plan defect or re-plan is needed.
+
+## Executor triage — accepted in full
+
+| ID | Verdict | Disposition |
+|---|---|---|
+| B1 | valid. Third statement of the same defect, and the third time I replaced an absolute with a slightly smaller absolute. "A convention-based predicate does not reach it" is refuted by `corpus_*_base.json` | Fixed at all three sites. Each now says only that the path matches none of the **four frozen stage-one predicates**, and adds that other predicates could match it. The general claim about convention-based predicates is gone. |
+| S1 | accepted | Backlog retained unchanged. |
+| S2 | valid, and it is the mechanism behind three rounds of this defect | Adopted. The broad scan is now the mandatory pre-submission check, run as a manual-review list rather than as proof. |
+
+**On the future-naming point.** Codex's suggested narrow statement was checked before it was written:
+the capture command does take its output path as an argument, at
+`supabase/functions/generate-story/corpus_parity_test.ts:15` —
+`deno run --allow-all _shared/zz_snap.ts generate-story/corpus_pd_base.json`. The artifact now cites
+that line rather than asserting anything about how future baselines will be named.
+
+## The S2 scan, run in full
+
+```text
+$ /usr/bin/grep -rniE '\b(all|every|none|no|never|only|cannot|nothing)\b[^.]{0,80}\b(exclude|excluded|drop|drops|keep|keeps|test|fixture|predicate|convention|referrer)' docs/plan/bilingue/evidence/ | /usr/bin/wc -l
+      28
+```
+
+All 28 were read individually. Disposition: 24 are rule definitions (the branch table, "every file
+that names it is a test file" as the exclusion condition), explicit disclaimers, quoted retractions,
+reported search results, or shell output inside a command block — none assert an untested property.
+Two prompted action:
+
+- `CENSUS-METHOD.md` — "A reviewer confirms nothing real was dropped by reading that short derived
+  list" promised the review step is sufficient. Reworded to "That list, not this artifact, is where
+  a reviewer checks whether anything real was dropped."
+- `CENSUS-METHOD.md` — the three named fixture helpers "all sit inside
+  `src/lib/cuentacuentos/__tests__/`" was inherited and unverified in this round, so it was checked:
+
+  ```text
+  $ /usr/bin/find src supabase -type f -name '*[Ff]ixtures*.ts' | /usr/bin/sort
+  src/lib/cuentacuentos/__tests__/pbImageFixtures.ts
+  src/lib/cuentacuentos/__tests__/pcuiWarningFixtures.ts
+  src/lib/cuentacuentos/__tests__/phFixtures.ts
+  ```
+
+  Three files, all in `__tests__/`, none elsewhere. The statement holds; no edit needed.

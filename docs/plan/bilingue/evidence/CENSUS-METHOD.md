@@ -66,11 +66,10 @@ specifically:
 exclude is enumerated in D1b's `evidence/D1-exclusions.md`, where a reviewer reads the list.
 
 **Stage two** is a referrer-based predicate applied to `.json` paths only, fixed in the next
-section. It exists because the four stage-one predicates match on *convention*, and the test data in
-these roots matches none of them — the live case, `corpus_pd_base.json`, is neither `*.test.*` nor
-`*_test.*` nor inside `__tests__/` nor a copied artifact. A predicate naming that basename literally
-would reach it; a convention-based one does not, and nothing fixes what the next captured baseline
-will be called. Stage two therefore classifies such a file by its referrers instead.
+section. It exists because the live test-data case, `corpus_pd_base.json`, matches none of the four
+frozen stage-one predicates: it is not `*.test.*`, not `*_test.*`, not inside `__tests__/`, and not
+a copied artifact. That is a statement about those four predicates and nothing more — other
+predicates could match this path. Stage two classifies such a file by its referrers instead.
 
 ### Stage two: test data is excluded by who refers to it, not by what it is called
 
@@ -150,12 +149,19 @@ TEST EVIDENCE (excluded): supabase/functions/generate-story/corpus_pd_base.json
 ```
 
 `corpus_pd_base.json` is a captured baseline of the prompt corpus, re-captured by a documented
-script and read only by `corpus_parity_test.ts`. Its path matches none of the three test-module
-predicates: it is not named `*_test.*` and does not sit in a `__tests__` directory. A predicate
-naming this basename literally would of course exclude it — the point is narrower and is all that is
-claimed: its name carries no *convention* for a general predicate to key on, and nothing in the
-capture script constrains what the next baseline is called. That is why stage two keys on referrers
-instead of on names.
+script and read only by `corpus_parity_test.ts`. **Its path matches none of the four frozen
+stage-one predicates** — it is not `*.test.*`, not `*_test.*`, not inside `__tests__/`, not a copied
+artifact. That is the whole of the claim: other predicates could match this path, and no statement
+is made about predicates that were not tested. One narrow, checkable fact bears on future captures:
+the documented capture command takes its output path as an argument —
+
+```text
+supabase/functions/generate-story/corpus_parity_test.ts:15
+//     deno run --allow-all _shared/zz_snap.ts generate-story/corpus_pd_base.json
+```
+
+— so the next baseline's name is a caller's choice, not a property of the tool. Stage two keys on
+referrers rather than on names for that reason.
 
 **What this rule cannot do.** It reads referrers inside `src/` and `supabase/` only, so a `.json`
 referenced solely from a build script, a Deno task or a CI workflow reaches branch 2 and is kept
@@ -186,9 +192,9 @@ printf 'Deno["test"]("x", () => {});\n'  > c_test.ts   # FAILS  — a real test 
 same kind of claim, and would fail on the next construction (D-O). What replaces it is
 enumeration: **D1b writes `evidence/D1-exclusions.md`** listing every path this method excluded, the
 rule that excluded it, and its evidence, together with every file kept under the ambiguity branch and
-its recorded reason (D1b.13). A reviewer confirms nothing real was dropped by reading that short
-derived list. **This artifact makes no claim that a given file is or is not a test.** It states the
-rules, and the direction in which each is wrong.
+its recorded reason (D1b.13). That list, not this artifact, is where a reviewer checks whether
+anything real was dropped. **This artifact makes no claim that a given file is or is not a test.**
+It states the rules, and the direction in which each is wrong.
 
 One bounded probe survives, and it is reported as **what it searched**, not as a property it
 establishes. The command looks under `src/` and `supabase/`, in `.ts`/`.tsx` files, for a

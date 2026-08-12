@@ -1403,3 +1403,76 @@ D-N blind spot, recorded as one.
   of the explicit retraction.
 - HANDOFFS: 1 (Brent pasted the re-review verdict).
 - CODEX: pending second re-review of the cumulative diff.
+
+### 2026-08-12 — D1a round 4, Codex re-review 2 FAIL(1) remediation — EXECUTOR (same conversation)
+
+- SESSION: `BILINGUE · D1a · r4 · EXEC` — same durable executor conversation (lean overlay §4.2).
+- STARTED: 2026-08-12T12:50Z · ENDED: 2026-08-12T13:04Z
+- ATTEMPT: still **4 cumulative**. Third remediation of round 4.
+- CODEX VERDICT: **FAIL(1)** + 2 SHOULD-FIX + 0 NIT. Confirmed fixed: [B2] — the literal harness
+  reproduced every displayed line including the SHA and `loop exit=0` — and the re-export
+  disclosure. Confirmed passing: comment-only `census.sh` edit, byte-identical selection, ambiguity
+  stderr, both manifest hashes, syntax, TypeScript, diff hygiene, remediation scope.
+- **[B1] — THE SAME DEFECT, THIRD STATEMENT, AND THE PATTERN IS NOW THE FINDING.** Each round I
+  replaced an absolute with a slightly smaller absolute: "no name predicate can reach it" became "no
+  *convention-based* predicate can reach it", which `corpus_*_base.json` refutes just as plainly.
+  Only the four frozen predicates were ever tested. All three sites — `CENSUS-METHOD.md` stage-two
+  intro, the `corpus_pd_base.json` paragraph, and `census.sh`'s function header — now say only that
+  the path matches **none of the four frozen stage-one predicates**, and add explicitly that other
+  predicates could match it.
+- **The future-naming statement was checked before it was written** (D-B), rather than asserted:
+
+  ```text
+  $ /usr/bin/grep -n "zz_snap" supabase/functions/generate-story/corpus_parity_test.ts
+  15://     deno run --allow-all _shared/zz_snap.ts generate-story/corpus_pd_base.json
+  ```
+
+  The capture command takes its output path as an argument, so the next baseline's name is a
+  caller's choice. The artifact cites that line instead of claiming anything about future names.
+- **[S2] ADOPTED — the A1 grep is retired as the pre-submission check, because it was the mechanism
+  behind three rounds of this defect.** A phrase-specific grep only ever finds the phrasing already
+  known to be wrong. The mandatory check is now a broad candidate scan read as a manual-review list,
+  never as proof:
+
+  ```text
+  $ /usr/bin/grep -rniE '\b(all|every|none|no|never|only|cannot|nothing)\b[^.]{0,80}\b(exclude|excluded|drop|drops|keep|keeps|test|fixture|predicate|convention|referrer)' docs/plan/bilingue/evidence/ | /usr/bin/wc -l
+        28
+  ```
+
+  All 28 lines were read individually this round. 24 are rule definitions, disclaimers, quoted
+  retractions, reported search results or shell output — none assert an untested property. Two
+  prompted action: "A reviewer confirms nothing real was dropped…" was reworded to "That list, not
+  this artifact, is where a reviewer checks whether anything real was dropped"; and the inherited
+  three-fixture-helper statement was verified rather than assumed —
+  `/usr/bin/find src supabase -type f -name '*[Ff]ixtures*.ts'` returns exactly those three paths,
+  all inside `__tests__/`, so it holds unchanged. Full disposition in
+  `reviews/D1a-r4-codex-review.md`.
+- **[S1]** Deferral still accepted; backlog unchanged.
+- GATES (full re-run; both artifacts rehashed again):
+
+  ```text
+  $ cd docs/plan/bilingue/evidence && /usr/bin/grep -vE '^#' METHOD-MANIFEST.txt | /usr/bin/shasum -a 256 -c
+  CENSUS-METHOD.md: OK
+  census.sh: OK
+  SURFACE-SCHEMA.md: OK
+  wordlist-passB.txt: OK
+  $ /usr/bin/diff /tmp/h3.txt /tmp/h4.txt && echo "IDENTICAL"
+  IDENTICAL
+  $ bash docs/plan/bilingue/evidence/census.sh 3>&1 1>/dev/null 2>&3
+  AMBIGUOUS_KEEP	src/data/elementos-fijos/index.json	reason=basename-collision
+  $ bash <harness> 2>&1 | /usr/bin/head -1
+  harness function sha256: ca6e9ce7977e29692cef6e8572f4a2a483458cd4fa9662744033f087a4aab7ef
+  $ /usr/bin/grep -rnE '^\s*[A-Za-z ]+\s*=\s*[0-9]+|files=|copy=|TOTAL' docs/plan/bilingue/evidence/CENSUS-METHOD.md docs/plan/bilingue/evidence/SURFACE-SCHEMA.md
+  (exit 1, no output)
+  $ /usr/bin/git diff --name-only pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'
+  (exit 1, no output)
+  $ bash -n docs/plan/bilingue/evidence/census.sh; echo "bash -n=$?"
+  bash -n=0
+  $ npx tsc --noEmit; echo "tsc=$?"
+  tsc=0
+  ```
+
+  The extracted-function `sha256` is unchanged again — this round's `census.sh` edit is also
+  comment-only, above the two `sed` ranges.
+- HANDOFFS: 1 (Brent pasted the re-review verdict).
+- CODEX: pending third re-review of the cumulative diff.
