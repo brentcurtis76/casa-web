@@ -2424,3 +2424,28 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   1. **Merge de `phase/E3b-pages` a `main`**, pendiente de autorización explícita de Brent.
   2. **Sigue sin empujarse `main`**, que arrastra 7 commits de UPGRADE.
   3. **`E4-spike` es la siguiente**, y es el único borrador que queda en el plan.
+
+### 2026-08-09 — `E3b` MERGEADA Y EMPUJADA — PM (Opus), por autorización explícita de Brent
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: merge **`--no-ff`** de `phase/E3b-pages` (`b89fe93`) a `main` → **`db8ed2e`**, y **push a
+  `origin`**. `d5b16e8..db8ed2e`.
+- **VERIFICACIÓN PREVIA:**
+  - SHA aprobado por Codex **intacto**: `b89fe93`.
+  - **`main` ya coincidía con `origin/main`** (`d5b16e8`): la sesión de UPGRADE empujó lo suyo, así
+    que **el problema de arrastrar sus 7 commits se resolvió solo** y este push publica sólo `E3b`.
+  - `main` **no estaba tomado por ningún worktree** — hice el merge en uno propio y desechable, sin
+    tocar el checkout de nadie.
+  - `main` ya contenía `E3a`. Desde `62e9158` había avanzado **13 commits**, todos de UPGRADE, con
+    **cero solape de ficheros** y `git merge-tree` → **0 conflictos**.
+- **VERIFICACIÓN POSTERIOR, sobre el árbol ya mergeado:** `npm run build` → **verde**;
+  `vitest` sobre `reflexiones` + `sermon-editor` + `pages` → **112/112**, que es `E3a` y `E3b`
+  conviviendo; los tres specs e2e juntos → **6 passed**.
+- POST-PUSH: `git merge-base --is-ancestor b89fe93 origin/main` → **verdadero**; ídem para
+  `6054d55` (`E3a`). **Las dos unidades están en `origin/main`.**
+- El push dispara el despliegue normal de Vercel, que es el camino que autoriza la instrucción de
+  merge. **Ningún comando manual de despliegue.**
+- **`/reflexiones` y `/reflexiones/:slug` quedan en producción**, con el slug como invariante de
+  base detrás. Es la primera vez en este plan que algo del bucle de escucha llega a `main`.
+- FINDINGS RAISED: ninguno.
+- OPEN AFTER THIS ROUND: **`E4-spike`**, único borrador que queda. Le toca `/pm-boot AUDIO E4-spike`
+  en sesión nueva.
