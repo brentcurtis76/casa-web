@@ -318,7 +318,7 @@ remediación. Primera unidad ejecutada del plan. **Mergeada a `main` el 2026-08-
 | E-infra-spike | Entorno de pruebas: **medir** las rutas viables | Spike | **✅ CERRADA 2026-08-08 — por aceptación explícita de Brent, NO por PASS de Codex** (ver D20) | — |
 | E-infra-impl | Entorno de pruebas: construirlo | Código + infra | **✅ DONE y MERGEADA a `main` — 2026-08-08, `1c4490f`, `CODEX REVIEW E-infra-impl FINAL: PASS`** | E-infra-spike |
 | E3a | `slug`: invariante en la base, derivación y `publishService` | Código + DB | **✅ DONE — 2026-08-09, `phase/E3a-slug@6054d55`, `CODEX REVIEW E3a ROUND 2/2 FINAL: PASS`** | E-infra-impl ✅ |
-| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **✅ CONGELADA — r20, por la disposición §1.5 que el propio Codex prescribió. Ejecutable en cuanto `E3a` esté en `main`** | E3a ✅, E-infra-impl ✅ |
+| E3b | Páginas públicas `/reflexiones` y `/reflexiones/:slug` | Código | **✅ DONE — 2026-08-09, `phase/E3b-pages@b89fe93`, `CODEX REVIEW E3b SECOND RE-REVIEW FINAL: PASS`** | E3a ✅, E-infra-impl ✅ |
 | E4-spike | Previsualización: prototipo desplegado | Spike | **NO CONGELADA** | E3b |
 
 **`E-infra` se partió en la r14.** No fue una decisión nueva: Codex r10/S3 la había condicionado
@@ -1090,6 +1090,10 @@ toca la superficie de `E3a`, y siguen siendo 62 migraciones. Codex r16/S3.)*
 (5 BLOCKING, 1 SHOULD-FIX, los seis aceptados).** El cuerpo anterior era borrador desde
 la r10 y arrastraba cinco cosas que hoy son falsas o están resueltas. **Se corrigen aquí las
 cinco, y la única decisión de diseño nueva —la paginación— se toma, no se delega.**
+
+**✅ DONE — 2026-08-09.** `phase/E3b-pages@b89fe93`, SHA padre `62e9158`. **9 ficheros,
++1941/-9.** `CODEX REVIEW E3b SECOND RE-REVIEW FINAL: **PASS**` — 0 BLOCKING, 0 SHOULD-FIX,
+1 NIT. **Seis rondas de ejecución.** **Pendiente:** merge a `main`, cuando Brent lo autorice.
 
 **CONGELADA en la r20.** Codex falló la r19 con 4 BLOCKING **mecánicos** y dictaminó que **no
 justifican otra ronda de diseño**: se aplican como enmiendas vinculantes previas a la ejecución,

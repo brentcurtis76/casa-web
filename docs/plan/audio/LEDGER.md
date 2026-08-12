@@ -2380,3 +2380,47 @@ es exactamente el error que dejó a `E-infra` en borrador.**
   r4 + r5 + r6. **Nota de accounting:** la r6 no es una remediación de un FAIL de Codex —es un
   arreglo autorizado por Brent sobre un hallazgo propio—, así que no consume el tope de §1.5,
   que sigue agotado para remediaciones de review.
+
+### 2026-08-09 — E3b CIERRE DE UNIDAD — PM (Opus)
+- SESSION: `AUDIO · E3a · PM`
+- ACTION: cierre tras `CODEX REVIEW E3b SECOND RE-REVIEW FINAL` → **PASS**, 0 BLOCKING, 0
+  SHOULD-FIX, **1 NIT**, sobre `phase/E3b-pages@b89fe93`, SHA padre `62e9158`. **`E3b` marcada
+  DONE.** Cuarta unidad ejecutada del plan.
+- **HUECO DE REGISTRO, Y LO DIGO EN VEZ DE TAPARLO.** **No vi los informes de las rondas r4, r5 y
+  r6.** La rama pasó de `ea3adaf` a `b89fe93` por tres commits que no me llegaron, así que **no hay
+  entradas de ejecutor ni verificación mía para esas tres rondas**. Lo que sigue es lo que **medí
+  yo sobre el árbol final**, no un resumen de informes que no leí.
+- **VERIFICADO POR MÍ sobre `b89fe93`:**
+  - Alcance acumulado: **9 ficheros, +1941/-9**. Las tres rondas nuevas tocan **sólo**
+    `queries.ts`, su test y `reflexiones-paginacion.spec.ts` — ni páginas, ni humo, ni rutas.
+  - Unitarios: **66/66**.
+  - **Mutación clave, aplicada por mí:** restaurar `Number.isFinite(Date.parse(valor))` como única
+    reja → **11 tests rojos**. El arreglo de B1 es falsable.
+  - Gate D18 sobre los 9 ficheros, base vs HEAD → **sin diferencias**; totales idénticos
+    `tsc=1039 eslint=161 deno-lint=92 deno-check=43`. `npm run build` → **verde**.
+  - Los tres specs juntos → **6 passed**.
+  - Leí el validador final: valida componente a componente con ida y vuelta de calendario, hora
+    ≤ 23, y **límites de PostgreSQL medidos** (`ANIO_MINIMO = 1`, `DESFASE_HORAS_MAXIMO = 15`), no
+    los de JavaScript.
+- **LO QUE APORTÓ CODEX Y NADIE MÁS HIZO:** generó **8253 candidatos** de timestamp con forma
+  válida y comprobó que **de los 7981 que el validador acepta, cero son rechazados por la API
+  real**. Encontró además un **segundo** BLOCKING que yo no vi —los límites de año y desfase de
+  PostgreSQL, `22008`/`22009`— y validó que la espera del spec de paginación de la r6 **no debilita
+  las mutaciones**: las dos siguen muriendo por su aserción, no por timeout.
+- **QUÉ SE CONSTRUYÓ:** `/reflexiones` y `/reflexiones/:slug` públicas, paginación **keyset** sobre
+  `(published_at DESC, id ASC)` con cursor validado en la URL, estado "no encontrado" y estado de
+  error en español, URL canónica visible y copiable desde `CANONICAL_ORIGIN`, y fallbacks para
+  predicador y portada ausentes.
+- **NIT heredado (de Codex):** el destructuring posicional del regex lleva una captura saltada;
+  añadir un grupo desplazaría los índices. No bloquea —los tests por componente lo pondrían rojo—
+  y va al backlog como endurecimiento estilístico.
+- **CIFRAS DE LA UNIDAD:** 5 rondas de review de plan (r18 FAIL 6, r19 FAIL 4 mecánicos, más las
+  r20-r23 de enmienda) y **6 de ejecución**, con **3 reviews finales de Codex**. Los dos BLOCKING
+  de las tres primeras rondas fueron **de plan, y los dos míos**; los dos de las reviews finales
+  fueron de código, y los encontró Codex.
+- BACKLOG: el NIT del destructuring; la rojez preexistente de la suite e2e (`mesa-abierta`, `rbac`,
+  `recorder`, `financial-*`), que sigue sin ser de AUDIO.
+- OPEN AFTER THIS ROUND:
+  1. **Merge de `phase/E3b-pages` a `main`**, pendiente de autorización explícita de Brent.
+  2. **Sigue sin empujarse `main`**, que arrastra 7 commits de UPGRADE.
+  3. **`E4-spike` es la siguiente**, y es el único borrador que queda en el plan.
