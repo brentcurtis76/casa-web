@@ -4247,3 +4247,55 @@ Formato CODEX REVIEW. PASS solo si aceptarías que se ejecute así.
   de la r1 más la deriva de aritmética.
 - OPEN AFTER THIS ROUND: (1) Re-revisión de Codex sobre el diff acumulado. (2) Las cuatro
   notas de plan. (3) Después, `/pm-boot UPGRADE P5b`.
+
+### 2026-08-12 — P5c round 4 — VEREDICTO `FINDINGS` — la fase NO cierra
+- SESSION: UPGRADE · P5c · r4 · EXEC (cierre de ronda, sin cierre de fase)
+- CODEX r4: **`FINDINGS`** (`7d01fa4`, `reviews/REVIEW-P5c.md:251`). State checks
+  `1 · 1 · 0 · 1 · 0` — revisó el árbol correcto. **Cero bloqueantes de código.**
+- **QUÉ SIGNIFICA: el código está bien y el CONTRATO está mal.** Todos los gates en verde
+  —Vitest `1097/6` contra `1093/6` del padre (**+4**), Deno `457/0` contra `456/0`
+  (**+1**), las 8 suites de P5c en 8/8, build ok, D8 sin diagnósticos nuevos, worktree
+  limpio—. `FINDINGS` no se parchea: se devuelve al PM. **P5c queda ABIERTA.**
+- **CODEX FALLÓ EN CONTRA DE LA r4, Y TIENE RAZÓN.** Pedí expresamente esa sentencia y
+  salió así: **la r4 debió detenerse como `FINDINGS`, no ampliar el contrato de `+2` a
+  `+4` sin enmienda del PM.** El §5 del overlay pedía «cambio de hipótesis **o partir la
+  fase** antes de más código»; hice el cambio de hipótesis y **seguí programando**, que es
+  justo la mitad que no me tocaba. La r3 fue parche serial y la r4 fue alcance unilateral.
+  Queda anotado para que el siguiente ejecutor no repita ninguna de las dos.
+- **MI REJILLA ESTABA MAL, Y DEL MISMO MODO QUE CRITIQUÉ.** Declaré
+  `preferredRole="host"` como camino de producción. **No lo es.** Verificado ahora, no
+  recordado: `MesaAbiertaSection.tsx:248` define `handleSignUp(role)` y **el único
+  invocador es la línea 523, con `'guest'`**; `signupRole` arranca en `'guest'` y nada más
+  lo mueve. Es decir, **el test de anfitrión que añadí en la r1 recorre un camino que la
+  aplicación no produce** — exactamente el reproche que le hice a los cuatro tests de
+  invitado de P5a. Las celdas 5–6 de mi tabla no son alcanzables.
+- **UN HECHO DE CONDUCTA QUE YO NO SABÍA Y CODEX SÍ COMPROBÓ:** `open` pasando de `false`
+  a `true` **no remonta** el asistente —`MesaAbiertaSection.tsx:725` lo mantiene montado
+  siempre que exista `nextMonth`—, así que el inicializador `useState(preferredRole ||
+  'guest')` corre **una sola vez** y `preferredRole` **no se sincroniza** con el estado
+  después. Confirmado por mí en el código antes de anotarlo.
+- **LA REJILLA CORREGIDA: cuatro celdas alcanzables, las cuatro cubiertas.** invitado con
+  `preferredRole="guest"` × {sin tocar, encendido} (test de la r4) y anfitrión por
+  **selección en el paso 1** × {sin tocar, encendido} (test de la r3/r4). Codex lo
+  confirma. **La cobertura real de B-18 la dan los tests de la r3/r4, no el de la r1.**
+- MUTACIONES: **nueve caen**. **`R3b` sobrevivió 7/7 y queda descartada** por afectar sólo
+  un camino inalcanzable — la descarté yo mismo en el prompt como prueba débil y Codex lo
+  ratificó. La lista de evidencia válida son nueve, no diez.
+- **NO REVIERTO LA r4.** Los dos tests existen, pasan y cubren las celdas que sí importan;
+  revertirlos sería un segundo cambio unilateral de contrato para arreglar el primero.
+  Quedan en la rama **a la espera de que el PM los ratifique o los rechace**.
+- **LO QUE EL PM TIENE QUE DECIDIR** (ninguna se arregla dentro de esta fase):
+  1. **Ratificar o rechazar la aritmética `+2 → +4`** (Vitest del plan 1072 → 1074). Los
+     dos tests de más vienen del SHOULD-FIX de la r2 y de la regla de parada.
+  2. **Qué hacer con los tests que recorren caminos inalcanzables**: el de anfitrión de la
+     r1 (`preferredRole="host"`) y los cuatro de invitado de P5a (sin prop). Reapuntarlos
+     exige levantar la prohibición de tocar los tests de P5a; dejarlos exige declararlos
+     como cobertura de más y no contarlos como protección real.
+  3. **Si H2 se da por cumplido**: B-18 es el opt-out del **anfitrión**, y la única vía de
+     producción al rol anfitrión es la selección en el paso 1. H2 está cubierto, pero por
+     un test que el contrato no nombra.
+  4. Siguen abiertas las tres notas de la r1: boundary de H7, formalizar D8.2 («repetir la
+     punta primero») y el carve-out de gates de `CLAUDE.md` para fases sin conducta.
+- ATTEMPT: 4 · RISK: STANDARD · CODEX: `FAIL` ×2 + `FINDINGS` ×1.
+- ESTADO: **P5c ABIERTA, esperando enmienda del PM.** Ninguna línea de código nueva hasta
+  que el contrato se corrija.
