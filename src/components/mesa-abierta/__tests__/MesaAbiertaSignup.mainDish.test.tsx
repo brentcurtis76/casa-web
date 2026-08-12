@@ -100,17 +100,21 @@ function advanceToStep3AsHost() {
 }
 
 /**
- * Deja el asistente en el paso 3 como anfitrión, pero **sin** `preferredRole`:
- * el asistente abre por defecto en invitado y el rol se elige en el paso 1.
+ * Deja el asistente en el paso 3 como anfitrión, **entrando como invitado y
+ * cambiando de idea en el paso 1** — el camino de «pinché inscribirme y luego
+ * decidí ser anfitrión».
  *
- * Es un camino distinto al de arriba, no una variante de estilo. Con
- * `preferredRole="host"` el prop y el estado coinciden desde el primer render;
- * por aquí `preferredRole` es `undefined` y sólo `rolePreference` cambia. Una
- * condición escrita sobre el prop en vez de sobre el estado se comporta distinto
- * en cada uno, y este es el camino que usa quien entra por el botón genérico.
+ * Entra con `preferredRole="guest"` **a propósito**: en producción el prop
+ * SIEMPRE llega (`MesaAbiertaSection.tsx:730` pasa `signupRole`, cuyo estado
+ * arranca en `'guest'`), así que `undefined` es un caso que la aplicación no
+ * produce nunca. Aquí el prop dice `guest` y el estado acaba en `host`, que es
+ * la única combinación donde una condición escrita sobre el **prop** se
+ * comporta distinto de una escrita sobre el **estado**.
  */
 function advanceToStep3ChoosingHostInStep1() {
-  render(<MesaAbiertaSignup open onClose={vi.fn()} monthId="month-1" />);
+  render(
+    <MesaAbiertaSignup open onClose={vi.fn()} monthId="month-1" preferredRole="guest" />
+  );
 
   fireEvent.click(screen.getByRole('radio', { name: /Quiero ser anfitrión/i }));
 
@@ -129,6 +133,33 @@ function advanceToStep3ChoosingHostInStep1() {
   fireEvent.change(screen.getByLabelText('Dirección de tu hogar *'), {
     target: { value: 'Calle Falsa 123' },
   });
+}
+
+/**
+ * El invitado **tal como llega en producción**: con `preferredRole="guest"`
+ * explícito.
+ *
+ * Los cuatro tests de P5a entran SIN el prop. Eso es un caso que la aplicación
+ * no produce nunca, así que una condición sobre `preferredRole === 'guest'`
+ * escondería el switch a **todo invitado real** y los dejaría a los cuatro
+ * verdes. Este recorrido es el que lo caza.
+ */
+function advanceToStep3AsProductionGuest() {
+  render(
+    <MesaAbiertaSignup open onClose={vi.fn()} monthId="month-1" preferredRole="guest" />
+  );
+
+  next(); // paso 1 → 2
+  fireEvent.change(screen.getByLabelText('Nombre completo *'), {
+    target: { value: 'Invitada de prueba' },
+  });
+  fireEvent.change(screen.getByLabelText('Correo electrónico *'), {
+    target: { value: 'invitada@ejemplo.com' },
+  });
+  fireEvent.change(screen.getByLabelText('Número de teléfono *'), {
+    target: { value: '+56 9 1234 5678' },
+  });
+  next(); // paso 2 → 3
 }
 
 /** Desde el paso 3, avanza hasta el resumen del paso 5. */
@@ -254,6 +285,40 @@ describe('MesaAbiertaSignup — plato principal', () => {
   // opt-out sólo por este camino, y dejaba los cinco tests anteriores verdes.
   // Las dos polaridades otra vez, y por la misma razón que en el test anterior:
   // sin el caso por defecto, forzar la exclusión en este camino pasaría inadvertido.
+  // Cierra la última celda alcanzable de la rejilla rol × entrada × polaridad.
+  // Ver la cabecera del fichero: en producción `preferredRole` SIEMPRE llega, y
+  // sin este test una condición sobre el prop apagaría el opt-out a todos los
+  // invitados reales sin poner nada en rojo.
+  it('el invitado de producción entra con preferredRole y conserva el opt-out', async () => {
+    participantInserts.length = 0;
+
+    advanceToStep3AsProductionGuest();
+
+    expect(screen.getByText('Paso 3 de 5')).toBeInTheDocument();
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'false');
+
+    advanceToStep5();
+
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      role_preference: 'guest',
+      can_bring_main_dish: true,
+    });
+
+    cleanup();
+    participantInserts.length = 0;
+
+    advanceToStep3AsProductionGuest();
+    fireEvent.click(mainDishSwitch());
+    expect(mainDishSwitch()).toHaveAttribute('aria-checked', 'true');
+
+    advanceToStep5();
+
+    expect(await submitAndCaptureInsert()).toMatchObject({
+      role_preference: 'guest',
+      can_bring_main_dish: false,
+    });
+  });
+
   it('el anfitrión elegido en el paso 1 también puede excluirse', async () => {
     participantInserts.length = 0;
 
