@@ -84,8 +84,9 @@ done < "$WORDLIST"
 [[ -n "$WORDS" ]] || fail 'word list has no entries'
 WORD_PATTERN="\\b($WORDS)\\b"
 
-# Stage two, applied to .json paths only. The rule is who-refers-to-it, not what-it-is-called:
-# a captured baseline follows no naming convention, so no name predicate can reach it.
+# Stage two, applied to .json paths only. The rule is who-refers-to-it, not what-it-is-called,
+# because the stage-one predicates match on convention and the test data here matches none of them.
+# A predicate naming a basename literally would of course reach it; a convention-based one does not.
 #
 # Three named branches. Ambiguous evidence keeps the file, and says why:
 #

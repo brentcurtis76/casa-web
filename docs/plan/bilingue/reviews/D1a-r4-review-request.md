@@ -129,10 +129,14 @@ REFERRER_ROOTS=(src supabase)
 for f in src/orphan.json src/dup.json src/fixture.json src/real.json; do
   if json_is_test_evidence "$f"; then printf 'EXCLUDED\t%s\n' "$f"; else printf 'KEPT\t%s\n' "$f"; fi
 done
+printf 'loop exit=%s\n' "$?"
 /bin/rm -rf "$SCRATCH"
 ```
 
-Unedited output, stdout and stderr interleaved, exit status included:
+Unedited output, stdout and stderr interleaved. **Every line below is printed by a command in the
+script above** — the earlier revision of this section showed a `harness exit=0` line that came from
+the invoking shell, not from the harness, which Codex caught as [B2] of the re-review. The status
+line now comes from the harness's own `printf`:
 
 ```text
 harness function sha256: ca6e9ce7977e29692cef6e8572f4a2a483458cd4fa9662744033f087a4aab7ef
@@ -142,13 +146,15 @@ AMBIGUOUS_KEEP	src/dup.json	reason=basename-collision
 KEPT	src/dup.json
 EXCLUDED	src/fixture.json
 KEPT	src/real.json
-harness exit=0
+loop exit=0
 ```
 
 Four fixtures, four outcomes: branch 2 (`orphan.json`, nothing names it), branch 1
 (`dup.json`, basename appears under both roots), branch 3 exclude (`fixture.json`, named only by
 `thing_test.ts`), branch 3 keep (`real.json`, named by `prod.ts`). The `sha256` line pins which text
 was actually sourced, so the run cannot be confused with one against an edited copy of the function.
+It is unchanged from the previous run because the re-review's [B1] edit touched only the comment
+block *above* the extracted range, which the two `sed` expressions do not include.
 
 ### No untested absolute survives (A1)
 

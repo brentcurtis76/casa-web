@@ -66,8 +66,11 @@ specifically:
 exclude is enumerated in D1b's `evidence/D1-exclusions.md`, where a reviewer reads the list.
 
 **Stage two** is a referrer-based predicate applied to `.json` paths only, fixed in the next
-section. It exists because a name predicate cannot reach test *data*: a captured baseline follows no
-naming convention, so there is no name to predicate on.
+section. It exists because the four stage-one predicates match on *convention*, and the test data in
+these roots matches none of them — the live case, `corpus_pd_base.json`, is neither `*.test.*` nor
+`*_test.*` nor inside `__tests__/` nor a copied artifact. A predicate naming that basename literally
+would reach it; a convention-based one does not, and nothing fixes what the next captured baseline
+will be called. Stage two therefore classifies such a file by its referrers instead.
 
 ### Stage two: test data is excluded by who refers to it, not by what it is called
 
@@ -201,7 +204,9 @@ no output at SOURCE_SHA:
 **That one specifier shape, in those two roots, at that commit, is the entire finding.** The search
 does not see, and the artifact therefore does not speak to: a side-effect import with no `from`
 clause (`import './helper_test.ts';`), a dynamic `import()`, a specifier assembled at runtime, a
-re-export chain, a `require`, an extensionless or aliased specifier that does not end in `_test`, or
+re-export chain **whose written specifiers do not end in `_test`** — a direct
+`export { x } from './helper_test.ts'` *does* match, so the probe is not blind to that one — a
+`require`, an extensionless or aliased specifier that does not end in `_test`, or
 any importer outside those two roots. It also says nothing about whether a test file reaches a user
 by another route — a test that itself wrote to a user-visible sink would produce no match here and
 still be excluded. Only the call-path audit fixed in `SURFACE-SCHEMA.md` bears on that, and it is

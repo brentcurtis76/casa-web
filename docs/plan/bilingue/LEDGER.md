@@ -1210,6 +1210,7 @@ D-N blind spot, recorded as one.
   for f in src/orphan.json src/dup.json src/fixture.json src/real.json; do
     if json_is_test_evidence "$f"; then printf 'EXCLUDED\t%s\n' "$f"; else printf 'KEPT\t%s\n' "$f"; fi
   done
+  printf 'loop exit=%s\n' "$?"
   /bin/rm -rf "$SCRATCH"
   ```
 
@@ -1221,11 +1222,14 @@ D-N blind spot, recorded as one.
   KEPT	src/dup.json
   EXCLUDED	src/fixture.json
   KEPT	src/real.json
-  harness exit=0
+  loop exit=0
   ```
 
-  The `sha256` pins which text was sourced, so the run cannot be confused with one against an edited
-  copy of the function.
+  Every line of that output is printed by a command in the script above. The first revision of this
+  block showed a `harness exit=0` line that came from the invoking shell rather than the harness —
+  caught as [B2] of the re-review, corrected by adding the `printf 'loop exit=%s\n'` line and
+  re-running. The `sha256` pins which text was sourced; it is unchanged across both runs because the
+  re-review's [B1] edit touched only the comment block *above* the extracted range.
 - **A7 / D1a.8 — initially NOT MET; resolved in the same round, see the remediation entry below.**
   The first submission's `git diff --name-only pilot/sop-v2...HEAD` also listed
   `docs/plan/HANDOFF-PROCESS.md` and `docs/plan/SOP-PILOT.md`, both from
@@ -1328,3 +1332,74 @@ D-N blind spot, recorded as one.
   submission; only `CENSUS-METHOD.md` was rehashed.
 - HANDOFFS: 2 (Brent pasted the Codex verdict; Brent authorised the history rewrite).
 - CODEX: pending re-review of the cumulative diff.
+
+### 2026-08-12 — D1a round 4, Codex re-review FAIL(2) remediation — EXECUTOR (same conversation)
+
+- SESSION: `BILINGUE · D1a · r4 · EXEC` — same durable executor conversation (lean overlay §4.2).
+- STARTED: 2026-08-12T12:26Z · ENDED: 2026-08-12T12:41Z
+- ATTEMPT: still **4 cumulative**. Second remediation of round 4, not a fifth round.
+- CODEX VERDICT: **FAIL(2)** + 2 SHOULD-FIX + 0 NIT. Full text and triage in
+  `reviews/D1a-r4-codex-review.md`. Both BLOCKING accepted; neither disputed. Codex confirmed as
+  fixed: first-review B1, B3, B5, N1; A7 satisfied; `98f4e51` reachable; stdout byte-identical;
+  manifest, `bash -n`, `tsc` and diff checks passing; and that the harness genuinely exercises all
+  four branch outcomes.
+- FIXES:
+  - **[B1]** The retracted absolute survived in two places I did not fix when I fixed the third:
+    `CENSUS-METHOD.md`'s stage-two introduction and `census.sh`'s stage-two comment header both
+    still said a captured baseline "follows no naming convention, so no name predicate can reach
+    it". Both now state the tested version: the live case matches none of stage one's four
+    predicates, a literal-basename predicate *would* reach it, nothing fixes what the next baseline
+    is called, and stage two therefore classifies by referrers. **Lesson worth keeping: a claim
+    retracted in one paragraph is not retracted in the artifact. Grep the phrasing, not the
+    section.**
+  - **[B2]** The harness printed no exit status; `harness exit=0` came from the invoking shell and
+    was pasted as if the script had produced it. This is the same failure class as D-M's original
+    violation — evidence that reads as literal but is not. The harness now ends with
+    `printf 'loop exit=%s\n' "$?"` before cleanup and was re-run; every line of the pasted output is
+    now produced by a command in the pasted script, in both evidence locations, and both record what
+    the earlier revision got wrong.
+  - **[S2]** The importer-probe disclosure understated the probe: a direct
+    `export { x } from './helper_test.ts'` *does* match the shown regex. Now qualified to "a
+    re-export chain whose written specifiers do not end in `_test`", with the matching case named.
+  - **[S1]** Deferral accepted by the reviewer; backlog entry retained unchanged.
+- **THE `census.sh` EDIT IS COMMENT-ONLY, VERIFIED TWO WAYS** — stdout still byte-identical to the
+  r3 script, and the `sha256` of the function text the harness extracts is unchanged, because both
+  `sed` ranges start below the edited comment block:
+
+  ```text
+  $ bash <harness>   # see the full script and output above; unchanged run
+  harness function sha256: ca6e9ce7977e29692cef6e8572f4a2a483458cd4fa9662744033f087a4aab7ef
+  ```
+
+- GATES (re-run in full; both changed artifacts rehashed in `METHOD-MANIFEST.txt`):
+
+  ```text
+  $ /usr/bin/git show 98f4e51:docs/plan/bilingue/evidence/census.sh > /tmp/census-r3.sh
+  $ bash /tmp/census-r3.sh > /tmp/g3.txt 2>/dev/null
+  $ bash docs/plan/bilingue/evidence/census.sh > /tmp/g4.txt 2>/dev/null
+  $ /usr/bin/diff /tmp/g3.txt /tmp/g4.txt && echo "IDENTICAL"
+  IDENTICAL
+  $ bash docs/plan/bilingue/evidence/census.sh 3>&1 1>/dev/null 2>&3
+  AMBIGUOUS_KEEP	src/data/elementos-fijos/index.json	reason=basename-collision
+  $ /usr/bin/grep -rniE "never drop|drops no|every excluded file is a test|no other (test|fixture|spec)|no name predicate|follows no naming convention" docs/plan/bilingue/evidence/
+  docs/plan/bilingue/evidence//CENSUS-METHOD.md:217:Round 2 of this artifact stated: *"No other test, spec, mock or fixture convention occurs in the
+  $ cd docs/plan/bilingue/evidence && /usr/bin/grep -vE '^#' METHOD-MANIFEST.txt | /usr/bin/shasum -a 256 -c
+  CENSUS-METHOD.md: OK
+  census.sh: OK
+  SURFACE-SCHEMA.md: OK
+  wordlist-passB.txt: OK
+  $ /usr/bin/grep -rnE '^\s*[A-Za-z ]+\s*=\s*[0-9]+|files=|copy=|TOTAL' docs/plan/bilingue/evidence/CENSUS-METHOD.md docs/plan/bilingue/evidence/SURFACE-SCHEMA.md
+  (exit 1, no output)
+  $ /usr/bin/git diff --name-only pilot/sop-v2...HEAD | /usr/bin/grep -v '^docs/plan/bilingue/'
+  (exit 1, no output)
+  $ bash -n docs/plan/bilingue/evidence/census.sh; echo "bash -n=$?"
+  bash -n=0
+  $ npx tsc --noEmit; echo "tsc=$?"
+  tsc=0
+  ```
+
+  The A1 grep was **widened** for this run to also probe the two phrasings Codex found surviving
+  (`no name predicate`, `follows no naming convention`). The single remaining hit is the quoted text
+  of the explicit retraction.
+- HANDOFFS: 1 (Brent pasted the re-review verdict).
+- CODEX: pending second re-review of the cumulative diff.
