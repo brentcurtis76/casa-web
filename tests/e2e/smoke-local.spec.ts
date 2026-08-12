@@ -27,6 +27,21 @@ const BASELINE_BORRADOR = '00000000-e2e0-4000-9000-000000000011';
 const FIXTURE_DEL_TEST = '00000000-e2e0-4000-8000-000000000001';
 const FIXTURE_GUID = 'e2e-guid-8001';
 
+/**
+ * Los ÚNICOS `id` sobre los que este spec puede afirmar (E3b, D24).
+ *
+ * `playwright.config.ts` tiene `fullyParallel: true`: mientras el humo corre, otros specs
+ * tienen sembradas sus propias filas publicadas, visibles para `anon`. Una aserción sobre
+ * la tabla ENTERA es por construcción incompatible con eso — no falla por un entorno sucio,
+ * falla por un vecino legítimo. Los pasos 1 y 7 se acotan a este bloque; el resto del viaje,
+ * la guarda y el contrato de limpieza no cambian.
+ */
+const IDS_QUE_POSEE = [FIXTURE_DEL_TEST, BASELINE_PUBLICADO, BASELINE_BORRADOR];
+
+/** Los `id` propios presentes en una lectura, en el orden en que llegaron. */
+const soloLosPropios = (filas: Episodio[]): string[] =>
+  filas.map((f) => f.id).filter((id) => IDS_QUE_POSEE.includes(id));
+
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 
@@ -121,10 +136,13 @@ test.describe('Humo del entorno local', () => {
 
     await test.step('1 · pre-estado: exactamente el baseline publicado', async () => {
       const filas = await leerEpisodios(ANON_KEY);
+      // De los tres ids que este spec posee, anon tiene que ver EXACTAMENTE uno: el
+      // baseline publicado. Ni el borrador del baseline (ésa es la RLS) ni el fixture
+      // propio, que todavía no se ha sembrado.
       expect(
-        filas.map((f) => f.id),
-        'El entorno está sucio: anon debería ver sólo el baseline publicado. ' +
-          'Corre `supabase db reset` antes de reintentar.'
+        soloLosPropios(filas),
+        'El entorno está sucio: de los ids del humo, anon debería ver sólo el baseline ' +
+          'publicado. Corre `supabase db reset` antes de reintentar.'
       ).toEqual([BASELINE_PUBLICADO]);
     });
 
@@ -173,9 +191,16 @@ test.describe('Humo del entorno local', () => {
 
     await test.step('5 · anon ve los dos publicados y ningún borrador', async () => {
       const filas = await leerEpisodios(ANON_KEY);
-      expect(filas.map((f) => f.id).sort()).toEqual(
-        [FIXTURE_DEL_TEST, BASELINE_PUBLICADO].sort()
-      );
+      // De los tres ids que este spec posee, anon tiene que ver EXACTAMENTE dos: el
+      // baseline publicado y el fixture que el paso 2 acaba de sembrar. El borrador
+      // del baseline sigue fuera (ésa es la RLS). Acotado a los ids propios por lo
+      // mismo que los pasos 1 y 7 (D24): un vecino legítimo de otro spec no es un
+      // entorno sucio.
+      expect(
+        soloLosPropios(filas).sort(),
+        'De los ids del humo, anon debería ver los dos publicados: el baseline y el ' +
+          'fixture recién sembrado.'
+      ).toEqual([FIXTURE_DEL_TEST, BASELINE_PUBLICADO].sort());
       expect(filas.every((f) => f.status === 'published')).toBe(true);
       expect(filas.map((f) => f.id)).not.toContain(BASELINE_BORRADOR);
     });
@@ -187,9 +212,13 @@ test.describe('Humo del entorno local', () => {
     await test.step('7 · post-estado: la tabla es el baseline, ni más ni menos', async () => {
       // Con el token de admin, para ver también el borrador del baseline.
       const filas = await leerEpisodios(token);
-      expect(filas.map((f) => f.id).sort()).toEqual(
-        [BASELINE_PUBLICADO, BASELINE_BORRADOR].sort()
-      );
+      // De los tres ids propios quedan los dos del baseline y ninguno más: el fixture
+      // se borró, y el borrado no se llevó por delante el baseline.
+      expect(
+        soloLosPropios(filas).sort(),
+        'El humo tenía que dejar sus ids como los encontró: los dos del baseline, ' +
+          'sin su fixture.'
+      ).toEqual([BASELINE_PUBLICADO, BASELINE_BORRADOR].sort());
     });
   });
 });
