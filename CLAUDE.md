@@ -70,6 +70,9 @@ ALL must pass before any task is reported complete:
 - `npm run lint`
 - `npm test`
 - `npm run build`
+- `npm run check:credentials` (credential guard: no credential-shaped literals in tracked files)
+- `npm run check:functions && npm run check:security && npm run test:functions && npm run test:security` (Deno, offline: hardened Edge Function, browser env policy, credential guard, deploy guard)
+- `npm run lint:deno` (Deno lint of the security tooling and every file it touches)
 - `npx playwright test` (E2E)
 
 ## Hard Rules

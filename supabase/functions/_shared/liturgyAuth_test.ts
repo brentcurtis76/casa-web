@@ -9,6 +9,9 @@ import {
   type CheckPermissionOutcome,
   createSupabaseAuthzDeps,
   type GetUserOutcome,
+  LITURGY_WRITER_PERMISSION,
+  readUnverifiedJwtRole,
+  requireAnyPermission,
   requireLiturgyWriter,
   requirePermission,
   type RequirePermissionDeps,
@@ -479,4 +482,259 @@ Deno.test("T-0.9 supabase adapter forwards oraciones:write via requirePermission
     Object.prototype.hasOwnProperty.call(rpcCalls[0].args, "p_user"),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Credential-shaped bearer tokens (anon key, service_role) are refused before
+// any backend call. Tokens are synthetic, built at runtime.
+// ---------------------------------------------------------------------------
+
+function b64url(value: unknown): string {
+  return btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fakeJwt(payload: Record<string, unknown>): string {
+  return [b64url({ alg: "HS256", typ: "JWT" }), b64url(payload), "x".repeat(43)].join(".");
+}
+function bearerRequest(token: string): Request {
+  return new Request("https://edge.test/fn", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+}
+
+Deno.test("readUnverifiedJwtRole reads the role claim and returns undefined for anything else", () => {
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ role: "authenticated", sub: "u1" })), "authenticated");
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ role: "service_role" })), "service_role");
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ sub: "u1" })), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("t".repeat(40)), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("a.b"), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("a.!!!.c"), undefined);
+});
+
+Deno.test("a service_role credential presented as bearer is refused with 401 and never reaches the backend", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requirePermission(bearerRequest(fakeJwt({ role: "service_role", iss: "supabase" })), deps, {
+    resource: RESOURCE,
+    action: ACTION,
+    corsHeaders: CORS,
+  });
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) {
+    assertStrictEquals(result.response.status, 401);
+    assertEquals(await result.response.json(), { success: false, code: "UNAUTHORIZED" });
+  }
+  assertEquals(calls, []);
+});
+
+Deno.test("the anon key presented as bearer is refused with 401 and never reaches the backend", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requireLiturgyWriter(bearerRequest(fakeJwt({ role: "anon", iss: "supabase" })), deps, CORS);
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 401);
+  assertEquals(calls, []);
+});
+
+Deno.test("a user-session token still goes through the backend, and the shared permission constant is liturgy_builder/write", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requireLiturgyWriter(bearerRequest(fakeJwt({ role: "authenticated", sub: USER.id })), deps, CORS);
+  assertStrictEquals(result.ok, true);
+  assertStrictEquals(calls.length, 2);
+  assertEquals(calls[1], { kind: "checkPermission", userId: USER.id, resource: "liturgy_builder", action: "write" });
+  assertEquals({ ...LITURGY_WRITER_PERMISSION }, { resource: "liturgy_builder", action: "write" });
+});
+
+// ---------------------------------------------------------------------------
+// requireUser — JWT-only guard (no permission check)
+// ---------------------------------------------------------------------------
+
+import { requireUser } from "./liturgyAuth.ts";
+import {
+  ANON_KEY_HEADER,
+  AUTH_HEADER,
+  makeAuthzDeps,
+  PUBLISHABLE_KEY_HEADER,
+  SERVICE_ROLE_HEADER,
+  strictGetUser,
+} from "./testHelpers.ts";
+
+function userDeps(getUser = strictGetUser(USER)) {
+  const calls: string[] = [];
+  return {
+    calls,
+    deps: {
+      getUser: (token: string) => {
+        calls.push(token);
+        return getUser(token);
+      },
+    },
+  };
+}
+
+Deno.test("requireUser: missing Authorization is 401 and never reaches the backend", async () => {
+  const { deps, calls } = userDeps();
+  const result = await requireUser(new Request("https://edge.test/fn"), deps, CORS);
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 401);
+  assertEquals(calls, []);
+});
+
+Deno.test("requireUser: the anon/publishable JWT and a service_role credential are refused offline", async () => {
+  for (const headers of [ANON_KEY_HEADER, SERVICE_ROLE_HEADER]) {
+    const { deps, calls } = userDeps();
+    const result = await requireUser(new Request("https://edge.test/fn", { headers }), deps, CORS);
+    assertStrictEquals(result.ok, false);
+    if (!result.ok) {
+      assertStrictEquals(result.response.status, 401);
+      assertEquals(await result.response.json(), { success: false, code: "UNAUTHORIZED" });
+    }
+    assertEquals(calls, [], "a non-session credential must not cost a backend round trip");
+  }
+});
+
+Deno.test("requireUser: a modern publishable key is not a session — backend says so, 401", async () => {
+  const { deps, calls } = userDeps();
+  const result = await requireUser(
+    new Request("https://edge.test/fn", { headers: PUBLISHABLE_KEY_HEADER }),
+    deps,
+    CORS,
+  );
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 401);
+  assertStrictEquals(calls.length, 1);
+});
+
+Deno.test("requireUser: backend failure fails closed with 503", async () => {
+  const { deps } = userDeps(() => Promise.resolve({ kind: "backend_error" as const }));
+  const result = await requireUser(
+    new Request("https://edge.test/fn", { headers: AUTH_HEADER }),
+    deps,
+    CORS,
+  );
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 503);
+});
+
+Deno.test("requireUser: a genuine session token authenticates and returns the user", async () => {
+  const { deps } = userDeps();
+  const result = await requireUser(
+    new Request("https://edge.test/fn", { headers: AUTH_HEADER }),
+    deps,
+    CORS,
+  );
+  assertStrictEquals(result.ok, true);
+  if (result.ok) assertEquals(result.user, USER);
+});
+
+// ---------------------------------------------------------------------------
+// requireAnyPermission — one authentication, several acceptable permissions
+// ---------------------------------------------------------------------------
+
+const ANY_OF = [
+  { resource: "presenter", action: "read" },
+  { resource: "liturgy_builder", action: "write" },
+  { resource: "oraciones", action: "write" },
+] as const;
+
+function anyOfRequest(headers: Record<string, string> = AUTH_HEADER): Request {
+  return new Request("https://edge.test/fn", { method: "POST", headers });
+}
+
+Deno.test("requireAnyPermission: each alternative authorizes on its own, and authentication happens once", async () => {
+  for (const winner of ANY_OF) {
+    const { deps, calls } = makeAuthzDeps({
+      getUser: strictGetUser(),
+      checkPermission: (_u, resource, action) =>
+        Promise.resolve(
+          resource === winner.resource && action === winner.action
+            ? { kind: "allowed" as const }
+            : { kind: "denied" as const },
+        ),
+    });
+    const result = await requireAnyPermission(anyOfRequest(), deps, { anyOf: ANY_OF, corsHeaders: CORS });
+    assertStrictEquals(result.ok, true, `${winner.resource}/${winner.action} must authorize`);
+    if (result.ok) assertStrictEquals(result.user.id, "user-abc");
+    assertStrictEquals(calls.filter((c) => c.kind === "getUser").length, 1, "authenticate exactly once");
+    const checked = calls.filter((c) => c.kind === "checkPermission");
+    // Short-circuits: nothing after the winning alternative is evaluated.
+    const winnerIndex = ANY_OF.findIndex((a) => a.resource === winner.resource && a.action === winner.action);
+    assertStrictEquals(checked.length, winnerIndex + 1);
+  }
+});
+
+Deno.test("requireAnyPermission: 403 only when EVERY alternative is denied, all of them evaluated", async () => {
+  const { deps, calls } = makeAuthzDeps({
+    getUser: strictGetUser(),
+    checkPermission: () => Promise.resolve({ kind: "denied" }),
+  });
+  const result = await requireAnyPermission(anyOfRequest(), deps, { anyOf: ANY_OF, corsHeaders: CORS });
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) {
+    assertStrictEquals(result.response.status, 403);
+    assertEquals(await result.response.json(), { success: false, code: "FORBIDDEN" });
+  }
+  assertEquals(
+    calls.filter((c) => c.kind === "checkPermission").map((c) => c.kind === "checkPermission" && `${c.resource}/${c.action}`),
+    ANY_OF.map((a) => `${a.resource}/${a.action}`),
+  );
+});
+
+Deno.test("requireAnyPermission: fails closed with 503 when no alternative is allowed and one could not be determined", async () => {
+  const backendError = makeAuthzDeps({
+    getUser: strictGetUser(),
+    checkPermission: (_u, resource) =>
+      Promise.resolve(resource === "liturgy_builder" ? { kind: "backend_error" as const } : { kind: "denied" as const }),
+  });
+  const r1 = await requireAnyPermission(anyOfRequest(), backendError.deps, { anyOf: ANY_OF, corsHeaders: CORS });
+  assertStrictEquals(r1.ok, false);
+  if (!r1.ok) assertStrictEquals(r1.response.status, 503);
+
+  const thrown = makeAuthzDeps({
+    getUser: strictGetUser(),
+    checkPermission: (_u, resource) => {
+      if (resource === "presenter") throw new Error("rpc down");
+      return Promise.resolve({ kind: "denied" as const });
+    },
+  });
+  const r2 = await requireAnyPermission(anyOfRequest(), thrown.deps, { anyOf: ANY_OF, corsHeaders: CORS });
+  assertStrictEquals(r2.ok, false);
+  if (!r2.ok) {
+    assertStrictEquals(r2.response.status, 503);
+    assertEquals(await r2.response.json(), { success: false, code: "AUTHZ_BACKEND_ERROR" });
+  }
+
+  // But a later alternative that IS allowed still authorizes: the decision is determined.
+  const recovered = makeAuthzDeps({
+    getUser: strictGetUser(),
+    checkPermission: (_u, resource) =>
+      Promise.resolve(
+        resource === "presenter"
+          ? { kind: "backend_error" as const }
+          : resource === "oraciones"
+          ? { kind: "allowed" as const }
+          : { kind: "denied" as const },
+      ),
+  });
+  const r3 = await requireAnyPermission(anyOfRequest(), recovered.deps, { anyOf: ANY_OF, corsHeaders: CORS });
+  assertStrictEquals(r3.ok, true);
+
+  const authDown = makeAuthzDeps({ getUser: () => Promise.resolve({ kind: "backend_error" }) });
+  const r4 = await requireAnyPermission(anyOfRequest(), authDown.deps, { anyOf: ANY_OF, corsHeaders: CORS });
+  assertStrictEquals(r4.ok, false);
+  if (!r4.ok) assertStrictEquals(r4.response.status, 503);
+  assertStrictEquals(authDown.calls.some((c) => c.kind === "checkPermission"), false);
+});
+
+Deno.test("requireAnyPermission: missing, anon, service_role and publishable-key bearers are 401 before any permission check", async () => {
+  for (const headers of [{}, ANON_KEY_HEADER, SERVICE_ROLE_HEADER, PUBLISHABLE_KEY_HEADER]) {
+    const { deps, calls } = makeAuthzDeps({ getUser: strictGetUser() });
+    const result = await requireAnyPermission(anyOfRequest(headers), deps, { anyOf: ANY_OF, corsHeaders: CORS });
+    assertStrictEquals(result.ok, false);
+    if (!result.ok) assertStrictEquals(result.response.status, 401);
+    assertStrictEquals(calls.some((c) => c.kind === "checkPermission"), false);
+  }
+});
+
+Deno.test("requireAnyPermission: an empty alternative list is a misconfiguration and fails closed (503) without touching the backend", async () => {
+  const { deps, calls } = makeAuthzDeps({ getUser: strictGetUser() });
+  const result = await requireAnyPermission(anyOfRequest(), deps, { anyOf: [], corsHeaders: CORS });
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 503);
+  assertEquals(calls, []);
 });

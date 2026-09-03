@@ -71,19 +71,59 @@ function fail(
   };
 }
 
-export async function requirePermission(
-  req: Request,
-  deps: RequirePermissionDeps,
-  opts: RequirePermissionOpts,
-): Promise<AuthzResult> {
-  const { corsHeaders, resource, action } = opts;
+/**
+ * Reads the `role` claim of a JWT-shaped bearer token WITHOUT verifying it.
+ * Used only to refuse, before any network call, tokens that can never
+ * represent a user session: the project's `anon` key and any `service_role`
+ * credential a caller might present. Everything else (including malformed
+ * tokens) is still decided by `deps.getUser`, exactly as before.
+ */
+export function readUnverifiedJwtRole(token: string): string | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((p) => p.length === 0 || !/^[A-Za-z0-9_-]+$/.test(p))) {
+    return undefined;
+  }
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const payload: unknown = JSON.parse(atob(padded));
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+    const role = (payload as { role?: unknown }).role;
+    return typeof role === "string" ? role : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
+/** Bearer roles that are credentials, never user sessions. Refused up front. */
+const NON_SESSION_ROLES: ReadonlySet<string> = new Set(["service_role", "anon"]);
+
+/**
+ * Authenticates the bearer token only — no permission check.
+ *
+ * Shared by `requirePermission` / `requireAnyPermission` and by functions whose
+ * access rule is "any signed-in user" (prayer-request and the identity step of
+ * send-signup-confirmation). The project's publishable/anon key and any
+ * service_role credential are refused before the backend is consulted: they
+ * authenticate the application at the gateway, never a user.
+ */
+export async function requireUser(
+  req: Request,
+  deps: Pick<RequirePermissionDeps, "getUser">,
+  corsHeaders: Record<string, string>,
+): Promise<AuthzResult> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return fail(401, "UNAUTHORIZED", corsHeaders);
   }
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) {
+    return fail(401, "UNAUTHORIZED", corsHeaders);
+  }
+  // The anon key or a service_role credential presented as the bearer token is
+  // never a user session: refuse it here, with no backend round trip.
+  const role = readUnverifiedJwtRole(token);
+  if (role !== undefined && NON_SESSION_ROLES.has(role)) {
     return fail(401, "UNAUTHORIZED", corsHeaders);
   }
 
@@ -101,7 +141,21 @@ export async function requirePermission(
     return fail(401, "UNAUTHORIZED", corsHeaders);
   }
 
-  const user = authOutcome.user;
+  return { ok: true, user: authOutcome.user };
+}
+
+export async function requirePermission(
+  req: Request,
+  deps: RequirePermissionDeps,
+  opts: RequirePermissionOpts,
+): Promise<AuthzResult> {
+  const { corsHeaders, resource, action } = opts;
+
+  const authn = await requireUser(req, deps, corsHeaders);
+  if (!authn.ok) {
+    return authn;
+  }
+  const user = authn.user;
 
   let permOutcome: CheckPermissionOutcome;
   try {
@@ -120,14 +174,90 @@ export async function requirePermission(
   return { ok: true, user };
 }
 
+export interface PermissionAlternative {
+  resource: string;
+  action: string;
+}
+
+export interface RequireAnyPermissionOpts {
+  /** Alternatives, evaluated in order; the first `allowed` wins. Must be non-empty. */
+  anyOf: readonly PermissionAlternative[];
+  corsHeaders: Record<string, string>;
+}
+
+/**
+ * Authenticates ONCE, then authorizes a caller holding at least one of the
+ * listed resource/action permissions. Used by functions that serve several
+ * workflows with different permissions (fetch-bible-passage: presenter/read,
+ * liturgy_builder/write, oraciones/write).
+ *
+ * Decision table:
+ *   * any alternative `allowed`                          → ok (short-circuits);
+ *   * every alternative `denied`                          → 403 FORBIDDEN;
+ *   * no alternative allowed and at least one check could
+ *     not be determined (backend error / throw)           → 503 AUTHZ_BACKEND_ERROR;
+ *   * an empty `anyOf` is a misconfiguration              → 503 (fail closed).
+ * Credential handling is `requireUser`'s: missing, anon, service_role and
+ * publishable-key bearers are refused before any permission check.
+ */
+export async function requireAnyPermission(
+  req: Request,
+  deps: RequirePermissionDeps,
+  opts: RequireAnyPermissionOpts,
+): Promise<AuthzResult> {
+  const { corsHeaders, anyOf } = opts;
+  if (anyOf.length === 0) {
+    return fail(503, "AUTHZ_BACKEND_ERROR", corsHeaders);
+  }
+
+  const authn = await requireUser(req, deps, corsHeaders);
+  if (!authn.ok) {
+    return authn;
+  }
+  const user = authn.user;
+
+  let undetermined = false;
+  for (const { resource, action } of anyOf) {
+    let permOutcome: CheckPermissionOutcome;
+    try {
+      permOutcome = await deps.checkPermission(user.id, resource, action);
+    } catch (_e) {
+      undetermined = true;
+      continue;
+    }
+    if (permOutcome.kind === "allowed") {
+      return { ok: true, user };
+    }
+    if (permOutcome.kind === "backend_error") {
+      undetermined = true;
+    }
+  }
+
+  if (undetermined) {
+    return fail(503, "AUTHZ_BACKEND_ERROR", corsHeaders);
+  }
+  return fail(403, "FORBIDDEN", corsHeaders);
+}
+
+/**
+ * The one permission every AI image/story generation function requires. The
+ * Cuentacuentos editor mirrors it (src/components/liturgia-builder/editors/
+ * imageGenerationAccess.ts) and scripts/security/authorization-policy_test.ts
+ * asserts both sides agree.
+ */
+export const LITURGY_WRITER_PERMISSION = {
+  resource: "liturgy_builder",
+  action: "write",
+} as const;
+
 export function requireLiturgyWriter(
   req: Request,
   deps: RequirePermissionDeps,
   corsHeaders: Record<string, string>,
 ): Promise<AuthzResult> {
   return requirePermission(req, deps, {
-    resource: "liturgy_builder",
-    action: "write",
+    resource: LITURGY_WRITER_PERMISSION.resource,
+    action: LITURGY_WRITER_PERMISSION.action,
     corsHeaders,
   });
 }

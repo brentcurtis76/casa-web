@@ -3,13 +3,16 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { resolveSupabaseBrowserConfig } from '@/integrations/supabase/config';
 import type { RecordingRow } from '@/types/leadershipModule';
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || 'https://mulsqxfhxxdsadxsljss.supabase.co';
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11bHNxeGZoeHhkc2FkeHNsanNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM0NzE2ODAsImV4cCI6MjA1OTA0NzY4MH0.K4KKonF8Sd_PbFZtunMTuAAf2rFCGjvuecW3Hn46Cb8';
+// Same validated browser configuration as the shared client: no URL or key
+// fallback is committed in this repository.
+// Resolved lazily (at call time, like the shared client's consumers) so importing
+// this module in a test never requires the browser environment to be present.
+function browserConfig(): { url: string; anonKey: string } {
+  return resolveSupabaseBrowserConfig(import.meta.env);
+}
 
 /**
  * Trigger transcription for a recording by calling the transcribe-meeting edge function.
@@ -21,6 +24,11 @@ const SUPABASE_ANON_KEY =
  * library's generic "non-2xx response" message.
  */
 export async function triggerTranscription(recordingId: string): Promise<void> {
+  // Resolve the validated browser configuration at call time. A misconfigured
+  // environment throws SupabaseConfigError here (naming the variable, never
+  // echoing a value) before any status is touched or any request is sent.
+  const { url: supabaseUrl, anonKey } = browserConfig();
+
   // Mark as pending up-front so the UI reflects the attempt.
   const { error: updateError } = await supabase
     .from('church_leadership_recordings')
@@ -46,12 +54,12 @@ export async function triggerTranscription(recordingId: string): Promise<void> {
 
   let response: Response;
   try {
-    response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-meeting`, {
+    response = await fetch(`${supabaseUrl}/functions/v1/transcribe-meeting`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
+        apikey: anonKey,
       },
       body: JSON.stringify({ recording_id: recordingId }),
     });

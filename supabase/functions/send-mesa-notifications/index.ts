@@ -20,6 +20,36 @@ interface NotificationRequest {
   monthId: string;
 }
 
+// Logo de La Mesa Abierta: objeto estable del bucket "Media". La URL se firma en
+// cada solicitud con el cliente de servicio (nunca se incrusta un token en el
+// código) y vive en una constante local a esa solicitud que se pasa de forma
+// explícita a las funciones de render: no existe estado mutable a nivel de
+// módulo, así que solicitudes concurrentes no comparten ninguna URL firmada.
+// Si la firma falla, el correo se envía sin logo.
+const MESA_LOGO_BUCKET = "Media";
+const MESA_LOGO_PATH = "La Mesa Abierta Logo.png";
+const MESA_LOGO_URL_TTL_SECONDS = 60 * 60 * 24 * 365; // los correos se leen mucho después de enviarse
+
+async function resolveMesaLogoUrl(client: ReturnType<typeof createClient>): Promise<string | null> {
+  try {
+    const { data, error } = await client.storage
+      .from(MESA_LOGO_BUCKET)
+      .createSignedUrl(MESA_LOGO_PATH, MESA_LOGO_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) {
+      console.warn("No se pudo firmar la URL del logo de La Mesa Abierta; el correo se envía sin logo");
+      return null;
+    }
+    return data.signedUrl;
+  } catch {
+    console.warn("No se pudo firmar la URL del logo de La Mesa Abierta; el correo se envía sin logo");
+    return null;
+  }
+}
+
+function mesaLogoImg(logoUrl: string | null): string {
+  return logoUrl ? `<img src="${logoUrl}" alt="La Mesa Abierta Logo" />` : "";
+}
+
 serve(async (req) => {
   try {
     // CORS headers
@@ -51,6 +81,10 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // URL firmada local a ESTA solicitud, con el cliente de servicio ya autenticado
+    // arriba (null si la firma falla → correo sin logo).
+    const mesaLogoUrl = await resolveMesaLogoUrl(supabase);
 
     // Get month details
     const { data: month, error: monthError } = await supabase
@@ -215,6 +249,7 @@ serve(async (req) => {
         guestList,
         guestCount: matchAssignments.length,
         hostFoodAssignment: match.host_food_assignment,
+        logoUrl: mesaLogoUrl,
       });
 
       if (hostEmailResult.success) {
@@ -279,6 +314,7 @@ serve(async (req) => {
           dinnerTime: match.dinner_time,
           foodAssignment: assignment.food_assignment,
           totalPeople: totalPeopleAtDinner,
+          logoUrl: mesaLogoUrl,
         });
 
         if (guestEmailResult.success) {
@@ -385,6 +421,8 @@ async function sendHostEmail(data: {
   guestList: string[];
   guestCount: number;
   hostFoodAssignment?: string;
+  /** URL firmada del logo para esta solicitud, o null para enviar sin logo. */
+  logoUrl: string | null;
 }) {
   const subject = "Tu asignación como Anfitrión - La Mesa Abierta";
 
@@ -420,7 +458,7 @@ async function sendHostEmail(data: {
     <body>
       <div class="container">
         <div class="header">
-          <img src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM" alt="La Mesa Abierta Logo" />
+          ${mesaLogoImg(data.logoUrl)}
           <h1>La Mesa Abierta</h1>
           <p>Tu asignación como Anfitrión</p>
         </div>
@@ -471,6 +509,8 @@ async function sendGuestEmail(data: {
   dinnerTime: string;
   foodAssignment: string;
   totalPeople: number;
+  /** URL firmada del logo para esta solicitud, o null para enviar sin logo. */
+  logoUrl: string | null;
 }) {
   const subject = "Tu asignación como Invitado - La Mesa Abierta";
 
@@ -502,7 +542,7 @@ async function sendGuestEmail(data: {
     <body>
       <div class="container">
         <div class="header">
-          <img src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM" alt="La Mesa Abierta Logo" />
+          ${mesaLogoImg(data.logoUrl)}
           <h1>La Mesa Abierta</h1>
           <p>Tu asignación como Invitado</p>
         </div>

@@ -14,7 +14,15 @@
     "test:coverage": "vitest --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "check:credentials": "node scripts/security/credential-guard.mjs",
+    "check:functions": "cd supabase/functions && deno check --no-lock --no-remote --no-npm generate-scene-images/handler.ts _shared/boundedBody.ts _shared/liturgyAuth.ts _shared/imageFetch.ts _shared/projectBinding.ts _shared/testHelpers.ts generate-children-lesson/handler.ts refine-children-lesson/handler.ts prayer-request/handler.ts send-signup-confirmation/handler.ts whatsapp-signup/handler.ts fetch-bible-passage/handler.ts",
+    "test:functions": "cd supabase/functions && deno test --no-lock --cached-only --allow-all generate-scene-images _shared/boundedBody_test.ts _shared/liturgyAuth_test.ts _shared/projectBinding_test.ts generate-children-lesson/handler_test.ts refine-children-lesson/handler_test.ts prayer-request/handler_test.ts send-signup-confirmation/handler_test.ts whatsapp-signup/handler_test.ts fetch-bible-passage/handler_test.ts",
+    "deploy:check:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --check",
+    "deploy:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --deploy",
+    "test:security": "deno test --no-config --no-lock --no-remote --no-npm --allow-read --allow-write --allow-env --allow-run=git,node,bash scripts/security/",
+    "check:security": "deno check --no-config --no-lock --no-remote --no-npm scripts/security/vite-supabase-env-guard.ts scripts/security/browser-env-policy_test.ts scripts/security/credential-guard_test.ts scripts/security/deploy-guard_test.ts scripts/security/authorization-policy_test.ts scripts/security/email-logo-isolation_test.ts scripts/security/scene-images-entrypoint_test.ts scripts/security/function-auth-policy_test.ts",
+    "lint:deno": "deno lint --no-config scripts/security supabase/functions/generate-scene-images supabase/functions/_shared supabase/functions/generate-children-lesson/handler.ts supabase/functions/generate-children-lesson/handler_test.ts supabase/functions/generate-children-lesson/index.ts supabase/functions/refine-children-lesson/handler.ts supabase/functions/refine-children-lesson/handler_test.ts supabase/functions/refine-children-lesson/index.ts supabase/functions/prayer-request supabase/functions/send-signup-confirmation supabase/functions/whatsapp-signup supabase/functions/fetch-bible-passage src/integrations/supabase/config.ts src/integrations/supabase/client.ts src/integrations/supabase/__tests__/config.test.ts src/components/liturgia-builder/editors/imageGenerationAccess.ts src/components/liturgia-builder/editors/__tests__/imageGenerationAccess.test.ts vite.config.ts"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

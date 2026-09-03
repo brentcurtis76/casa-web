@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 // Brand colors from CASA Brand Kit
 const COLORS = {
@@ -12,7 +13,8 @@ const COLORS = {
 };
 
 interface SlideImage {
-  url: string;
+  /** Ruta del objeto dentro del bucket "Media"; la URL se resuelve en tiempo de ejecución. */
+  path: string;
   name: string;
   quote: string; // Inspirational text for this image
 }
@@ -31,8 +33,37 @@ interface Announcement {
   images: SlideImage[];
 }
 
-// Pre-configured announcements with signed URLs
-// NOTE: These URLs expire after 7 days. To refresh, generate new signed URLs from Supabase dashboard.
+// Bucket de Storage con las fotos de los anuncios. Solo se guardan rutas de objeto:
+// las URLs se generan en tiempo de ejecución con el cliente de Supabase (URL firmada
+// temporal; si el bucket es público se usa la URL pública). Nunca se incrustan tokens.
+const MEDIA_BUCKET = 'Media';
+const MEDIA_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24; // el slideshow puede proyectarse durante horas
+
+/**
+ * Resuelve la URL de cada foto. Intenta URLs firmadas (funciona con buckets
+ * privados si la política de lectura lo permite) y cae a la URL pública.
+ */
+async function resolveMediaUrls(paths: string[]): Promise<Record<string, string>> {
+  const urls: Record<string, string> = {};
+  try {
+    const { data, error } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .createSignedUrls(paths, MEDIA_SIGNED_URL_TTL_SECONDS);
+    if (!error && data) {
+      for (const item of data) {
+        if (item.path && item.signedUrl && !item.error) urls[item.path] = item.signedUrl;
+      }
+    }
+  } catch {
+    // Sin URLs firmadas: se usa la URL pública como alternativa.
+  }
+  for (const path of paths) {
+    if (!urls[path]) urls[path] = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  }
+  return urls;
+}
+
+// Pre-configured announcements (object paths only)
 const announcements: Announcement[] = [
   {
     id: 'cenas-navidad',
@@ -51,22 +82,22 @@ const announcements: Announcement[] = [
     callToAction: 'Súmate y transforma una noche',
     images: [
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Cenas%20de%20Navidad/WhatsApp%20Image%202025-12-06%20at%2017.28.32.jpeg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9DZW5hcyBkZSBOYXZpZGFkL1doYXRzQXBwIEltYWdlIDIwMjUtMTItMDYgYXQgMTcuMjguMzIuanBlZyIsImlhdCI6MTc2NTYzNzE5MywiZXhwIjoxNzY2MjQxOTkzfQ.dhhL5TbDyqsWugHpPxrdHChqK0BKp_ZV_ckh4d8Bm1w',
+        path: 'Cenas de Navidad/WhatsApp Image 2025-12-06 at 17.28.32.jpeg',
         name: 'Cena 1',
         quote: 'Compartir es multiplicar la alegría',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Cenas%20de%20Navidad/WhatsApp%20Image%202025-12-06%20at%2017.29.27%20(1).jpeg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9DZW5hcyBkZSBOYXZpZGFkL1doYXRzQXBwIEltYWdlIDIwMjUtMTItMDYgYXQgMTcuMjkuMjcgKDEpLmpwZWciLCJpYXQiOjE3NjU2MzcxOTgsImV4cCI6MTc2NjI0MTk5OH0.AtBR3awZYciABKEixLRVULJ2PVrCI1qDbevsDgt6QaU',
+        path: 'Cenas de Navidad/WhatsApp Image 2025-12-06 at 17.29.27 (1).jpeg',
         name: 'Cena 2',
         quote: 'Juntos hacemos la diferencia',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Cenas%20de%20Navidad/WhatsApp%20Image%202025-12-06%20at%2017.29.28.jpeg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9DZW5hcyBkZSBOYXZpZGFkL1doYXRzQXBwIEltYWdlIDIwMjUtMTItMDYgYXQgMTcuMjkuMjguanBlZyIsImlhdCI6MTc2NTYzNzIwOSwiZXhwIjoxNzY2MjQyMDA5fQ.XPDvLCR32GyqFqCrHTUrXxZRIy_0Zy-rSMbgZ8OE0E4',
+        path: 'Cenas de Navidad/WhatsApp Image 2025-12-06 at 17.29.28.jpeg',
         name: 'Cena 3',
         quote: 'El amor se sirve en cada plato',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Cenas%20de%20Navidad/WhatsApp%20Image%202025-12-06%20at%2017.35.28.jpeg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9DZW5hcyBkZSBOYXZpZGFkL1doYXRzQXBwIEltYWdlIDIwMjUtMTItMDYgYXQgMTcuMzUuMjguanBlZyIsImlhdCI6MTc2NTYzNzIxNSwiZXhwIjoxNzY2MjQyMDE1fQ.IU3c3cdp8-zm9GnZCXTsq5opx8rr-3zcOT1Z-uy1Wpg',
+        path: 'Cenas de Navidad/WhatsApp Image 2025-12-06 at 17.35.28.jpeg',
         name: 'Cena 4',
         quote: 'Una cena, una esperanza',
       },
@@ -85,22 +116,22 @@ const announcements: Announcement[] = [
     callToAction: 'Dios Con Nosotros',
     images: [
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Noche%20de%20Velas/Jackie%20&%20Ceci.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9Ob2NoZSBkZSBWZWxhcy9KYWNraWUgJiBDZWNpLmpwZyIsImlhdCI6MTc2NTYzNzIyOCwiZXhwIjoxNzY2MjQyMDI4fQ.8EHBVIL4Fbha2uWXhiVpZvrjLdaobh4zikXd-LCqauY',
+        path: 'Noche de Velas/Jackie & Ceci.jpg',
         name: 'Jackie & Ceci',
         quote: 'La luz brilla en la oscuridad',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Noche%20de%20Velas/Leo.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9Ob2NoZSBkZSBWZWxhcy9MZW8uanBnIiwiaWF0IjoxNzY1NjM3MjM0LCJleHAiOjE3NjYyNDIwMzR9.LvYRXXCvxKxAHjZRY0q_ucavykjrhE8vcT5_NF0OlAU',
+        path: 'Noche de Velas/Leo.jpg',
         name: 'Leo',
         quote: 'Somos luz para el mundo',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Noche%20de%20Velas/Marcela.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9Ob2NoZSBkZSBWZWxhcy9NYXJjZWxhLmpwZyIsImlhdCI6MTc2NTYzNzI0MCwiZXhwIjoxNzY2MjQyMDQwfQ.H478V6p5hETfeiLBTYEXHQdc8N0zJ9DA02ppGCh9wyY',
+        path: 'Noche de Velas/Marcela.jpg',
         name: 'Marcela',
         quote: 'En comunidad, celebramos',
       },
       {
-        url: 'https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/Noche%20de%20Velas/Rafa%20y%20Renato%202.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9Ob2NoZSBkZSBWZWxhcy9SYWZhIHkgUmVuYXRvIDIuanBnIiwiaWF0IjoxNzY1NjM3MjQ1LCJleHAiOjE3NjYyNDIwNDV9.HSl6Gp-EkbqLdQOehxZwLloqwHqmh34UfdznITXtuuM',
+        path: 'Noche de Velas/Rafa y Renato 2.jpg',
         name: 'Rafa y Renato',
         quote: 'Esperanza que nos une',
       },
@@ -118,26 +149,34 @@ export default function AnnouncementSlideshow() {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0); // 0 = title, 1+ = photos
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
-  // Preload images on mount
+  // Resolve image URLs at runtime, then preload them
   useEffect(() => {
-    const preloadImages = async () => {
-      const imagePromises = announcements.flatMap(announcement =>
-        announcement.images.map(img => {
-          return new Promise<void>((resolve) => {
-            const image = new Image();
-            image.onload = () => resolve();
-            image.onerror = () => resolve();
-            image.src = img.url;
-          });
-        })
-      );
+    let cancelled = false;
 
-      await Promise.all(imagePromises);
-      setIsLoading(false);
+    const resolveAndPreload = async () => {
+      const paths = announcements.flatMap(announcement => announcement.images.map(img => img.path));
+      const urls = await resolveMediaUrls(paths);
+      if (cancelled) return;
+      setImageUrls(urls);
+
+      await Promise.all(
+        paths.map(path => new Promise<void>((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve();
+          image.onerror = () => resolve();
+          image.src = urls[path];
+        }))
+      );
+      if (!cancelled) setIsLoading(false);
     };
 
-    preloadImages();
+    resolveAndPreload();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Calculate total slides for current announcement
@@ -205,6 +244,7 @@ export default function AnnouncementSlideshow() {
   const currentAnnouncement = announcements[currentAnnouncementIndex];
   const isShowingTitle = currentSlideIndex === 0;
   const currentPhoto = !isShowingTitle && currentAnnouncement?.images?.[currentSlideIndex - 1];
+  const currentPhotoUrl = currentPhoto ? imageUrls[currentPhoto.path] : undefined;
   const isCenasNavidad = currentAnnouncement?.id === 'cenas-navidad';
 
   return (
@@ -407,12 +447,16 @@ export default function AnnouncementSlideshow() {
         >
           {/* Photo with Ken Burns effect */}
           <div className="absolute inset-0 overflow-hidden">
-            <img
-              key={currentPhoto.url}
-              src={currentPhoto.url}
-              alt={currentPhoto.name}
-              className="w-full h-full object-cover kenburns-animation"
-            />
+            {currentPhotoUrl ? (
+              <img
+                key={currentPhoto.path}
+                src={currentPhotoUrl}
+                alt={currentPhoto.name}
+                className="w-full h-full object-cover kenburns-animation"
+              />
+            ) : (
+              <div className="absolute inset-0" style={{ backgroundColor: COLORS.primaryBlack }} />
+            )}
           </div>
 
           {/* Gradient overlay for text legibility */}

@@ -29,6 +29,10 @@ const formSchema = z.object({
   phone: z.string().min(8, {
     message: "Por favor ingrese un número de teléfono válido.",
   }),
+  // Honeypot: a real visitor never sees or fills this field. The whatsapp-signup
+  // Function answers a silent 200 when it arrives with content. The field name
+  // must match supabase/functions/whatsapp-signup/handler.ts.
+  _honey: z.string().optional(),
 });
 
 const socialLinks = [
@@ -56,12 +60,18 @@ export function InstagramFeed() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  // Anti-bot timing metadata for the whatsapp-signup Function: when this form was
+  // presented. Refreshed after a successful submission so the next one is timed
+  // from the moment the empty form reappears. Client-supplied, so it only stops
+  // naïve scripted posts — the Function treats it as one signal, not as proof.
+  const [presentedAt, setPresentedAt] = useState<number>(() => Date.now());
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       phone: "",
+      _honey: "",
     },
   });
 
@@ -71,20 +81,23 @@ export function InstagramFeed() {
 
     try {
       setIsSubmitting(true);
-      console.log("Enviando solicitud...", values);
+      // Privacy: the visitor's name and phone are never logged from the browser.
 
       const { data, error } = await supabase.functions.invoke("whatsapp-signup", {
-        body: { name: values.name, phone: values.phone }
+        body: {
+          name: values.name,
+          phone: values.phone,
+          _honey: values._honey ?? "",
+          _timestamp: presentedAt,
+        }
       });
 
       if (error) {
         throw new Error(`Error al enviar el formulario: ${error.message}`);
       }
 
-      console.log("Respuesta:", data);
-
-      if (!data.success) {
-        throw new Error(data.error || "Error al procesar la solicitud");
+      if (!data?.success) {
+        throw new Error(data?.error || "Error al procesar la solicitud");
       }
 
       setSubmitSuccess(true);
@@ -94,8 +107,10 @@ export function InstagramFeed() {
       });
 
       form.reset();
+      setPresentedAt(Date.now());
     } catch (error) {
-      console.error("Error:", error);
+      // No console output: the error may echo the submitted values or a raw
+      // response body. The user-facing message below is all that is surfaced.
       const errorMessage = error instanceof Error ? error.message : "Ocurrió un error inesperado";
       setSubmitError(errorMessage);
       toast({
@@ -220,6 +235,22 @@ export function InstagramFeed() {
                     </FormItem>
                   )}
                 />
+
+                {/* Honeypot: out of the visual flow and the tab order, hidden from
+                    assistive tech. Humans never fill it; form-filling bots do. */}
+                <div
+                  aria-hidden="true"
+                  className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden"
+                >
+                  <label htmlFor="whatsapp-signup-honey">No completar este campo</label>
+                  <input
+                    id="whatsapp-signup-honey"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    {...form.register("_honey")}
+                  />
+                </div>
 
                 <Button
                   type="submit"

@@ -275,3 +275,43 @@ export function streamingResponse(
 export const TEST_SUPABASE_URL = "https://proj.supabase.co";
 export const BUCKET_PREFIX =
   `${TEST_SUPABASE_URL}${DRAFTS_BUCKET_PATH}`.replace(/\/$/, "");
+
+// ---------------------------------------------------------------------------
+// Credential-shaped tokens (assembled at runtime, so this file carries no
+// credential-shaped literal — see scripts/security/credential-guard.mjs)
+// ---------------------------------------------------------------------------
+
+const base64url = (value: unknown): string =>
+  btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** A JWT-shaped token with the given payload and a meaningless signature. */
+export function fakeJwt(payload: Record<string, unknown>): string {
+  return [base64url({ alg: "HS256", typ: "JWT" }), base64url(payload), "f".repeat(43)].join(".");
+}
+
+/** The legacy anon/publishable key: a project JWT whose role is `anon`. */
+export const ANON_KEY_JWT = fakeJwt({ iss: "supabase", ref: "proj", role: "anon" });
+/** A service_role credential presented as a bearer token. */
+export const SERVICE_ROLE_JWT = fakeJwt({ iss: "supabase", ref: "proj", role: "service_role" });
+/** The modern publishable key shape. Not a JWT, so only the backend can reject it. */
+export const PUBLISHABLE_KEY = ["sb", "publishable", "unit-test-".padEnd(30, "k")].join("_");
+
+export const ANON_KEY_HEADER = { Authorization: `Bearer ${ANON_KEY_JWT}` };
+export const SERVICE_ROLE_HEADER = { Authorization: `Bearer ${SERVICE_ROLE_JWT}` };
+export const PUBLISHABLE_KEY_HEADER = { Authorization: `Bearer ${PUBLISHABLE_KEY}` };
+
+/** The one token `strictGetUser` accepts; everything else is unauthenticated. */
+export const VALID_USER_TOKEN = AUTH_HEADER.Authorization.replace(/^Bearer /, "");
+
+/**
+ * A `getUser` that behaves like the real backend: only a genuine session token
+ * authenticates; an anon key, publishable key, or random string does not.
+ */
+export function strictGetUser(user = { id: "user-abc", email: "u@example.com" }) {
+  return (token: string): Promise<GetUserOutcome> =>
+    Promise.resolve(
+      token === VALID_USER_TOKEN
+        ? { kind: "authenticated" as const, user }
+        : { kind: "unauthenticated" as const },
+    );
+}

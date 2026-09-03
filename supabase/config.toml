@@ -11,6 +11,11 @@ verify_jwt = false
 [functions.wa-reminders]
 verify_jwt = false
 
+# generate-scene-images: authenticated, cost-bearing (Google Gemini) function.
+# verify_jwt = true is REQUIRED: the gateway rejects requests without a valid
+# project JWT before the handler runs its own session + permission checks.
+# Deploy only with scripts/security/deploy-generate-scene-images.sh, which
+# refuses any project other than CASA.
 [functions.generate-scene-images]
 verify_jwt = true
 import_map = "./functions/import_map.json"
@@ -30,6 +35,79 @@ import_map = "./functions/import_map.json"
 [functions.generate-oraciones]
 verify_jwt = true
 import_map = "./functions/import_map.json"
+
+# User-facing functions corrected in the publishable-key review. The gateway
+# check is defense in depth only: a publishable key satisfies it, so each
+# handler verifies the user JWT itself (supabase/functions/_shared/liturgyAuth.ts)
+# before any privileged read, signed URL, email, or provider call.
+# scripts/security/function-auth-policy_test.ts pins this policy. Note: this
+# file states the intended policy; it does not prove the provider-side setting.
+[functions.send-signup-confirmation]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.generate-children-lesson]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.refine-children-lesson]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.prayer-request]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+# fetch-bible-passage: handler authenticates once and accepts any of
+# presenter/read, liturgy_builder/write, oraciones/write before calling Bolls.life.
+[functions.fetch-bible-passage]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+# Browser-invoked functions whose handlers were NOT part of this review. The
+# platform default is already verify_jwt = true; it is declared explicitly so the
+# policy test can pin the complete browser-facing inventory. No import_map is
+# declared here, so deploy-time module resolution for them is unchanged. This
+# says nothing about what each handler does after the gateway check.
+[functions.admin-add-participant]
+verify_jwt = true
+
+[functions.admin-user-management]
+verify_jwt = true
+
+[functions.create-mesa-matches]
+verify_jwt = true
+
+[functions.generate-illustration]
+verify_jwt = true
+
+[functions.podcast-backfill]
+verify_jwt = true
+
+[functions.send-children-service-packet]
+verify_jwt = true
+
+[functions.send-mesa-notifications]
+verify_jwt = true
+
+[functions.send-mesa-whatsapp]
+verify_jwt = true
+
+[functions.send-music-service-packet]
+verify_jwt = true
+
+[functions.transcribe-meeting]
+verify_jwt = true
+
+# Intentionally anonymous public signup endpoints: no user session exists, so
+# there is no JWT to verify. Abuse protection lives in the handlers (honeypot,
+# timing check, validation, rate limiting). Nothing else may be listed with
+# verify_jwt = false without a matching entry in the policy test above.
+[functions.public-signup]
+verify_jwt = false
+
+[functions.whatsapp-signup]
+verify_jwt = false
 
 # Puertos propios: los de por defecto (54321-54324, 54327) los ocupa otro
 # proyecto Supabase en esta maquina.

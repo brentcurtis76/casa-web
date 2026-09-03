@@ -67,6 +67,8 @@ import { useCuentacuentosDraft, draftIdentitiesEqual, type CuentacuentosDraftFul
 import { useStoryImagePipeline } from '@/hooks/useStoryImagePipeline';
 import type { PipelineItemTask, RunIdentity } from '@/hooks/storyImagePipelineRunner';
 import { useToast } from '@/hooks/use-toast';
+import { usePermissions } from '@/hooks/usePermissions';
+import { IMAGE_GENERATION_PERMISSION, resolveImageGenerationAccess } from './imageGenerationAccess';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -803,6 +805,31 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   // sólo feedback visual: deshabilita los botones durante el envelope en vuelo.
   const isApprovingRef = useRef(false);
   const [isApproving, setIsApproving] = useState(false);
+
+  // Permiso para generar imágenes con IA. Misma política que la Edge Function
+  // generate-scene-images (liturgy_builder / write): sin permiso, los controles de
+  // generación se deshabilitan en vez de fallar con 403.
+  const imagePermissions = usePermissions(IMAGE_GENERATION_PERMISSION.resource);
+  const imageGenerationAccess = resolveImageGenerationAccess({
+    loading: imagePermissions.loading,
+    canWrite: imagePermissions.canWrite,
+    hasAuthContext: imagePermissions.hasAuthContext,
+  });
+  const canGenerateImages = imageGenerationAccess.allowed;
+
+  const renderImageGenerationNotice = () => {
+    if (imageGenerationAccess.allowed) return null;
+    return (
+      <div
+        role="status"
+        className="p-3 rounded-lg flex items-start gap-2"
+        style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}20`, border: `1px solid ${CASA_BRAND.colors.primary.amber}` }}
+      >
+        <AlertCircle size={16} style={{ color: CASA_BRAND.colors.primary.amber, marginTop: 2, flexShrink: 0 }} />
+        <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>{imageGenerationAccess.reason}</p>
+      </div>
+    );
+  };
 
   // Estado del diálogo de confirmación de eliminación
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -2137,6 +2164,7 @@ Instrucciones críticas:
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
+    if (!canGenerateImages) return;
     if (!story) return;
     setError(null);
     try {
@@ -2145,7 +2173,7 @@ Instrucciones críticas:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando character sheet');
     }
-  }, [story, buildCharacterSheetTask, buildRunIdentity, pipeline]);
+  }, [canGenerateImages, story, buildCharacterSheetTask, buildRunIdentity, pipeline]);
 
   // ===== Lugares y objetos recurrentes (props) =====
   // Reemplaza base64 por URLs subidas dentro de los props del estado
@@ -2260,6 +2288,7 @@ Instrucciones críticas:
   }, [invokeSceneImagesWithFeedback, story, getDraftIdentity, enqueueGeneratedSnapshot]);
 
   const handleGeneratePropSheet = useCallback(async (prop: StoryProp) => {
+    if (!canGenerateImages) return;
     if (!story) return;
     setError(null);
     try {
@@ -2268,7 +2297,7 @@ Instrucciones críticas:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando hoja de referencia');
     }
-  }, [story, buildPropSheetTask, buildRunIdentity, pipeline]);
+  }, [canGenerateImages, story, buildPropSheetTask, buildRunIdentity, pipeline]);
 
   // Elegir una candidata: pasa a ser la PRIMERA referenceImage del prop
   // (getPropsForScene la envía primero y el edge function la usa como
@@ -2406,6 +2435,7 @@ Instrucciones críticas:
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
+    if (!canGenerateImages) return;
     if (!story) return;
 
     const append = generateOptions?.append ?? false;
@@ -2446,7 +2476,7 @@ Instrucciones críticas:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen de escena');
     }
-  }, [story, editingSceneText, toast, buildSceneTask, buildRunIdentity, pipeline, setStory]);
+  }, [canGenerateImages, story, editingSceneText, toast, buildSceneTask, buildRunIdentity, pipeline, setStory]);
 
   // Construir el prompt de portada para preview
   const buildCoverPromptPreview = useCallback((): string => {
@@ -2541,6 +2571,7 @@ Instrucciones críticas:
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
+    if (!canGenerateImages) return;
     if (!story) return;
     // Finding 3 — Guarda imperativa: el `disabled` del botón es feedback
     // visual, no una garantía. `deriveNextStory` lee `coverOptionsRef` VIVA
@@ -2560,7 +2591,7 @@ Instrucciones críticas:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando portada');
     }
-  }, [story, buildCoverTask, buildRunIdentity, pipeline]);
+  }, [canGenerateImages, story, buildCoverTask, buildRunIdentity, pipeline]);
 
   // Construir el prompt de fin para preview
   const buildEndPromptPreview = useCallback((): string => {
@@ -2638,6 +2669,7 @@ Instrucciones críticas:
     customPrompt?: string,
     generateOptions?: { append?: boolean }
   ) => {
+    if (!canGenerateImages) return;
     if (!story) return;
     // Finding 3 + PH/G5 — misma guarda imperativa que `handleGenerateCover`,
     // incluida la consulta VIVA al runner que cierra la carrera cover↔end.
@@ -2649,7 +2681,7 @@ Instrucciones críticas:
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error generando imagen final');
     }
-  }, [story, buildEndTask, buildRunIdentity, pipeline]);
+  }, [canGenerateImages, story, buildEndTask, buildRunIdentity, pipeline]);
 
   // ===== Generación automática por lotes (pipeline) =====
   // Solo genera lo FALTANTE: al retomar un borrador, lo ya generado se salta.
@@ -2710,20 +2742,20 @@ Instrucciones críticas:
   // `runItems` (el usuario pidió explícitamente arrancar) y devuelven `false`
   // si el runner está ocupado.
   const runCharacterSheetBatch = useCallback((): boolean => {
-    if (!story || pipeline.isBusy()) return false;
+    if (!story || !canGenerateImages || pipeline.isBusy()) return false;
     const tasks = collectCharacterSheetTasks();
     if (tasks.length === 0) return true;
     void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, pipeline, collectCharacterSheetTasks, buildRunIdentity]);
+  }, [canGenerateImages, story, pipeline, collectCharacterSheetTasks, buildRunIdentity]);
 
   const runSceneBatch = useCallback((): boolean => {
-    if (!story || pipeline.isBusy()) return false;
+    if (!story || !canGenerateImages || pipeline.isBusy()) return false;
     const tasks = collectSceneTasks();
     if (tasks.length === 0) return true;
     void pipeline.runItems(tasks, buildRunIdentity());
     return true;
-  }, [story, pipeline, collectSceneTasks, buildRunIdentity]);
+  }, [canGenerateImages, story, pipeline, collectSceneTasks, buildRunIdentity]);
 
   // ===========================================================================
   // E / A9a — Auto-arranque por INTENCIÓN EXPLÍCITA + aceptación atómica.
@@ -2764,6 +2796,14 @@ Instrucciones críticas:
       return;
     }
     if (!story) return;
+    // Permiso de generación: con el permiso aún cargando la intención se
+    // CONSERVA (el efecto vuelve a correr al resolverse); sin permiso se
+    // descarta sin disparar — el servidor lo rechazaría con 403 de todos modos.
+    if (imageGenerationAccess.pending) return;
+    if (!canGenerateImages) {
+      pendingAutoKickRef.current = null;
+      return;
+    }
 
     const tasks =
       currentStep === 'characters' ? collectCharacterSheetTasks()
@@ -2798,6 +2838,8 @@ Instrucciones críticas:
     collectSceneTasks,
     collectCoverEndTasks,
     buildRunIdentity,
+    canGenerateImages,
+    imageGenerationAccess.pending,
   ]);
 
   // ===== Phase 7: refine handlers (character, scene, cover, end) =====
@@ -2840,6 +2882,7 @@ Instrucciones críticas:
 
   const handleRefineCharacterSheet = useCallback(
     async (characterId: string, sourceImage: string, feedback: string) => {
+    if (!canGenerateImages) return;
       if (!story) return;
       const character = story.characters.find((c) => c.id === characterId);
       if (!character) return;
@@ -2865,7 +2908,7 @@ Instrucciones críticas:
         setRefiningCharId(null);
       }
     },
-    [story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine scene image — delega en `makeRefineSceneTask`.
@@ -2920,7 +2963,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     sceneExcludedCharacters,
     sceneIncludedCharacters,
@@ -2933,6 +2976,7 @@ Instrucciones críticas:
 
   const handleRefineSceneImage = useCallback(
     async (sceneNumber: number, sourceImage: string, feedback: string) => {
+    if (!canGenerateImages) return;
       if (!story) return;
       const scene = story.scenes.find((s) => s.number === sceneNumber);
       if (!scene) return;
@@ -2958,7 +3002,7 @@ Instrucciones críticas:
         setRefiningSceneNumber(null);
       }
     },
-    [story, buildRefineSceneTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineSceneTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine cover — delega en `makeRefineCoverTask`.
@@ -3004,7 +3048,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     coverExcludedCharacters,
     coverReferenceImage,
@@ -3016,6 +3060,7 @@ Instrucciones críticas:
 
   const handleRefineCover = useCallback(
     async (sourceImage: string, feedback: string) => {
+    if (!canGenerateImages) return;
       if (!story) return;
       setRefineCoverError(null);
       setIsRefiningCover(true);
@@ -3037,7 +3082,7 @@ Instrucciones críticas:
         setIsRefiningCover(false);
       }
     },
-    [story, buildRefineCoverTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineCoverTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine end image — delega en `makeRefineEndTask`.
@@ -3075,7 +3120,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     endReferenceImage,
     editingEndPrompt,
@@ -3086,6 +3131,7 @@ Instrucciones críticas:
 
   const handleRefineEnd = useCallback(
     async (sourceImage: string, feedback: string) => {
+    if (!canGenerateImages) return;
       if (!story) return;
       setRefineEndError(null);
       setIsRefiningEnd(true);
@@ -3107,7 +3153,7 @@ Instrucciones críticas:
         setIsRefiningEnd(false);
       }
     },
-    [story, buildRefineEndTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineEndTask, buildRunIdentity, pipeline],
   );
 
   // Subir imagen de personaje manualmente
@@ -4524,6 +4570,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera y selecciona una imagen de referencia para cada personaje. Esto ayudará a mantener consistencia visual en las escenas.
@@ -4575,7 +4622,8 @@ Instrucciones críticas:
                     <button
                       type="button"
                       onClick={runCharacterSheetBatch}
-                      disabled={pipeline.isRunning || refiningCharId !== null}
+                      disabled={!canGenerateImages || pipeline.isRunning || refiningCharId !== null}
+                      title={imageGenerationAccess.reason ?? undefined}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -4604,7 +4652,8 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                  disabled={pipeline.isRunning || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  disabled={!canGenerateImages || pipeline.isRunning || refiningCharId !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  title={imageGenerationAccess.reason ?? undefined}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -4703,16 +4752,17 @@ Instrucciones críticas:
                       disabled={isApproving}
                       onSave={() => handleSaveCharacterImage(character.id)}
                       onRegenerate={() => {
-                        if (refiningCharId !== null || pipeline.isRunning) return;
+                        if (!canGenerateImages || refiningCharId !== null || pipeline.isRunning) return;
                         handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id]);
                       }}
+                      regenerateDisabled={!canGenerateImages}
                       phase={phaseOf(`sheet-${character.id}`)}
                       isSaving={savingCharacter === character.id}
                       savedMessage={savedCharacterMessage[character.id]}
                       label="character sheet"
                     />
                   </div>
-                  {charSelectedImage && (
+                  {charSelectedImage && canGenerateImages && (
                     <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                       <ImageRefineBox
                         onRefine={(feedback) => handleRefineCharacterSheet(character.id, charSelectedImage, feedback)}
@@ -4890,6 +4940,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera imágenes para cada escena. Puedes ver/editar el prompt y controlar qué imágenes de referencia se usan. ({scenesWithImages}/{story.scenes.length} generadas, {scenesSelected}/{story.scenes.length} seleccionadas)
@@ -4939,7 +4990,8 @@ Instrucciones críticas:
                     <button
                       type="button"
                       onClick={runSceneBatch}
-                      disabled={pipeline.isRunning || refiningSceneNumber !== null}
+                      disabled={!canGenerateImages || pipeline.isRunning || refiningSceneNumber !== null}
+                      title={imageGenerationAccess.reason ?? undefined}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                       style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                     >
@@ -5020,7 +5072,8 @@ Instrucciones críticas:
                       <button
                         type="button"
                         onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                        disabled={pipeline.isRunning || refiningSceneNumber !== null}
+                        disabled={!canGenerateImages || pipeline.isRunning || refiningSceneNumber !== null}
+                        title={imageGenerationAccess.reason ?? undefined}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
@@ -5564,16 +5617,17 @@ Instrucciones críticas:
                           disabled={isApproving}
                           onSave={() => handleSaveSceneImage(scene.number)}
                           onRegenerate={() => {
-                            if (refiningSceneNumber !== null || pipeline.isRunning) return;
+                            if (!canGenerateImages || refiningSceneNumber !== null || pipeline.isRunning) return;
                             handleGenerateSceneImage(scene, editingScenePrompt[scene.number]);
                           }}
+                          regenerateDisabled={!canGenerateImages}
                           phase={phaseOf(`scene-${scene.number}`)}
                           isSaving={savingScene === scene.number}
                           savedMessage={savedSceneMessage[scene.number]}
                           label={`escena ${scene.number}`}
                         />
                       </div>
-                      {sceneSelectedImage && (
+                      {sceneSelectedImage && canGenerateImages && (
                         <div className={pipeline.isRunning ? 'opacity-60 pointer-events-none' : ''}>
                           <ImageRefineBox
                             onRefine={(feedback) => handleRefineSceneImage(scene.number, sceneSelectedImage, feedback)}
@@ -5906,6 +5960,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera la portada del cuento y la imagen final de "Fin".
@@ -6006,10 +6061,12 @@ Instrucciones críticas:
                   // botón no despacha, así que tampoco puede verse habilitado.
                   // `pipeline.isRunning` es el booleano de render y acá basta:
                   // esto es el pre-filtro; la garantía vive en el handler.
-                  disabled={isItemBusy('cover') || isRefiningCover || isApproving || pipeline.isRunning}
+                  disabled={!canGenerateImages || isItemBusy('cover') || isRefiningCover || isApproving || pipeline.isRunning}
+                  // Una sola `title`: la razón de permiso (denegado/pendiente) manda;
+                  // si no hay, el tooltip de "2 más" cuando ya existen options.
+                  title={imageGenerationAccess.reason ?? (coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined)}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-                  title={coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('cover') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
@@ -6292,11 +6349,11 @@ Instrucciones críticas:
                     // PH/G3+G5 — Pre-filtro VISUAL, igual que sheets/scenes; la
                     // garantía imperativa vive en el handler (`pipeline.isBusy()`).
                     onRegenerate={() => {
-                      if (isRefiningCover || pipeline.isRunning) return;
+                      if (!canGenerateImages || isRefiningCover || pipeline.isRunning) return;
                       handleGenerateCover(undefined, { append: true });
                     }}
                     // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
-                    regenerateDisabled={isRefiningCover || pipeline.isRunning}
+                    regenerateDisabled={!canGenerateImages || isRefiningCover || pipeline.isRunning}
                     regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('cover')}
                     isSaving={savingCover}
@@ -6304,7 +6361,7 @@ Instrucciones críticas:
                     label="portada"
                   />
                 </div>
-                {selectedCover !== null && coverOptions[selectedCover] && (
+                {selectedCover !== null && coverOptions[selectedCover] && canGenerateImages && (
                   <ImageRefineBox
                     onRefine={(feedback) => handleRefineCover(coverOptions[selectedCover], feedback)}
                     isRefining={isRefiningCover}
@@ -6359,10 +6416,11 @@ Instrucciones críticas:
                   onClick={() => handleGenerateEnd(undefined, { append: endOptions.length > 0 })}
                   // PH/G5 [B1-PM] — Espejo de la portada: el pre-filtro visual
                   // cubre la corrida global y el envelope, no sólo este ítem.
-                  disabled={isItemBusy('end') || isRefiningEnd || isApproving || pipeline.isRunning}
+                  disabled={!canGenerateImages || isItemBusy('end') || isRefiningEnd || isApproving || pipeline.isRunning}
+                  // Una sola `title`: espejo de la portada.
+                  title={imageGenerationAccess.reason ?? (endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined)}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-                  title={endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('end') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
@@ -6647,11 +6705,11 @@ Instrucciones críticas:
                     onSave={handleSaveEnd}
                     // PH/G3+G5 — ver el equivalente de portada.
                     onRegenerate={() => {
-                      if (isRefiningEnd || pipeline.isRunning) return;
+                      if (!canGenerateImages || isRefiningEnd || pipeline.isRunning) return;
                       handleGenerateEnd(undefined, { append: true });
                     }}
                     // [B1-PM] — El mismo pre-filtro, ahora también VISIBLE.
-                    regenerateDisabled={isRefiningEnd || pipeline.isRunning}
+                    regenerateDisabled={!canGenerateImages || isRefiningEnd || pipeline.isRunning}
                     regenerateLabel="Generar 2 opciones adicionales"
                     phase={phaseOf('end')}
                     isSaving={savingEnd}
@@ -6659,7 +6717,7 @@ Instrucciones críticas:
                     label="imagen final"
                   />
                 </div>
-                {selectedEnd !== null && endOptions[selectedEnd] && (
+                {selectedEnd !== null && endOptions[selectedEnd] && canGenerateImages && (
                   <ImageRefineBox
                     onRefine={(feedback) => handleRefineEnd(endOptions[selectedEnd], feedback)}
                     isRefining={isRefiningEnd}
