@@ -24,7 +24,7 @@ interface EmailFunction {
 
 const EMAIL_FUNCTIONS: readonly EmailFunction[] = [
   { file: 'supabase/functions/send-mesa-notifications/index.ts', renderers: ['sendHostEmail', 'sendGuestEmail'] },
-  { file: 'supabase/functions/send-signup-confirmation/index.ts', renderers: ['sendConfirmationEmail'] },
+  { file: 'supabase/functions/send-signup-confirmation/handler.ts', renderers: ['sendConfirmationEmail'] },
 ];
 
 function sourceOf(file: string): string {
@@ -39,7 +39,9 @@ for (const { file, renderers } of EMAIL_FUNCTIONS) {
     assert.doesNotMatch(text, /^(let|var)\s+\w*[Ll]ogo/m, 'no module-scope mutable logo binding');
     assert.doesNotMatch(text, /^\s*mesaLogoUrl\s*=/m, 'the logo URL is never assigned; it is declared const per request');
     const declaration = text.indexOf('const mesaLogoUrl = await resolveMesaLogoUrl(');
-    const handlerStart = text.indexOf('serve(async (req)');
+    const inlineHandler = text.indexOf('serve(async (req)');
+    const extractedHandler = text.indexOf('return async function handler(req');
+    const handlerStart = Math.max(inlineHandler, extractedHandler);
     assert.ok(handlerStart >= 0, 'request handler must be present');
     assert.ok(declaration > handlerStart, 'the signed URL must be resolved into a const INSIDE the request handler');
     assert.match(text, /^\s+const mesaLogoUrl = await resolveMesaLogoUrl\(/m, 'request-local const, not a module-level binding');
@@ -66,7 +68,11 @@ for (const { file, renderers } of EMAIL_FUNCTIONS) {
 
   Deno.test(`${file}: signing failure still sends the email without a logo`, () => {
     const text = sourceOf(file);
-    assert.match(text, /return logoUrl \? `<img src="\$\{logoUrl\}"[^`]*` : "";/, 'a null logo renders nothing');
+    assert.match(
+      text,
+      /return (?:logoUrl|src) \? `<img src="\$\{(?:logoUrl|src)\}"[^`]*` : "";/,
+      'a null logo renders nothing (send-signup-confirmation first encodes the URL for the attribute)',
+    );
     const resolver = text.slice(text.indexOf('async function resolveMesaLogoUrl('), text.indexOf('function mesaLogoImg('));
     assert.ok((resolver.match(/return null;/g) ?? []).length >= 2, 'resolver returns null on a signing error and on an exception');
     assert.ok(!/throw/.test(resolver), 'resolver never throws: the email is sent without a logo instead');

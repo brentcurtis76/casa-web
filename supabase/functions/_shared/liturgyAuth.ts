@@ -98,13 +98,20 @@ export function readUnverifiedJwtRole(token: string): string | undefined {
 /** Bearer roles that are credentials, never user sessions. Refused up front. */
 const NON_SESSION_ROLES: ReadonlySet<string> = new Set(["service_role", "anon"]);
 
-export async function requirePermission(
+/**
+ * Authenticates the bearer token only — no permission check.
+ *
+ * Shared by `requirePermission` / `requireAnyPermission` and by functions whose
+ * access rule is "any signed-in user" (prayer-request and the identity step of
+ * send-signup-confirmation). The project's publishable/anon key and any
+ * service_role credential are refused before the backend is consulted: they
+ * authenticate the application at the gateway, never a user.
+ */
+export async function requireUser(
   req: Request,
-  deps: RequirePermissionDeps,
-  opts: RequirePermissionOpts,
+  deps: Pick<RequirePermissionDeps, "getUser">,
+  corsHeaders: Record<string, string>,
 ): Promise<AuthzResult> {
-  const { corsHeaders, resource, action } = opts;
-
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return fail(401, "UNAUTHORIZED", corsHeaders);
@@ -134,7 +141,21 @@ export async function requirePermission(
     return fail(401, "UNAUTHORIZED", corsHeaders);
   }
 
-  const user = authOutcome.user;
+  return { ok: true, user: authOutcome.user };
+}
+
+export async function requirePermission(
+  req: Request,
+  deps: RequirePermissionDeps,
+  opts: RequirePermissionOpts,
+): Promise<AuthzResult> {
+  const { corsHeaders, resource, action } = opts;
+
+  const authn = await requireUser(req, deps, corsHeaders);
+  if (!authn.ok) {
+    return authn;
+  }
+  const user = authn.user;
 
   let permOutcome: CheckPermissionOutcome;
   try {
@@ -151,6 +172,71 @@ export async function requirePermission(
   }
 
   return { ok: true, user };
+}
+
+export interface PermissionAlternative {
+  resource: string;
+  action: string;
+}
+
+export interface RequireAnyPermissionOpts {
+  /** Alternatives, evaluated in order; the first `allowed` wins. Must be non-empty. */
+  anyOf: readonly PermissionAlternative[];
+  corsHeaders: Record<string, string>;
+}
+
+/**
+ * Authenticates ONCE, then authorizes a caller holding at least one of the
+ * listed resource/action permissions. Used by functions that serve several
+ * workflows with different permissions (fetch-bible-passage: presenter/read,
+ * liturgy_builder/write, oraciones/write).
+ *
+ * Decision table:
+ *   * any alternative `allowed`                          → ok (short-circuits);
+ *   * every alternative `denied`                          → 403 FORBIDDEN;
+ *   * no alternative allowed and at least one check could
+ *     not be determined (backend error / throw)           → 503 AUTHZ_BACKEND_ERROR;
+ *   * an empty `anyOf` is a misconfiguration              → 503 (fail closed).
+ * Credential handling is `requireUser`'s: missing, anon, service_role and
+ * publishable-key bearers are refused before any permission check.
+ */
+export async function requireAnyPermission(
+  req: Request,
+  deps: RequirePermissionDeps,
+  opts: RequireAnyPermissionOpts,
+): Promise<AuthzResult> {
+  const { corsHeaders, anyOf } = opts;
+  if (anyOf.length === 0) {
+    return fail(503, "AUTHZ_BACKEND_ERROR", corsHeaders);
+  }
+
+  const authn = await requireUser(req, deps, corsHeaders);
+  if (!authn.ok) {
+    return authn;
+  }
+  const user = authn.user;
+
+  let undetermined = false;
+  for (const { resource, action } of anyOf) {
+    let permOutcome: CheckPermissionOutcome;
+    try {
+      permOutcome = await deps.checkPermission(user.id, resource, action);
+    } catch (_e) {
+      undetermined = true;
+      continue;
+    }
+    if (permOutcome.kind === "allowed") {
+      return { ok: true, user };
+    }
+    if (permOutcome.kind === "backend_error") {
+      undetermined = true;
+    }
+  }
+
+  if (undetermined) {
+    return fail(503, "AUTHZ_BACKEND_ERROR", corsHeaders);
+  }
+  return fail(403, "FORBIDDEN", corsHeaders);
 }
 
 /**

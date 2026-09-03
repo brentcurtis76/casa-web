@@ -60,7 +60,11 @@ export const appRoutes = [
   { path: "/admin/liturgia/canciones", element: <ProtectedRoute requires={{ resource: 'canciones', action: 'write' }}><CancionesPage /></ProtectedRoute> },
   { path: "/admin/liturgia/elementos-fijos", element: <ProtectedRoute requires={{ resource: 'elementos_fijos', action: 'write' }}><ElementosFijosPage /></ProtectedRoute> },
   { path: "/admin/liturgia/constructor", element: <ProtectedRoute requires={{ resource: 'liturgy_builder', action: 'write' }}><ConstructorLiturgiasPage /></ProtectedRoute> },
-  { path: "/presenter", element: <PresenterPage /> },
+  // /presenter requires presenter:read (RBAC resource `presenter`, granted to liturgist,
+  // av_volunteer and worship_coordinator in 20260209000000_casa_rbac_schema.sql).
+  // /output stays public on purpose: it is the projector window the presenter opens
+  // and only renders what the presenter broadcasts to it.
+  { path: "/presenter", element: <ProtectedRoute requires={{ resource: 'presenter', action: 'read' }}><PresenterPage /></ProtectedRoute> },
   { path: "/output", element: <OutputPage /> },
   { path: "/admin/sermon-editor", element: <SermonEditorPage /> },
   { path: "/test/sermon-editor", element: <SermonEditorTestPage /> },
