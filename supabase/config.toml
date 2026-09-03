@@ -11,6 +11,11 @@ verify_jwt = false
 [functions.wa-reminders]
 verify_jwt = false
 
+# generate-scene-images: authenticated, cost-bearing (Google Gemini) function.
+# verify_jwt = true is REQUIRED: the gateway rejects requests without a valid
+# project JWT before the handler runs its own session + permission checks.
+# Deploy only with scripts/security/deploy-generate-scene-images.sh, which
+# refuses any project other than CASA.
 [functions.generate-scene-images]
 verify_jwt = true
 import_map = "./functions/import_map.json"

@@ -20,6 +20,34 @@ interface NotificationRequest {
   monthId: string;
 }
 
+// Logo de La Mesa Abierta: objeto estable del bucket "Media". La URL se firma en
+// cada ejecución con el cliente de servicio (nunca se incrusta un token en el
+// código). Si la firma falla, el correo se envía sin logo.
+const MESA_LOGO_BUCKET = "Media";
+const MESA_LOGO_PATH = "La Mesa Abierta Logo.png";
+const MESA_LOGO_URL_TTL_SECONDS = 60 * 60 * 24 * 365; // los correos se leen mucho después de enviarse
+let mesaLogoUrl: string | null = null;
+
+async function resolveMesaLogoUrl(client: ReturnType<typeof createClient>): Promise<string | null> {
+  try {
+    const { data, error } = await client.storage
+      .from(MESA_LOGO_BUCKET)
+      .createSignedUrl(MESA_LOGO_PATH, MESA_LOGO_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) {
+      console.warn("No se pudo firmar la URL del logo de La Mesa Abierta; el correo se envía sin logo");
+      return null;
+    }
+    return data.signedUrl;
+  } catch {
+    console.warn("No se pudo firmar la URL del logo de La Mesa Abierta; el correo se envía sin logo");
+    return null;
+  }
+}
+
+function mesaLogoImg(): string {
+  return mesaLogoUrl ? `<img src="${mesaLogoUrl}" alt="La Mesa Abierta Logo" />` : "";
+}
+
 serve(async (req) => {
   try {
     // CORS headers
@@ -51,6 +79,9 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Firma la URL del logo con el cliente de servicio ya autenticado arriba.
+    mesaLogoUrl = await resolveMesaLogoUrl(supabase);
 
     // Get month details
     const { data: month, error: monthError } = await supabase
@@ -420,7 +451,7 @@ async function sendHostEmail(data: {
     <body>
       <div class="container">
         <div class="header">
-          <img src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM" alt="La Mesa Abierta Logo" />
+          ${mesaLogoImg()}
           <h1>La Mesa Abierta</h1>
           <p>Tu asignación como Anfitrión</p>
         </div>
@@ -502,7 +533,7 @@ async function sendGuestEmail(data: {
     <body>
       <div class="container">
         <div class="header">
-          <img src="https://mulsqxfhxxdsadxsljss.supabase.co/storage/v1/object/sign/Media/La%20Mesa%20Abierta%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84N2ZkZDdiMi1lYjczLTRhZWItOGNmZS0yOTZjODQ3M2ExYzAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNZWRpYS9MYSBNZXNhIEFiaWVydGEgTG9nby5wbmciLCJpYXQiOjE3NjI4OTQxNzQsImV4cCI6MTg0MDY1NDE3NH0.iAn0riDQJ-EZXSxDBk_5VjckQbBhLzX6l4bDQ6xKCeM" alt="La Mesa Abierta Logo" />
+          ${mesaLogoImg()}
           <h1>La Mesa Abierta</h1>
           <p>Tu asignación como Invitado</p>
         </div>

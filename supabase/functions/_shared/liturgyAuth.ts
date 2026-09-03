@@ -120,14 +120,25 @@ export async function requirePermission(
   return { ok: true, user };
 }
 
+/**
+ * The one permission every AI image/story generation function requires. The
+ * Cuentacuentos editor mirrors it (src/components/liturgia-builder/editors/
+ * imageGenerationAccess.ts) and scripts/security/authorization-policy_test.ts
+ * asserts both sides agree.
+ */
+export const LITURGY_WRITER_PERMISSION = {
+  resource: "liturgy_builder",
+  action: "write",
+} as const;
+
 export function requireLiturgyWriter(
   req: Request,
   deps: RequirePermissionDeps,
   corsHeaders: Record<string, string>,
 ): Promise<AuthzResult> {
   return requirePermission(req, deps, {
-    resource: "liturgy_builder",
-    action: "write",
+    resource: LITURGY_WRITER_PERMISSION.resource,
+    action: LITURGY_WRITER_PERMISSION.action,
     corsHeaders,
   });
 }
