@@ -13,12 +13,14 @@ interface SignupConfirmationRequest {
 }
 
 // Logo de La Mesa Abierta: objeto estable del bucket "Media". La URL se firma en
-// cada ejecución con el cliente de servicio (nunca se incrusta un token en el
-// código). Si la firma falla, el correo se envía sin logo.
+// cada solicitud con el cliente de servicio (nunca se incrusta un token en el
+// código) y vive en una constante local a esa solicitud que se pasa de forma
+// explícita a las funciones de render: no existe estado mutable a nivel de
+// módulo, así que solicitudes concurrentes no comparten ninguna URL firmada.
+// Si la firma falla, el correo se envía sin logo.
 const MESA_LOGO_BUCKET = "Media";
 const MESA_LOGO_PATH = "La Mesa Abierta Logo.png";
 const MESA_LOGO_URL_TTL_SECONDS = 60 * 60 * 24 * 365; // los correos se leen mucho después de enviarse
-let mesaLogoUrl: string | null = null;
 
 async function resolveMesaLogoUrl(client: ReturnType<typeof createClient>): Promise<string | null> {
   try {
@@ -36,8 +38,8 @@ async function resolveMesaLogoUrl(client: ReturnType<typeof createClient>): Prom
   }
 }
 
-function mesaLogoImg(): string {
-  return mesaLogoUrl ? `<img src="${mesaLogoUrl}" alt="La Mesa Abierta Logo" />` : "";
+function mesaLogoImg(logoUrl: string | null): string {
+  return logoUrl ? `<img src="${logoUrl}" alt="La Mesa Abierta Logo" />` : "";
 }
 
 serve(async (req) => {
@@ -50,7 +52,8 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
-    mesaLogoUrl = await resolveMesaLogoUrl(supabaseClient);
+    // URL firmada local a ESTA solicitud (null si la firma falla → correo sin logo).
+    const mesaLogoUrl = await resolveMesaLogoUrl(supabaseClient);
 
     const { participantId }: SignupConfirmationRequest = await req.json();
 
@@ -99,6 +102,7 @@ serve(async (req) => {
       dinnerDate,
       dinnerTime,
       registrationDeadline,
+      logoUrl: mesaLogoUrl,
     });
 
     if (!emailResult.success) {
@@ -166,6 +170,8 @@ async function sendConfirmationEmail(data: {
   dinnerDate: string;
   dinnerTime: string;
   registrationDeadline: string;
+  /** URL firmada del logo para esta solicitud, o null para enviar sin logo. */
+  logoUrl: string | null;
 }) {
   const subject = "¡Inscripción Confirmada! - La Mesa Abierta";
 
@@ -218,7 +224,7 @@ async function sendConfirmationEmail(data: {
     <body>
       <div class="container">
         <div class="header">
-          ${mesaLogoImg()}
+          ${mesaLogoImg(data.logoUrl)}
           <h1>La Mesa Abierta</h1>
           <p>Confirmación de Inscripción</p>
         </div>

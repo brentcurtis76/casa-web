@@ -135,10 +135,16 @@ Deno.test('resolve: missing variables fail naming only the variable', () => {
   expectError(() => resolveSupabaseBrowserConfig({ VITE_SUPABASE_URL: CASA_SUPABASE_URL, VITE_SUPABASE_ANON_KEY: '   ' }), 'missing');
 });
 
-Deno.test('resolve: a local URL is refused for production builds but accepted otherwise', () => {
+Deno.test('resolve: a local URL is refused for every build command and for production mode, accepted for serve and at runtime', () => {
   const env = { VITE_SUPABASE_URL: LOCAL_SUPABASE_URLS[0], VITE_SUPABASE_ANON_KEY: LOCAL_ANON };
+  for (const mode of ['production', 'staging', 'development', 'preview', 'anything-else']) {
+    expectError(() => resolveSupabaseBrowserConfig(env, { command: 'build', mode }), 'url-local-in-build');
+  }
   expectError(() => resolveSupabaseBrowserConfig(env, { mode: 'production' }), 'url-local-in-production');
+  expectError(() => resolveSupabaseBrowserConfig(env, { command: 'serve', mode: 'production' }), 'url-local-in-production');
+  assert.equal(resolveSupabaseBrowserConfig(env, { command: 'serve', mode: 'development' }).target, 'local');
   assert.equal(resolveSupabaseBrowserConfig(env, { mode: 'development' }).target, 'local');
+  // Runtime browser validation (client.ts passes import.meta.env with no options) keeps working locally.
   assert.equal(resolveSupabaseBrowserConfig(env).target, 'local');
 });
 
@@ -187,9 +193,31 @@ Deno.test('vite guard: missing variables abort, and the error carries the policy
     error instanceof ViteEnvGuardError && error.code === 'missing' && /VITE_SUPABASE_URL/.test(error.message));
 });
 
-Deno.test('vite guard: a local stack is allowed for vite dev but not for a production build', () => {
-  const plugin = supabaseBrowserEnvGuard({ VITE_SUPABASE_URL: LOCAL_SUPABASE_URLS[1], VITE_SUPABASE_ANON_KEY: LOCAL_ANON });
-  plugin.config({}, { command: 'serve', mode: 'development' });
-  assert.throws(() => plugin.config({}, { command: 'build', mode: 'production' }), (error: unknown) =>
-    error instanceof ViteEnvGuardError && error.code === 'url-local-in-production');
+Deno.test('vite guard: a local stack is allowed for vite dev but refused by every vite build, regardless of --mode', () => {
+  for (const local of LOCAL_SUPABASE_URLS) {
+    const plugin = supabaseBrowserEnvGuard({ VITE_SUPABASE_URL: local, VITE_SUPABASE_ANON_KEY: LOCAL_ANON });
+    // serve + development + local: accepted (ordinary development server).
+    plugin.config({}, { command: 'serve', mode: 'development' });
+    // build + {production, staging, development, arbitrary} + local: refused before bundling.
+    for (const mode of ['production', 'staging', 'development', 'test', 'preview']) {
+      assert.throws(
+        () => plugin.config({}, { command: 'build', mode }),
+        (error: unknown) =>
+          error instanceof ViteEnvGuardError && error.code === 'url-local-in-build' &&
+          /aborted before bundling/.test(error.message) && error.message.includes(`mode "${mode}"`),
+        `vite build --mode ${mode} must refuse a local Supabase URL`,
+      );
+    }
+    // serve + production + local is still refused (production mode never uses a local stack).
+    assert.throws(() => plugin.config({}, { command: 'serve', mode: 'production' }), (error: unknown) =>
+      error instanceof ViteEnvGuardError && error.code === 'url-local-in-production');
+  }
+});
+
+Deno.test('vite guard: the hosted CASA configuration is accepted for builds in every mode and for serve', () => {
+  for (const key of [CASA_ANON, PUBLISHABLE]) {
+    const plugin = supabaseBrowserEnvGuard({ VITE_SUPABASE_URL: CASA_SUPABASE_URL, VITE_SUPABASE_ANON_KEY: key });
+    for (const mode of ['production', 'staging', 'development']) plugin.config({}, { command: 'build', mode });
+    plugin.config({}, { command: 'serve', mode: 'development' });
+  }
 });
