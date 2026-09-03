@@ -62,7 +62,7 @@ Deno.test('URL: exactly the hosted CASA URL is accepted (trailing slash tolerate
 
 Deno.test('URL: explicitly supported local Supabase URLs are accepted', () => {
   for (const local of LOCAL_SUPABASE_URLS) assert.equal(validateSupabaseUrl(local).target, 'local');
-  assert.deepEqual([...LOCAL_SUPABASE_URLS], ['http://127.0.0.1:54321', 'http://localhost:54321']);
+  assert.deepEqual([...LOCAL_SUPABASE_URLS], ['http://127.0.0.1:54331', 'http://localhost:54331', 'http://127.0.0.1:54321', 'http://localhost:54321']);
 });
 
 Deno.test('URL: the FNE project is explicitly refused', () => {

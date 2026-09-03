@@ -17,11 +17,11 @@
     "test:e2e:debug": "playwright test --debug",
     "check:credentials": "node scripts/security/credential-guard.mjs",
     "check:functions": "cd supabase/functions && deno check --no-lock --no-remote --no-npm generate-scene-images/handler.ts _shared/liturgyAuth.ts _shared/imageFetch.ts _shared/projectBinding.ts",
-    "test:functions": "cd supabase/functions && deno test --no-lock --allow-all generate-scene-images _shared/liturgyAuth_test.ts _shared/projectBinding_test.ts",
+    "test:functions": "cd supabase/functions && deno test --no-lock --cached-only --allow-all generate-scene-images _shared/liturgyAuth_test.ts _shared/projectBinding_test.ts",
     "deploy:check:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --check",
     "deploy:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --deploy",
     "test:security": "deno test --no-config --no-lock --no-remote --no-npm --allow-read --allow-write --allow-env --allow-run=git,node,bash scripts/security/",
-    "check:security": "deno check --no-config --no-lock --no-remote --no-npm scripts/security/vite-supabase-env-guard.ts scripts/security/browser-env-policy_test.ts scripts/security/credential-guard_test.ts scripts/security/deploy-guard_test.ts scripts/security/authorization-policy_test.ts scripts/security/email-logo-isolation_test.ts",
+    "check:security": "deno check --no-config --no-lock --no-remote --no-npm scripts/security/vite-supabase-env-guard.ts scripts/security/browser-env-policy_test.ts scripts/security/credential-guard_test.ts scripts/security/deploy-guard_test.ts scripts/security/authorization-policy_test.ts scripts/security/email-logo-isolation_test.ts scripts/security/scene-images-entrypoint_test.ts",
     "lint:deno": "deno lint --no-config scripts/security supabase/functions/generate-scene-images supabase/functions/_shared src/integrations/supabase/config.ts src/integrations/supabase/client.ts src/integrations/supabase/__tests__/config.test.ts src/components/liturgia-builder/editors/imageGenerationAccess.ts src/components/liturgia-builder/editors/__tests__/imageGenerationAccess.test.ts vite.config.ts"
   },
   "dependencies": {

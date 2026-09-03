@@ -33,8 +33,14 @@ export const CASA_SUPABASE_URL = `https://${CASA_PROJECT_REF}.supabase.co`;
 /** Project refs that must be refused explicitly (unrelated FNE project). */
 export const FORBIDDEN_PROJECT_REFS: readonly string[] = ['sxlogxqzmarhqsblxmtj'];
 
-/** Local `supabase start` API URLs that are explicitly supported. */
+/**
+ * Local `supabase start` API URLs that are explicitly supported: this
+ * repository's stack listens on 54331 (`[api] port` in supabase/config.toml);
+ * 54321 is the CLI default kept for stacks started with a default config.
+ */
 export const LOCAL_SUPABASE_URLS: readonly string[] = [
+  'http://127.0.0.1:54331',
+  'http://localhost:54331',
   'http://127.0.0.1:54321',
   'http://localhost:54321',
 ];

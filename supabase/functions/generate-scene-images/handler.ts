@@ -616,6 +616,9 @@ ${prompt}`;
   }
 }
 
+/** Client-facing message for a provider response that produced no image. */
+export const NO_IMAGE_ERROR = 'El servicio de imágenes no devolvió una imagen.';
+
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -1359,7 +1362,11 @@ Instrucciones críticas:
         console.error(`[generate-scene-images] Variation ${i} failed: ${describeError(result.reason)}`);
         errors.push(result.reason?.message || String(result.reason));
       } else {
-        console.log(`[generate-scene-images] Variation ${i} returned empty image`);
+        // A provider 200 that carries no usable image is an upstream failure:
+        // recorded like any other so the caller never receives a silent,
+        // image-less "success". Metadata only — the response body is not logged.
+        console.warn(`[generate-scene-images] Variation ${i} returned no usable image`);
+        errors.push(NO_IMAGE_ERROR);
       }
     });
 

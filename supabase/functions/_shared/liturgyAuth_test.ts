@@ -9,6 +9,8 @@ import {
   type CheckPermissionOutcome,
   createSupabaseAuthzDeps,
   type GetUserOutcome,
+  LITURGY_WRITER_PERMISSION,
+  readUnverifiedJwtRole,
   requireLiturgyWriter,
   requirePermission,
   type RequirePermissionDeps,
@@ -479,4 +481,60 @@ Deno.test("T-0.9 supabase adapter forwards oraciones:write via requirePermission
     Object.prototype.hasOwnProperty.call(rpcCalls[0].args, "p_user"),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Credential-shaped bearer tokens (anon key, service_role) are refused before
+// any backend call. Tokens are synthetic, built at runtime.
+// ---------------------------------------------------------------------------
+
+function b64url(value: unknown): string {
+  return btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fakeJwt(payload: Record<string, unknown>): string {
+  return [b64url({ alg: "HS256", typ: "JWT" }), b64url(payload), "x".repeat(43)].join(".");
+}
+function bearerRequest(token: string): Request {
+  return new Request("https://edge.test/fn", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+}
+
+Deno.test("readUnverifiedJwtRole reads the role claim and returns undefined for anything else", () => {
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ role: "authenticated", sub: "u1" })), "authenticated");
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ role: "service_role" })), "service_role");
+  assertStrictEquals(readUnverifiedJwtRole(fakeJwt({ sub: "u1" })), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("t".repeat(40)), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("a.b"), undefined);
+  assertStrictEquals(readUnverifiedJwtRole("a.!!!.c"), undefined);
+});
+
+Deno.test("a service_role credential presented as bearer is refused with 401 and never reaches the backend", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requirePermission(bearerRequest(fakeJwt({ role: "service_role", iss: "supabase" })), deps, {
+    resource: RESOURCE,
+    action: ACTION,
+    corsHeaders: CORS,
+  });
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) {
+    assertStrictEquals(result.response.status, 401);
+    assertEquals(await result.response.json(), { success: false, code: "UNAUTHORIZED" });
+  }
+  assertEquals(calls, []);
+});
+
+Deno.test("the anon key presented as bearer is refused with 401 and never reaches the backend", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requireLiturgyWriter(bearerRequest(fakeJwt({ role: "anon", iss: "supabase" })), deps, CORS);
+  assertStrictEquals(result.ok, false);
+  if (!result.ok) assertStrictEquals(result.response.status, 401);
+  assertEquals(calls, []);
+});
+
+Deno.test("a user-session token still goes through the backend, and the shared permission constant is liturgy_builder/write", async () => {
+  const { deps, calls } = makeDeps({});
+  const result = await requireLiturgyWriter(bearerRequest(fakeJwt({ role: "authenticated", sub: USER.id })), deps, CORS);
+  assertStrictEquals(result.ok, true);
+  assertStrictEquals(calls.length, 2);
+  assertEquals(calls[1], { kind: "checkPermission", userId: USER.id, resource: "liturgy_builder", action: "write" });
+  assertEquals({ ...LITURGY_WRITER_PERMISSION }, { resource: "liturgy_builder", action: "write" });
 });

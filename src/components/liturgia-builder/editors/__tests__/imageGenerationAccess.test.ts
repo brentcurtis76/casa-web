@@ -27,6 +27,12 @@ describe('resolveImageGenerationAccess', () => {
     });
   });
 
+  it('is inert (allowed, no reason) when rendered without an AuthProvider, and still gates when one is present', () => {
+    expect(resolveImageGenerationAccess({ loading: true, canWrite: false, hasAuthContext: false })).toEqual({ allowed: true, pending: false, reason: null });
+    expect(resolveImageGenerationAccess({ loading: false, canWrite: false, hasAuthContext: true }).allowed).toBe(false);
+    expect(resolveImageGenerationAccess({ loading: true, canWrite: true, hasAuthContext: true }).pending).toBe(true);
+  });
+
   it('enables controls for users with write permission', () => {
     expect(resolveImageGenerationAccess({ loading: false, canWrite: true })).toEqual({ allowed: true, pending: false, reason: null });
   });

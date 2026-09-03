@@ -20,4 +20,7 @@ Deno.test('controls stay disabled while loading and for users without write perm
   assert.equal(resolveImageGenerationAccess({ loading: false, canWrite: false }).allowed, false);
   assert.equal(resolveImageGenerationAccess({ loading: false, canWrite: true }).allowed, true);
   assert.equal(resolveImageGenerationAccess({ loading: false, canWrite: false }).reason?.includes('Constructor de Liturgias'), true);
+  // Without an AuthProvider (isolated component render) the UI gate is inert; the Edge Function enforces.
+  assert.equal(resolveImageGenerationAccess({ loading: true, canWrite: false, hasAuthContext: false }).allowed, true);
+  assert.equal(resolveImageGenerationAccess({ loading: false, canWrite: false, hasAuthContext: true }).allowed, false);
 });

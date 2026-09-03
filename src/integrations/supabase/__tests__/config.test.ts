@@ -49,7 +49,7 @@ describe('resolveSupabaseBrowserConfig (runtime defense in depth)', () => {
   });
 
   it('accepts the explicitly supported local Supabase stack', () => {
-    for (const local of ['http://127.0.0.1:54321', 'http://localhost:54321']) {
+    for (const local of ['http://127.0.0.1:54331', 'http://localhost:54331', 'http://127.0.0.1:54321']) {
       expect(
         resolveSupabaseBrowserConfig({ VITE_SUPABASE_URL: local, VITE_SUPABASE_ANON_KEY: CASA_ANON_JWT }).target,
       ).toBe('local');

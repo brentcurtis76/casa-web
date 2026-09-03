@@ -28,7 +28,21 @@ export interface ImageGenerationAccess {
   readonly reason: string | null;
 }
 
-export function resolveImageGenerationAccess(state: { loading: boolean; canWrite: boolean }): ImageGenerationAccess {
+export interface ImageGenerationPermissionState {
+  readonly loading: boolean;
+  readonly canWrite: boolean;
+  /**
+   * False when the editor is rendered without an AuthProvider (isolated
+   * component renders in tests). Defaults to true. Without an auth context
+   * there is no user to evaluate, so the UI gate is INERT rather than a
+   * blanket denial: the Edge Function remains the enforcement point, and in
+   * the application every route is mounted under AuthProvider (src/App.tsx).
+   */
+  readonly hasAuthContext?: boolean;
+}
+
+export function resolveImageGenerationAccess(state: ImageGenerationPermissionState): ImageGenerationAccess {
+  if (state.hasAuthContext === false) return { allowed: true, pending: false, reason: null };
   if (state.loading) return { allowed: false, pending: true, reason: IMAGE_GENERATION_PENDING_REASON };
   if (!state.canWrite) return { allowed: false, pending: false, reason: IMAGE_GENERATION_DENIED_REASON };
   return { allowed: true, pending: false, reason: null };

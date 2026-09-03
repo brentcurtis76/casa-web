@@ -13,6 +13,7 @@ import { serve } from 'std/http/server.ts';
 import { createClient } from '@supabase/supabase-js';
 
 import { createSupabaseAuthzDeps } from '../_shared/liturgyAuth.ts';
+import { assertCasaProject } from '../_shared/projectBinding.ts';
 import { createHandler } from './handler.ts';
 
 const apiKey = Deno.env.get('GOOGLE_AI_API_KEY') ?? '';
@@ -21,6 +22,9 @@ const flashModel = Deno.env.get('GEMINI_IMAGE_MODEL_FLASH') ?? 'gemini-3.1-flash
 const proModel = Deno.env.get('GEMINI_IMAGE_MODEL_PRO') ?? 'gemini-3-pro-image';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+// CASA project binding: refuse to boot on any other project (or an unset URL)
+// before a client is built or the server starts. See _shared/projectBinding.ts.
+assertCasaProject(supabaseUrl, 'generate-scene-images');
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {

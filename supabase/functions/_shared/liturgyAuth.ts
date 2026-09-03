@@ -71,6 +71,33 @@ function fail(
   };
 }
 
+/**
+ * Reads the `role` claim of a JWT-shaped bearer token WITHOUT verifying it.
+ * Used only to refuse, before any network call, tokens that can never
+ * represent a user session: the project's `anon` key and any `service_role`
+ * credential a caller might present. Everything else (including malformed
+ * tokens) is still decided by `deps.getUser`, exactly as before.
+ */
+export function readUnverifiedJwtRole(token: string): string | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((p) => p.length === 0 || !/^[A-Za-z0-9_-]+$/.test(p))) {
+    return undefined;
+  }
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const payload: unknown = JSON.parse(atob(padded));
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+    const role = (payload as { role?: unknown }).role;
+    return typeof role === "string" ? role : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Bearer roles that are credentials, never user sessions. Refused up front. */
+const NON_SESSION_ROLES: ReadonlySet<string> = new Set(["service_role", "anon"]);
+
 export async function requirePermission(
   req: Request,
   deps: RequirePermissionDeps,
@@ -84,6 +111,12 @@ export async function requirePermission(
   }
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) {
+    return fail(401, "UNAUTHORIZED", corsHeaders);
+  }
+  // The anon key or a service_role credential presented as the bearer token is
+  // never a user session: refuse it here, with no backend round trip.
+  const role = readUnverifiedJwtRole(token);
+  if (role !== undefined && NON_SESSION_ROLES.has(role)) {
     return fail(401, "UNAUTHORIZED", corsHeaders);
   }
 

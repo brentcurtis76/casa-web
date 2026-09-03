@@ -813,6 +813,7 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
   const imageGenerationAccess = resolveImageGenerationAccess({
     loading: imagePermissions.loading,
     canWrite: imagePermissions.canWrite,
+    hasAuthContext: imagePermissions.hasAuthContext,
   });
   const canGenerateImages = imageGenerationAccess.allowed;
 
@@ -2907,7 +2908,7 @@ Instrucciones críticas:
         setRefiningCharId(null);
       }
     },
-    [story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineCharacterSheetTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine scene image — delega en `makeRefineSceneTask`.
@@ -2962,7 +2963,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [canGenerateImages, invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     sceneExcludedCharacters,
     sceneIncludedCharacters,
@@ -3001,7 +3002,7 @@ Instrucciones críticas:
         setRefiningSceneNumber(null);
       }
     },
-    [story, buildRefineSceneTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineSceneTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine cover — delega en `makeRefineCoverTask`.
@@ -3047,7 +3048,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [canGenerateImages, invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     coverExcludedCharacters,
     coverReferenceImage,
@@ -3081,7 +3082,7 @@ Instrucciones críticas:
         setIsRefiningCover(false);
       }
     },
-    [story, buildRefineCoverTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineCoverTask, buildRunIdentity, pipeline],
   );
 
   // Builder: refine end image — delega en `makeRefineEndTask`.
@@ -3119,7 +3120,7 @@ Instrucciones críticas:
       getLiveIdentity: getDraftIdentity,
       enqueueGeneratedSnapshot,
     });
-  }, [canGenerateImages, invokeSceneImagesWithFeedback, 
+  }, [invokeSceneImagesWithFeedback,
     story,
     endReferenceImage,
     editingEndPrompt,
@@ -3152,7 +3153,7 @@ Instrucciones críticas:
         setIsRefiningEnd(false);
       }
     },
-    [story, buildRefineEndTask, buildRunIdentity, pipeline],
+    [canGenerateImages, story, buildRefineEndTask, buildRunIdentity, pipeline],
   );
 
   // Subir imagen de personaje manualmente
@@ -3165,7 +3166,7 @@ Instrucciones críticas:
       return { ...prev, [characterId]: [...existing, base64] };
     });
     setSelectedCharacterSheets(prev => ({ ...prev, [characterId]: newIndex }));
-  }, [canGenerateImages, characterSheetOptions]);
+  }, [characterSheetOptions]);
 
   // Subir imagen de escena manualmente
   const handleUploadSceneImage = useCallback((sceneNumber: number, base64: string) => {

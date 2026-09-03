@@ -30,7 +30,7 @@ project.
 
 ```bash
 npm run check:functions        # deno check (offline) of the handler and the shared guard/fetch modules
-npm run test:functions         # deno test of this function and the shared guard (needs @std/assert cached once)
+npm run test:functions         # deno test (--cached-only: never fetches; run `cd supabase/functions && deno cache _shared/*_test.ts` once online)
 npm run deploy:check:scene-images   # verify CASA binding + verify_jwt without deploying
 npm run deploy:scene-images         # supabase functions deploy generate-scene-images --project-ref <casa-ref>
 ```
