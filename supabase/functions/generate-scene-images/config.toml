@@ -1,2 +1,6 @@
+# generate-scene-images — CASA project only (ref in ../../config.toml).
+# The gateway must verify the project JWT; the handler additionally verifies the
+# user session and the liturgy_builder/write permission. Never deploy this
+# function with --no-verify-jwt. Deploy via scripts/security/deploy-generate-scene-images.sh.
 [functions.generate-scene-images]
-verify_jwt = false
+verify_jwt = true

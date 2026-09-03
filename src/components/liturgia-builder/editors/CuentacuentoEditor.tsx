@@ -42,6 +42,8 @@ import type { SlideGroup, Slide } from '@/types/shared/slide';
 import type { Story, StoryCharacter, StoryScene, StoryStatus } from '@/types/shared/story';
 import { createPreviewSlideGroup } from '@/lib/cuentacuentos/storyToSlides';
 import { useCuentacuentosDraft, type CuentacuentosDraftFull } from '@/hooks/useCuentacuentosDraft';
+import { usePermissions } from '@/hooks/usePermissions';
+import { IMAGE_GENERATION_PERMISSION, resolveImageGenerationAccess } from './imageGenerationAccess';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -564,6 +566,30 @@ const CuentacuentoEditor: React.FC<CuentacuentoEditorProps> = ({
     declineRecovery,
     saveDraftNow,
   } = useCuentacuentosDraft({ liturgyId: context.id });
+
+  // Permiso para generar imágenes con IA. Misma política que la Edge Function
+  // generate-scene-images (liturgy_builder / write): sin permiso, los controles de
+  // generación se deshabilitan en vez de fallar con 403.
+  const imagePermissions = usePermissions(IMAGE_GENERATION_PERMISSION.resource);
+  const imageGenerationAccess = resolveImageGenerationAccess({
+    loading: imagePermissions.loading,
+    canWrite: imagePermissions.canWrite,
+  });
+  const canGenerateImages = imageGenerationAccess.allowed;
+
+  const renderImageGenerationNotice = () => {
+    if (imageGenerationAccess.allowed) return null;
+    return (
+      <div
+        role="status"
+        className="p-3 rounded-lg flex items-start gap-2"
+        style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}20`, border: `1px solid ${CASA_BRAND.colors.primary.amber}` }}
+      >
+        <AlertCircle size={16} style={{ color: CASA_BRAND.colors.primary.amber, marginTop: 2, flexShrink: 0 }} />
+        <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>{imageGenerationAccess.reason}</p>
+      </div>
+    );
+  };
 
   // Estado del diálogo de confirmación de eliminación
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -2757,6 +2783,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera y selecciona una imagen de referencia para cada personaje. Esto ayudará a mantener consistencia visual en las escenas.
@@ -2779,7 +2806,8 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
-                  disabled={generatingCharacterIndex !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  disabled={!canGenerateImages || generatingCharacterIndex !== null || !(editingCharacterPrompt[character.id] ?? character.visualDescription).trim()}
+                  title={imageGenerationAccess.reason ?? undefined}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -2841,7 +2869,7 @@ Instrucciones críticas:
                 selectedIndex={selectedCharacterSheets[character.id] ?? null}
                 onSelect={(idx) => setSelectedCharacterSheets(prev => ({ ...prev, [character.id]: idx }))}
                 onSave={() => handleSaveCharacterImage(character.id)}
-                onRegenerate={() => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id])}
+                onRegenerate={canGenerateImages ? () => handleGenerateCharacterSheet(character, index, editingCharacterPrompt[character.id]) : undefined}
                 isGenerating={generatingCharacterIndex === index}
                 isSaving={savingCharacter === character.id}
                 savedMessage={savedCharacterMessage[character.id]}
@@ -2943,6 +2971,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera imágenes para cada escena. Puedes ver/editar el prompt y controlar qué imágenes de referencia se usan. ({scenesWithImages}/{story.scenes.length} generadas, {scenesSelected}/{story.scenes.length} seleccionadas)
@@ -2998,7 +3027,8 @@ Instrucciones críticas:
                       <button
                         type="button"
                         onClick={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
-                        disabled={generatingSceneIndex !== null}
+                        disabled={!canGenerateImages || generatingSceneIndex !== null}
+                        title={imageGenerationAccess.reason ?? undefined}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                         style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                       >
@@ -3393,7 +3423,7 @@ Instrucciones críticas:
                       selectedIndex={selectedSceneImages[scene.number] ?? null}
                       onSelect={(idx) => setSelectedSceneImages(prev => ({ ...prev, [scene.number]: idx }))}
                       onSave={() => handleSaveSceneImage(scene.number)}
-                      onRegenerate={() => handleGenerateSceneImage(scene, editingScenePrompt[scene.number])}
+                      onRegenerate={canGenerateImages ? () => handleGenerateSceneImage(scene, editingScenePrompt[scene.number]) : undefined}
                       isGenerating={generatingSceneIndex === scene.number}
                       isSaving={savingScene === scene.number}
                       savedMessage={savedSceneMessage[scene.number]}
@@ -3447,6 +3477,7 @@ Instrucciones críticas:
 
     return (
       <div className="space-y-4">
+        {renderImageGenerationNotice()}
         <div className="p-3 rounded-lg" style={{ backgroundColor: `${CASA_BRAND.colors.amber.light}10`, borderLeft: `4px solid ${CASA_BRAND.colors.primary.amber}` }}>
           <p className="text-sm" style={{ color: CASA_BRAND.colors.secondary.grayDark }}>
             Genera la portada del cuento y la imagen final de "Fin".
@@ -3488,7 +3519,8 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateCover()}
-                  disabled={generatingCover}
+                  disabled={!canGenerateImages || generatingCover}
+                  title={imageGenerationAccess.reason ?? undefined}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -3751,7 +3783,7 @@ Instrucciones críticas:
                 selectedIndex={selectedCover}
                 onSelect={setSelectedCover}
                 onSave={handleSaveCover}
-                onRegenerate={() => handleGenerateCover()}
+                onRegenerate={canGenerateImages ? () => handleGenerateCover() : undefined}
                 isGenerating={generatingCover}
                 isSaving={savingCover}
                 savedMessage={savedCoverMessage}
@@ -3799,7 +3831,8 @@ Instrucciones críticas:
                 <button
                   type="button"
                   onClick={() => handleGenerateEnd()}
-                  disabled={generatingEnd}
+                  disabled={!canGenerateImages || generatingEnd}
+                  title={imageGenerationAccess.reason ?? undefined}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
                 >
@@ -3998,7 +4031,7 @@ Instrucciones críticas:
                 selectedIndex={selectedEnd}
                 onSelect={setSelectedEnd}
                 onSave={handleSaveEnd}
-                onRegenerate={() => handleGenerateEnd()}
+                onRegenerate={canGenerateImages ? () => handleGenerateEnd() : undefined}
                 isGenerating={generatingEnd}
                 isSaving={savingEnd}
                 savedMessage={savedEndMessage}

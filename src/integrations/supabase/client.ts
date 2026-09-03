@@ -1,11 +1,19 @@
-// Updated to use environment variables for Vercel deployment
+/**
+ * Supabase browser client.
+ *
+ * Configuration comes exclusively from Vite environment variables
+ * (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY). The same policy in ./config.ts
+ * is enforced at build/start time by vite.config.ts (so a privileged key or a
+ * wrong project can never be bundled) and re-checked here at runtime as
+ * defense in depth. No URL or key is committed in this repository.
+ */
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
+import type { Database } from './types.ts';
+import { resolveSupabaseBrowserConfig } from './config.ts';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://mulsqxfhxxdsadxsljss.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11bHNxeGZoeHhkc2FkeHNsanNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM0NzE2ODAsImV4cCI6MjA1OTA0NzY4MH0.K4KKonF8Sd_PbFZtunMTuAAf2rFCGjvuecW3Hn46Cb8";
+const { url, anonKey } = resolveSupabaseBrowserConfig(import.meta.env);
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const supabase = createClient<Database>(url, anonKey);

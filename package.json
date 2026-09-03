@@ -14,7 +14,15 @@
     "test:coverage": "vitest --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "check:credentials": "node scripts/security/credential-guard.mjs",
+    "check:functions": "deno check --no-config --no-lock --no-remote --no-npm supabase/functions/generate-scene-images/index.ts supabase/functions/generate-scene-images/handler_test.ts",
+    "test:functions": "deno test --no-config --no-lock --no-remote --no-npm supabase/functions/generate-scene-images/",
+    "deploy:check:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --check",
+    "deploy:scene-images": "bash scripts/security/deploy-generate-scene-images.sh --deploy",
+    "test:security": "deno test --no-config --no-lock --no-remote --no-npm --allow-read --allow-write --allow-env --allow-run=git,node,bash scripts/security/",
+    "check:security": "deno check --no-config --no-lock --no-remote --no-npm scripts/security/vite-supabase-env-guard.ts scripts/security/browser-env-policy_test.ts scripts/security/credential-guard_test.ts scripts/security/deploy-guard_test.ts scripts/security/authorization-policy_test.ts",
+    "lint:deno": "deno lint --no-config scripts/security supabase/functions/generate-scene-images src/integrations/supabase/config.ts src/integrations/supabase/client.ts src/integrations/supabase/__tests__/config.test.ts src/components/liturgia-builder/editors/imageGenerationAccess.ts src/components/liturgia-builder/editors/__tests__/imageGenerationAccess.test.ts vite.config.ts"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

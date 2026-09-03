@@ -85,7 +85,7 @@ ORDER BY p.role_preference;
 ### Error: "Resend API key not configured"
 ```bash
 # Set the API key again
-supabase secrets set RESEND_API_KEY=re_5hB9PthG_5uGjwwhiaAVPZ1MoHSLTK2uv
+supabase secrets set RESEND_API_KEY=<your-resend-api-key>
 ```
 
 ### Error: "Month must be in 'matched' status"
