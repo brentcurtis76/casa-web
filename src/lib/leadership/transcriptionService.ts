@@ -24,6 +24,11 @@ function browserConfig(): { url: string; anonKey: string } {
  * library's generic "non-2xx response" message.
  */
 export async function triggerTranscription(recordingId: string): Promise<void> {
+  // Resolve the validated browser configuration at call time. A misconfigured
+  // environment throws SupabaseConfigError here (naming the variable, never
+  // echoing a value) before any status is touched or any request is sent.
+  const { url: supabaseUrl, anonKey } = browserConfig();
+
   // Mark as pending up-front so the UI reflects the attempt.
   const { error: updateError } = await supabase
     .from('church_leadership_recordings')
@@ -49,12 +54,12 @@ export async function triggerTranscription(recordingId: string): Promise<void> {
 
   let response: Response;
   try {
-    response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-meeting`, {
+    response = await fetch(`${supabaseUrl}/functions/v1/transcribe-meeting`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
+        apikey: anonKey,
       },
       body: JSON.stringify({ recording_id: recordingId }),
     });

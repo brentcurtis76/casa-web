@@ -6062,10 +6062,11 @@ Instrucciones críticas:
                   // `pipeline.isRunning` es el booleano de render y acá basta:
                   // esto es el pre-filtro; la garantía vive en el handler.
                   disabled={!canGenerateImages || isItemBusy('cover') || isRefiningCover || isApproving || pipeline.isRunning}
-                  title={imageGenerationAccess.reason ?? undefined}
+                  // Una sola `title`: la razón de permiso (denegado/pendiente) manda;
+                  // si no hay, el tooltip de "2 más" cuando ya existen options.
+                  title={imageGenerationAccess.reason ?? (coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined)}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-                  title={coverOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('cover') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
@@ -6416,10 +6417,10 @@ Instrucciones críticas:
                   // PH/G5 [B1-PM] — Espejo de la portada: el pre-filtro visual
                   // cubre la corrida global y el envelope, no sólo este ítem.
                   disabled={!canGenerateImages || isItemBusy('end') || isRefiningEnd || isApproving || pipeline.isRunning}
-                  title={imageGenerationAccess.reason ?? undefined}
+                  // Una sola `title`: espejo de la portada.
+                  title={imageGenerationAccess.reason ?? (endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined)}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
                   style={{ backgroundColor: CASA_BRAND.colors.primary.amber, color: 'white' }}
-                  title={endOptions.length > 0 ? 'Genera 2 opciones adicionales sin descartar las existentes' : undefined}
                 >
                   {phaseOf('end') === 'generating' ? (
                     <><Loader2 size={14} className="animate-spin" /> Generando...</>
