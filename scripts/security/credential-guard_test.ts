@@ -7,13 +7,13 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as guard from './credential-guard.mjs';
 
-const { DEFAULT_MAX_FILE_BYTES, RULES, isPlaceholder, listIndexEntries, listTrackedFiles, locateWorktreeEntry, scanText } = guard;
+const { DEFAULT_MAX_FILE_BYTES, RULES, isDirectInvocation, isPlaceholder, listIndexEntries, listTrackedFiles, locateWorktreeEntry, scanText } = guard;
 
 interface Finding {
   ruleId: string;
@@ -433,4 +433,143 @@ Deno.test('regular staged and unstaged files still scan correctly alongside a tr
   assert.equal(json.scannedBlobs, 4);
   assert.equal(stdout.includes(stagedToken.split('.')[1]), false);
   assert.equal(stdout.includes(worktreeToken.split('.')[1]), false);
+});
+
+// ─── False-green paths: unreadable files and legal POSIX filenames ───────────
+
+Deno.test('an unreadable modified tracked file fails closed (exit 2): the clean index copy is never a false green', () => {
+  const token = fakeJwt({ role: 'anon', ref: 'unreadable-test' });
+  const repo = tempGitRepo({ 'README.md': '# clean\n', 'src/config.ts': 'export const KEY = import.meta.env.VITE_KEY;\n' });
+  const target = join(repo, 'src/config.ts');
+  writeFileSync(target, `export const KEY = "${token}";\n`);
+  chmodSync(target, 0o000);
+  try {
+    // A privileged user (root) ignores file modes, so the permission error cannot be produced there.
+    let stillReadable = true;
+    try {
+      readFileSync(target);
+    } catch {
+      stillReadable = false;
+    }
+    if (stillReadable) return;
+    const { status, json, stdout } = jsonRun(repo);
+    assert.equal(status, 2, 'must never exit 0 when the working-tree copy exists but cannot be read');
+    assert.equal(json.ok, false);
+    assert.match(json.error ?? '', /src\/config\.ts: working-tree file could not be read \(EACCES\)/);
+    assert.equal('findings' in json, false);
+    assert.equal(stdout.includes(token.split('.')[1]), false);
+    assert.equal(runGuard(['--root', repo]).status, 2);
+  } finally {
+    chmodSync(target, 0o644);
+  }
+});
+
+Deno.test('a POSIX filename containing a backslash is scanned, and a genuinely deleted tracked file is still scanned from the index', () => {
+  if (Deno.build.os === 'windows') return; // backslash is a separator there, not a filename character
+  const worktreeToken = fakeJwt({ role: 'anon', ref: 'backslash-test' });
+  const indexToken = fakeJwt({ role: 'service_role', ref: 'deleted-test' });
+  const name = 'src/name\\part.ts';
+  const repo = tempGitRepo({
+    'README.md': '# clean\n',
+    [name]: 'export const KEY = import.meta.env.VITE_KEY;\n',
+    'deleted.js': `const KEY = "${indexToken}";\n`,
+  });
+  writeFileSync(join(repo, name), `export const KEY = "${worktreeToken}";\n`);
+  rmSync(join(repo, 'deleted.js'));
+  assert.equal(locateWorktreeEntry(realpathSync(repo), name).kind, 'file', 'the backslash must not be treated as a separator');
+
+  const { status, json, stdout } = jsonRun(repo);
+  assert.equal(status, 1);
+  assert.deepEqual(
+    json.findings.map((finding) => [finding.file, finding.ruleId, finding.source]).sort(),
+    [['deleted.js', 'jwt-literal', 'index'], [name, 'jwt-literal', 'worktree']],
+  );
+  assert.equal(json.missingWorktree, 1, 'only the deleted file is missing from the working tree');
+  assert.equal(json.scannedFiles, 2);
+  assert.equal(json.scannedBlobs, 3);
+  assert.equal(stdout.includes(worktreeToken.split('.')[1]), false);
+  assert.equal(stdout.includes(indexToken.split('.')[1]), false);
+});
+
+// ─── Direct-invocation detection through noncanonical paths ──────────────────
+
+/** Spawns Node on `script` with the guard's usual minimal environment. */
+function runNode(script: string, args: string[], cwd: string) {
+  const result = spawnSync('node', [script, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: { PATH: Deno.env.get('PATH') ?? '/usr/bin:/bin', HOME: Deno.env.get('HOME') ?? '/tmp' },
+  });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+Deno.test('isDirectInvocation compares canonical identities and never runs main on a plain import', () => {
+  const base = mkdtempSync(join(tmpdir(), 'casa-guard-ident-'));
+  const guardUrl = pathToFileURL(GUARD).href;
+  assert.equal(isDirectInvocation(GUARD, guardUrl), true);
+  assert.equal(isDirectInvocation(join(HERE, '..', 'security', 'credential-guard.mjs'), guardUrl), true, 'non-normalised path');
+  assert.equal(isDirectInvocation(join(HERE, 'credential-guard_test.ts'), guardUrl), false, 'another file');
+  assert.equal(isDirectInvocation(join(base, 'does-not-exist.mjs'), guardUrl), false, 'unresolvable argv[1] never runs');
+  assert.equal(isDirectInvocation(undefined, guardUrl), false);
+  assert.equal(isDirectInvocation('', guardUrl), false);
+  try {
+    symlinkSync(HERE, join(base, 'alias'), 'dir');
+  } catch {
+    return; // directory symlinks unavailable on this host; the CLI test below covers the rest where they are
+  }
+  assert.equal(isDirectInvocation(join(base, 'alias', 'credential-guard.mjs'), guardUrl), true, 'symlinked directory alias');
+});
+
+Deno.test('CLI invoked through a symlinked directory alias runs main: summary, exit codes and value suppression intact; import stays side-effect free', () => {
+  const base = mkdtempSync(join(tmpdir(), 'casa-guard-alias-'));
+  const alias = join(base, 'scripts-alias');
+  try {
+    symlinkSync(HERE, alias, 'dir');
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'EPERM' || code === 'EACCES' || code === 'ENOTSUP' || code === 'ENOSYS') {
+      console.warn(`skipping: directory symlinks cannot be created here (${code})`);
+      return;
+    }
+    throw error;
+  }
+  const guardViaAlias = join(alias, 'credential-guard.mjs');
+  assert.notEqual(realpathSync(guardViaAlias), guardViaAlias, 'the alias must be a noncanonical path to the guard');
+  assert.equal(realpathSync(guardViaAlias), realpathSync(GUARD));
+
+  // 1. A clean repository through the alias emits the normal, nonempty summary and exits 0.
+  const clean = tempGitRepo({ 'README.md': '# clean\n', 'src/ok.ts': 'export const KEY = import.meta.env.VITE_KEY;\n' });
+  const ok = runNode(guardViaAlias, ['--root', clean], base);
+  assert.equal(ok.status, 0);
+  assert.match(ok.stdout, /^CASA credential guard — 2 tracked paths: 2 working-tree files and 2 index blobs scanned/);
+  assert.match(ok.stdout, /OK — no credential-shaped literals found\./);
+  const canonical = runNode(GUARD, ['--root', clean], base);
+  assert.equal(canonical.stdout, ok.stdout, 'alias and canonical invocations must produce the same scan');
+
+  // 2. A fake credential through the alias exits 1, and the value is absent from stdout and stderr.
+  const token = fakeJwt({ role: 'service_role', ref: 'alias-test' });
+  const leak = tempGitRepo({ 'README.md': '# clean\n', 'src/leak.ts': `export const KEY = "${token}";\n` });
+  const bad = runNode(guardViaAlias, ['--root', leak], base);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stdout, /FAIL — 1 credential-shaped literal/);
+  assert.match(bad.stdout, /jwt-literal\s+src\/leak\.ts:1:21/);
+  assert.equal(`${bad.stdout}${bad.stderr}`.includes(token.split('.')[1]), false, 'the value must never be printed');
+  assert.equal(`${bad.stdout}${bad.stderr}`.includes(token), false);
+  const badJson = runNode(guardViaAlias, ['--json', '--root', leak], base);
+  assert.equal(badJson.status, 1);
+  assert.equal((JSON.parse(badJson.stdout) as JsonResult).findings.length, 1);
+
+  // 3. Fail-closed paths still fail closed (exit 2, never a silent 0) through the alias.
+  const missing = runNode(guardViaAlias, ['--root', join(base, 'no-such-repo')], base);
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /cannot scan/);
+
+  // 4. Importing the module (via the alias, from a script whose cwd is the leaking repo) runs nothing:
+  //    if main() ran, the process would print FAIL and exit 1.
+  const importer = join(base, 'importer.mjs');
+  writeFileSync(importer, `import * as g from ${JSON.stringify(pathToFileURL(guardViaAlias).href)};\nconsole.log('IMPORT_ONLY', typeof g.main, typeof g.scanRepository);\n`);
+  const imported = runNode(importer, [], leak);
+  assert.equal(imported.status, 0);
+  assert.equal(imported.stdout.trim(), 'IMPORT_ONLY function function');
+  assert.equal(imported.stderr, '');
 });

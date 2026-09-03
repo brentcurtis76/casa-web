@@ -6,6 +6,9 @@
  * variables, wrong or FNE project, service_role / sb_secret_ / sbp_ key, unknown
  * JWT role, malformed JWT, arbitrary format) throws, so `vite dev` and
  * `vite build` abort before any browser asset is transformed or emitted.
+ * The Vite COMMAND is forwarded to the policy: every `vite build`, whatever
+ * `--mode` it is given, refuses a local Supabase URL; only `serve` (the
+ * development server) may use the local stack.
  * The error names the variable and the reason; it never prints a value.
  *
  * The plugin object is typed structurally (no import from 'vite') so it can be
@@ -55,7 +58,7 @@ export function supabaseBrowserEnvGuard(env: Record<string, string | undefined>)
     enforce: 'pre',
     config(_userConfig: unknown, hookEnv: ConfigHookEnv): void {
       try {
-        assertBrowserSupabaseEnv(browserEnv, { mode: hookEnv.mode });
+        assertBrowserSupabaseEnv(browserEnv, { command: hookEnv.command, mode: hookEnv.mode });
       } catch (error) {
         if (error instanceof SupabaseConfigError) {
           throw new ViteEnvGuardError(

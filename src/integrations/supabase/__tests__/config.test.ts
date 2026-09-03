@@ -56,6 +56,17 @@ describe('resolveSupabaseBrowserConfig (runtime defense in depth)', () => {
     }
   });
 
+  it('refuses the local stack for every build command (any mode) but not for the dev server or at runtime', () => {
+    const env = { VITE_SUPABASE_URL: 'http://127.0.0.1:54321', VITE_SUPABASE_ANON_KEY: CASA_ANON_JWT };
+    for (const mode of ['production', 'staging', 'development']) {
+      expect(codeOf(() => resolveSupabaseBrowserConfig(env, { command: 'build', mode }))).toBe('url-local-in-build');
+    }
+    expect(codeOf(() => resolveSupabaseBrowserConfig(env, { mode: 'production' }))).toBe('url-local-in-production');
+    expect(resolveSupabaseBrowserConfig(env, { command: 'serve', mode: 'development' }).target).toBe('local');
+    expect(resolveSupabaseBrowserConfig(env).target).toBe('local');
+    expect(resolveSupabaseBrowserConfig({ VITE_SUPABASE_URL: CASA_SUPABASE_URL, VITE_SUPABASE_ANON_KEY: CASA_ANON_JWT }, { command: 'build', mode: 'staging' }).target).toBe('casa');
+  });
+
   it('fails clearly when a variable is missing, naming the variable only', () => {
     try {
       resolveSupabaseBrowserConfig({ VITE_SUPABASE_ANON_KEY: CASA_ANON_JWT });

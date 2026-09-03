@@ -6,14 +6,17 @@
  *      `config` hook (scripts/security/vite-supabase-env-guard.ts) before Vite
  *      transforms or emits any browser asset. `vite dev` and `vite build` abort
  *      when the environment is missing, points at the wrong project, or holds a
- *      privileged key, so a secret can never be bundled.
+ *      privileged key, so a secret can never be bundled. EVERY `vite build`
+ *      (whatever `--mode` says: production, staging, development, ...) also
+ *      refuses a local Supabase URL; only the dev server (`serve`) may use it.
  *   2. RUNTIME — src/integrations/supabase/client.ts re-validates with
  *      `resolveSupabaseBrowserConfig()` as defense in depth.
  *
  * Policy:
  *   - VITE_SUPABASE_URL must be exactly the hosted CASA project URL or one of the
  *     explicitly supported local Supabase URLs. FNE and every other hosted project
- *     are rejected.
+ *     are rejected. A local URL is rejected for any build command and for
+ *     production mode; it is accepted for the development server and at runtime.
  *   - VITE_SUPABASE_ANON_KEY must be a legacy anon JWT that belongs to CASA (or to
  *     the local demo stack when a local URL is used) or an `sb_publishable_*` key.
  *     service_role JWTs, `sb_secret_*`, `sbp_*`, unknown roles, malformed
@@ -58,6 +61,7 @@ export type SupabaseConfigErrorCode =
   | 'url-forbidden-project'
   | 'url-other-project'
   | 'url-not-allowed'
+  | 'url-local-in-build'
   | 'url-local-in-production'
   | 'key-secret'
   | 'key-access-token'
@@ -235,7 +239,13 @@ export function validateBrowserKey(rawKey: string, target: SupabaseTarget): stri
 }
 
 export interface ValidateOptions {
-  /** Vite mode. Local Supabase URLs are refused for production builds. */
+  /**
+   * Vite command. `build` refuses local Supabase URLs regardless of the mode
+   * name (`vite build --mode staging|development|...` included); `serve` (the
+   * development server) may use the local stack.
+   */
+  readonly command?: 'build' | 'serve';
+  /** Vite mode. Local Supabase URLs are additionally refused in production mode. */
   readonly mode?: string;
 }
 
@@ -250,10 +260,17 @@ export function resolveSupabaseBrowserConfig(
   const rawUrl = readRequired(env, SUPABASE_URL_ENV);
   const rawKey = readRequired(env, SUPABASE_ANON_KEY_ENV);
   const { url, target } = validateSupabaseUrl(rawUrl);
+  if (target === 'local' && options.command === 'build') {
+    throw new SupabaseConfigError(
+      'url-local-in-build',
+      `${SUPABASE_URL_ENV} apunta a una instancia local; ningún \`vite build\` puede empaquetar contra Supabase local, ` +
+        'sea cual sea el modo (production, staging, development, ...). Solo el servidor de desarrollo puede usarla.',
+    );
+  }
   if (target === 'local' && options.mode === 'production') {
     throw new SupabaseConfigError(
       'url-local-in-production',
-      `${SUPABASE_URL_ENV} apunta a una instancia local; no está permitido en builds de producción.`,
+      `${SUPABASE_URL_ENV} apunta a una instancia local; no está permitido en modo production.`,
     );
   }
   const anonKey = validateBrowserKey(rawKey, target);

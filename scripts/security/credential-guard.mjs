@@ -29,8 +29,14 @@
  *
  * Fail-closed rules (exit 2, never 0): not a Git repository, zero tracked paths,
  * zero text files scanned, a tracked text file that could not be read from either
- * source, a text file larger than the hard ceiling, or a tracked path that cannot
- * be proven to stay inside the repository root.
+ * source, a text file larger than the hard ceiling, a tracked path that cannot be
+ * proven to stay inside the repository root, or a working-tree file that exists
+ * but cannot be opened/read (permission error, I/O error): the index copy alone is
+ * never trusted in its place. Only a genuinely missing/deleted working-tree file
+ * falls back to the index copy.
+ *
+ * Paths come from `git ls-files -z`, whose separator is always "/". A backslash is
+ * a legal POSIX filename character and is never treated as a separator.
  *
  * Usage:  node scripts/security/credential-guard.mjs [--json] [--root <dir>]
  * Exit:   0 clean · 1 findings · 2 scan cannot be trusted
@@ -41,10 +47,10 @@
 import { Buffer } from 'node:buffer';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, constants as fsConstants, lstatSync, openSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { closeSync, constants as fsConstants, lstatSync, openSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 /**
  * @typedef {{ ruleId: string, file: string, line: number, column: number, source: 'index' | 'worktree' | 'both' }} Finding
@@ -328,7 +334,9 @@ export function isInsideRoot(canonicalRoot, candidate) {
  * @returns {WorktreeLocation}
  */
 export function locateWorktreeEntry(canonicalRoot, relPath) {
-  const parts = relPath.split(/[\\/]+/).filter((part) => part.length > 0);
+  // Git always reports repository-relative paths with "/" separators; a backslash is
+  // an ordinary character of a POSIX filename and must not be reinterpreted.
+  const parts = relPath.split('/').filter((part) => part.length > 0);
   if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) {
     return { kind: 'unsafe', reason: 'path contains a traversal component' };
   }
@@ -437,11 +445,19 @@ export function scanEntries(entries, { root = process.cwd(), maxFileBytes = DEFA
       try {
         worktree = readRegularFileNoFollow(located.path);
       } catch (error) {
-        if (error && error.code === 'ELOOP') {
+        const code = error && typeof error.code === 'string' ? error.code : 'unknown error';
+        if (code === 'ELOOP') {
           result.problems.push(`${file}: refused to read the working-tree copy (became a symlink)`);
           continue;
         }
-        result.missingWorktree += 1;
+        if (code === 'ENOENT') {
+          // Deleted between lstat and open: genuinely missing, the index copy is still scanned.
+          result.missingWorktree += 1;
+        } else {
+          // Exists but unreadable (EACCES, EPERM, EIO, ...): never fall back to the index copy.
+          result.problems.push(`${file}: working-tree file could not be read (${code}); the index copy alone is not trusted`);
+          continue;
+        }
       }
     } else {
       result.missingWorktree += 1;
@@ -559,8 +575,38 @@ export function main(argv = process.argv.slice(2)) {
   return 1;
 }
 
-const invokedDirectly = typeof process.argv[1] === 'string' &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-if (invokedDirectly) {
+/**
+ * True only when this module file IS the script Node was asked to run.
+ *
+ * Node canonicalises the ESM entry point (import.meta.url is the realpath) while
+ * process.argv[1] keeps whatever alias the caller typed, so a plain string
+ * comparison of the two fails whenever the guard is reached through a symlinked
+ * or otherwise noncanonical directory (e.g. macOS /var → /private/var) — and a
+ * failed comparison meant main() never ran and the process exited 0 in silence.
+ * Both sides are therefore reduced to their canonical filesystem identity:
+ * realpath first, then device+inode as a second, independent proof. Any
+ * resolution failure yields false, i.e. "imported as a module", never a run.
+ */
+export function isDirectInvocation(argv1 = process.argv[1], moduleUrl = import.meta.url) {
+  if (typeof argv1 !== 'string' || argv1.length === 0) return false;
+  let entryPath;
+  let selfPath;
+  try {
+    entryPath = realpathSync(resolve(argv1));
+    selfPath = realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+  if (entryPath === selfPath) return true;
+  try {
+    const entry = statSync(entryPath);
+    const self = statSync(selfPath);
+    return entry.isFile() && self.isFile() && entry.dev === self.dev && entry.ino === self.ino;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectInvocation()) {
   process.exit(main());
 }
