@@ -22,10 +22,10 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
           <div className="bg-casa-50 p-4 rounded-lg">
             <h3 className="font-medium text-casa-700 mb-2">Datos de cuenta corriente:</h3>
             <ul className="space-y-2 text-casa-600">
-              <li><span className="font-medium">Nombre:</span> Corporación Anglicana de Chile</li>
-              <li><span className="font-medium">Rut:</span> 70.043.500-8</li>
-              <li><span className="font-medium">Banco:</span> Santander</li>
-              <li><span className="font-medium">Cuenta:</span> 73922194</li>
+              <li><span className="font-medium">Nombre:</span> Corporación Anglicana San Andrés</li>
+              <li><span className="font-medium">Rut:</span> 65.272.016-1</li>
+              <li><span className="font-medium">Banco:</span> Banco Estado</li>
+              <li><span className="font-medium">Cuenta:</span> 34670708651</li>
               <li><span className="font-medium">Email:</span> eriffocontreras@gmail.com</li>
             </ul>
           </div>
