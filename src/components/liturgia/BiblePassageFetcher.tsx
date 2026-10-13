@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2, Search, X, BookOpen, Check, AlertCircle } from 'lucide-react';
+import { isWithdrawnBibleText } from '@/lib/liturgia/bibleText';
 import { LABELS } from './constants';
 import {
   type LecturaFetched,
@@ -77,6 +78,10 @@ export const BiblePassageFetcher = ({
         throw new Error(data?.error || 'Error desconocido');
       }
 
+      if (isWithdrawnBibleText(data.text)) {
+        throw new Error('Esta versión ya no está disponible');
+      }
+
       onLecturaFetched({
         cita: data.reference || cita,
         texto: data.text,
@@ -96,7 +101,7 @@ export const BiblePassageFetcher = ({
 
       toast({
         title: 'No se pudo obtener el texto',
-        description: 'Puedes ingresar el texto manualmente',
+        description: 'Pega el texto de la lectura en el recuadro',
         variant: 'destructive',
       });
     } finally {
@@ -229,7 +234,7 @@ export const BiblePassageFetcher = ({
           <div className="space-y-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
             <div className="flex items-center gap-2 text-amber-700">
               <AlertCircle className="h-4 w-4" />
-              <span className="text-sm font-medium">Entrada manual</span>
+              <span className="text-sm font-medium">Pegar texto</span>
             </div>
             <Textarea
               value={manualText}
@@ -279,9 +284,8 @@ export const BiblePassageFetcher = ({
             <Button
               variant="outline"
               onClick={() => setIsManualMode(true)}
-              disabled={!cita.trim()}
             >
-              Ingresar manual
+              Pegar texto
             </Button>
           </div>
         )}
