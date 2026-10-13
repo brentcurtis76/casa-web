@@ -183,14 +183,22 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
   // Update reading reference
   const updateReference = (index: number, reference: string) => {
     const updated = [...readings];
-    updated[index] = { ...updated[index], reference, text: '', version: '' };
+    // Pasted text belongs to the user, not to the old reference — keep it
+    updated[index] = updated[index].isManual
+      ? { ...updated[index], reference }
+      : { ...updated[index], reference, text: '', version: '' };
     setReadings(updated);
   };
 
   // Update reading version
   const updateVersion = (index: number, versionCode: string) => {
     const updated = [...readings];
-    updated[index] = { ...updated[index], versionCode, text: '', version: '' };
+    if (updated[index].isManual) {
+      const versionInfo = BIBLE_VERSIONS.find(v => v.code === versionCode);
+      updated[index] = { ...updated[index], versionCode, version: versionInfo?.name || versionCode };
+    } else {
+      updated[index] = { ...updated[index], versionCode, text: '', version: '' };
+    }
     setReadings(updated);
   };
 
