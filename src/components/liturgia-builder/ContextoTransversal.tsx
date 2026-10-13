@@ -10,6 +10,7 @@ import { CASA_BRAND } from '@/lib/brand-kit';
 import { Calendar, BookOpen, User, FileText, Plus, X, Search, Loader2, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { isWithdrawnBibleText } from '@/lib/liturgia/bibleText';
 import type { LiturgyContext, LiturgyReading, LiturgyContextInput } from '@/types/shared/liturgy';
 
 interface ContextoTransversalProps {
@@ -220,6 +221,10 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
         throw new Error(data?.error || 'Error al obtener el texto');
       }
 
+      if (isWithdrawnBibleText(data.text)) {
+        throw new Error('Esta versión ya no está disponible');
+      }
+
       updated[index] = {
         ...updated[index],
         text: data.text,
@@ -241,7 +246,7 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
 
       toast({
         title: 'No se pudo obtener el texto',
-        description: 'Puedes ingresarlo manualmente',
+        description: 'Pega el texto de la lectura en el recuadro',
         variant: 'destructive',
       });
     }
@@ -859,6 +864,17 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
                       borderColor: CASA_BRAND.colors.secondary.grayLight,
                     }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = [...readings];
+                      updated[index] = { ...updated[index], text: '', version: '', isManual: false };
+                      setReadings(updated);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               ) : (
                 <div className="flex gap-2">
@@ -892,14 +908,13 @@ const ContextoTransversal: React.FC<ContextoTransversalProps> = ({
                       updated[index] = { ...updated[index], isManual: true };
                       setReadings(updated);
                     }}
-                    disabled={!reading.reference.trim()}
                     className="px-4 py-2 rounded-lg border text-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
                     style={{
                       fontFamily: CASA_BRAND.fonts.body,
                       borderColor: CASA_BRAND.colors.secondary.grayLight,
                     }}
                   >
-                    Manual
+                    Pegar texto
                   </button>
                 </div>
               )}

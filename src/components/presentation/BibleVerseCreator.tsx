@@ -6,6 +6,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -18,6 +19,7 @@ import {
 import { CASA_BRAND } from '@/lib/brand-kit';
 import { Book, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { isWithdrawnBibleText } from '@/lib/liturgia/bibleText';
 import type { Slide } from '@/types/shared/slide';
 
 const BIBLE_VERSIONS = [
@@ -55,6 +57,14 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ text: string; reference: string } | null>(null);
   const [isDebouncing, setIsDebouncing] = useState(false);
+  const [isManual, setIsManual] = useState(false);
+  const [manualText, setManualText] = useState('');
+
+  const slidePreview = isManual
+    ? manualText.trim() && reference.trim()
+      ? { text: manualText.trim(), reference: reference.trim() }
+      : null
+    : preview;
 
   // Refs for cleanup and mounted state
   const isMountedRef = useRef(true);
@@ -100,6 +110,11 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
         throw new Error(data?.error || 'Error desconocido');
       }
 
+      if (isWithdrawnBibleText(data.text)) {
+        setIsManual(true);
+        throw new Error('Esta versión ya no está disponible. Pega el texto abajo.');
+      }
+
       setPreview({
         text: data.text || '',
         reference: data.reference || reference,
@@ -118,7 +133,7 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
   }, [reference, version]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !loading && !isDebouncing) {
+    if (e.key === 'Enter' && !isManual && !loading && !isDebouncing) {
       e.preventDefault();
       setIsDebouncing(true);
       fetchVerse();
@@ -129,17 +144,17 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
         }
       }, 500); // 500ms debounce
     }
-  }, [loading, isDebouncing, fetchVerse]);
+  }, [isManual, loading, isDebouncing, fetchVerse]);
 
   const handleCreate = () => {
-    if (!preview) return;
+    if (!slidePreview) return;
 
     const slide: Slide = {
       id: `temp-verse-${Date.now()}`,
       type: 'reading',
       content: {
-        primary: preview.text,
-        secondary: preview.reference,
+        primary: slidePreview.text,
+        secondary: slidePreview.reference,
         subtitle: BIBLE_VERSIONS.find((v) => v.value === version)?.label.split(' - ')[0] || version,
       },
       style: {
@@ -188,19 +203,62 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
             onKeyDown={handleKeyDown}
             aria-label="Referencia bíblica"
           />
-          <Button
-            onClick={fetchVerse}
-            disabled={loading || !reference.trim() || isDebouncing}
-            style={{
-              backgroundColor: CASA_BRAND.colors.primary.amber,
-              color: CASA_BRAND.colors.primary.black,
-            }}
-            aria-label="Buscar versículo"
-          >
-            {loading ? <Loader2 className="animate-spin" size={16} /> : 'Buscar'}
-          </Button>
+          {!isManual && (
+            <Button
+              onClick={fetchVerse}
+              disabled={loading || !reference.trim() || isDebouncing}
+              style={{
+                backgroundColor: CASA_BRAND.colors.primary.amber,
+                color: CASA_BRAND.colors.primary.black,
+              }}
+              aria-label="Buscar versículo"
+            >
+              {loading ? <Loader2 className="animate-spin" size={16} /> : 'Buscar'}
+            </Button>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setIsManual(!isManual);
+            setError(null);
+          }}
+          className="text-xs underline"
+          style={{
+            fontFamily: CASA_BRAND.fonts.body,
+            color: CASA_BRAND.colors.secondary.grayLight,
+          }}
+        >
+          {isManual ? 'Buscar el texto automáticamente' : 'Pegar el texto manualmente'}
+        </button>
       </div>
+
+      {/* Manual text */}
+      {isManual && (
+        <div className="space-y-2">
+          <Label
+            htmlFor="manual-text"
+            style={{
+              fontFamily: CASA_BRAND.fonts.body,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          >
+            Texto
+          </Label>
+          <Textarea
+            id="manual-text"
+            value={manualText}
+            onChange={(e) => setManualText(e.target.value)}
+            placeholder="Pega aquí el texto del versículo..."
+            rows={5}
+            style={{
+              backgroundColor: CASA_BRAND.colors.primary.black,
+              borderColor: CASA_BRAND.colors.secondary.grayDark,
+              color: CASA_BRAND.colors.primary.white,
+            }}
+          />
+        </div>
+      )}
 
       {/* Version selector */}
       <div className="space-y-2">
@@ -266,7 +324,7 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
       )}
 
       {/* Preview */}
-      {preview && (
+      {slidePreview && (
         <div
           className="p-4 rounded-lg"
           style={{
@@ -283,9 +341,9 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
               marginBottom: '8px',
             }}
           >
-            {preview.text.length > 300
-              ? `${preview.text.slice(0, 300)}...`
-              : preview.text}
+            {slidePreview.text.length > 300
+              ? `${slidePreview.text.slice(0, 300)}...`
+              : slidePreview.text}
           </p>
           <p
             style={{
@@ -296,7 +354,7 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
               textAlign: 'right',
             }}
           >
-            — {preview.reference}
+            — {slidePreview.reference}
           </p>
         </div>
       )}
@@ -354,7 +412,7 @@ export const BibleVerseCreator: React.FC<BibleVerseCreatorProps> = ({
         </Button>
         <Button
           onClick={handleCreate}
-          disabled={!preview}
+          disabled={!slidePreview}
           className="gap-2"
           style={{
             backgroundColor: CASA_BRAND.colors.primary.amber,
