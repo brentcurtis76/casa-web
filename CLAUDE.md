@@ -110,3 +110,5 @@ Admin, Liturgist, AV Volunteer, Worship Coordinator, Musician, Small Group Leade
 ---
 
 *Canonical project context: ~/SecondBrain/projects/casa.md*
+
+- Database migrations reach Production only through the workflow's Publish button; agents never hold Production write access.

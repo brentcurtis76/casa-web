@@ -1,0 +1,1 @@
+- Database migrations reach Production only through the workflow's Publish button; agents never hold Production write access.
